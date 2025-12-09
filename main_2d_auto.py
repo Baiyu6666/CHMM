@@ -145,7 +145,12 @@ def run_experiment_2d(
         g_step=0.2,
         vmf_steps=3,
         plot_every=max_iter,  # 只在最后一轮画 4-panel（如果你在 plot 里有调用）
-        auto_feature_select=True,
+        auto_feature_select=not True,
+        r_sparse_lambda=0.3,
+        feature_types=["margin_exp_lower",  # 0: 距离 -> 下界不等式
+                       "gauss",  # 1: 速度 -> 等式/窄带
+                       "gauss",  # 2: 假障碍
+                       "gauss"],
     )
 
     posts = learner.fit(max_iter=max_iter)
@@ -184,7 +189,7 @@ def run_experiment_2d(
 if __name__ == "__main__":
     run_experiment_2d(
         n_demos=10,
-        seed=2619,
+        seed=229,
         max_iter=45,
         run_baseline=True,
     )

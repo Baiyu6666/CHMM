@@ -1,7 +1,6 @@
 # env/env2d.py
 # ------------------------------------------------------------
 # 2D obstacle-avoid + speed-constraint demo generator.
-# This file keeps the original 2D behavior you used before.
 # ------------------------------------------------------------
 
 import numpy as np
@@ -9,12 +8,15 @@ import numpy as np
 
 class ObsAvoidEnv:
     """
-    2D 环境（保留你原来的 2D demo 生成逻辑）：
+    2D 环境：
       - stage1: 绕圆柱障碍（XY平面）
       - stage2: 速度约束（后半段速度更慢）
-    特征：
-      f1 = distance to obstacle center (2D)
-      f2 = speed magnitude (2D)
+
+    特征（full feature set）：
+      f0 = distance to main obstacle center (2D)
+      f1 = speed magnitude (2D)
+      f2 = distance to a far cylinder center (2D)
+      f3 = deterministic "noise-like" feature (no physical meaning)
     """
 
     def __init__(
@@ -26,6 +28,8 @@ class ObsAvoidEnv:
         obs_radius=0.3,
         dt=1.0,
         noise_std=0.01,
+        # 新增：远处圆柱的中心（只参与 feature，不参与生成）
+        far_center=(-0.5, 2.5),
     ):
         self.start = np.array(start, dtype=float)
         self.subgoal = np.array(subgoal, dtype=float)
@@ -36,6 +40,14 @@ class ObsAvoidEnv:
 
         self.dt = float(dt)
         self.noise_std = float(noise_std)
+
+        # 远处圆柱，只作为 f2 feature
+        self.far_center = np.array(far_center, dtype=float)
+
+        # 噪声特征的“方向向量”（固定常数，保证 deterministic）
+        # 可以随便选几个不共线的数
+        self.noise_vec = np.array([0.37, -0.58], dtype=float)
+        self.noise_bias = 0.0  # 可选偏移，先设 0
 
     # ----------------------------
     # Demo generation (2D)
@@ -52,12 +64,6 @@ class ObsAvoidEnv:
     ):
         """
         生成一条 2D demo，并返回 (traj, true_tau)
-
-        保留你原来风格：
-          - 段1：直线 -> 绕障碍圆弧（上绕/下绕） -> 可能提前离开圆弧 -> 直线到 subgoal
-          - 段2：subgoal -> goal 的轻微摆动直线
-          - 速度：段1后半段减速，段2整体慢于段1（speed_ratio）
-          - 每条 demo 的 subgoal 和 goal 都有轻微扰动
         """
         if direction is None:
             direction = np.random.choice(["up", "down"])
@@ -85,7 +91,7 @@ class ObsAvoidEnv:
         arc_full = self.obs_center + R_path * np.c_[np.cos(theta1), np.sin(theta1)]
         arc_full[0] = straight1[-1]
 
-        # early exit from arc (random cut)
+        # early exit from arc
         early_frac = float(np.random.uniform(*arc_early_frac_range))
         cut_idx = max(1, int(np.round(early_frac * (len(arc_full) - 1))))
         exit_point = arc_full[cut_idx]
@@ -93,7 +99,7 @@ class ObsAvoidEnv:
 
         stage1_pre = np.vstack([straight1, arc[1:]])
 
-        # connect exit -> subgoal_local with step size similar to arc
+        # connect exit -> subgoal_local
         arc_steps = np.linalg.norm(np.diff(arc, axis=0), axis=1)
         mean_arc_step = max(1e-6, np.mean(arc_steps))
         seg_exit2sub = np.linalg.norm(subgoal_local - exit_point)
@@ -183,28 +189,78 @@ class ObsAvoidEnv:
         return traj, true_tau
 
     # ----------------------------
-    # Features
+    # Old feature API (兼容用)
     # ----------------------------
     def compute_features(self, traj, tau):
         """
-        traj: (T,2)
-        tau: cutpoint index
-        Returns:
-          feats1: distance series for stage1 [0..tau]
-          feats2: speed series for stage2 [tau..T-1] (speed defined on edges)
+        （兼容旧接口）:
+          feats1: distance to main obstacle, [0..tau]
+          feats2: speed magnitude, [tau..]
         """
         dists = np.linalg.norm(traj - self.obs_center[None, :], axis=1)
-        speeds = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
+        speeds_edge = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
+        # pad to length T
+        T = len(traj)
+        speeds = np.empty(T, dtype=float)
+        speeds[0] = speeds_edge[0]
+        speeds[1:] = speeds_edge
         feats1 = dists[: tau + 1]
         feats2 = speeds[tau:]
         return feats1, feats2
 
     def compute_features_all(self, traj):
         """
-        Returns:
-          dists: length T
-          speeds: length T-1 (edge speeds)
+        （兼容旧接口）:
+          dists: length T (distance to main obstacle)
+          speeds: length T (padded speed)
         """
         dists = np.linalg.norm(traj - self.obs_center[None, :], axis=1)
-        speeds = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
+        speeds_edge = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
+        T = len(traj)
+        speeds = np.empty(T, dtype=float)
+        speeds[0] = speeds_edge[0]
+        speeds[1:] = speeds_edge
         return dists, speeds
+
+    # ----------------------------
+    # New unified multi-feature API
+    # ----------------------------
+    def compute_all_features_matrix(self, traj, feat_ids=None):
+        """
+        返回 full feature matrix F: shape = (T, 4)
+            f0 = distance to main obstacle center
+            f1 = 2D speed magnitude (padded to length T)
+            f2 = distance to far cylinder center
+            f3 = deterministic noise-like feature
+
+        feat_ids: None or 列索引列表，例如 [0,2,3]
+        """
+        traj = np.asarray(traj, float)
+        T = traj.shape[0]
+
+        # f0: 主障碍距离
+        d_main = np.linalg.norm(traj - self.obs_center[None, :], axis=1)
+
+        # f1: 2D 速度模长，pad 到长度 T
+        speeds_edge = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
+        speeds = np.empty(T, dtype=float)
+        if T > 1:
+            speeds[0] = speeds_edge[0]
+            speeds[1:] = speeds_edge
+        else:
+            speeds[0] = 0.0
+
+        # f2: 距离远处圆柱
+        d_far = np.linalg.norm(traj - self.far_center[None, :], axis=1)
+
+        # f3: "噪声特征"：对 (x,y) 做一个固定的线性投影再加一点非线性
+        t = np.linspace(0, 2 * np.pi, T)
+        phase = np.random.uniform(0, 2 * np.pi)
+        noise_feat = 0.2 * np.sin(5 * t + phase)
+
+        F = np.stack([d_main, speeds, d_far, noise_feat], axis=1)  # (T,4)
+
+        if feat_ids is None:
+            return F
+        else:
+            return F[:, feat_ids]

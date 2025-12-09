@@ -199,7 +199,7 @@ def run_experiment(
         env = ObsAvoidEnv3D(
             start_xy=(-1.5, 0.0),
             subgoal_xy=(0.5, 0.0),
-            goal_xy=(0.2, 0.5),
+            goal_xy=(-0.2, 0.5),
             obs_center_xy=(-0.5, 0.0),
             obs_radius=0.3,
             start_z_range=(0.2, 0.7),
@@ -244,8 +244,15 @@ def run_experiment(
         g_step=0.2,
         vmf_steps=3,
         plot_every=max_iter,
-        auto_feature_select=not True,
-        r_sparse_lambda = 1.7,
+        feature_ids=[0, 1, 2, 3],
+        main_feat_stage1_raw=0,     # env feature 中表示 "distance-like" 的原始索引
+        main_feat_stage2_raw=1,
+        feature_types=["margin_exp_lower",  # 0: 距离 -> 下界不等式
+                     "gauss",  # 1: 速度 -> 等式/窄带
+                     "gauss",  # 2: 假障碍
+                     "gauss"],
+        auto_feature_select=True,
+        r_sparse_lambda=0.3
 
     # g1_init="random"
     )
@@ -273,16 +280,16 @@ def run_experiment(
     # 使用 learned constraint 做 two-stage optimal control 规划
     # ========================================================
 
-    if render and use_3d:
+    # if render and use_3d:
         # =====================================================================
         # 从 learner 中提取约束阈值：d_safe_min (stage1) 与 v2_max (stage2)
         # =====================================================================
-        d_safe_min_raw, v2_max_raw = get_feature_constraints_from_learner(learner)
-        print(
-            f"\n[Constraints from learner] "
-            f"d_safe_min = {d_safe_min_raw:.3f}, v2_max = {v2_max_raw:.3f}"
-        )
-        #
+        # d_safe_min_raw, v2_max_raw = get_feature_constraints_from_learner(learner)
+        # print(
+        #     f"\n[Constraints from learner] "
+        #     f"d_safe_min = {d_safe_min_raw:.3f}, v2_max = {v2_max_raw:.3f}"
+        # )
+        # #
         # # =====================================================================
         # # Now plan new trajectories using learned constraints
         # # =====================================================================
@@ -336,63 +343,63 @@ def run_experiment(
         # ========================================================
         # 使用 learned constraint 做 transfer-planning
         # ========================================================
-        d_safe_min_raw, v2_max_raw = get_feature_constraints_from_learner(learner)
-        print(f"[Constraints] d_safe_min={d_safe_min_raw:.3f}, v2_max={v2_max_raw:.3f}")
-
-        print("\nPlanning new trajectories WITH oscillation transfer…")
-        n_plan = 3
-        planned_trajs = []
-        planned_taus = []
-
-        for i in range(n_plan):
-            x_start = sample_random_start_3d(env, xy_jitter=0.5)
-            x_start[0] += 1.2
-            x_start[1] -= .5
-
-            X_plan, tau_plan, X1, X2, goal_above = plan_oscillate_then_descend(
-                env,
-                x_start=x_start,
-                dt=0.2,
-                d_safe_min=d_safe_min_raw,
-                v1_max=0.9,
-                v2_max=v2_max_raw,
-                n_round_trips=2,
-                stage1_max_steps_per_leg=80,
-                stage2_max_steps=120,
-                verbose=False,
-            )
-            planned_trajs.append(X_plan)
-            planned_taus.append(tau_plan)
-            print(f"[Main/Osc] traj {i}: T={len(X_plan)}, tau={tau_plan}")
-
-        # debug plot（还能看到 stage1 很长，然后 stage2 一段垂直接近）
-        debug_plot_plans_3d(
-            env,
-            planned_trajs,
-            planned_taus,
-            title="Oscillate-then-descend trajectories",
-            dt=0.2,
-            v2_max=v2_max_raw,
-        )
-
-        # Render（可以继续用 subsample）
-        renderer = PyBulletRenderer3D(env)
-        renderer.setup_scene()
-        renderer.play_all(
-            planned_trajs,
-            planned_taus,
-            g1=None,
-            g2=None,
-            v_target=0.2,
-            min_dt=1 / 60,
-            max_dt=0.12,
-        )
+        # d_safe_min_raw, v2_max_raw = get_feature_constraints_from_learner(learner)
+        # print(f"[Constraints] d_safe_min={d_safe_min_raw:.3f}, v2_max={v2_max_raw:.3f}")
+        #
+        # print("\nPlanning new trajectories WITH oscillation transfer…")
+        # n_plan = 3
+        # planned_trajs = []
+        # planned_taus = []
+        #
+        # for i in range(n_plan):
+        #     x_start = sample_random_start_3d(env, xy_jitter=0.5)
+        #     x_start[0] += 1.2
+        #     x_start[1] -= .5
+        #
+        #     X_plan, tau_plan, X1, X2, goal_above = plan_oscillate_then_descend(
+        #         env,
+        #         x_start=x_start,
+        #         dt=0.2,
+        #         d_safe_min=d_safe_min_raw,
+        #         v1_max=0.9,
+        #         v2_max=v2_max_raw,
+        #         n_round_trips=2,
+        #         stage1_max_steps_per_leg=80,
+        #         stage2_max_steps=120,
+        #         verbose=False,
+        #     )
+        #     planned_trajs.append(X_plan)
+        #     planned_taus.append(tau_plan)
+        #     print(f"[Main/Osc] traj {i}: T={len(X_plan)}, tau={tau_plan}")
+        #
+        # # debug plot（还能看到 stage1 很长，然后 stage2 一段垂直接近）
+        # debug_plot_plans_3d(
+        #     env,
+        #     planned_trajs,
+        #     planned_taus,
+        #     title="Oscillate-then-descend trajectories",
+        #     dt=0.2,
+        #     v2_max=v2_max_raw,
+        # )
+        #
+        # # Render（可以继续用 subsample）
+        # renderer = PyBulletRenderer3D(env)
+        # renderer.setup_scene()
+        # renderer.play_all(
+        #     planned_trajs,
+        #     planned_taus,
+        #     g1=None,
+        #     g2=None,
+        #     v_target=0.2,
+        #     min_dt=1 / 60,
+        #     max_dt=0.12,
+        # )
 
 
 if __name__ == "__main__":
     run_experiment(
         n_demos=10,
-        seed=4221,
+        seed=434421,
         use_3d=True,
         max_iter=45,
         run_baseline=True,

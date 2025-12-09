@@ -25,7 +25,7 @@ import scipy.stats as stats
 USE_3D = True
 N_DEMOS = 12
 DEMO_SEED = 123
-N_RUNS_PER_MODE = 25
+N_RUNS_PER_MODE = 2
 MAX_ITER = 40
 
 SAVE_DIR = "exp_results"
