@@ -1,89 +1,93 @@
 # exp_init_sensitivity.py
 # ------------------------------------------------------------
-# 实验：比较 GoalHMM vs GMM-HMM 在不同“共享初始化 τ”方案下的敏感性
+# 实验：在 SineCorridorEnv3D 上比较 GoalHMM 在不同初始化 τ 方案下的敏感性
 #
-# - 使用同一批 demos
+# - Env:   SineCorridorEnv3D（正弦走廊 + 两阶段速度约束）
+# - Demo:  env.generate_demos(...)
+# - Model: GoalHMM3D（配置参考 main_sine_auto.py）
+#
 # - 两种共享初始化方案：
-#       "random"     : 每条轨迹随机选 τ （clip 在 [1, T-2]）
-#       "heuristic"  : candidate centers + 平均距离 softmax 采样
+#       "random"     : shared random λ ∈ (0,1)，每条轨迹 tau = round(λ (T-1))，clip 到 [1, T-1]
+#       "heuristic"  : candidate centers + 平均距离 softmax 采样（全局几何启发式）
+#
 # - 对于每个 scheme：
 #       * 采样一组 taus_init（长度 = n_demos）
-#       * 用这组 taus_init 跑一次 GoalHMM（from_tau）
-#       * 用同一组 taus_init 初始化 GMMHMM
+#       * 用这组 taus_init 跑一次 GoalHMM（tau_init=taus_init, g1_init/g2_init="from_tau"）
 # - 记录：
 #       loglik
 #       tau MAE / NMAE
 #       ||g1 - g1_true||, ||g2 - g2_true||
 #       RelErr(d_safe), RelErr(v2_max)
 # - 最后画 boxplot，对比：
-#       random-goal, random-gmm, heuristic-goal, heuristic-gmm
+#       random, heuristic
 # ------------------------------------------------------------
 
 import numpy as np
 import matplotlib.pyplot as plt
+import random
 
-from env.env2d import ObsAvoidEnv
-from env.env3d import ObsAvoidEnv3D
+from env.sine_corridor_3d import SineCorridorEnv3D
 from learner.goal_hmm import GoalHMM3D
-from learner.gmm_hmm import GMMHMM
+# from utils.learned_feature import SineCorridorResidual  # 如需开启可恢复
 
 # ------------------------------------------------------------
 # 配置
 # ------------------------------------------------------------
-USE_3D = True          # True: 用 ObsAvoidEnv3D, False: 用 ObsAvoidEnv (2D)
-N_DEMOS = 12            # demo 数量
-DEMO_SEED = 123         # 用于生成 demos 的 seed（固定数据，只改初始化）
-N_RUNS_PER_SCHEME = 3   # 每种 init scheme 重复次数
-MAX_ITER = 40           # EM 迭代次数
+N_DEMOS = 12             # demo 数量
+DEMO_SEED = 123          # 用于生成 demos 的 seed（固定数据，只改初始化）
+N_RUNS_PER_SCHEME = 10   # 每种 init scheme 重复次数
+MAX_ITER = 30            # EM 迭代次数（参考 main_sine_auto.py）
 
 INIT_SCHEMES = [
-    "true_tau",
     "random",       # shared_random
     "heuristic",    # shared_heuristic (softmax 距离)
 ]
 
-MODELS = [
-    "goal",         # GoalHMM
-    "gmm",          # GMMHMM
-]
+# 只测 GoalHMM 一个模型
+MODEL_NAME = "goal"
 
 
 # ------------------------------------------------------------
-# 生成一批固定 demos
+# 工具：设定全局随机种子
 # ------------------------------------------------------------
-def generate_demos(use_3d=True, n_demos=10, seed=0):
+def set_seed(seed: int = 0):
     np.random.seed(seed)
+    random.seed(seed)
 
-    if use_3d:
-        env = ObsAvoidEnv3D(
-            start_xy=(-1.5, 0.0),
-            subgoal_xy=(0.5, 0.0),
-            goal_xy=(0.2, 0.5),
-            obs_center_xy=(-0.5, 0.0),
-            obs_radius=0.3,
-            start_z_range=(0.2, 0.7),
-            subgoal_z=0.4,
-            goal_z=0.05,
-        )
-    else:
-        env = ObsAvoidEnv(
-            start=(-1.5, 0.0),
-            subgoal=(0.5, 0.0),
-            goal=(0.0, 0.3),
-            obs_center=(-0.5, 0.0),
-            obs_radius=0.3,
-        )
 
-    demos, true_taus = [], []
-    for _ in range(n_demos):
-        if use_3d:
-            X, tau = env.generate_demo_3d(n1=20, direction=None)
-        else:
-            X, tau = env.generate_demo(n1=20, direction=None)
-        demos.append(X)
-        true_taus.append(int(tau))
+# ------------------------------------------------------------
+# 构建 SineCorridorEnv3D（参考 main_sine_auto.build_env）
+# ------------------------------------------------------------
+def build_env():
+    env = SineCorridorEnv3D(
+        A=0.1,
+        omega=10.0,
+        bias=0.2,
+        phase=0.0,
+        x_start_range=(-2.0, -1.0),
+        z_start_range=(0, 0.5),
+        x_sub=0.0,
+        z_sub=0.6,
+        goal=(0.6, 0, 0),
+        dt=1,
+    )
+    return env
 
-    return env, demos, true_taus
+
+# ------------------------------------------------------------
+# 生成一批固定 demos（参考 main_sine_auto.generate_demos）
+# ------------------------------------------------------------
+def generate_demos(env, n_demos=12, seed=0):
+    np.random.seed(seed)
+    demos, true_taus = env.generate_demos(
+        n_demos=n_demos,
+        T_stage1=120,
+        noise_y_std=0.0,
+        noise_z_std=0.0,
+        v2_max=None,
+    )
+    env.estimate_oracle_constraints(demos, true_taus)
+    return demos, true_taus
 
 
 # ------------------------------------------------------------
@@ -91,7 +95,9 @@ def generate_demos(use_3d=True, n_demos=10, seed=0):
 # ------------------------------------------------------------
 def sample_taus_random_shared(demos, rng):
     """
-    每条轨迹独立随机一个 tau ∈ [1, T-2]
+    共享 random λ：
+      lam ~ U(0,1)，对所有轨迹共用；
+      对第 i 条轨迹：tau_i = round(lam * (T_i - 1))，clip 到 [1, T_i - 1]。
     """
     taus = []
     lam = rng.rand()
@@ -102,13 +108,12 @@ def sample_taus_random_shared(demos, rng):
         taus.append(int(t))
     return np.array(taus, dtype=int)
 
+
 # ------------------------------------------------------------
-# τ 初始化：shared heuristic + softmax over distance
+# τ 初始化：shared heuristic + softmax over distance（几何启发式）
 # ------------------------------------------------------------
 def sample_taus_heuristic_softmax(demos, rng, n_cand=200, temperature=0.3):
     """
-    按照你在 GoalHMM 里说的那套逻辑实现一个简单版：
-
     1. 把所有点堆起来 all_pts
     2. 随机挑 n_cand 个 candidate center
     3. 对每个 candidate c：
@@ -145,7 +150,8 @@ def sample_taus_heuristic_softmax(demos, rng, n_cand=200, temperature=0.3):
 
         mean_d = float(np.mean(dists_this_c))
         scores.append(mean_d)
-        taus_for_each_cand.append(np.array(taus_this_c, dtype=int))
+        taus_this_c = np.array(taus_this_c, dtype=int)
+        taus_for_each_cand.append(taus_this_c)
 
     scores = np.array(scores, dtype=float)
     # softmax over -score/temperature
@@ -162,27 +168,72 @@ def sample_taus_heuristic_softmax(demos, rng, n_cand=200, temperature=0.3):
 
 
 # ------------------------------------------------------------
-# 单次：GoalHMM 训练 + 提取 metrics
+# 单次：GoalHMM 在一组 taus_init 下训练 + 提取 metrics
 # ------------------------------------------------------------
 def run_single_goal(env, demos, true_taus, taus_init, max_iter, seed):
-    np.random.seed(seed)
+    set_seed(seed)
+
+    # ============= main_sine_auto 里的配置 =============
+    # optional learnable feature，如果你要打开，可以取消注释并在 GoalHMM3D 里加 learned_features 参数
+    # learned_features = [
+    #     SineCorridorResidual(
+    #         A_init=env.A,
+    #         w_init=env.omega,
+    #         phi_init=env.phase,
+    #         state_index=0,  # 主约束在 stage1
+    #     )
+    # ]
+
+    # 假设：
+    #   - raw 维度 0: stage1 的主约束
+    #   - raw 维度 1: stage2 的主约束（速度）
+    main_feat_stage1_raw = 0
+    main_feat_stage2_raw = 1
 
     learner = GoalHMM3D(
         demos=demos,
         env=env,
         true_taus=true_taus,
+
+        # ★ 关键：用外部给定的 taus_init，并从 tau 初始化 g1/g2
         tau_init=taus_init,
         g1_init="from_tau",
         g2_init="from_tau",
+
+        main_feat_stage1_raw=main_feat_stage1_raw,
+        main_feat_stage2_raw=main_feat_stage2_raw,
+        feature_types=None,
+
+        auto_feature_select=False,
+        r_sparse_lambda=0.3,
+
+        # learned_features=learned_features,
+        f_lr=1e-2,
+        f_mstep_steps=5,
+
+        # ===== EM 权重 / 超参（保持与 main_sine_auto 一致）=====
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,
+
+        prog_kappa1=8.0,
+        prog_kappa2=6.0,
+
+        fixed_sigma_irrelevant=1.0,
+
+        trans_eps=1e-6,
         delta_init=0.15,
         learn_delta=True,
-        vmf_lr=8e-4,
-        g_step=0.2,
+        lr_delta=5e-4,
+
         vmf_steps=3,
-        plot_every=None,   # 不在这里画 4-panel
+        vmf_lr=5e-4,
+        g_step=0.1,
+        g_grad_clip=None,
+        g1_vmf_weight=1.0,
+        g1_trans_weight=1.0,
+
+        plot_every=None,   # 实验里不画 4-panel
     )
 
     learner.fit(max_iter=max_iter, verbose=False)
@@ -207,60 +258,17 @@ def run_single_goal(env, demos, true_taus, taus_init, max_iter, seed):
 
 
 # ------------------------------------------------------------
-# 单次：GMM-HMM 训练 + 提取 metrics
-# ------------------------------------------------------------
-def run_single_gmm(env, demos, true_taus, taus_init, max_iter, seed):
-    np.random.seed(seed)
-
-    gmm = GMMHMM(
-        demos=demos,
-        env=env,
-        true_taus=true_taus,
-        use_xy_vel=True,
-        plot_every=None,
-    )
-
-    # fit
-    # （假设和 GoalHMM 一样有 loss_loglik，可自己在 GMMHMM 中补一条记录逻辑）
-    if "verbose" in gmm.fit.__code__.co_varnames:
-        gmm.fit(max_iter=max_iter, verbose=False)
-    else:
-        gmm.fit(max_iter=max_iter)
-
-    last_idx = -1
-
-    def _safe(obj, arr_name):
-        arr = getattr(obj, arr_name, None)
-        if arr is None or len(arr) == 0:
-            return np.nan
-        return float(arr[last_idx])
-
-    # 如果你也给 GMMHMM 实现了对应 metric_xxx，这里会自动用；否则是 NaN
-    return {
-        "loglik": _safe(gmm, "loss_loglik"),
-        "tau_mae": _safe(gmm, "metric_tau_mae"),
-        "tau_nmae": _safe(gmm, "metric_tau_nmae"),
-        "g1_err": _safe(gmm, "metric_g1_err"),
-        "g2_err": _safe(gmm, "metric_g2_err"),
-        "d_relerr": _safe(gmm, "metric_d_relerr"),
-        "v_relerr": _safe(gmm, "metric_v_relerr"),
-    }
-
-
-# ------------------------------------------------------------
-# 主实验：两种 shared init × 两个模型，多次重复
+# 主实验：两种 shared init × GoalHMM，多次重复
 # ------------------------------------------------------------
 def run_init_sensitivity_experiment():
     # 1) 生成固定 demos
-    print(f"[Exp] Generating demos (USE_3D={USE_3D}) ...")
-    env, demos, true_taus = generate_demos(
-        use_3d=USE_3D,
-        n_demos=N_DEMOS,
-        seed=DEMO_SEED,
-    )
+    print(f"[Exp] Building SineCorridorEnv3D …")
+    env = build_env()
+    print(f"[Exp] Generating demos (N_DEMOS={N_DEMOS}) …")
+    demos, true_taus = generate_demos(env, n_demos=N_DEMOS, seed=DEMO_SEED)
     print(f"[Exp] Demos generated: {len(demos)}, example shape = {demos[0].shape}")
 
-    # 2) metrics[metric_name][scheme][model] = list
+    # 2) metrics[metric_name][scheme] = list
     metric_names = [
         "loglik",
         "tau_mae",
@@ -272,7 +280,7 @@ def run_init_sensitivity_experiment():
     ]
 
     metrics = {
-        m: {scheme: {model: [] for model in MODELS} for scheme in INIT_SCHEMES}
+        m: {scheme: [] for scheme in INIT_SCHEMES}
         for m in metric_names
     }
 
@@ -283,7 +291,7 @@ def run_init_sensitivity_experiment():
         print(f"\n[Exp] ===== Init scheme: {scheme} =====")
 
         for run_id in range(N_RUNS_PER_SCHEME):
-            # 每个 run 使用独立 rng，但保证 random/heuristic 比较时可控
+            # 每个 run 使用独立 rng
             rng = np.random.RandomState(rng_master.randint(0, 10**9))
 
             # 3.1 先根据 scheme 采一组共享的 taus_init
@@ -296,28 +304,23 @@ def run_init_sensitivity_experiment():
                     n_cand=200,
                     temperature=0.02,
                 )
-            elif scheme == "true_tau":
-                taus_init = np.array(true_taus, dtype=int)
             else:
                 raise ValueError(f"Unknown init scheme: {scheme}")
 
-            # 3.2 在这组 taus_init 下，分别跑 GoalHMM / GMMHMM
+            # 3.2 在这组 taus_init 下，跑 GoalHMM
             seed_goal = rng_master.randint(0, 10**9)
-            seed_gmm = rng_master.randint(0, 10**9)
-
             res_goal = run_single_goal(env, demos, true_taus, taus_init, MAX_ITER, seed_goal)
-            res_gmm = run_single_gmm(env, demos, true_taus, taus_init, MAX_ITER, seed_gmm)
 
             # 3.3 记录
             for k in metric_names:
-                metrics[k][scheme]["goal"].append(res_goal[k])
-                metrics[k][scheme]["gmm"].append(res_gmm[k])
+                metrics[k][scheme].append(res_goal[k])
 
             print(
                 f"  [Run {run_id:02d}] "
                 f"scheme={scheme}, "
-                f"Goal: log={res_goal['loglik']:.2f}, NMAE_tau={res_goal['tau_nmae']:.3f}, g1_err={res_goal['g1_err']:.3f}; "
-                f"GMM:  log={res_gmm['loglik']:.2f}, NMAE_tau={res_gmm['tau_nmae']:.3f}, g1_err={res_gmm['g1_err']:.3f}"
+                f"log={res_goal['loglik']:.2f}, "
+                f"NMAE_tau={res_goal['tau_nmae']:.3f}, "
+                f"g1_err={res_goal['g1_err']:.3f}"
             )
 
     # 4) Summary
@@ -325,18 +328,17 @@ def run_init_sensitivity_experiment():
     for m in metric_names:
         print(f"\nMetric: {m}")
         for scheme in INIT_SCHEMES:
-            for model in MODELS:
-                vals = np.array(metrics[m][scheme][model], dtype=float)
-                mean = np.nanmean(vals)
-                std = np.nanstd(vals)
-                print(f"  {scheme:9s}-{model:4s}: {mean:.4f} ± {std:.4f}")
+            vals = np.array(metrics[m][scheme], dtype=float)
+            mean = np.nanmean(vals)
+            std = np.nanstd(vals)
+            print(f"  {scheme:9s}: {mean:.4f} ± {std:.4f}")
 
     # 5) 画 boxplot
     plot_boxplots(metrics)
 
 
 # ------------------------------------------------------------
-# 画 boxplot（flatten：random-goal, random-gmm, heuristic-goal, heuristic-gmm）
+# 画 boxplot（random, heuristic）
 # ------------------------------------------------------------
 def plot_boxplots(metrics):
     metric_order = [
@@ -362,29 +364,22 @@ def plot_boxplots(metrics):
         data = []
         labels = []
         for scheme in INIT_SCHEMES:
-            for model in MODELS:
-                data.append(metrics[mname][scheme][model])
-                labels.append(f"{scheme}-{model}")
+            data.append(metrics[mname][scheme])
+            labels.append(scheme)
 
-        # plt.boxplot(
-        #     data,
-        #     labels=labels,
-        #     showmeans=True,
-        #     meanline=True,
-        # )
-        # plt.title(mname)
-        # plt.xticks(rotation=20)
-        # plt.grid(alpha=0.3, axis='y')
-
-
-        # enhanced violin + box + points, colored, with medians and means
         positions = np.arange(1, len(data) + 1)
         cleaned = [np.array(d, dtype=float) for d in data]
 
-        # create violins
-        vp = plt.violinplot(cleaned, positions=positions, showmeans=False, showextrema=False, widths=0.8, points=200)
+        # violin
+        vp = plt.violinplot(
+            cleaned,
+            positions=positions,
+            showmeans=False,
+            showextrema=False,
+            widths=0.8,
+            points=200,
+        )
 
-        # color palette
         cmap = plt.get_cmap("Set2")
         colors = [cmap(i / max(1, len(cleaned) - 1)) for i in range(len(cleaned))]
 
@@ -393,21 +388,32 @@ def plot_boxplots(metrics):
             body.set_edgecolor("black")
             body.set_alpha(0.75)
 
-        # compute medians and means and plot them
         medians = [np.nanmedian(d) if len(d) else np.nan for d in cleaned]
         means = [np.nanmean(d) if len(d) else np.nan for d in cleaned]
 
         for pos, med in zip(positions, medians):
             if not np.isnan(med):
-                plt.plot([pos - 0.28, pos + 0.28], [med, med], color="white", linewidth=2, zorder=3)
+                plt.plot(
+                    [pos - 0.28, pos + 0.28],
+                    [med, med],
+                    color="white",
+                    linewidth=2,
+                    zorder=3,
+                )
 
         for pos, mean in zip(positions, means):
             if not np.isnan(mean):
                 plt.scatter(pos, mean, marker="D", color="black", s=24, zorder=4)
 
-        # overlay a slim boxplot to show quartiles
-        bp = plt.boxplot(cleaned, positions=positions, widths=0.12, patch_artist=True, showfliers=False,
-                         manage_ticks=False)
+        # box
+        bp = plt.boxplot(
+            cleaned,
+            positions=positions,
+            widths=0.12,
+            patch_artist=True,
+            showfliers=False,
+            manage_ticks=False,
+        )
         for patch in bp["boxes"]:
             patch.set_facecolor("white")
             patch.set_edgecolor("black")
@@ -420,16 +426,15 @@ def plot_boxplots(metrics):
             median.set_color("black")
             median.set_linewidth(1.5)
 
-        # jittered raw points for distribution visualization
+        # raw points
         for i, d in enumerate(cleaned):
             y = d[~np.isnan(d)]
             if len(y):
                 x = np.random.normal(positions[i], 0.06, size=len(y))
                 plt.scatter(x, y, s=6, color="black", alpha=0.18, zorder=2, rasterized=True)
 
-        # final styling
         plt.title(mname, fontsize=12, fontweight="semibold")
-        plt.xticks(positions, labels, rotation=20)
+        plt.xticks(positions, labels, rotation=0)
         plt.ylabel(mname)
         plt.grid(axis="y", alpha=0.28)
 

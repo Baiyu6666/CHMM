@@ -39,32 +39,6 @@ def sample_random_start_3d(env, xy_jitter=0.5):
     x0[2] = np.random.uniform(env.start_z_range[0], env.start_z_range[1])
     return x0
 
-
-def get_feature_constraints_from_learner(learner):
-    """
-    从 GoalHMM3D 中提取：
-      - stage1 distance 的 2σ 下界（raw 距离） -> 用作 d_safe_min
-      - stage2 speed 的  2σ 上界（raw 速度） -> 用作 v2_max
-
-    返回:
-      d_safe_min_raw, v2_max_raw
-    """
-    # ---- stage1: distance ----
-    mu1 = float(learner.model_stage1.mu)
-    sig1 = float(learner.model_stage1.sigma)
-    # 这里先用 1σ，你自己可以改回 2σ
-    z1_low = mu1 - 1.0 * sig1
-    d_safe_min_raw = float(learner._inv1(z1_low))
-
-    # ---- stage2: speed ----
-    mu2 = float(learner.model_stage2.mu)
-    sig2 = float(learner.model_stage2.sigma)
-    z2_high = mu2 + 1.0 * sig2
-    v2_max_raw = float(learner._inv2(z2_high))
-
-    return d_safe_min_raw, v2_max_raw
-
-
 def debug_plot_plans_3d(
     env,
     trajs,
@@ -74,11 +48,14 @@ def debug_plot_plans_3d(
     v2_max=None,
 ):
     """
-    用 matplotlib 画出 planner 得到的 3D 轨迹，
-    前半段(阶段1)蓝色，后半段(阶段2)红色。
-    另外再开一个图画速度随时间变化，并画出速度约束的最大值 v2_max。
+    画真正等比例 (1:1:1) 的 3D 轨迹：
+    - 阶段1：蓝色
+    - 阶段2：红色
+    - 自动设定 xyz 等比例坐标范围
     """
+    import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D  # noqa
+    import numpy as np
 
     # ======================
     # Figure 1: 3D 轨迹
@@ -86,62 +63,113 @@ def debug_plot_plans_3d(
     fig = plt.figure(figsize=(7, 6))
     ax = fig.add_subplot(111, projection="3d")
 
-    # ---- 画 obstacle 的投影圈，方便检查约束 ----
-    cx, cy = env.obs_center_xy
-    r = env.obs_radius
-    theta = np.linspace(0, 2 * np.pi, 100)
+    # ---- 画 obstacle 的投影圈（用于检查避障）----
+    if hasattr(env, "obs_center_xy") and hasattr(env, "obs_radius"):
+        cx, cy = env.obs_center_xy
+        r = env.obs_radius
+        theta = np.linspace(0, 2 * np.pi, 200)
 
-    # 在一个固定高度画圆圈（大致在 subgoal 高度）
-    z_ring = env.subgoal_z if hasattr(env, "subgoal_z") else 0.3
-    ax.plot(
-        cx + r * np.cos(theta),
-        cy + r * np.sin(theta),
-        z_ring * np.ones_like(theta),
-        "gray",
-        alpha=0.4,
-    )
+        # 在 subgoal 高度画一圈
+        z_ring = env.subgoal_z if hasattr(env, "subgoal_z") else 0.3
 
-    # ---- 画所有 planned 轨迹 ----
+        ax.plot(
+            cx + r * np.cos(theta),
+            cy + r * np.sin(theta),
+            z_ring * np.ones_like(theta),
+            color="gray",
+            alpha=0.4,
+            lw=1.5,
+        )
+
+    # ---- 收集所有点，用来设定等比例坐标范围 ----
+    all_pts = []
+
+    # ---- 画所有轨迹 ----
     for X, tau in zip(trajs, taus):
         X = np.asarray(X)
         tau = int(tau)
 
+        all_pts.append(X)
+
+        # stage 1
         ax.plot(
             X[: tau + 1, 0],
             X[: tau + 1, 1],
             X[: tau + 1, 2],
-            "b-",
+            color="blue",
             lw=2,
             alpha=0.9,
         )
+
+        # stage 2
         ax.plot(
             X[tau:, 0],
             X[tau:, 1],
             X[tau:, 2],
-            "r-",
+            color="red",
             lw=2,
             alpha=0.9,
         )
 
-    # ---- subgoal / goal 标记 ----
+    all_pts = np.concatenate(all_pts, axis=0)
+
+    # ---- subgoal / goal ----
     sg = np.array([env.subgoal_xy[0], env.subgoal_xy[1], env.subgoal_z])
     gg = np.array([env.goal_xy[0], env.goal_xy[1], env.goal_z])
+
     ax.scatter(
         sg[0], sg[1], sg[2],
-        c="orange", marker="D", s=80, label="subgoal"
+        c="orange", marker="D", s=80, label="subgoal", zorder=5
     )
     ax.scatter(
         gg[0], gg[1], gg[2],
-        c="green", marker="P", s=80, label="goal"
+        c="green", marker="P", s=90, label="goal", zorder=5
     )
 
+    # 也把 subgoal / goal 加入坐标范围计算
+    all_pts = np.vstack([all_pts, sg[None, :], gg[None, :]])
+
+    # ======================
+    # ✅ 关键：设置 1:1:1 等比例坐标
+    # ======================
+    x_min, y_min, z_min = all_pts.min(axis=0)
+    x_max, y_max, z_max = all_pts.max(axis=0)
+
+    x_mid = 0.5 * (x_min + x_max)
+    y_mid = 0.5 * (y_min + y_max)
+    z_mid = 0.5 * (z_min + z_max)
+
+    max_range = max(
+        x_max - x_min,
+        y_max - y_min,
+        z_max - z_min,
+    )
+
+    half = 0.5 * max_range
+
+    ax.set_xlim(x_mid - half, x_mid + half)
+    ax.set_ylim(y_mid - half, y_mid + half)
+    ax.set_zlim(z_mid - half, z_mid + half)
+
+    # ✅ matplotlib >= 3.3 才支持
+    try:
+        ax.set_box_aspect((1, 1, 1))
+    except Exception:
+        pass  # 老版本 matplotlib 忽略即可
+
+    # ======================
+    # 视觉优化
+    # ======================
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_zlabel("z")
     ax.set_title(title)
     ax.legend(loc="best")
+
     ax.view_init(elev=35, azim=-60)
-    plt.tight_layout()
+    ax.grid(True)
+    plt.show()
+
 
     # ======================
     # Figure 2: 速度随时间
@@ -226,7 +254,7 @@ def run_experiment(
             X, tau = env.generate_demo(n1=20, direction=None)
         demos.append(X)
         true_taus.append(tau)
-
+    env.estimate_oracle_constraints(demos, true_taus)
     print("Generated demos. Example shape:", demos[0].shape)
 
     # -------- Train GoalHMM3D --------
@@ -245,16 +273,12 @@ def run_experiment(
         vmf_steps=3,
         plot_every=max_iter,
         feature_ids=[0, 1, 2, 3],
-        main_feat_stage1_raw=0,     # env feature 中表示 "distance-like" 的原始索引
-        main_feat_stage2_raw=1,
         feature_types=["margin_exp_lower",  # 0: 距离 -> 下界不等式
                      "gauss",  # 1: 速度 -> 等式/窄带
                      "gauss",  # 2: 假障碍
                      "gauss"],
         auto_feature_select=True,
         r_sparse_lambda=0.3
-
-    # g1_init="random"
     )
     posts = learner.fit(max_iter=max_iter)
 
@@ -280,16 +304,17 @@ def run_experiment(
     # 使用 learned constraint 做 two-stage optimal control 规划
     # ========================================================
 
-    # if render and use_3d:
+    if render and use_3d:
         # =====================================================================
         # 从 learner 中提取约束阈值：d_safe_min (stage1) 与 v2_max (stage2)
         # =====================================================================
-        # d_safe_min_raw, v2_max_raw = get_feature_constraints_from_learner(learner)
-        # print(
-        #     f"\n[Constraints from learner] "
-        #     f"d_safe_min = {d_safe_min_raw:.3f}, v2_max = {v2_max_raw:.3f}"
-        # )
-        # #
+        d_safe_min_raw = learner.feature_models[0][0].L * learner.feat_std[0] + learner.feat_mean[0]
+        v2_max_raw = learner.feature_models[1][1].U * learner.feat_std[1] + learner.feat_mean[1]
+        print(
+            f"\n[Constraints from learner] "
+            f"d_safe_min = {d_safe_min_raw:.3f}, v2_max = {v2_max_raw:.3f}"
+        )
+        #
         # # =====================================================================
         # # Now plan new trajectories using learned constraints
         # # =====================================================================
@@ -343,63 +368,62 @@ def run_experiment(
         # ========================================================
         # 使用 learned constraint 做 transfer-planning
         # ========================================================
-        # d_safe_min_raw, v2_max_raw = get_feature_constraints_from_learner(learner)
-        # print(f"[Constraints] d_safe_min={d_safe_min_raw:.3f}, v2_max={v2_max_raw:.3f}")
-        #
-        # print("\nPlanning new trajectories WITH oscillation transfer…")
-        # n_plan = 3
-        # planned_trajs = []
-        # planned_taus = []
-        #
-        # for i in range(n_plan):
-        #     x_start = sample_random_start_3d(env, xy_jitter=0.5)
-        #     x_start[0] += 1.2
-        #     x_start[1] -= .5
-        #
-        #     X_plan, tau_plan, X1, X2, goal_above = plan_oscillate_then_descend(
-        #         env,
-        #         x_start=x_start,
-        #         dt=0.2,
-        #         d_safe_min=d_safe_min_raw,
-        #         v1_max=0.9,
-        #         v2_max=v2_max_raw,
-        #         n_round_trips=2,
-        #         stage1_max_steps_per_leg=80,
-        #         stage2_max_steps=120,
-        #         verbose=False,
-        #     )
-        #     planned_trajs.append(X_plan)
-        #     planned_taus.append(tau_plan)
-        #     print(f"[Main/Osc] traj {i}: T={len(X_plan)}, tau={tau_plan}")
-        #
-        # # debug plot（还能看到 stage1 很长，然后 stage2 一段垂直接近）
-        # debug_plot_plans_3d(
-        #     env,
-        #     planned_trajs,
-        #     planned_taus,
-        #     title="Oscillate-then-descend trajectories",
-        #     dt=0.2,
-        #     v2_max=v2_max_raw,
-        # )
-        #
-        # # Render（可以继续用 subsample）
-        # renderer = PyBulletRenderer3D(env)
-        # renderer.setup_scene()
-        # renderer.play_all(
-        #     planned_trajs,
-        #     planned_taus,
-        #     g1=None,
-        #     g2=None,
-        #     v_target=0.2,
-        #     min_dt=1 / 60,
-        #     max_dt=0.12,
-        # )
+        print(f"[Constraints] d_safe_min={d_safe_min_raw:.3f}, v2_max={v2_max_raw:.3f}")
+
+        print("\nPlanning new trajectories WITH oscillation transfer…")
+        n_plan = 3
+        planned_trajs = []
+        planned_taus = []
+
+        for i in range(n_plan):
+            x_start = sample_random_start_3d(env, xy_jitter=0.5)
+            x_start[0] += 1.2
+            x_start[1] -= .5
+
+            X_plan, tau_plan, X1, X2, goal_above = plan_oscillate_then_descend(
+                env,
+                x_start=x_start,
+                dt=0.2,
+                d_safe_min=d_safe_min_raw,
+                v1_max=0.9,
+                v2_max=v2_max_raw,
+                n_round_trips=2,
+                stage1_max_steps_per_leg=80,
+                stage2_max_steps=120,
+                verbose=False,
+            )
+            planned_trajs.append(X_plan)
+            planned_taus.append(tau_plan)
+            print(f"[Main/Osc] traj {i}: T={len(X_plan)}, tau={tau_plan}")
+
+        # debug plot（还能看到 stage1 很长，然后 stage2 一段垂直接近）
+        debug_plot_plans_3d(
+            env,
+            planned_trajs,
+            planned_taus,
+            title="Oscillate-then-descend trajectories",
+            dt=0.2,
+            v2_max=v2_max_raw,
+        )
+
+        # Render（可以继续用 subsample）
+        renderer = PyBulletRenderer3D(env)
+        renderer.setup_scene()
+        renderer.play_all(
+            planned_trajs,
+            planned_taus,
+            g1=None,
+            g2=None,
+            v_target=0.2,
+            min_dt=1 / 60,
+            max_dt=0.12,
+        )
 
 
 if __name__ == "__main__":
     run_experiment(
         n_demos=10,
-        seed=434421,
+        seed=431227,
         use_3d=True,
         max_iter=45,
         run_baseline=True,

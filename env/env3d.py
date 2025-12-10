@@ -44,9 +44,6 @@ class ObsAvoidEnv3D:
         subgoal_z=0.4,
         goal_z=0.6,
 
-        # 远处圆柱（只参与 feature，不参与生成）
-        far_center_xy=(-0.5, 2.5),
-
         # base env2d configs
         dt=1.0,
         noise_std=0.01
@@ -67,9 +64,6 @@ class ObsAvoidEnv3D:
         self.dt = float(dt)
         self.noise_std = float(noise_std)
 
-        # far cylinder center in XY
-        self.far_center_xy = np.array(far_center_xy, float)
-
         # --- create 3D goal/subgoal for plotting ---
         self.subgoal = np.array([self.subgoal_xy[0], self.subgoal_xy[1], self.subgoal_z], float)
         self.goal = np.array([self.goal_xy[0], self.goal_xy[1], self.goal_z], float)
@@ -85,7 +79,6 @@ class ObsAvoidEnv3D:
             obs_radius=obs_radius,
             dt=dt,
             noise_std=noise_std,
-            far_center=far_center_xy,
         )
 
         # 噪声特征用的 3D 向量
@@ -131,57 +124,6 @@ class ObsAvoidEnv3D:
         return traj3d, tau
 
     # ------------------------------------------------------------------
-    # Old feature API（兼容）
-    # ------------------------------------------------------------------
-    def compute_features(self, traj3d, tau):
-        """
-        Compute features for stage1 and stage2, consistent with learner:
-
-            f1 = distance(XY, obstacle_center)
-            f2 = 3D speed magnitude
-
-        Return:
-            feats1: f1[:tau+1]
-            feats2: f2[tau:]
-        """
-        xy = traj3d[:, :2]
-        dists_xy = np.linalg.norm(xy - self.obs_center_xy[None, :], axis=1)
-
-        speeds_edge = np.linalg.norm(np.diff(traj3d, axis=0), axis=1) / self.dt
-        T = len(traj3d)
-        speeds_3d = np.empty(T, dtype=float)
-        if T > 1:
-            speeds_3d[0] = speeds_edge[0]
-            speeds_3d[1:] = speeds_edge
-        else:
-            speeds_3d[0] = 0.0
-
-        feats1 = dists_xy[: tau + 1]
-        feats2 = speeds_3d[tau:]
-
-        return feats1, feats2
-
-    def compute_features_all(self, traj3d):
-        """
-        Return full-series features (compat):
-            dists_xy: len T
-            speeds_3d: len T
-        """
-        xy = traj3d[:, :2]
-        dists = np.linalg.norm(xy - self.obs_center_xy[None, :], axis=1)
-
-        speeds_edge = np.linalg.norm(np.diff(traj3d, axis=0), axis=1) / self.dt
-        T = len(traj3d)
-        speeds = np.empty(T, dtype=float)
-        if T > 1:
-            speeds[0] = speeds_edge[0]
-            speeds[1:] = speeds_edge
-        else:
-            speeds[0] = 0.0
-
-        return dists, speeds
-
-    # ------------------------------------------------------------------
     # New unified multi-feature API
     # ------------------------------------------------------------------
     def compute_all_features_matrix(self, traj3d, feat_ids=None):
@@ -211,7 +153,8 @@ class ObsAvoidEnv3D:
             speeds[0] = 0.0
 
         # f2: XY distance to far cylinder
-        d_far = np.linalg.norm(xy - self.far_center_xy[None, :], axis=1)
+        far_center_xy=np.array((-0.5, 2.5))
+        d_far = np.linalg.norm(xy - far_center_xy[None, :], axis=1)
 
         # f3: noise-like feature
         t = np.linspace(0, 2 * np.pi, T)
@@ -224,3 +167,67 @@ class ObsAvoidEnv3D:
             return F
         else:
             return F[:, feat_ids]
+
+    # --------------------------------------------------------
+    # Simple Oracle Constraints (3D, final version)
+    # --------------------------------------------------------
+    def estimate_oracle_constraints(
+            self,
+            demos,
+            true_taus,
+            clearance=0.10,
+            speed_quantile=0.95,
+    ):
+        """
+        Oracle 定义（最终版）：
+
+          Stage 1:
+            - XY obstacle distance: d >= obs_radius + clearance
+            - 3D speed upper bound: v <= v1_max
+
+          Stage 2:
+            - 3D speed upper bound: v <= v2_max
+        """
+
+        # ---------- (1) obstacle distance ----------
+        d_safe_raw = float(self.obs_radius + clearance)
+
+        # ---------- (2) speed bounds ----------
+        v_stage1_all = []
+        v_stage2_all = []
+
+        for X, tau_true in zip(demos, true_taus):
+            X = np.asarray(X, float)
+            T = len(X)
+
+            tau = int(np.clip(int(tau_true), 0, T - 1))
+
+            # 3D speed
+            if T > 1:
+                speeds_edge = np.linalg.norm(np.diff(X, axis=0), axis=1) / self.dt
+                speeds = np.empty(T, dtype=float)
+                speeds[0] = speeds_edge[0]
+                speeds[1:] = speeds_edge
+            else:
+                speeds = np.zeros(1)
+
+            v_stage1_all.append(speeds[: tau + 1])
+            v_stage2_all.append(speeds[tau:])
+
+        v_stage1_all = np.concatenate(v_stage1_all).astype(float)
+        v_stage2_all = np.concatenate(v_stage2_all).astype(float)
+
+        v1_max_raw = float(
+            np.quantile(v_stage1_all, speed_quantile)
+        )
+        v2_max_raw = float(
+            np.quantile(v_stage2_all, speed_quantile)
+        )
+
+        self.true_constraints = {
+            "d_safe": d_safe_raw,
+            "v1_max": v1_max_raw,
+            "v2_max": v2_max_raw,
+            "speed_quantile": speed_quantile,
+        }
+        print('True constraints :', self.true_constraints)

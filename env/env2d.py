@@ -26,28 +26,31 @@ class ObsAvoidEnv:
         goal=(0.6, 0.6),
         obs_center=(-0.5, 0.0),
         obs_radius=0.3,
+        clearance=0.1,
         dt=1.0,
         noise_std=0.01,
-        # 新增：远处圆柱的中心（只参与 feature，不参与生成）
-        far_center=(-0.5, 2.5),
-    ):
+         ):
         self.start = np.array(start, dtype=float)
         self.subgoal = np.array(subgoal, dtype=float)
         self.goal = np.array(goal, dtype=float)
 
         self.obs_center = np.array(obs_center, dtype=float)
         self.obs_radius = float(obs_radius)
+        self.clearance = float(clearance)
 
         self.dt = float(dt)
         self.noise_std = float(noise_std)
-
-        # 远处圆柱，只作为 f2 feature
-        self.far_center = np.array(far_center, dtype=float)
 
         # 噪声特征的“方向向量”（固定常数，保证 deterministic）
         # 可以随便选几个不共线的数
         self.noise_vec = np.array([0.37, -0.58], dtype=float)
         self.noise_bias = 0.0  # 可选偏移，先设 0
+
+    def get_true_constraints(self):
+        return {
+            "d_safe_raw": self.obs_radius + self.clearance,  # 你可以把 clearance 存成成员
+            "v2_max_raw": self.v2_max_true,  # 由 speed profile 推出来或预计算
+        }
 
     # ----------------------------
     # Demo generation (2D)
@@ -80,8 +83,7 @@ class ObsAvoidEnv:
         # ---- stage1: straight -> arc around obstacle -> straight to subgoal ----
         straight1 = np.linspace(self.start, [-1.0, 0.0], 5)
 
-        clearance = 0.1
-        R_path = self.obs_radius + clearance
+        R_path = self.obs_radius + self.clearance
 
         if direction == "up":
             theta1 = np.linspace(np.pi, 0.0, n1)
@@ -189,40 +191,6 @@ class ObsAvoidEnv:
         return traj, true_tau
 
     # ----------------------------
-    # Old feature API (兼容用)
-    # ----------------------------
-    def compute_features(self, traj, tau):
-        """
-        （兼容旧接口）:
-          feats1: distance to main obstacle, [0..tau]
-          feats2: speed magnitude, [tau..]
-        """
-        dists = np.linalg.norm(traj - self.obs_center[None, :], axis=1)
-        speeds_edge = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
-        # pad to length T
-        T = len(traj)
-        speeds = np.empty(T, dtype=float)
-        speeds[0] = speeds_edge[0]
-        speeds[1:] = speeds_edge
-        feats1 = dists[: tau + 1]
-        feats2 = speeds[tau:]
-        return feats1, feats2
-
-    def compute_features_all(self, traj):
-        """
-        （兼容旧接口）:
-          dists: length T (distance to main obstacle)
-          speeds: length T (padded speed)
-        """
-        dists = np.linalg.norm(traj - self.obs_center[None, :], axis=1)
-        speeds_edge = np.linalg.norm(np.diff(traj, axis=0), axis=1) / self.dt
-        T = len(traj)
-        speeds = np.empty(T, dtype=float)
-        speeds[0] = speeds_edge[0]
-        speeds[1:] = speeds_edge
-        return dists, speeds
-
-    # ----------------------------
     # New unified multi-feature API
     # ----------------------------
     def compute_all_features_matrix(self, traj, feat_ids=None):
@@ -251,7 +219,8 @@ class ObsAvoidEnv:
             speeds[0] = 0.0
 
         # f2: 距离远处圆柱
-        d_far = np.linalg.norm(traj - self.far_center[None, :], axis=1)
+        far_center = np.array((-0.5, 2.5), dtype=float)
+        d_far = np.linalg.norm(traj - far_center[None, :], axis=1)
 
         # f3: "噪声特征"：对 (x,y) 做一个固定的线性投影再加一点非线性
         t = np.linspace(0, 2 * np.pi, T)
@@ -264,3 +233,64 @@ class ObsAvoidEnv:
             return F
         else:
             return F[:, feat_ids]
+
+    def estimate_oracle_constraints(
+            self,
+            demos,
+            true_taus,
+            speed_quantile=0.95,
+    ):
+        """
+        Oracle 定义（最终版）：
+
+          Stage 1:
+            - obstacle distance: d >= obs_radius + clearance
+            - speed upper bound: v <= v1_max   (95% quantile)
+
+          Stage 2:
+            - speed upper bound: v <= v2_max   (95% quantile)
+        """
+
+        # ---------- (1) obstacle distance (stage1) ----------
+        d_safe_raw = float(self.obs_radius + self.clearance)
+
+        # ---------- (2) speed bounds ----------
+        v_stage1_all = []
+        v_stage2_all = []
+
+        for X, tau_true in zip(demos, true_taus):
+            X = np.asarray(X, float)
+            T = len(X)
+
+            tau = int(np.clip(int(tau_true), 0, T - 1))
+
+            # 2D speed
+            if T > 1:
+                speeds_edge = np.linalg.norm(np.diff(X, axis=0), axis=1) / self.dt
+                speeds = np.empty(T, dtype=float)
+                speeds[0] = speeds_edge[0]
+                speeds[1:] = speeds_edge
+            else:
+                speeds = np.zeros(1)
+
+            # stage1: [0 .. tau]
+            v_stage1_all.append(speeds[: tau + 1])
+
+            # stage2: [tau .. T-1]
+            v_stage2_all.append(speeds[tau:])
+
+        v_stage1_all = np.concatenate(v_stage1_all).astype(float)
+        v_stage2_all = np.concatenate(v_stage2_all).astype(float)
+
+        v1_max_raw = float(
+            np.quantile(v_stage1_all, speed_quantile)
+        )
+        v2_max_raw = float(
+            np.quantile(v_stage2_all, speed_quantile)
+        )
+        self.true_constraints = {
+            "d_safe": d_safe_raw,
+            "v1_max": v1_max_raw,
+            "v2_max": v2_max_raw,
+        }
+        print('True constraints :', self.true_constraints)

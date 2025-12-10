@@ -123,7 +123,7 @@ def run_experiment_2d(
         X, tau = env.generate_demo(n1=20, direction=None)
         demos.append(X)
         true_taus.append(tau)
-
+    env.estimate_oracle_constraints(demos, true_taus)
     print("[2D] Generated demos. Example shape:", demos[0].shape)
     print("[2D] True taus:", true_taus)
 
@@ -145,6 +145,7 @@ def run_experiment_2d(
         g_step=0.2,
         vmf_steps=3,
         plot_every=max_iter,  # 只在最后一轮画 4-panel（如果你在 plot 里有调用）
+        feature_ids=[0, 1],
         auto_feature_select=not True,
         r_sparse_lambda=0.3,
         feature_types=["margin_exp_lower",  # 0: 距离 -> 下界不等式
@@ -189,7 +190,7 @@ def run_experiment_2d(
 if __name__ == "__main__":
     run_experiment_2d(
         n_demos=10,
-        seed=229,
+        seed=2224519,
         max_iter=45,
         run_baseline=True,
     )

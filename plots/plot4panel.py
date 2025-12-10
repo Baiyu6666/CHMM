@@ -55,7 +55,6 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
       - get_bounds_for_plot(k_sigma=2)
       - _features_for_demo(X)
       - _transition_logprob(X, return_aux=False/True)
-      - model_stage1, model_stage2, sigma_irrel, feat_weight, prog_weight
       - prog_kappa1, prog_kappa2
       - trans_eps, d0_trans (如果你现在叫 delta，也保留别名 d0_trans)
     """
@@ -356,53 +355,44 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     plt.subplot(2, 2, 2)
     iters = np.arange(len(learner.loss_loglik))
 
-    # 左轴（ll）
+    # 左轴：log-likelihood
     ax1 = plt.gca()
     ax1.plot(iters, learner.loss_loglik, '-o', color='black', label='total log p(X)')
-    # ax1.plot(iters, learner.loss_feat, '-o', color='tab:red', label='feature term')
-    # ax1.plot(iters, learner.loss_prog, '-o', color='tab:blue', label='vMF progress term')
-    # if hasattr(learner, "loss_trans"):
-    #     ax1.plot(iters, learner.loss_trans, '-o', color='tab:orange', label='transition term')
-
     ax1.set_xlabel("Iteration")
     ax1.set_ylabel("Log-likelihood")
     ax1.set_title("Learning curves & metrics")
 
-    # 右轴（metrics）
+    # 右轴：metrics（来自 metrics_hist dict）
     ax2 = ax1.twinx()
+    ax2.set_ylabel("Metrics")
+    ax2.set_ylim(0.0, 0.8)
 
-    # τ 归一化误差
-    if hasattr(learner, "metric_tau_nmae"):
-        ax2.plot(iters, learner.metric_tau_nmae,
-                 color='red', linestyle='--', linewidth=1.5,
-                 label='NMAE(tau)')
+    metrics_hist = getattr(learner, "metrics_hist", None)
+    if isinstance(metrics_hist, dict) and len(metrics_hist) > 0:
+        color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        from itertools import cycle
+        color_iter = cycle(color_cycle)
 
-    # goal 误差
-    if hasattr(learner, "metric_g1_err"):
-        ax2.plot(iters, learner.metric_g1_err,
-                 color='green', linestyle='--', linewidth=1.5,
-                 label='||g1 - g1*||')
-    # if hasattr(learner, "metric_g2_err"):
-    #     ax2.plot(iters, learner.metric_g2_err,
-    #              color='cyan', linestyle='--', linewidth=1.5,
-    #              label='||g2 - g2*||')
+        for name, seq in metrics_hist.items():
+            if not seq:
+                continue
+            Tm = min(len(seq), len(iters))
+            ax2.plot(
+                iters[:Tm],
+                seq[:Tm],
+                linestyle='--',
+                linewidth=1.5,
+                label=name,
+                color=next(color_iter),
+            )
 
-    # constraint relative error
-    if hasattr(learner, "metric_d_relerr"):
-        ax2.plot(iters, learner.metric_d_relerr,
-                 color='magenta', linestyle='-.', linewidth=1.3,
-                 label='RelErr(d_safe)')
-    if hasattr(learner, "metric_v_relerr"):
-        ax2.plot(iters, learner.metric_v_relerr,
-                 color='purple', linestyle='-.', linewidth=1.3,
-                 label='RelErr(v_max)')
-
-    ax2.set_ylabel("Metrics (normalized)")
-
-    # 合并 legend（左右轴）
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='best', fontsize=8)
+        # 合并 legend（左右轴）
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='best', fontsize=8)
+    else:
+        # 只有 log-likelihood 时，就只要左侧 legend
+        ax1.legend(loc='best', fontsize=8)
 
     # ==========================================================
     # (3) Feature evolution (demo 0) + ranges + r + P(z=1) + P(1->2)
@@ -463,127 +453,54 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     ax_main.set_xlabel("t")
     ax_main.set_ylabel("feature values (raw)")
 
-    # ---------- 分段画 r-band：stage1 / stage2 ----------
-    k_sigma = 2.0
-
-    # 为了避免 legend 里重复 label，做两个小 flag
-    used_label_stage1 = set()
-    used_label_stage2 = set()
-
-    # t 轴分段索引
-    t1 = t_axis[: tau_hat0 + 1]  # [0..tau_hat0]
+    # t 轴分段
+    t1 = t_axis[: tau_hat0 + 1]
     t2 = t_axis[tau_hat0:] if tau_hat0 < T0 else np.array([tau_hat0])
 
     for m in range(M):
         color_m = color_cycle[m]
 
-        # ---- stage1 bands (t <= tau_hat0) ----
+        # ---- stage1 bands ----
         if learner.r[0, m] == 1 and len(t1) > 0:
             model1 = learner.feature_models[0][m]
-            info1 = model1.get_summary() if hasattr(model1, "get_summary") else {}
-            t1_type = info1.get("type", "gauss")
+            info1 = model1.get_summary()
+            t1_type = info1.get("type", "base")
 
-            if t1_type == "gauss":
-                # 原来的高斯逻辑：μ ± kσ
-                mu1 = float(info1["mu"])
-                sig1 = float(info1["sigma"])
-                z_low1 = mu1 - k_sigma * sig1
-                z_up1 = mu1 + k_sigma * sig1
+            if t1_type in ("gauss", "margin_exp_lower"):
+                z_low1 = float(model1.L)
+                z_up1 = float(model1.U)
 
-            elif t1_type == "margin_exp_lower":
-                # 不等式约束：从 boundary 到 q_high 分位数
-                b = float(info1["b"])
-                lam = float(info1.get("lam", 1.0))
-                q_high = getattr(learner, "q_high", 0.9)
-                q_high = np.clip(q_high, 0.0, 0.999999)
+                L1_raw = z_low1 * learner.feat_std[m] + learner.feat_mean[m]
+                U1_raw = z_up1 * learner.feat_std[m] + learner.feat_mean[m]
 
-                m_high = -lam * np.log(max(1.0 - q_high, 1e-8))
-                z_low1 = b  # boundary
-                z_up1 = b + m_high  # 高密度区域的上界
+                ax_main.fill_between(
+                    t1, L1_raw, U1_raw,
+                    color=color_m,
+                    alpha=0.12,
+                    linewidth=0,
+                )
+                ax_main.axhline(0.4, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
 
-            else:
-                # 兜底：当成高斯一样画一个窄区间
-                mu1 = 0.0
-                sig1 = 1.0
-                z_low1 = mu1 - k_sigma * sig1
-                z_up1 = mu1 + k_sigma * sig1
-
-            # z → raw
-            L1_raw = z_low1 * learner.feat_std[m] + learner.feat_mean[m]
-            U1_raw = z_up1 * learner.feat_std[m] + learner.feat_mean[m]
-
-            label_band1 = None
-            key1 = f"stage1_f{m}"
-            if key1 not in used_label_stage1:
-                if t1_type == "gauss":
-                    label_band1 = f"stage1 {k_sigma}σ band (f{m})"
-                elif t1_type == "margin_exp_lower":
-                    label_band1 = f"stage1 [b, q_high] (f{m})"
-                else:
-                    label_band1 = f"stage1 band (f{m})"
-                used_label_stage1.add(key1)
-
-            ax_main.fill_between(
-                t1,
-                L1_raw,
-                U1_raw,
-                color=color_m,
-                alpha=0.12,
-                linewidth=0,
-                label=label_band1,
-            )
-
-        # ---- stage2 bands (t >= tau_hat0) ----
+        # ---- stage2 bands ----
         if learner.r[1, m] == 1 and len(t2) > 0:
             model2 = learner.feature_models[1][m]
-            info2 = model2.get_summary() if hasattr(model2, "get_summary") else {}
-            t2_type = info2.get("type", "gauss")
+            info2 = model2.get_summary()
+            t2_type = info2.get("type", "base")
 
-            if t2_type == "gauss":
-                mu2 = float(info2["mu"])
-                sig2 = float(info2["sigma"])
-                z_low2 = mu2 - k_sigma * sig2
-                z_up2 = mu2 + k_sigma * sig2
+            if t2_type in ("gauss", "margin_exp_lower"):
+                z_low2 = float(model2.L)
+                z_up2 = float(model2.U)
 
-            elif t2_type == "margin_exp_lower":
-                b = float(info2["b"])
-                lam = float(info2.get("lam", 1.0))
-                q_high = getattr(learner, "q_high", 0.9)
-                q_high = np.clip(q_high, 0.0, 0.999999)
+                L2_raw = z_low2 * learner.feat_std[m] + learner.feat_mean[m]
+                U2_raw = z_up2 * learner.feat_std[m] + learner.feat_mean[m]
 
-                m_high = -lam * np.log(max(1.0 - q_high, 1e-8))
-                z_low2 = b
-                z_up2 = b + m_high
-
-            else:
-                mu2 = 0.0
-                sig2 = 1.0
-                z_low2 = mu2 - k_sigma * sig2
-                z_up2 = mu2 + k_sigma * sig2
-
-            L2_raw = z_low2 * learner.feat_std[m] + learner.feat_mean[m]
-            U2_raw = z_up2 * learner.feat_std[m] + learner.feat_mean[m]
-
-            label_band2 = None
-            key2 = f"stage2_f{m}"
-            if key2 not in used_label_stage2:
-                if t2_type == "gauss":
-                    label_band2 = f"stage2 {k_sigma}σ band (f{m})"
-                elif t2_type == "margin_exp_lower":
-                    label_band2 = f"stage2 [b, q_high] (f{m})"
-                else:
-                    label_band2 = f"stage2 band (f{m})"
-                used_label_stage2.add(key2)
-
-            ax_main.fill_between(
-                t2,
-                L2_raw,
-                U2_raw,
-                color=color_m,
-                alpha=0.06,
-                linewidth=0,
-                label=label_band2,
-            )
+                ax_main.fill_between(
+                    t2, L2_raw, U2_raw,
+                    color=color_m,
+                    alpha=0.06,
+                    linewidth=0,
+                )
+                ax_main.axhline(0.0554, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
 
     # ---------- P(z_t=1 | X) & P(1→2 | x_t) ----------
     ax_prob = ax_main.twinx()

@@ -12,6 +12,15 @@ import time
 import numpy as np
 import pybullet as p
 import pybullet_data
+import os, sys
+import matplotlib.pyplot as plt
+
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
+
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 
 class PyBulletRenderer3D:
@@ -263,9 +272,24 @@ class PyBulletRenderer3D:
         )
 
     # ==========================================================
-    # 障碍物: 杯子 + 透明圆柱
+    # 障碍物 / 约束可视化
+    #   - 普通 ObsAvoid3D：杯子 + 透明圆柱
+    #   - SineCorridor3D：半透明的正弦“带子”（corridor）
     # ==========================================================
     def _load_obstacle(self):
+        """
+        根据 env 类型选择可视化形式：
+
+        - 若 env 有 centerline(x) 方法（我们约定 SineCorridor3D 提供）：
+              画一条半透明的正弦带，表示等式约束 manifold；
+        - 否则退回旧逻辑：杯子 + 透明圆柱。
+        """
+        # ---- Sine corridor 模式（新环境）----
+        if hasattr(self.env, "centerline"):
+            self._load_sine_surface()
+            return
+
+        # ---- 默认：圆柱 + 杯子（原来的 ObsAvoid3D 可视化）----
         cx, cy = self.env.obs_center_xy
         r = self.env.obs_radius
 
@@ -284,18 +308,111 @@ class PyBulletRenderer3D:
         except Exception as e:
             print("[Renderer] Mug load failed:", e)
 
-        # 透明约束圆柱
+        # 透明约束圆柱（只做可视化，不参与碰撞）
         cyl_vis = p.createVisualShape(
             p.GEOM_CYLINDER,
             radius=r * self.world_scale,
             length=self.cylinder_height,
-            rgbaColor=[0.7, 0.7, 0.7, 0.4]
+            rgbaColor=[0.7, 0.7, 0.7, 0.4],
         )
         cyl_pos = self._world([cx, cy, self.cylinder_height / 2.0])
         p.createMultiBody(
             baseMass=0,
             baseVisualShapeIndex=cyl_vis,
-            basePosition=cyl_pos.tolist()
+            basePosition=cyl_pos.tolist(),
+        )
+
+    # ==========================================================
+    # Sine corridor 的半透明“平面”
+    # ==========================================================
+    def _load_sine_surface(
+            self,
+            n_segments: int = 70,
+            thickness_env: float = 0.04,
+            height_world: float | None = None,
+    ):
+        """
+        用一串细长的半透明 box 近似一条 3D 正弦带：
+
+            - x 方向分成 n_segments 段
+            - y = centerline(x)
+            - 在 y 方向给一点厚度 thickness_env（env 坐标系）
+            - z 方向给定高度 height_world（world 坐标系）
+
+        这里只做 visual，不做 collision。
+        """
+        if height_world is None:
+            height_world = self.cylinder_height  # 直接复用圆柱高度作为视觉高度
+
+        # ---- 估计 x 取值范围 ----
+        xs_candidates = []
+
+        # 如果新 env 有 x_start_range / x_end_range 之类的，可以直接用
+        if hasattr(self.env, "x_start_range"):
+            try:
+                xs_candidates.extend(list(self.env.x_start_range))
+            except Exception:
+                pass
+
+        # 把 subgoal / goal 的 x 也纳入范围
+        if hasattr(self.env, "subgoal"):
+            xs_candidates.append(float(self.env.subgoal[0]))
+        if hasattr(self.env, "goal"):
+            xs_candidates.append(float(self.env.goal[0]))
+
+        if len(xs_candidates) == 0:
+            # fallback：给个大致范围，方便先 debug
+            x_min_env, x_max_env = -1., 1.5
+        else:
+            x_min_env = min(xs_candidates) - 0.2
+            x_max_env = max(xs_candidates) + 0.2
+
+        # ---- 准备可视化 shape ----
+        dx_env = (x_max_env - x_min_env) / float(n_segments)
+        dx_world = dx_env * self.world_scale
+        thickness_world = thickness_env * self.world_scale
+        h_world = float(height_world)
+
+        # 单个 segment 的 box（细长砖块）
+        half_extents = [
+            dx_world / 2.0,
+            thickness_world / 2.0,
+            h_world / 3.0,
+        ]
+
+        vis_id = p.createVisualShape(
+            p.GEOM_BOX,
+            halfExtents=half_extents,
+            rgbaColor=[0.2, 0.7, 1.0, 0.35],  # 半透明蓝色带
+        )
+
+        # 不需要碰撞
+        col_id = -1
+
+        # ---- 沿着 x 方向铺一条带 ----
+        for i in range(n_segments):
+            x_env = x_min_env + (i + 0.5) * dx_env
+            # SineCorridor3D 需要提供 centerline(x_env) -> y_env
+            try:
+                y_env = float(self.env.centerline(x_env))
+            except Exception:
+                # 如果 centerline 出错，就直接跳过这一 segment
+                continue
+
+            # 在 env 坐标中 z 取 h_world/2，这样转换到 world 后刚好从桌面往上“竖”一条带
+            pos_env = [x_env, y_env, h_world / 2.0]
+            pos_w = self._world(pos_env)  # 会自动把 z 加到桌面高度上
+
+            p.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=col_id,
+                baseVisualShapeIndex=vis_id,
+                basePosition=pos_w.tolist(),
+            )
+
+        print(
+            f"[Renderer] Loaded sine corridor surface: "
+            f"x∈[{x_min_env:.2f},{x_max_env:.2f}], segments={n_segments}"
         )
 
     # ==========================================================
@@ -521,19 +638,117 @@ class PyBulletRenderer3D:
             time.sleep(0.8)
 
 
-# ==========================================================
-# Debug main（可选）：单独测试 Renderer
-# ==========================================================
-def main():
-    class _FakeEnv:
-        obs_center_xy = (-0.5, 0.0)
-        obs_radius = 0.3
-        subgoal_xy = (0.5, 0.0)
-        goal_xy = (0.0, 0.3)
-        subgoal_z = 0.3
-        goal_z = 0.5
+def _compute_all_features_for_demo(env, X):
+    """
+    通用 feature 提取：优先用 env.compute_all_features_matrix(traj)，
+    否则回退到 env.compute_features_all(traj)（distance, speed）。
 
-    env = _FakeEnv()
+    返回:
+        F: ndarray, shape = (T, M)
+        feat_names: list[str]，长度 M 的 feature 名称（用于 legend）
+    """
+    X = np.asarray(X, float)
+    T = len(X)
+
+    # 新接口：直接矩阵
+    if hasattr(env, "compute_all_features_matrix"):
+        F = env.compute_all_features_matrix(X)
+        F = np.asarray(F, float)
+        M = F.shape[1]
+        feat_names = [f"f{m}" for m in range(M)]
+        return F, feat_names
+
+    # 旧接口：distance + speed
+    elif hasattr(env, "compute_features_all"):
+        d_raw, s_raw = env.compute_features_all(X)  # list/ndarray
+        d_raw = np.asarray(d_raw, float)
+        s_raw = np.asarray(s_raw, float)
+
+        # speed 通常是 T-1，补到 T
+        if len(s_raw) < T:
+            if len(s_raw) == 0:
+                s_raw = np.zeros(T)
+            else:
+                s_raw = np.concatenate([s_raw, [s_raw[-1]]])
+
+        F = np.stack([d_raw, s_raw], axis=1)  # (T, 2)
+        feat_names = ["distance", "speed"]
+        return F, feat_names
+
+    else:
+        # 实在没有 feature 接口，就只画个 dummy
+        F = np.zeros((T, 1), float)
+        feat_names = ["dummy"]
+        return F, feat_names
+
+
+
+
+def main():
+    """
+    小测试入口：
+      - mode = "obs3d"       : 标准 3D 障碍物环境
+      - mode = "sine_corridor": 正弦走廊环境（等式约束）
+    """
+    from env.env3d import ObsAvoidEnv3D
+    from env.sine_corridor_3d import SineCorridorEnv3D
+
+    # -------- 选环境 --------
+    mode = "sine_corridor"   # 手动改成 "obs3d" / "sine_corridor" 来测试不同环境
+
+    if mode == "obs3d":
+        # 标准 3D 障碍环境
+        env = ObsAvoidEnv3D()
+        # 生成一条 3D demo（用 env 自带的 API）
+        traj3d, tau = env.generate_demo_3d()
+        g1 = env.subgoal
+        g2 = env.goal
+
+    elif mode == "sine_corridor":
+        if SineCorridorEnv3D is None:
+            raise RuntimeError(
+                "env.sine_corridor_3d.SineCorridorEnv3D 未找到，"
+                "请确认文件名和类名一致。"
+            )
+        # 你自己的正弦走廊环境，建议实现 generate_demo_3d 或类似接口
+        env = SineCorridorEnv3D()
+        # 假设你实现了 generate_demo_3d(n_demos=1) -> (demos, taus)
+        demos, taus = env.generate_demos(n_demos=2)
+        traj3d, tau = demos[0], int(taus[0])
+
+        # 约定 env.subgoal / env.goal 为 3D np.array
+        g1 = env.subgoal
+        g2 = env.goal
+
+        # ==========================================================
+        # Feature vs time 可视化（用第一条 demo）
+        # ==========================================================
+        X0 = demos[0]
+        tau0 = int(taus[0]) if (taus is not None and len(taus) > 0) else None
+
+        F, feat_names = _compute_all_features_for_demo(env, X0)  # (T, M)
+        T0, M = F.shape
+        t_axis = np.arange(T0)
+
+        plt.figure(figsize=(10, 6))
+        for m in range(M):
+            plt.plot(t_axis, F[:, m], label=feat_names[m])
+
+        if tau0 is not None:
+            plt.axvline(tau0, color="red", linestyle="--", label="true tau")
+
+        plt.xlabel("t")
+        plt.ylabel("feature value")
+        plt.title("Features over time (demo 0)")
+        plt.legend(loc="best")
+        plt.tight_layout()
+        plt.show()
+
+
+    else:
+        raise ValueError(f"Unknown mode '{mode}'")
+
+    # -------- 启动 renderer 并播放轨迹 --------
     renderer = PyBulletRenderer3D(
         env,
         world_scale=0.5,
@@ -543,28 +758,8 @@ def main():
     )
     renderer.setup_scene()
 
-    # dummy demo: arc around obstacle then go to goal
-    T = 80
-    theta = np.linspace(-np.pi / 2, np.pi / 2, T // 2)
-    arc = np.stack([
-        env.obs_center_xy[0] + (env.obs_radius + 0.25) * np.cos(theta),
-        env.obs_center_xy[1] + (env.obs_radius + 0.25) * np.sin(theta),
-        np.linspace(0.25, 0.35, len(theta))
-    ], axis=1)
-    tail = np.stack([
-        np.linspace(arc[-1, 0], env.goal_xy[0], T - len(theta)),
-        np.linspace(arc[-1, 1], env.goal_xy[1], T - len(theta)),
-        np.linspace(arc[-1, 2], env.goal_z, T - len(theta))
-    ], axis=1)
-    X = np.concatenate([arc, tail], axis=0)
-
-    tau = len(arc)
-    g1 = np.array([env.subgoal_xy[0], env.subgoal_xy[1], env.subgoal_z])
-    g2 = np.array([env.goal_xy[0], env.goal_xy[1], env.goal_z])
-
-    print("Running IK debug animation...")
-    # 注意：这里不要再单独调用 render_demo，只用 play_all
-    renderer.play_all([X], [tau], g1, g2,
+    print(f"Running IK debug animation in mode='{mode}' ...")
+    renderer.play_all([traj3d], [tau], g1, g2,
                       v_target=0.20, min_dt=1/120, max_dt=0.10)
 
     print("Renderer debug done. Close window to exit.")
@@ -574,3 +769,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

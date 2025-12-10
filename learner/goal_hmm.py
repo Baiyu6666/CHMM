@@ -16,14 +16,14 @@
 #
 # - 可选:
 #     feature_ids: 使用 env 的哪些 feature 维度（索引）
-#     main_feat_stage1_raw: 在 env feature 里的“主约束维度”(比如 distance)
-#     main_feat_stage2_raw: 在 env feature 里的“主约束维度”(比如 speed)
+
 #   只在 metric + 可视化时用；EM 内部对所有 feature 对称处理。
 # ------------------------------------------------------------
 
 import numpy as np
 from plots.plot4panel import plot_results_4panel, plot_feature_model_debug
-
+from eval.constraint_eval import eval_goalhmm_auto
+import torch
 from utils.vmf import _unit, vmf_logC_d, vmf_grad_wrt_g
 from utils.models import GaussianModel, MarginExpLowerEmission
 
@@ -41,11 +41,17 @@ class GoalHMM3D:
 
         # feature 相关
         feature_ids=None,           # 在 env 的所有 feature 里选哪些维度 (None=全部)
-        main_feat_stage1_raw=0,     # env feature 中表示 "distance-like" 的原始索引
-        main_feat_stage2_raw=1,     # env feature 中表示 "speed-like" 的原始索引
         feature_types=None,
 
-        # weights
+        learned_features=None,  # list[LearnedFeatureBase] 或 None
+        f_lr=1e-2,  # learnable feature 的学习率
+        f_mstep_steps=5,  # 每个 EM 迭代里对 g 进行多少个梯度步
+
+        # feature mask (auto selection)
+        auto_feature_select=True,
+        r_sparse_lambda=0.3,  # 对每个 r[k,m]=1 的惩罚（L0 风格）
+
+            # weights
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,
@@ -71,16 +77,10 @@ class GoalHMM3D:
         g1_vmf_weight=1.0,
         g1_trans_weight=1.0,
 
-        # feature mask (auto selection)
-        auto_feature_select=True,
-        r_sparse_lambda=1.7,       # 对每个 r[k,m]=1 的惩罚（L0 风格）
-
-        # plotting bands（只在 main_feat_stage1/2 上用）
-        q_low=0.1,
-        q_high=0.9,
-        width_reg=0.0,
-
         plot_every=200,
+
+        eval_fn=eval_goalhmm_auto,
+
     ):
         self.demos = list(demos)
         self.env = env
@@ -94,6 +94,9 @@ class GoalHMM3D:
             tau_init = np.asarray(tau_init, dtype=int)
             assert len(tau_init) == len(self.demos), "tau_init 长度必须等于 demos 数量"
             self.tau_init = tau_init
+
+        self.eval_fn = eval_fn  # 回调
+        self.metrics_hist = {}
 
         # HMM / emission 参数
         self.feat_weight = float(feat_weight)
@@ -116,26 +119,44 @@ class GoalHMM3D:
         self.g1_vmf_weight = float(g1_vmf_weight)
         self.g1_trans_weight = float(g1_trans_weight)
 
-        self.q_low = float(q_low)
-        self.q_high = float(q_high)
-        self.width_reg = float(width_reg)
         self.plot_every = plot_every
 
         # temperature on progress（保留接口）
         self.tau = 1.0
 
+        # ---------------- Learnable features ----------------
+        # learned_features: list of LearnedFeatureBase
+        if learned_features is None:
+            self.learned_features: list[LearnedFeatureBase] = []
+        else:
+            self.learned_features = list(learned_features)
+
+        self.f_lr = float(f_lr)
+        self.f_mstep_steps = int(f_mstep_steps)
+
+        # 只有在存在 learnable feature 时才需要 torch 和 optimizer
+        self._has_learned = len(self.learned_features) > 0
+
+        if self._has_learned:
+            import torch
+            params = []
+            for lf in self.learned_features:
+                params += list(lf.parameters())
+            # 一个总的 optimizer 就够了
+            self.g_optimizer = torch.optim.Adam(params, lr=self.f_lr)
+        else:
+            self.g_optimizer = None
+
         # ---------------- Feature 结构初始化 ----------------
-        self.feature_ids = feature_ids           # env 的原始 feature 维度索引
-        self.main_feat_stage1_raw = int(main_feat_stage1_raw)
-        self.main_feat_stage2_raw = int(main_feat_stage2_raw)
+        self.feature_ids = feature_ids
         self.feature_types_raw = feature_types
 
         # 先做全局 feature 预处理（确定 num_features / z 变换）
         self._init_feature_preprocessing()
+        # 后面代码（num_states, feature_models, etc.）完全沿用你现在的版本……
 
         # HMM 状态数量（目前写死 2 个 stage）
         self.num_states = 2
-        self.num_features = self.F_dim  # 选中后的 feature 维度数
 
         # 根据 feature_types 为每个 state×feature 构造 emission model
         self.feature_models = []
@@ -159,24 +180,14 @@ class GoalHMM3D:
         self.auto_feature_select = bool(auto_feature_select)
         self.r_sparse_lambda = float(r_sparse_lambda)
         self.r = np.zeros((self.num_states, self.num_features), dtype=int)
-
-        # “主约束维度”在选中 feature 里的索引（用于 plot & metric）
-        self.main_feat_stage1 = self.feature_ids.index(self.main_feat_stage1_raw)
-        self.main_feat_stage2 = self.feature_ids.index(self.main_feat_stage2_raw)
-
-        # 方便可视化的别名：stage1 = state0/main_feat_stage1，stage2 = state1/main_feat_stage2
-        self.model_stage1 = self.feature_models[0][self.main_feat_stage1]
-        self.model_stage2 = self.feature_models[1][self.main_feat_stage2]
+        if not auto_feature_select:
+            self.r = np.ones((self.num_states, self.num_features), dtype=int)
 
         # init_taus 记录初始化分段，供 debug
         self.init_taus = None
 
         # 初始化 g1/g2 + feature_models
         self._init_goals_and_features(g1_init, g2_init)
-
-        # 以 main_feat_stage1/2 为主，初始化绘图区间
-        self.L1, self.U1 = self._interval_from_model(self.model_stage1)
-        self.L2, self.U2 = self._interval_from_model(self.model_stage2)
 
         # 日志
         self.g1_hist = [self.g1.copy()]
@@ -196,82 +207,126 @@ class GoalHMM3D:
         self.metric_d_relerr = []   # distance 阈值误差（relative）
         self.metric_v_relerr = []   # speed 阈值误差（relative）
 
-        # 基于 true_taus 的 oracle 约束（只在 main_feat_stage1/2 上）
-        self._init_oracle_constraints()
+        if self._has_learned:
+            all_X = [np.asarray(X, float) for X in self.demos]
+            for lf in self.learned_features:
+                lf.update_stats(all_X)
 
     # ==========================================================
     # Feature 预处理
     # ==========================================================
     def _compute_all_features_raw(self, X):
         """
-        从 env 取所有 raw features:
-          - 若 env 有 compute_all_features_matrix(traj)：
-                返回 shape=(T, M_raw)
-          - 否则回退到旧接口 compute_features_all(traj)，得到 (dists, speeds)
+        从 env 取所有 **物理 feature**，再附加所有 **learnable feature**：
+
+          F_env : shape = (T, M_env)
+          F_learn: 把每个 learnable feature 的输出视为一个额外维度，拼在后面
+                   shape = (T, M_learn)
+
+        返回:
+          F_raw : shape = (T, M_env + M_learn)
         """
+        X = np.asarray(X, float)
+
+        # --- 1) env 物理 feature ---
         if hasattr(self.env, "compute_all_features_matrix"):
-            F = self.env.compute_all_features_matrix(X)
-            return np.asarray(F, float)  # (T, M_raw)
+            F_env = self.env.compute_all_features_matrix(X)
+            F_env = np.asarray(F_env, float)  # (T, M_env)
         else:
-            # 兼容旧版本：只用 (distance, speed)
+            # 老兼容：只用 (distance, speed)
             d, s = self.env.compute_features_all(X)  # d len=T, s len=T-1
             T = len(X)
             d = np.asarray(d, float)
             s = np.asarray(s, float)
             if len(s) < T:
                 s = np.concatenate([s, [s[-1]]])
-            F = np.stack([d, s], axis=1)  # (T,2)
-            return F
+            F_env = np.stack([d, s], axis=1)  # (T,2)
+
+        T, M_env = F_env.shape
+
+        # --- 2) learnable features（由 GoalHMM 持有） ---
+        if not self._has_learned:
+            return F_env
+
+        F_list = [F_env]
+        for lf in self.learned_features:
+            # lf.eval_numpy: (T,) -> reshape 成 (T,1)
+            g = lf.eval_numpy(X)  # (T,)
+            g = np.asarray(g, float).reshape(T, -1)
+            F_list.append(g)
+
+        F_raw = np.concatenate(F_list, axis=1)  # (T, M_env + n_learn)
+        return F_raw
 
     def _init_feature_preprocessing(self):
         """
-        聚合所有 demo 的 raw features，
-        决定：
-          - feature_ids （如果 None 就用全部维度）
-          - 每个 feature 的全局 mean/std（用于 z 变换）
+        只用 env feature 计算全局 mean/std；
+        对 learnable feature，统一设 mean=0, std=1。
         """
-        all_raw = []
-        for X in self.demos:
-            F_raw = self._compute_all_features_raw(X)   # (T, M_raw)
-            all_raw.append(F_raw)
-        all_raw = np.concatenate(all_raw, axis=0)       # (N_total, M_raw)
-        N_all, M_raw = all_raw.shape
+        all_env = []
+        M_env = None
 
-        # 若未指定 feature_ids，则用所有维度
+        for X in self.demos:
+            X = np.asarray(X, float)
+
+            # --- env feature ---
+            if hasattr(self.env, "compute_all_features_matrix"):
+                F_env = np.asarray(self.env.compute_all_features_matrix(X), float)
+            else:
+                d, s = self.env.compute_features_all(X)
+                T = len(X)
+                d = np.asarray(d, float)
+                s = np.asarray(s, float)
+                if len(s) < T:
+                    s = np.concatenate([s, [s[-1]]])
+                F_env = np.stack([d, s], axis=1)
+
+            if M_env is None:
+                M_env = F_env.shape[1]
+            all_env.append(F_env)
+
+        all_env = np.concatenate(all_env, axis=0)  # (N_total, M_env)
+        self.M_env = M_env
+        M_learn = len(self.learned_features)
+        M_raw = M_env + M_learn
+
+        # 若未指定 feature_ids，则默认用所有维度（env + learned）
         if self.feature_ids is None:
             self.feature_ids = list(range(M_raw))
         self.feature_ids = list(self.feature_ids)
 
-        # 选中的 feature 原始数据
-        F_sel = all_raw[:, self.feature_ids]  # (N_total, M)
-        self.F_dim = F_sel.shape[1]
+        self.num_features = len(self.feature_ids)
 
-        # 逐 feature 计算 mean/std，用于 z 变换
-        self.feat_mean = np.mean(F_sel, axis=0).astype(float)
-        self.feat_std = (np.std(F_sel, axis=0) + 1e-8).astype(float)
+        # ----- 构造 feat_mean / feat_std -----
+        feat_mean = np.zeros(M_raw, dtype=float)
+        feat_std = np.ones(M_raw, dtype=float)
 
-        # ---- 根据 raw feature_types 映射到选中 feature 的 type 列表 ----
-        # 最终 self.feature_types: 长度 = self.F_dim，每个是 "gauss" / "margin_exp_lower" 等
+        # 前 M_env 维：用 env 数据统计
+        for j in range(M_env):
+            vals = all_env[:, j]
+            feat_mean[j] = float(np.mean(vals))
+            feat_std[j] = float(np.std(vals) + 1e-8)
+
+        # 后 M_learn 维：mean=0, std=1（因为 lf 内部已经标准化）
+        # feat_mean[M_env:] = 0.0
+        # feat_std[M_env:] = 1.0  # 已经初始化成 1 了
+
+        self.feat_mean = feat_mean
+        self.feat_std = feat_std
+
+        # ----- feature_types 映射 -----
         if self.feature_types_raw is None:
-            # 默认全部 Gaussian
-            self.feature_types = ["gauss"] * self.F_dim
+            # 默认所有维度都当作 "gauss"
+            self.feature_types = ["gauss"] * len(self.feature_ids)
         else:
             types = []
-            # 允许 feature_types_raw 是 list/tuple（按 raw index）、也可以是 dict
             if isinstance(self.feature_types_raw, dict):
                 for fid in self.feature_ids:
                     types.append(self.feature_types_raw.get(fid, "gauss"))
             else:
-                # 假设可以按 raw 索引 index
                 for fid in self.feature_ids:
                     types.append(self.feature_types_raw[fid])
             self.feature_types = types
-
-        # main feature 在选中的 feature 中必须存在
-        assert self.main_feat_stage1_raw in self.feature_ids, \
-            f"main_feat_stage1_raw={self.main_feat_stage1_raw} 不在 feature_ids={self.feature_ids} 中"
-        assert self.main_feat_stage2_raw in self.feature_ids, \
-            f"main_feat_stage2_raw={self.main_feat_stage2_raw} 不在 feature_ids={self.feature_ids} 中"
 
     def _features_for_demo_matrix(self, X):
         """
@@ -280,74 +335,8 @@ class GoalHMM3D:
         """
         F_raw = self._compute_all_features_raw(X)        # (T, M_raw)
         F_sel = F_raw[:, self.feature_ids]               # (T, M)
-        Z = (F_sel - self.feat_mean[None, :]) / self.feat_std[None, :]
+        Z = (F_sel - self.feat_mean[None,  self.feature_ids]) / self.feat_std[None,  self.feature_ids]
         return Z
-
-    # ==========================================================
-    # Oracle constraints (仅用于 metric，不参与训练)
-    # ==========================================================
-    def _init_oracle_constraints(self):
-        """
-        用 true_taus 把 stage1 / stage2 的“主 feature”数据分开，
-        在 z 空间拟合高斯，再用 mean±1σ 映射回 raw，得到 oracle d_safe / v2_max。
-        注意：这里只看 main_feat_stage1_raw / main_feat_stage2_raw 两个维度。
-        """
-        self.oracle_d_safe_raw = None
-        self.oracle_v2_max_raw = None
-
-        if self.true_taus is None or all(t is None for t in self.true_taus):
-            return
-
-        stage1_vals = []
-        stage2_vals = []
-
-        for X, tau_true in zip(self.demos, self.true_taus):
-            if tau_true is None:
-                continue
-            tau_true = int(tau_true)
-
-            # 用旧接口拿 distance/speed（你之前代码里就是这么做的）
-            d_raw, s_raw = self.env.compute_features_all(X)  # 一般是 distance, speed
-            d_raw = np.asarray(d_raw, float)
-            s_raw = np.asarray(s_raw, float)
-
-            T = len(X)
-            tau_true = np.clip(tau_true, 0, T - 1)
-
-            # stage1: 0..tau_true 的 distance
-            stage1_vals.append(d_raw[: tau_true + 1])
-
-            # stage2: tau_true.. 的 speed
-            s_idx_start = min(max(tau_true, 0), len(s_raw) - 1)
-            stage2_vals.append(s_raw[s_idx_start:])
-
-        if len(stage1_vals) == 0 or len(stage2_vals) == 0:
-            return
-
-        stage1_vals = np.concatenate(stage1_vals).astype(float)
-        stage2_vals = np.concatenate(stage2_vals).astype(float)
-
-        # 找到这两个 "物理 feature" 在当前选中 feature 里的索引
-        idx1 = self.feature_ids.index(self.main_feat_stage1_raw)
-        idx2 = self.feature_ids.index(self.main_feat_stage2_raw)
-
-        # 用同一套 z 变换
-        z1 = (stage1_vals - self.feat_mean[idx1]) / self.feat_std[idx1]
-        z2 = (stage2_vals - self.feat_mean[idx2]) / self.feat_std[idx2]
-
-        mu1_or = float(np.mean(z1))
-        sig1_or = float(np.std(z1) + 1e-8)
-        mu2_or = float(np.mean(z2))
-        sig2_or = float(np.std(z2) + 1e-8)
-
-        k1 = 1.0
-        k2 = 1.0
-        z1_low_or = mu1_or - k1 * sig1_or
-        z2_high_or = mu2_or + k2 * sig2_or
-
-        # 反变换回 raw
-        self.oracle_d_safe_raw = float(z1_low_or * self.feat_std[idx1] + self.feat_mean[idx1])
-        self.oracle_v2_max_raw = float(z2_high_or * self.feat_std[idx2] + self.feat_mean[idx2])
 
     # ==========================================================
     # 初始化 g1/g2 + feature_models
@@ -746,34 +735,8 @@ class GoalHMM3D:
                     ws.append(gamma[:, k])  # 这一条 demo 对第 k 个 state 的 posterior
 
                 model = self.feature_models[k][m]
+                model.m_step_update(xs, ws)
 
-                if hasattr(model, "m_step_update"):
-                    # 统一接口：MarginExp / 新的 emission / 你改过的 Gaussian 都走这里
-                    model.m_step_update(xs, ws)
-                else:
-                    # 向后兼容：老版 GaussianModel 只支持 m_update(y, w)
-                    y_all = np.concatenate(xs, axis=0)
-                    w_all = np.concatenate(ws, axis=0)
-                    model.m_update(y_all, w_all)
-
-        # ------- 同步主约束维度到 model_stage1/2（暂时仍假设这两个是高斯）-------
-        fm_10 = self.feature_models[0][self.main_feat_stage1]  # stage1 的主 feature 模型
-        fm_21 = self.feature_models[1][self.main_feat_stage2]  # stage2 的主 feature 模型
-
-        # 这里先保留 Gaussian 特化逻辑：只有在主维度真的是 GaussianModel 时才更新
-        from utils.models import GaussianModel  # 确保类型判断可用（也可以在文件头 import）
-
-        if isinstance(fm_10, GaussianModel):
-            self.model_stage1.mu = float(fm_10.mu)
-            self.model_stage1.sigma = float(fm_10.sigma)
-        if isinstance(fm_21, GaussianModel):
-            self.model_stage2.mu = float(fm_21.mu)
-            self.model_stage2.sigma = float(fm_21.sigma)
-
-        # 如果主 feature 不是高斯（比如是 MarginExp），
-        # 后面就应该改 _interval_from_model / 画图逻辑，用 b / lambda 来算 L/U。
-        self.L1, self.U1 = self._interval_from_model(self.model_stage1)
-        self.L2, self.U2 = self._interval_from_model(self.model_stage2)
 
     # ==========================================================
     # M-step: hard-EM 更新 feature mask r
@@ -954,120 +917,42 @@ class GoalHMM3D:
 
         self.delta = float(np.clip(delta + self.lr_delta * grad_delta, 1e-4, 2.0))
 
-    # ==========================================================
-    # interval & bounds（用于绘图/metric）
-    # ==========================================================
-    def _interval_from_model(self, model):
-        """
-        根据 emission model 的 summary 计算一个 [L, U] 区间：
-          - Gaussian: 调用 model.interval(q_low, q_high) 或退回到 μ±kσ
-          - margin_exp_lower: 用分位数公式 b + m_q (m_q = -λ log(1-q))
-          - 其他类型：先尝试 interval，否则退回 0,0
+    def _mstep_update_learned_features(self, gammas):
+        if not self._has_learned or self.g_optimizer is None:
+            return
 
-        注意：这是“可视化/metric”用的区间，不是 planner 用的硬约束。
-        """
-        info = {}
-        if hasattr(model, "get_summary"):
-            info = model.get_summary() or {}
-        t = info.get("type", "unknown")
+        for _ in range(self.f_mstep_steps):
+            self.g_optimizer.zero_grad()
+            total_loss = torch.tensor(0.0, dtype=torch.float32)
 
-        L = None
-        U = None
+            for lf in self.learned_features:
+                k = int(getattr(lf, "state_index", 0))
+                for X, gamma in zip(self.demos, gammas):
+                    X_np = np.asarray(X, float)
+                    Xt = torch.from_numpy(X_np.astype(np.float32))  # (T,D)
 
-        # 1) 先尝试已有的 interval 接口（主要是 GaussianModel 兼容）
-        if hasattr(model, "interval"):
-            try:
-                L0, U0 = model.interval(self.q_low, self.q_high)
-                L, U = float(L0), float(U0)
-            except Exception:
-                L, U = None, None
+                    g_raw = lf(Xt).squeeze(-1)  # 原始 residual
+                    gamma_k = torch.from_numpy(
+                        np.asarray(gamma[:, k], dtype=np.float32)
+                    )
 
-        # 2) margin_exp_lower：用解析分位数覆盖掉上面的 L/U
-        if t == "margin_exp_lower":
-            b = float(info["b"])
-            lam = float(info.get("lam", 1.0))
+                    total_loss = total_loss + torch.sum(gamma_k * (g_raw ** 2))
 
-            q_low = np.clip(self.q_low, 0.0, 0.999999)
-            q_high = np.clip(self.q_high, 0.0, 0.999999)
+            if total_loss.requires_grad:
+                total_loss.backward()
+                self.g_optimizer.step()
 
-            # m_q = -λ log(1-q)，z_q = b + m_q
-            m_low = -lam * np.log(max(1.0 - q_low, 1e-8))
-            m_high = -lam * np.log(max(1.0 - q_high, 1e-8))
-            L = b + m_low
-            U = b + m_high
-
-        # 3) Gaussian：如果上面没拿到 interval，就退回 μ±kσ
-        if t == "gauss" and (L is None or U is None):
-            mu = float(info.get("mu", 0.0))
-            sigma = float(info.get("sigma", 1.0))
-            # 这里用一个简单的系数（对应 q_low/q_high 的 roughly 1~2σ）
-            k = 2.0
-            L = mu - k * sigma
-            U = mu + k * sigma
-
-        # 4) 其他类型且没成功：给个默认值，避免报错
-        if L is None or U is None:
-            L, U = 0.0, 0.0
-
-        # width_reg 收缩区间
-        if self.width_reg > 0 and np.isfinite(L) and np.isfinite(U):
-            c = 0.5 * (L + U)
-            h = 0.5 * (U - L) / (1.0 + self.width_reg)
-            L, U = c - h, c + h
-
-        return float(L), float(U)
-
-    def get_bounds_for_plot(self, k_sigma=2):
-        """
-        返回 (L1_raw, U1_raw, L2_raw, U2_raw)：
-          - stage1 主 feature（一般是 distance）
-          - stage2 主 feature（一般是 speed）
-
-        k_sigma:
-          - >0 且主维度是 Gaussian 时：用 μ ± k_sigma * sigma
-          - 其他情况：用 self.L1/U1, self.L2/U2（由 _interval_from_model 给出）
-        """
-        idx1 = self.main_feat_stage1
-        idx2 = self.main_feat_stage2
-
-        use_gauss_sigma = (
-                k_sigma is not None
-                and k_sigma > 0
-                and hasattr(self.model_stage1, "get_summary")
-                and hasattr(self.model_stage2, "get_summary")
-        )
-
-        z1_low = self.L1
-        z1_up = self.U1
-        z2_low = self.L2
-        z2_up = self.U2
-
-        if use_gauss_sigma:
-            info1 = self.model_stage1.get_summary()
-            info2 = self.model_stage2.get_summary()
-            if info1.get("type", "") == "gauss" and info2.get("type", "") == "gauss":
-                mu1 = float(info1["mu"])
-                sig1 = float(info1["sigma"])
-                mu2 = float(info2["mu"])
-                sig2 = float(info2["sigma"])
-
-                z1_low = mu1 - k_sigma * sig1
-                z1_up = mu1 + k_sigma * sig1
-                z2_low = mu2 - k_sigma * sig2
-                z2_up = mu2 + k_sigma * sig2
-
-        # 从 z 空间映射回 raw 空间
-        L1_raw = z1_low * self.feat_std[idx1] + self.feat_mean[idx1]
-        U1_raw = z1_up * self.feat_std[idx1] + self.feat_mean[idx1]
-        L2_raw = z2_low * self.feat_std[idx2] + self.feat_mean[idx2]
-        U2_raw = z2_up * self.feat_std[idx2] + self.feat_mean[idx2]
-
-        return float(L1_raw), float(U1_raw), float(L2_raw), float(U2_raw)
+        # 参数 θ 更新完之后，用新的 g_raw 重新估计 mean/std
+        all_X = [np.asarray(X, float) for X in self.demos]
+        for lf in self.learned_features:
+            lf.update_stats(all_X)
 
     # ==========================================================
     # 主 training loop (EM)
     # ==========================================================
     def fit(self, max_iter=30, verbose=True):
+
+
         posts = None
         for it in range(max_iter):
             gammas, xis_list, aux_list = [], [], []
@@ -1111,109 +996,22 @@ class GoalHMM3D:
             self.loss_prog.append(total_prog_ll)
             self.loss_trans.append(total_trans_ll)
 
-            # ---------------- metrics ----------------
-            # segmentation
-            taus_map = []
+            # 先统一算一份当前迭代的 MAP cutpoints，方便 eval & plot 用
+            taus_hat = []
             for gamma in gammas:
                 idx = np.where(gamma[:, 1] > 0.5)[0]
                 tau_hat = int(idx[0]) if len(idx) > 0 else int(np.argmax(gamma[:, 1]))
-                taus_map.append(tau_hat)
+                taus_hat.append(tau_hat)
 
-            mae_list, nmae_list = [], []
-            if self.true_taus is not None:
-                for tau_hat, tau_true, X in zip(
-                    taus_map, self.true_taus, self.demos
-                ):
-                    if tau_true is None:
-                        continue
-                    tau_true = int(tau_true)
-                    T = len(X)
-                    err = abs(tau_hat - tau_true)
-                    mae_list.append(err)
-                    nmae_list.append(err / max(T, 1))
-            mae_tau = float(np.mean(mae_list)) if len(mae_list) > 0 else np.nan
-            nmae_tau = float(np.mean(nmae_list)) if len(nmae_list) > 0 else np.nan
-            self.metric_tau_mae.append(mae_tau)
-            self.metric_tau_nmae.append(nmae_tau)
-
-            # goal error
-            if hasattr(self.env, "subgoal") and hasattr(self.env, "goal"):
-                g1_true = np.asarray(self.env.subgoal, float)
-                g2_true = np.asarray(self.env.goal, float)
-                e_g1 = float(np.linalg.norm(self.g1 - g1_true))
-                e_g2 = float(np.linalg.norm(self.g2 - g2_true))
-            else:
-                e_g1 = np.nan
-                e_g2 = np.nan
-            self.metric_g1_err.append(e_g1)
-            self.metric_g2_err.append(e_g2)
-
-            # constraint threshold relative error（仅 main feature）
-            if (self.oracle_d_safe_raw is not None) and (
-                    self.oracle_v2_max_raw is not None
-            ):
-                idx1 = self.main_feat_stage1
-                idx2 = self.main_feat_stage2
-
-                info1 = (
-                    self.model_stage1.get_summary()
-                    if hasattr(self.model_stage1, "get_summary")
-                    else {}
-                )
-                info2 = (
-                    self.model_stage2.get_summary()
-                    if hasattr(self.model_stage2, "get_summary")
-                    else {}
-                )
-                t1 = info1.get("type", "")
-                t2 = info2.get("type", "")
-
-                k1 = 1.0
-                k2 = 1.0
-
-                # ---- stage1: distance lower bound ----
-                z1_low = None
-                if t1 == "gauss":
-                    mu1 = float(info1["mu"])
-                    sig1 = float(info1["sigma"])
-                    z1_low = mu1 - k1 * sig1
-                elif t1 == "margin_exp_lower":
-                    # inequality: boundary 本身就是 z-space 的下界
-                    z1_low = float(info1["b"])
-
-                # ---- stage2: speed upper bound ----
-                z2_high = None
-                if t2 == "gauss":
-                    mu2 = float(info2["mu"])
-                    sig2 = float(info2["sigma"])
-                    z2_high = mu2 + k2 * sig2
-                # 如果将来你有 margin_exp_upper，可以在这里加分支
-
-                # 计算 relative error（如果能定义的话）
-                if z1_low is not None:
-                    d_safe_raw = float(
-                        z1_low * self.feat_std[idx1] + self.feat_mean[idx1]
-                    )
-                    e_d = abs(d_safe_raw - self.oracle_d_safe_raw)
-                    rel_d = e_d / (abs(self.oracle_d_safe_raw) + 1e-8)
-                else:
-                    rel_d = np.nan
-
-                if z2_high is not None:
-                    v2_max_raw = float(
-                        z2_high * self.feat_std[idx2] + self.feat_mean[idx2]
-                    )
-                    e_v = abs(v2_max_raw - self.oracle_v2_max_raw)
-                    rel_v = e_v / (abs(self.oracle_v2_max_raw) + 1e-8)
-                else:
-                    rel_v = np.nan
-            else:
-                rel_d = np.nan
-                rel_v = np.nan
-            self.metric_d_relerr.append(float(rel_d))
-            self.metric_v_relerr.append(float(rel_v))
+            if self.eval_fn is not None:
+                metrics = self.eval_fn(self, gammas, xis_list)  # dict
+                if not hasattr(self, "metrics_hist") or self.metrics_hist is None:
+                    self.metrics_hist = {}
+                for name, value in metrics.items():
+                    self.metrics_hist.setdefault(name, []).append(value)
 
             # ---------------- M-step ----------------
+            self._mstep_update_learned_features(gammas)
             self._mstep_update_features(gammas)
             self._mstep_update_feature_mask(gammas)
             self._mstep_update_goals(gammas, xis_list, aux_list)
@@ -1222,22 +1020,37 @@ class GoalHMM3D:
             posts = gammas
 
             if verbose:
-                print(
-                    f"Iter {it}: MAP_cutpoints={taus_map}, "
-                    f"loglik={total_ll:.2f}, feat={total_feat_ll:.2f}, prog={total_prog_ll:.2f}, trans={total_trans_ll:.2f} | "
-                    f"delta={self.delta:.4f}, g1={np.round(self.g1, 3)}, g2={np.round(self.g2, 3)}, "
-                    f"r={self.r.tolist()} | "
-                    f"MAE_tau={mae_tau:.3f}, NMAE_tau={nmae_tau:.3f}, "
-                    f"e_g1={e_g1:.3f}, e_g2={e_g2:.3f}, "
-                    f"RelErr_d={rel_d:.3f}, RelErr_v={rel_v:.3f}"
+                # 打印时可以顺手从 metrics 里拿几项
+                msg = (
+                    f"Iter {it}: MAP_cutpoints={taus_hat}, "
+                    f"loglik={total_ll:.2f}, feat={total_feat_ll:.2f}, "
+                    f"prog={total_prog_ll:.2f}, trans={total_trans_ll:.2f}, "
+                    f"delta={self.delta:.4f}, g1={np.round(self.g1, 3)}, "
+                    f"g2={np.round(self.g2, 3)}, r={self.r.tolist()}"
                 )
+                if hasattr(self, "metrics_hist") and self.metrics_hist:
+                    last_metrics = {k: v[-1] for k, v in self.metrics_hist.items() if len(v) > 0}
+                    msg += " | " + ", ".join(
+                        f"{k}={last_metrics[k]:.3f}"
+                        for k in sorted(last_metrics.keys())
+                    )
+                print(msg)
 
+                # ---------------- plotting ----------------
             if self.plot_every is not None:
                 if (it + 1) % self.plot_every == 0 or it == max_iter - 1:
+                    # panel2 现在会从 learner.metrics_hist 里自动读所有曲线
                     plot_results_4panel(
-                        self, taus_map, it, gammas, alphas, betas, xis_list, aux_list
+                        self, taus_hat, it, gammas, alphas, betas, xis_list, aux_list
                     )
-                    plot_feature_model_debug(self, posts, stages=(0, 1))
+                    # debug 图这里直接传 gammas，不再依赖老的 metric 列表
+                    try:
+                        plot_feature_model_debug(self, gammas, stages=(0, 1))
+                    except NameError:
+                        # 如果你有时候不 import 这个函数，就静默跳过
+                        pass
 
         return posts
+
+
 
