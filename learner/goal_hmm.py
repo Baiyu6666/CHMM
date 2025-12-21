@@ -51,7 +51,7 @@ class GoalHMM3D:
         auto_feature_select=True,
         r_sparse_lambda=0.3,  # 对每个 r[k,m]=1 的惩罚（L0 风格）
 
-            # weights
+        # weights
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,

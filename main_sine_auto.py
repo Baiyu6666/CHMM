@@ -112,7 +112,7 @@ def run_experiment(
         prog_kappa1=8.0,
         prog_kappa2=6.0,
 
-        fixed_sigma_irrelevant=1.0,      # 你之前用的背景宽度（可以试试 1.0 / 2.0）
+        fixed_sigma_irrelevant=1.0,
 
         trans_eps=1e-6,
         delta_init=0.15,
@@ -143,6 +143,12 @@ def main():
         n_demos=12,
         max_iter=30,
     )
+
+def foo():
+    pass
+
+def bar():
+    foo()
 
 
 if __name__ == "__main__":
