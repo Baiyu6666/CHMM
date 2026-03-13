@@ -1,8 +1,8 @@
 import numpy as np
 import cvxpy as cp
 
-from env.env3d import ObsAvoidEnv3D
-from render.pybullet_renderer import PyBulletRenderer3D
+from envs.obs_avoid_3d import ObsAvoidEnv3D
+from visualization.pybullet_renderer import PyBulletRenderer3D
 
 
 def scp_trajopt_stage(

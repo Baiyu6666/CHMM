@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Any, Dict
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from envs import load_env
+from pipelines import JointPipeline, SequentialPipeline
+
+
+JOINT_METHODS = {"segcons"}
+SEQUENTIAL_METHODS = {"gmmhmm", "hdphmm", "arhmm", "changepoint"}
+
+
+def run_experiment(
+    dataset_name: str,
+    method_name: str,
+    dataset_kwargs: Dict[str, Any] | None = None,
+    method_kwargs: Dict[str, Any] | None = None,
+):
+    dataset_kwargs = dataset_kwargs or {}
+    method_kwargs = method_kwargs or {}
+    dataset = load_env(dataset_name, **dataset_kwargs)
+
+    if method_name in JOINT_METHODS:
+        pipeline = JointPipeline(kwargs=method_kwargs)
+        return pipeline.run(dataset)
+
+    if method_name in SEQUENTIAL_METHODS:
+        segmenter_kwargs = dict(method_kwargs.get("segmenter", {}))
+        constraint_kwargs = dict(method_kwargs.get("constraints", {}))
+        pipeline = SequentialPipeline(
+            segmenter_name=method_name,
+            segmenter_kwargs=segmenter_kwargs,
+            constraint_kwargs=constraint_kwargs,
+        )
+        return pipeline.run(dataset)
+
+    raise ValueError(
+        f"Unknown method '{method_name}'. "
+        f"Joint: {sorted(JOINT_METHODS)}. Sequential: {sorted(SEQUENTIAL_METHODS)}"
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Unified CHMM experiment entrypoint.")
+    parser.add_argument("--dataset", type=str, default="2DObsAvoid")
+    parser.add_argument("--method", type=str, default="segcons")
+    parser.add_argument("--n-demos", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--max-iter", type=int, default=30)
+    args = parser.parse_args()
+
+    dataset_kwargs = {"n_demos": args.n_demos, "seed": args.seed}
+    if args.method == "segcons":
+        method_kwargs = {"max_iter": args.max_iter, "verbose": True}
+    else:
+        method_kwargs = {
+            "segmenter": {"max_iter": args.max_iter, "verbose": True, "seed": args.seed},
+            "constraints": {"refine_steps": 5},
+        }
+
+    results = run_experiment(
+        dataset_name=args.dataset,
+        method_name=args.method,
+        dataset_kwargs=dataset_kwargs,
+        method_kwargs=method_kwargs,
+    )
+
+    if args.method == "segcons":
+        print(results["joint_result"]["metrics"])
+    else:
+        print(results["constraints"]["metrics"])
+
+
+if __name__ == "__main__":
+    main()

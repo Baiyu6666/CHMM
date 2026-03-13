@@ -7,8 +7,66 @@
 # ------------------------------------------------------------
 
 from __future__ import annotations
-from scipy.stats import norm
 import numpy as np
+
+
+def _norm_ppf(p: float) -> float:
+    """
+    Rational approximation of the inverse standard normal CDF.
+    Reference: Peter J. Acklam's approximation.
+    """
+    if not 0.0 < p < 1.0:
+        raise ValueError("p must be in (0, 1)")
+
+    a = [
+        -3.969683028665376e01,
+        2.209460984245205e02,
+        -2.759285104469687e02,
+        1.383577518672690e02,
+        -3.066479806614716e01,
+        2.506628277459239e00,
+    ]
+    b = [
+        -5.447609879822406e01,
+        1.615858368580409e02,
+        -1.556989798598866e02,
+        6.680131188771972e01,
+        -1.328068155288572e01,
+    ]
+    c = [
+        -7.784894002430293e-03,
+        -3.223964580411365e-01,
+        -2.400758277161838e00,
+        -2.549732539343734e00,
+        4.374664141464968e00,
+        2.938163982698783e00,
+    ]
+    d = [
+        7.784695709041462e-03,
+        3.224671290700398e-01,
+        2.445134137142996e00,
+        3.754408661907416e00,
+    ]
+
+    plow = 0.02425
+    phigh = 1.0 - plow
+
+    if p < plow:
+        q = np.sqrt(-2.0 * np.log(p))
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q) + 1.0
+        )
+    if p > phigh:
+        q = np.sqrt(-2.0 * np.log(1.0 - p))
+        return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q) + 1.0
+        )
+
+    q = p - 0.5
+    r = q * q
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (
+        (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r) + 1.0
+    )
 
 
 class BaseEmission:
@@ -44,7 +102,7 @@ class BaseEmission:
     ) -> None:
         """
         初始化阶段用的数据拟合。
-        典型使用：GoalHMM 的 init_taus 之后，用初次分段的数据给出 mu/b 等初值。
+        典型使用：SegCons 的 init_taus 之后，用初次分段的数据给出 mu/b 等初值。
         """
         pass
 
@@ -159,7 +217,7 @@ class GaussianModel(BaseEmission):
             ws: list[np.ndarray] | None = None,
     ) -> None:
         """
-        初始化阶段使用的数据；GoalHMM 在根据 init_taus 做初次分段后会调用这里。
+        初始化阶段使用的数据；SegCons 在根据 init_taus 做初次分段后会调用这里。
         """
         self._fit_weighted(xs, ws)
         self.L, self.U = self.interval(0.05, 0.95)
@@ -177,6 +235,9 @@ class GaussianModel(BaseEmission):
         self._fit_weighted(xs, ws)
         self.L, self.U = self.interval(q_low, q_high)
 
+    def m_update(self, x: np.ndarray, w: np.ndarray) -> None:
+        self.m_step_update([np.asarray(x, dtype=float)], [np.asarray(w, dtype=float)])
+
     # ---------------- 区间 & summary ----------------
     def interval(self, q_low: float, q_high: float) -> tuple[float, float]:
         """
@@ -187,8 +248,8 @@ class GaussianModel(BaseEmission):
 
         sigma = max(float(self.sigma), 1e-8)
 
-        z_low = norm.ppf(q_low)
-        z_high = norm.ppf(q_high)
+        z_low = _norm_ppf(q_low)
+        z_high = _norm_ppf(q_high)
 
         L = self.mu + z_low * sigma
         U = self.mu + z_high * sigma
@@ -297,13 +358,16 @@ class ZeroMeanGaussianModel(BaseEmission):
             self.L, self.U = self.interval(q_low, q_high)
             print(self.L, self.U)
 
+    def m_update(self, x: np.ndarray, w: np.ndarray) -> None:
+        self.m_step_update([np.asarray(x, dtype=float)], [np.asarray(w, dtype=float)])
+
     # ---------------- interval & summary ----------------
     def interval(self, q_low: float, q_high: float) -> tuple[float, float]:
         assert 0.0 <= q_low < q_high <= 1.0
         sigma = max(float(self.sigma), 1e-8)
 
-        z_low = norm.ppf(q_low)
-        z_high = norm.ppf(q_high)
+        z_low = _norm_ppf(q_low)
+        z_high = _norm_ppf(q_high)
 
         # mu == 0
         L = z_low * sigma

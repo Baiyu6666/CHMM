@@ -1,0 +1,6 @@
+{
+  "name": "segcons",
+  "max_iter": 30,
+  "verbose": true,
+  "plot_every": null
+}

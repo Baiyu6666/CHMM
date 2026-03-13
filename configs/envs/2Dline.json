@@ -1,0 +1,7 @@
+{
+  "name": "2Dline",
+  "n_demos": 8,
+  "horizon": 120,
+  "n_segments": 3,
+  "seed": 2025
+}

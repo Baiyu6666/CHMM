@@ -1,0 +1,10 @@
+{
+  "name": "gmmhmm",
+  "segmenter": {
+    "max_iter": 30,
+    "verbose": true
+  },
+  "constraints": {
+    "refine_steps": 5
+  }
+}

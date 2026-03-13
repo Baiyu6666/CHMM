@@ -38,7 +38,7 @@ class LearnedFeatureBase(nn.Module):
         g = g.squeeze(-1)
         return g.detach().cpu().numpy()
 
-    # --------- 标准化后的输出（给 GoalHMM 用） ---------
+    # --------- 标准化后的输出（给 SegCons 用） ---------
     @torch.no_grad()
     def eval_numpy(self, X_np: np.ndarray) -> np.ndarray:
         """

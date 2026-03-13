@@ -1,0 +1,13 @@
+{
+  "name": "changepoint",
+  "segmenter": {
+    "n_states": 2,
+    "standardize": true,
+    "use_velocity": true,
+    "cost_type": "gaussian",
+    "min_len": 1
+  },
+  "constraints": {
+    "refine_steps": 5
+  }
+}

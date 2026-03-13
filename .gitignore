@@ -1,0 +1,15 @@
+__pycache__/
+*/__pycache__/
+*.pyc
+.DS_Store
+
+.idea/workspace.xml
+
+outputs/experiments/*.json
+outputs/experiments/*.png
+outputs/experiments/*.csv
+
+exp_compare_2d_results.json
+exp_compare_3d_results.json
+exp_init_sensitivity_results.json
+exp_feature_select_sensitivity_results.json

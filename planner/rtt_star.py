@@ -17,9 +17,12 @@
 # ------------------------------------------------------------
 
 import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
 
-from env.env3d import ObsAvoidEnv3D
-from render.pybullet_renderer import PyBulletRenderer3D
+from envs.obs_avoid_3d import ObsAvoidEnv3D
+from visualization.pybullet_renderer import PyBulletRenderer3D
+from visualization.io import save_figure
 
 
 class _Node:
@@ -497,7 +500,7 @@ def _debug_plot_single_3d(env, X_full, tau, title="RRT* planned trajectory"):
     ax.legend(loc="best")
     ax.view_init(elev=35, azim=-60)
     plt.tight_layout()
-    plt.show()
+    save_figure(plt.gcf(), Path("outputs/plots/RRTStar/rrt_star_overview.png"))
 
 
 # ============================================================
@@ -525,7 +528,7 @@ def main():
     )
 
     # --- choose a test safety distance (learned d_safe_min 的替身) ---
-    # 实际实验里，你会从 GoalHMM3D 的 get_feature_constraints_from_learner 拿到 d_safe_min_raw
+    # 实际实验里，你会从 SegCons 的 get_feature_constraints_from_learner 拿到 d_safe_min_raw
     d_safe_min_test = 0.32
 
     print("[RRT* main] Planning one two-stage trajectory with RRT*…")

@@ -30,8 +30,8 @@
 import numpy as np
 import torch
 
-from env.env3d import ObsAvoidEnv3D
-from render.pybullet_renderer import PyBulletRenderer3D
+from envs.obs_avoid_3d import ObsAvoidEnv3D
+from visualization.pybullet_renderer import PyBulletRenderer3D
 
 
 def sample_random_start_3d(env, rng=None):
@@ -342,7 +342,7 @@ def plan_two_stage_trajectory(
     return X_full, tau, X1, X2, x_subgoal, x_goal
 
 import numpy as np
-from env.env3d import ObsAvoidEnv3D  # 顶部已经有就不用重复
+from envs.obs_avoid_3d import ObsAvoidEnv3D  # 顶部已经有就不用重复
 
 def plan_oscillate_then_descend(
     env: ObsAvoidEnv3D,

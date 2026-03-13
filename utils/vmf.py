@@ -1,6 +1,19 @@
 # utils/vmf.py
+import math
 import numpy as np
-from scipy.special import iv  # modified Bessel I_v
+
+try:
+    from scipy.special import iv  # type: ignore
+except ModuleNotFoundError:
+    iv = None
+
+
+def _approx_iv(nu: float, kappa: float) -> float:
+    if kappa <= 1e-8:
+        return (0.5 * max(kappa, 1e-12)) ** nu / math.exp(math.lgamma(nu + 1.0))
+    if kappa < 10.0:
+        return (0.5 * kappa) ** nu / math.exp(math.lgamma(nu + 1.0))
+    return math.exp(kappa) / math.sqrt(2.0 * math.pi * kappa)
 
 
 def _unit(x, eps=1e-12):
@@ -17,7 +30,8 @@ def vmf_logC_d(kappa: float, d: int) -> float:
     if kappa <= 0:
         return - (d/2) * np.log(2*np.pi)
     nu = d/2 - 1.0
-    return (nu)*np.log(kappa + 1e-12) - (d/2)*np.log(2*np.pi) - np.log(iv(nu, kappa) + 1e-300)
+    bessel = iv(nu, kappa) if iv is not None else _approx_iv(nu, kappa)
+    return (nu)*np.log(kappa + 1e-12) - (d/2)*np.log(2*np.pi) - np.log(bessel + 1e-300)
 
 
 def vmf_segment_loglike(Xseg: np.ndarray, g: np.ndarray, kappa: float) -> float:

@@ -1,0 +1,11 @@
+{
+  "name": "arhmm",
+  "segmenter": {
+    "max_iter": 30,
+    "verbose": true,
+    "n_states": 2
+  },
+  "constraints": {
+    "refine_steps": 5
+  }
+}
