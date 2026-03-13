@@ -3,9 +3,9 @@
 # Your main method:
 #   - Two-state left-to-right HMM
 #   - Emission = feature Gaussians + vMF progress
-#   - Transition = Gaussian bump near g1 with learnable delta
+#   - Transition = Gaussian bump near g1 with learnable trans_delta
 #   - Update g1 with vMF + attraction-only transition gradient (xi01)
-#   - Update delta with full xi (xi01+xi00)
+#   - Update trans_delta with full xi (xi01+xi00)
 # ------------------------------------------------------------
 
 import numpy as np

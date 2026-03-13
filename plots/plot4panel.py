@@ -56,7 +56,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
       - _features_for_demo(X)
       - _transition_logprob(X, return_aux=False/True)
       - prog_kappa1, prog_kappa2
-      - trans_eps, d0_trans (如果你现在叫 delta，也保留别名 d0_trans)
+      - trans_eps, d0_trans (如果你现在叫 trans_delta，也保留别名 d0_trans)
     """
 
     # ==========================================================
@@ -161,14 +161,14 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
         # 3D env: obs_center_xy + obs_radius
         cx, cy = learner.env.obs_center_xy
         r = learner.env.obs_radius
-        _draw_cylinder_wire(
-            ax,
-            center_xy=(cx, cy),
-            radius=r,
-            z0=0.0,
-            height=0.5,
-            color='gray'
-        )
+        # _draw_cylinder_wire(
+        #     ax,
+        #     center_xy=(cx, cy),
+        #     radius=r,
+        #     z0=0.0,
+        #     height=0.5,
+        #     color='gray'
+        # )
     else:
         # 2D env: obs_center + obs_radius
         cx, cy = learner.env.obs_center
@@ -408,10 +408,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     Fz = learner._features_for_demo_matrix(X0)  # (T, M)
     M = learner.num_features
 
-    feat_raw_list = []
-    for m in range(M):
-        raw_m = Fz[:, m] * learner.feat_std[m] + learner.feat_mean[m]
-        feat_raw_list.append(raw_m)
+    feat_raw = Fz * learner.feat_std[learner.feature_ids] + learner.feat_mean[learner.feature_ids]
+    # feat_raw_list = []
+    # for m in range(M):
+    #     raw_m = Fz[:, m] * learner.feat_std[m] + learner.feat_mean[m]
+    #     feat_raw_list.append(raw_m)
 
     ax_main = plt.gca()
 
@@ -425,15 +426,14 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     for m in range(M):
         ax_main.plot(
             t_axis,
-            feat_raw_list[m],
+            feat_raw[:, m],
             "-",
             color=color_cycle[m],
-            label=f"f{m}(t)",
+            label=f"f{learner.feature_ids[m]}(t)",
         )
 
     # ---------- cutpoints ----------
-    idx = np.where(gamma0[:, 1] > 0.5)[0]
-    tau_hat0 = int(idx[0]) if len(idx) > 0 else int(np.argmax(gamma0[:, 1]))
+    tau_hat0 = taus[0]
     true_tau0 = learner.true_taus[0]
 
     ax_main.axvline(
@@ -466,12 +466,13 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             info1 = model1.get_summary()
             t1_type = info1.get("type", "base")
 
-            if t1_type in ("gauss", "margin_exp_lower"):
+            if t1_type in ("gauss", "margin_exp_lower", "gauss_zero"):
                 z_low1 = float(model1.L)
                 z_up1 = float(model1.U)
 
-                L1_raw = z_low1 * learner.feat_std[m] + learner.feat_mean[m]
-                U1_raw = z_up1 * learner.feat_std[m] + learner.feat_mean[m]
+                fid = learner.feature_ids[m]
+                L1_raw = z_low1 * learner.feat_std[fid] + learner.feat_mean[fid]
+                U1_raw = z_up1 * learner.feat_std[fid] + learner.feat_mean[fid]
 
                 ax_main.fill_between(
                     t1, L1_raw, U1_raw,
@@ -487,12 +488,13 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             info2 = model2.get_summary()
             t2_type = info2.get("type", "base")
 
-            if t2_type in ("gauss", "margin_exp_lower"):
+            if t2_type in ("gauss", "margin_exp_lower", "gauss_zero"):
                 z_low2 = float(model2.L)
                 z_up2 = float(model2.U)
 
-                L2_raw = z_low2 * learner.feat_std[m] + learner.feat_mean[m]
-                U2_raw = z_up2 * learner.feat_std[m] + learner.feat_mean[m]
+                fid = learner.feature_ids[m]
+                L2_raw = z_low2 * learner.feat_std[fid] + learner.feat_mean[fid]
+                U2_raw = z_up2 * learner.feat_std[fid] + learner.feat_mean[fid]
 
                 ax_main.fill_between(
                     t2, L2_raw, U2_raw,
@@ -626,21 +628,24 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     beta_odds = beta0[:, 1] - beta0[:, 0]
     post_odds = np.log((gamma0[:, 1] + eps) / (gamma0[:, 0] + eps))
 
+    # ---------- Jump posterior: xi(0->1) ----------
+    xi0 = xis_list[0]  # (T0-1, K, K)
+    xi01 = xi0[:, 0, 1]  # length T0-1
+    xi01_pad = np.r_[xi01, 0.0]
+
     # ---------- Plot ----------
     plt.plot(t_axis, d_feat, '-', lw=1.8, color='tab:red', label='Δ_feat')
     plt.plot(t_axis, d_prog, '-', lw=1.8, color='tab:blue', label='Δ_prog')
     plt.plot(t_axis, d_trans, '--', lw=2, color='tab:orange', label='Δ_trans')
-    plt.plot(t_axis, d_emit, ':', lw=1.5, color='gray', label='Δ_emit = Δ_feat + Δ_prog')
+    # plt.plot(t_axis, d_emit, ':', lw=1.5, color='gray', label='Δ_emit = Δ_feat + Δ_prog')
 
-    plt.plot(t_axis, alpha_odds, '-.', lw=2, color='tab:purple',
-             label='alpha log-odds (past evidence)')
-    plt.plot(t_axis, beta_odds, '-', lw=2, color='tab:green',
-             label='beta log-odds (future evidence)')
+    # plt.plot(t_axis, alpha_odds, '-.', lw=2, color='tab:purple',
+    #          label='alpha log-odds (past evidence)')
+    # plt.plot(t_axis, beta_odds, '-', lw=2, color='tab:green',
+    #          label='beta log-odds (future evidence)')
     plt.plot(t_axis, post_odds, '-', lw=3, color='black', label='posterior log-odds')
 
     # cutpoints
-    idx = np.where(gamma0[:, 1] > 0.5)[0]
-    tau_hat0 = int(idx[0]) if len(idx) > 0 else int(np.argmax(gamma0[:, 1]))
     plt.axvline(tau_hat0, color='blue', linestyle='--', label='learned cutpoint')
     if learner.true_taus[0] is not None:
         plt.axvline(learner.true_taus[0], color='green', linestyle='--', label='true cutpoint')
@@ -651,6 +656,18 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     plt.ylabel("log-odds / log-likelihood diff")
     plt.legend(loc='best')
     plt.ylim([-30, 20])
+
+    ax = plt.gca()
+    ax2 = ax.twinx()
+    # ax2.plot(t_axis, xi01_pad, '-', lw=2, color='tab:cyan', label='xi(0→1) (jump posterior)')
+    ax2.set_ylabel('probability')
+    ax2.plot(t_axis, gammas[0][:, 0], '-', lw=2, color='purple', label='gamma(0)')
+    ax2.set_ylim([0.0, 1.0])
+
+    # 合并 legend
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, loc='best')
 
     plt.tight_layout()
     plt.show()
@@ -686,7 +703,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     # plt.show()
     #
     # # effective force
-    # sigma = getattr(learner, "d0_trans", getattr(learner, "delta", 0.2))
+    # sigma = getattr(learner, "d0_trans", getattr(learner, "trans_delta", 0.2))
     # d = aux0["dists"][:-1]
     # e = np.exp(-0.5 * (d ** 2) / (sigma ** 2 + 1e-12))
     # F = A * e * d / (sigma ** 2 + 1e-12)

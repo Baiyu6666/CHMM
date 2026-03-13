@@ -205,6 +205,121 @@ class GaussianModel(BaseEmission):
             "U": float(self.U),
         }
 
+class ZeroMeanGaussianModel(BaseEmission):
+    """
+    Zero-mean 1D Gaussian emission for equality-style residuals:
+        z ~ N(0, sigma^2)
+
+    Key semantics:
+      - mu is fixed to 0 (not learned).
+      - sigma can be learned from data (weighted MLE) OR fixed via fixed_sigma.
+      - interval(q_low, q_high) is defined by Gaussian quantiles around mu=0.
+
+    This is meant for learned constraint residuals h(x) where the constraint is h(x)=0
+    with tolerance controlled by sigma (ideally fixed and small for hard-ish equality).
+    """
+
+    def __init__(
+        self,
+        sigma: float | None = None,
+        fixed_sigma: float | None = None,
+        min_sigma: float = 1e-3,
+    ):
+        super().__init__()
+        self.mu: float = 0.0
+        self.fixed_sigma: float | None = fixed_sigma
+        if fixed_sigma is not None:
+            self.sigma = float(fixed_sigma)
+        else:
+            self.sigma: float = float(sigma) if sigma is not None else 1.0
+
+        self.min_sigma: float = float(min_sigma)
+
+    # ---------------- core: logpdf ----------------
+    def logpdf(self, x: np.ndarray) -> np.ndarray:
+        x = np.asarray(x, dtype=float)
+        sig = float(self.sigma)
+        sig2 = sig * sig + 1e-12
+        c = -0.5 * np.log(2.0 * np.pi * sig2)
+        # mu is fixed to 0
+        return c - 0.5 * (x ** 2) / sig2
+
+    # ---------------- internal helper: weighted fit sigma ----------------
+    def _fit_weighted(
+        self,
+        xs: list[np.ndarray],
+        ws: list[np.ndarray] | None = None,
+    ) -> None:
+        if self.fixed_sigma is not None:
+            self.sigma = float(self.fixed_sigma)
+            return
+        xs_cat = np.concatenate(xs, axis=0).astype(float)
+        if xs_cat.size == 0:
+            xs_cat = np.zeros(1, dtype=float)
+
+        if ws is None:
+            w_cat = np.ones_like(xs_cat)
+        else:
+            w_cat = np.concatenate(ws, axis=0).astype(float)
+            if w_cat.size == 0:
+                w_cat = np.ones_like(xs_cat)
+
+        w_cat = np.maximum(w_cat, 0.0)
+        w_sum = float(np.sum(w_cat)) + 1e-12
+
+        # mu fixed to 0 => var = E[x^2]
+        var = float(np.sum(w_cat * (xs_cat ** 2)) / w_sum)
+
+        self.mu = 0.0
+        sigma = float(np.sqrt(max(var, 0.0)))
+        self.sigma = float(max(sigma, self.min_sigma))
+
+
+    # ---------------- init / m_step_update ----------------
+    def init_from_data(
+        self,
+        xs: list[np.ndarray],
+        ws: list[np.ndarray] | None = None,
+    ) -> None:
+        self._fit_weighted(xs, ws)
+        # follow GaussianModel convention
+        self.L, self.U = self.interval(0.05, 0.95)
+
+    def m_step_update(
+        self,
+        xs: list[np.ndarray],
+        ws: list[np.ndarray],
+        q_low: float | None = 0.05,
+        q_high: float | None = 0.95,
+    ) -> None:
+        self._fit_weighted(xs, ws)
+        if q_low is not None and q_high is not None:
+            self.L, self.U = self.interval(q_low, q_high)
+            print(self.L, self.U)
+
+    # ---------------- interval & summary ----------------
+    def interval(self, q_low: float, q_high: float) -> tuple[float, float]:
+        assert 0.0 <= q_low < q_high <= 1.0
+        sigma = max(float(self.sigma), 1e-8)
+
+        z_low = norm.ppf(q_low)
+        z_high = norm.ppf(q_high)
+
+        # mu == 0
+        L = z_low * sigma
+        U = z_high * sigma
+        return float(L), float(U)
+
+    def get_summary(self) -> dict:
+        return {
+            "type": "gauss_zero",
+            "mu": 0.0,
+            "sigma": float(self.sigma),
+            "fixed_sigma": self.fixed_sigma,
+            "min_sigma": float(self.min_sigma),
+            "L": float(self.L),
+            "U": float(self.U),
+        }
 # ============================================================
 # One-sided exponential (lower-bound) emission
 # ============================================================

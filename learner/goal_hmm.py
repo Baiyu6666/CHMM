@@ -10,7 +10,7 @@
 #   特征都在 z 空间（逐特征 zero-mean / unit-ish variance）
 #
 # - 进度项: vMF 对齐 g1/g2
-# - 转移: 围绕 g1 的高斯 bump, learnable delta
+# - 转移: 围绕 g1 的高斯 bump, learnable trans_delta
 # - g1/g2 用 vMF + transition gradient 更新
 # - r: (K=2, M=num_features) 的 0/1 mask, 初始为全 0，由 EM 中的 hard-EM 更新
 #
@@ -25,7 +25,8 @@ from plots.plot4panel import plot_results_4panel, plot_feature_model_debug
 from eval.constraint_eval import eval_goalhmm_auto
 import torch
 from utils.vmf import _unit, vmf_logC_d, vmf_grad_wrt_g
-from utils.models import GaussianModel, MarginExpLowerEmission
+from utils.models import GaussianModel, MarginExpLowerEmission, ZeroMeanGaussianModel
+import matplotlib.pyplot as plt
 
 class GoalHMM3D:
     def __init__(
@@ -49,12 +50,15 @@ class GoalHMM3D:
 
         # feature mask (auto selection)
         auto_feature_select=True,
+        fixed_feature_mask=None,  # 如果 auto_feature_select=False，则用这个 mask 指定哪些 feature 用于哪一阶段
         r_sparse_lambda=0.3,  # 对每个 r[k,m]=1 的惩罚（L0 风格）
 
         # weights
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,
+
+        posterior_temp = 1.0,
 
         # vMF kappas
         prog_kappa1=8.0,
@@ -66,13 +70,14 @@ class GoalHMM3D:
         # transition bump
         trans_eps=1e-6,
         delta_init=0.15,
-        learn_delta=True,
+        trans_b_init=-1,
+        learn_transition=False,  # None -> follow learn_delta
         lr_delta=5e-4,
+        lr_b=5e-4,
 
         # g update
-        vmf_steps=3,
-        vmf_lr=5e-4,
-        g_step=0.1,
+        g_steps=5,
+        g_lr=5e-4,
         g_grad_clip=None,
         g1_vmf_weight=1.0,
         g1_trans_weight=1.0,
@@ -102,34 +107,32 @@ class GoalHMM3D:
         self.feat_weight = float(feat_weight)
         self.prog_weight = float(prog_weight)
         self.trans_weight = float(trans_weight)
+        self.posterior_temp = float(posterior_temp)
 
         self.prog_kappa1 = float(prog_kappa1)
         self.prog_kappa2 = float(prog_kappa2)
-        self.sigma_irrel = float(fixed_sigma_irrelevant)
+        self.sigma_irrel = float(fixed_sigma_irrelevant)  #bg分布按理说来自whole demos的统计，但是因为还做了归一化，就变成固定1方差了
 
         self.trans_eps = float(trans_eps)
-        self.delta = float(delta_init)
-        self.learn_delta = bool(learn_delta)
-        self.lr_delta = float(lr_delta)
+        self.trans_delta = float(delta_init)
+        self.trans_b = float(trans_b_init)
 
-        self.vmf_steps = int(vmf_steps)
-        self.vmf_lr = float(vmf_lr)
-        self.g_step = float(g_step)
+        # learning switches (keep old API working)
+        self.learn_transition = bool(learn_transition)
+        self.lr_delta = float(lr_delta)
+        self.lr_b = float(lr_b)
+
+        self.g_steps = int(g_steps)
+        self.g_lr = float(g_lr)
         self.g_grad_clip = g_grad_clip
         self.g1_vmf_weight = float(g1_vmf_weight)
         self.g1_trans_weight = float(g1_trans_weight)
 
         self.plot_every = plot_every
 
-        # temperature on progress（保留接口）
-        self.tau = 1.0
-
         # ---------------- Learnable features ----------------
         # learned_features: list of LearnedFeatureBase
-        if learned_features is None:
-            self.learned_features: list[LearnedFeatureBase] = []
-        else:
-            self.learned_features = list(learned_features)
+        self.learned_features = list(learned_features) if learned_features is not None else []
 
         self.f_lr = float(f_lr)
         self.f_mstep_steps = int(f_mstep_steps)
@@ -166,6 +169,9 @@ class GoalHMM3D:
                 kind = self.feature_types[m]
                 if kind == "gauss":
                     row.append(GaussianModel(mu=None, sigma=None, fixed_sigma=None))
+                elif kind == "zero_gauss":
+                    row.append(GaussianModel(mu=None, sigma=None, fixed_sigma=None))
+                    # row.append(ZeroMeanGaussianModel(sigma=None, fixed_sigma=0.1))
                 elif kind == "margin_exp_lower":
                     # 下界约束，比如距离要大（d >= b）
                     row.append(MarginExpLowerEmission(b_init=0.0, lam_init=1.0))
@@ -181,7 +187,11 @@ class GoalHMM3D:
         self.r_sparse_lambda = float(r_sparse_lambda)
         self.r = np.zeros((self.num_states, self.num_features), dtype=int)
         if not auto_feature_select:
-            self.r = np.ones((self.num_states, self.num_features), dtype=int)
+            if fixed_feature_mask is not None:
+                self.r = np.asarray(fixed_feature_mask, dtype=int)
+                assert self.r.shape == (self.num_states, self.num_features)
+            else:
+                self.r = np.ones((self.num_states, self.num_features), dtype=int)
 
         # init_taus 记录初始化分段，供 debug
         self.init_taus = None
@@ -229,18 +239,8 @@ class GoalHMM3D:
         X = np.asarray(X, float)
 
         # --- 1) env 物理 feature ---
-        if hasattr(self.env, "compute_all_features_matrix"):
-            F_env = self.env.compute_all_features_matrix(X)
-            F_env = np.asarray(F_env, float)  # (T, M_env)
-        else:
-            # 老兼容：只用 (distance, speed)
-            d, s = self.env.compute_features_all(X)  # d len=T, s len=T-1
-            T = len(X)
-            d = np.asarray(d, float)
-            s = np.asarray(s, float)
-            if len(s) < T:
-                s = np.concatenate([s, [s[-1]]])
-            F_env = np.stack([d, s], axis=1)  # (T,2)
+        F_env = self.env.compute_all_features_matrix(X)
+        F_env = np.asarray(F_env, float)  # (T, M_env)
 
         T, M_env = F_env.shape
 
@@ -270,16 +270,7 @@ class GoalHMM3D:
             X = np.asarray(X, float)
 
             # --- env feature ---
-            if hasattr(self.env, "compute_all_features_matrix"):
-                F_env = np.asarray(self.env.compute_all_features_matrix(X), float)
-            else:
-                d, s = self.env.compute_features_all(X)
-                T = len(X)
-                d = np.asarray(d, float)
-                s = np.asarray(s, float)
-                if len(s) < T:
-                    s = np.concatenate([s, [s[-1]]])
-                F_env = np.stack([d, s], axis=1)
+            F_env = np.asarray(self.env.compute_all_features_matrix(X), float)
 
             if M_env is None:
                 M_env = F_env.shape[1]
@@ -301,23 +292,24 @@ class GoalHMM3D:
         feat_mean = np.zeros(M_raw, dtype=float)
         feat_std = np.ones(M_raw, dtype=float)
 
-        # 前 M_env 维：用 env 数据统计
+        # 前 M_env 维：用 env 数据统计；后 M_learn 维：mean=0, std=1（因为 lf 内部已经标准化）
         for j in range(M_env):
             vals = all_env[:, j]
             feat_mean[j] = float(np.mean(vals))
             feat_std[j] = float(np.std(vals) + 1e-8)
 
-        # 后 M_learn 维：mean=0, std=1（因为 lf 内部已经标准化）
-        # feat_mean[M_env:] = 0.0
-        # feat_std[M_env:] = 1.0  # 已经初始化成 1 了
-
-        self.feat_mean = feat_mean
+        self.feat_mean = feat_mean  # 注意这里的feat mean包含了所有feature，而不仅是feature ids对应的哪些
         self.feat_std = feat_std
 
         # ----- feature_types 映射 -----
         if self.feature_types_raw is None:
-            # 默认所有维度都当作 "gauss"
-            self.feature_types = ["gauss"] * len(self.feature_ids)
+            # 默认：fixed(env) -> gauss；learned -> zero_gauss（仅对出现在 feature_ids 里的维度生效）
+            self.feature_types = []
+            for fid in self.feature_ids:
+                if fid < M_env:
+                    self.feature_types.append("gauss")
+                else:
+                    self.feature_types.append("zero_gauss")
         else:
             types = []
             if isinstance(self.feature_types_raw, dict):
@@ -396,7 +388,7 @@ class GoalHMM3D:
                 elif mode == "random":
                     taus = []
                     pts = []
-                    lam = np.clip(np.random.rand(), 0.0, 1.0)
+                    lam = np.clip(np.random.rand(), 0.1, .9)
                     for X in demos:
                         T = len(X)
                         t = int(round(lam * (T - 1)))
@@ -476,6 +468,19 @@ class GoalHMM3D:
         self.g1_init_var = float(
             np.mean(np.sum((sub_pts - self.g1[None, :]) ** 2, axis=1))
         )
+
+        if self._has_learned and self.g_optimizer is not None:
+            gammas_init = []
+            for X, tau in zip(self.demos, self.init_taus):
+                T = len(X)
+                tau = int(np.clip(tau, 1, T - 2))
+                gamma = np.zeros((T, 2), dtype=float)
+                gamma[:tau + 1, 0] = 1.0
+                gamma[tau + 1:, 1] = 1.0
+                gammas_init.append(gamma)
+
+            # do a few gradient steps to make learned residual meaningful
+            self._mstep_update_learned_features(gammas_init)
 
         # ---------------- 使用 init_taus 初始化 feature_models ----------------
         # 在 z 空间中统计：每个 state / feature 的值
@@ -611,16 +616,16 @@ class GoalHMM3D:
 
             cos1 = np.sum(Vs * U1, axis=1)
             cos2 = np.sum(Vs * U2, axis=1)
-            ll_prog[:-1, 0] = self.prog_weight * (logC1 + self.prog_kappa1 * cos1)
-            ll_prog[:-1, 1] = self.prog_weight * (logC2 + self.prog_kappa2 * cos2)
+            ll_prog[:-1, 0] = (logC1 + self.prog_kappa1 * cos1)
+            ll_prog[:-1, 1] = (logC2 + self.prog_kappa2 * cos2)
 
         # ---------- 总 emission ----------
         ll_emit = np.zeros((T, 2))
-        ll_emit[:, 0] = self.feat_weight * ll_feat_k[:, 0] + self.tau * ll_prog[:, 0]
-        ll_emit[:, 1] = self.feat_weight * ll_feat_k[:, 1] + self.tau * ll_prog[:, 1]
+        ll_emit[:, 0] = self.feat_weight * ll_feat_k[:, 0] + self.prog_weight * ll_prog[:, 0]
+        ll_emit[:, 1] = self.feat_weight * ll_feat_k[:, 1] + self.prog_weight *  ll_prog[:, 1]
 
         if return_parts:
-            return ll_emit, ll_feat_k, ll_prog
+            return ll_emit, self.feat_weight * ll_feat_k, self.prog_weight * ll_prog
         else:
             return ll_emit
 
@@ -632,16 +637,20 @@ class GoalHMM3D:
         if T <= 1:
             logA = np.zeros((0, 2, 2))
             if return_aux:
-                return logA, {"dists": np.zeros(T), "p12": np.zeros(T)}
+                return logA, {"dists": np.zeros(T), "p12": np.zeros(T), "logit": np.zeros(T)}
             return logA
 
+        # log-linear transition (no progress term here):
+        #   logit p(0->1) = b - ||x_t - g1||^2 / (2*trans_delta^2)
         dists = np.linalg.norm(X - self.g1[None, :], axis=1)
         eps = self.trans_eps
-        delta = max(self.delta, 1e-6)
-        a = 1.0 - 2.0 * eps
+        delta = max(self.trans_delta, 1e-6)
+        b = float(getattr(self, "trans_b", 0.0))
 
-        exp_term = np.exp(-0.5 * (dists**2) / (delta**2))
-        p12 = eps + a * exp_term
+        logit = b - 0.5 * (dists ** 2) / (delta ** 2)
+
+        # sigmoid (stable)
+        p12 = 1.0 / (1.0 + np.exp(-np.clip(logit, -60.0, 60.0)))
         p12 = np.clip(p12, eps, 1.0 - eps)
 
         logA = np.full((T - 1, 2, 2), -np.inf)
@@ -651,7 +660,7 @@ class GoalHMM3D:
         logA[:, 1, 0] = -np.inf
 
         if return_aux:
-            return logA, {"p12": p12, "dists": dists}
+            return logA, {"p12": p12, "dists": dists, "logit": logit}
         return logA
 
     # ==========================================================
@@ -721,7 +730,7 @@ class GoalHMM3D:
         F_list = []
         gamma_list = []
         for X, gamma in zip(self.demos, gammas):
-            Fz = self._features_for_demo_matrix(X)  # (T, M)
+            Fz = self._features_for_demo_matrix(X)  # (T, M) # 这里的feature都是z空间的，包括learned feature
             F_list.append(Fz)
             gamma_list.append(gamma)  # (T, K)
 
@@ -736,7 +745,6 @@ class GoalHMM3D:
 
                 model = self.feature_models[k][m]
                 model.m_step_update(xs, ws)
-
 
     # ==========================================================
     # M-step: hard-EM 更新 feature mask r
@@ -792,19 +800,14 @@ class GoalHMM3D:
                 else:
                     self.r[k, m] = 0
 
-
-            # if k == 0:
-            #     self.r[0, :] = 0
-            #     self.r[0, 0] = 1
-
     # ==========================================================
-    # M-step: goals & delta（保持原有逻辑）
+    # M-step: goals & trans_delta（保持原有逻辑）
     # ==========================================================
     def _mstep_update_goals(self, gammas, xis_list, aux_list):
         if self.prog_weight <= 0.0 and self.trans_weight <= 0.0:
             return
 
-        for _ in range(self.vmf_steps):
+        for _ in range(self.g_steps):
             g1_grad_vmf = np.zeros_like(self.g1)
             g2_grad_vmf = np.zeros_like(self.g2)
             w1_sum = 0.0
@@ -833,29 +836,25 @@ class GoalHMM3D:
             if w2_sum > 1e-12:
                 g2_grad_vmf /= w2_sum
 
-            # transition gradient（attraction only）
+            # transition gradient
             g1_grad_trans = np.zeros_like(self.g1)
             w_trans_sum = 0.0
 
             if self.trans_weight > 0.0:
-                eps = self.trans_eps
-                delta = max(self.delta, 1e-6)
-
-                for X, xi, aux in zip(self.demos, xis_list, aux_list):
+                for X, gamma, xi, aux in zip(self.demos, gammas, xis_list, aux_list):
                     if xi is None or aux is None or len(xi) == 0:
                         continue
                     p12 = aux["p12"]
                     Tm1 = xi.shape[0]
-
+                    delta = max(self.trans_delta, 1e-6)
+                    rts = []
                     for t in range(Tm1):
-                        n01 = xi[t, 0, 1]
-                        if n01 <= 0:
-                            continue
+                        # r_t = dQ/deta_t
+                        r_t = xi[t, 0, 1] - gamma[t, 0] * p12[t]
+                        rts.append(r_t)
+                        g1_grad_trans += r_t * (X[t] - self.g1) / (delta ** 2)
+                        w_trans_sum += gamma[t, 0]
 
-                        p = p12[t]
-                        coef = (p - eps) / (p * (delta**2) + 1e-12)
-                        g1_grad_trans += n01 * coef * (X[t] - self.g1)
-                        w_trans_sum += n01
 
                 if w_trans_sum > 1e-12:
                     g1_grad_trans /= w_trans_sum
@@ -874,48 +873,67 @@ class GoalHMM3D:
                 if n2 > self.g_grad_clip:
                     g2_grad *= self.g_grad_clip / (n2 + 1e-12)
 
-            g1_new = self.g1 + self.vmf_lr * g1_grad
-            g2_new = self.g2 + self.vmf_lr * g2_grad
-            self.g1 = (1 - self.g_step) * self.g1 + self.g_step * g1_new
-            self.g2 = (1 - self.g_step) * self.g2 + self.g_step * g2_new
+
+            self.g1 = self.g1 + self.g_lr * g1_grad
+            self.g2 = self.g2 + self.g_lr * g2_grad
 
         self.g1_hist.append(self.g1.copy())
         self.g2_hist.append(self.g2.copy())
 
-    def _mstep_update_delta(self, xis_list, aux_list):
-        if not self.learn_delta:
+        # plt.figure(figsize=(6, 4))
+        # plt.plot(np.arange(0, Tm1), rts, label=f"r_t ")
+        # plt.plot(np.arange(0, Tm1), xi[:, 0, 1], "--", label=f"xi01 ")
+        # plt.plot(np.arange(0, Tm1 + 1), p12, ":", label=f"p12 ")
+        # plt.plot(np.arange(0, Tm1 + 1), p12 * gamma[:, 0], ":", label=f"p12*gamma ")
+        # plt.legend()
+        # plt.show()
+
+    def _mstep_update_transition(self, gammas, xis_list, aux_list):
+        """Update log-linear transition parameters (trans_delta, b).
+
+        Transition model (left-to-right):
+            p01(t) = sigmoid( b - ||x_t - g1||^2 / (2*trans_delta^2) )
+            p00(t) = 1 - p01(t)
+            p11 = 1, p10 = 0
+        """
+        if not getattr(self, "learn_transition", False):
             return
 
-        eps = self.trans_eps
-        delta = max(self.delta, 1e-6)
-        a = 1.0 - 2.0 * eps
+        eps = float(self.trans_eps)
+        delta = max(float(self.trans_delta), 1e-6)
+        b = float(getattr(self, "trans_b", 0.0))
 
+        grad_b = 0.0
         grad_delta = 0.0
-        count = 0.0
+        w_sum = 0.0
 
-        for xi, aux in zip(xis_list, aux_list):
-            if xi is None or aux is None:
+        # Q_trans = sum_t [ xi01 log p + xi00 log(1-p) ]
+        # dQ/deta = xi01 - gamma0 * p  (since xi00+xi01 = gamma0)
+        # eta = b - 0.5*d^2/trans_delta^2
+        # d eta / d b = 1
+        # d eta / d trans_delta = d^2 / trans_delta^3
+        for X, gamma, xi, aux in zip(self.demos, gammas, xis_list, aux_list):
+            if xi is None or aux is None or len(xi) == 0:
                 continue
-            p12 = aux["p12"]
-            dists = aux["dists"]
+            p12 = np.asarray(aux["p12"], float)
+            dists = np.asarray(aux["dists"], float)
             Tm1 = xi.shape[0]
-
             for t in range(Tm1):
-                n00 = xi[t, 0, 0]
-                n01 = xi[t, 0, 1]
-                p = p12[t]
-                d = dists[t]
+                p = float(np.clip(p12[t], eps, 1.0 - eps))
+                d = float(dists[t])
+                r_t = float(xi[t, 0, 1] - gamma[t, 0] * p)
 
-                exp_term = np.exp(-0.5 * (d**2) / (delta**2))
-                dp_ddelta = a * exp_term * (d**2) / (delta**3 + 1e-12)
+                grad_b += r_t
+                grad_delta += r_t * (d ** 2) / (delta ** 3 + 1e-12)
+                w_sum += gamma[t, 0]
 
-                grad_delta += (n01 / (p + 1e-12) - n00 / (1 - p + 1e-12)) * dp_ddelta
-                count += n00 + n01
+        if w_sum > 1e-12:
+            grad_b /= w_sum
+            grad_delta /= w_sum
 
-        if count > 1e-12:
-            grad_delta /= count
-
-        self.delta = float(np.clip(delta + self.lr_delta * grad_delta, 1e-4, 2.0))
+        # gradient ascent
+        self.trans_b = float(b + self.lr_b * grad_b)
+        self.trans_delta = float(np.clip(delta + self.lr_delta * grad_delta, 1e-4, 2.0))
 
     def _mstep_update_learned_features(self, gammas):
         if not self._has_learned or self.g_optimizer is None:
@@ -966,8 +984,13 @@ class GoalHMM3D:
             for X in self.demos:
                 ll_emit, ll_feat_k, ll_prog = self._emission_loglik(X, return_parts=True)
                 logA, aux = self._transition_logprob(X, return_aux=True)
+                temp = self.posterior_temp
+                ll_emit /= temp
+                ll_feat_k /= temp
+                logA /= temp
+                ll_prog /= temp
 
-                gamma, xi, ll, alpha, beta = self._forward_backward(ll_emit, logA)
+                gamma, xi, ll, alpha, beta = self._forward_backward(ll_emit , logA)
 
                 gammas.append(gamma)
                 xis_list.append(xi)
@@ -977,9 +1000,9 @@ class GoalHMM3D:
                 total_ll += ll
 
                 # feature 的 expected LL
-                total_feat_ll += self.feat_weight * float(np.sum(gamma * ll_feat_k))
+                total_feat_ll +=  float(np.sum(gamma * ll_feat_k))
                 # progress 的 expected LL
-                total_prog_ll += self.tau * float(np.sum(gamma * ll_prog))
+                total_prog_ll += float(np.sum(gamma * ll_prog))
 
                 # transition 的 expected LL
                 p12 = aux["p12"]
@@ -998,9 +1021,9 @@ class GoalHMM3D:
 
             # 先统一算一份当前迭代的 MAP cutpoints，方便 eval & plot 用
             taus_hat = []
-            for gamma in gammas:
-                idx = np.where(gamma[:, 1] > 0.5)[0]
-                tau_hat = int(idx[0]) if len(idx) > 0 else int(np.argmax(gamma[:, 1]))
+            for xi in xis_list:
+                xi01 = xi[:, 0, 1]
+                tau_hat = int(np.argmax(xi01))
                 taus_hat.append(tau_hat)
 
             if self.eval_fn is not None:
@@ -1010,12 +1033,32 @@ class GoalHMM3D:
                 for name, value in metrics.items():
                     self.metrics_hist.setdefault(name, []).append(value)
 
+                # ---------------- plotting ----------------
+            if self.plot_every is not None:
+                if (it) % self.plot_every == 0 or it == max_iter - 1:
+                    # panel2 现在会从 learner.metrics_hist 里自动读所有曲线
+                    plot_results_4panel(
+                        self, taus_hat, it, gammas, alphas, betas, xis_list, aux_list
+                    )
+                    # debug 图这里直接传 gammas，不再依赖老的 metric 列表
+                    # try:
+                    #     plot_feature_model_debug(self, gammas, stages=(0, 1))
+                    # except NameError:
+                    #     # 如果你有时候不 import 这个函数，就静默跳过
+                    #     pass
+                    # try:
+                    #     self._plot_learned_sine_xy(gammas)  # xs: list of trajectories, each shape (T, D)
+                    # except Exception as e:
+                    #     print("[GoalHMM] _plot_learned_sine_xy skipped:", repr(e))
+
+
             # ---------------- M-step ----------------
             self._mstep_update_learned_features(gammas)
             self._mstep_update_features(gammas)
             self._mstep_update_feature_mask(gammas)
             self._mstep_update_goals(gammas, xis_list, aux_list)
-            self._mstep_update_delta(xis_list, aux_list)
+            self._mstep_update_transition(gammas, xis_list, aux_list)
+            print(self.r)
 
             posts = gammas
 
@@ -1025,8 +1068,8 @@ class GoalHMM3D:
                     f"Iter {it}: MAP_cutpoints={taus_hat}, "
                     f"loglik={total_ll:.2f}, feat={total_feat_ll:.2f}, "
                     f"prog={total_prog_ll:.2f}, trans={total_trans_ll:.2f}, "
-                    f"delta={self.delta:.4f}, g1={np.round(self.g1, 3)}, "
-                    f"g2={np.round(self.g2, 3)}, r={self.r.tolist()}"
+                    f"trans_delta={self.trans_delta:.4f}, b={getattr(self, 'trans_b', 0.0):.3f}，"
+                    f"g1={np.round(self.g1, 3)}, g2={np.round(self.g2, 3)}, r={self.r.tolist()}"
                 )
                 if hasattr(self, "metrics_hist") and self.metrics_hist:
                     last_metrics = {k: v[-1] for k, v in self.metrics_hist.items() if len(v) > 0}
@@ -1035,22 +1078,108 @@ class GoalHMM3D:
                         for k in sorted(last_metrics.keys())
                     )
                 print(msg)
-
-                # ---------------- plotting ----------------
-            if self.plot_every is not None:
-                if (it + 1) % self.plot_every == 0 or it == max_iter - 1:
-                    # panel2 现在会从 learner.metrics_hist 里自动读所有曲线
-                    plot_results_4panel(
-                        self, taus_hat, it, gammas, alphas, betas, xis_list, aux_list
-                    )
-                    # debug 图这里直接传 gammas，不再依赖老的 metric 列表
-                    try:
-                        plot_feature_model_debug(self, gammas, stages=(0, 1))
-                    except NameError:
-                        # 如果你有时候不 import 这个函数，就静默跳过
-                        pass
-
         return posts
+
+    def _plot_learned_sine_xy(self, gammas):
+        """Plot learned sine curve in *original xy space* with demos.
+
+        Triggered only when:
+          - there exists a learned feature whose name contains 'sine'
+          - that learned feature is included in self.feature_ids
+
+        Important: the learned feature is a residual g_raw = y - y_hat.
+        In z-space we additionally fit a Gaussian with mean mu_z.
+        To draw the sine curve in original space, we must shift the curve by
+        mu_raw = mu_z * std_ + mean_ (otherwise it will be offset).
+        """
+        state0_xy = _collect_xy_for_state(self.demos, gammas, state_id=0, thresh=0.6)
+        x_min, x_max = float(np.min(state0_xy[:, 0])), float(np.max(state0_xy[:, 0]))
+        xs = np.linspace(x_min, x_max, 400)
+
+        # plot one figure per sine learned feature (usually just one)
+        for i, lf in enumerate(self.learned_features):
+            name = str(getattr(lf, "name", "")).lower()
+            if "sine" not in name:
+                continue
+
+            fid = int(getattr(self, "M_env", 0)) + int(i)  # raw feature id in concatenated space
+            if fid not in self.feature_ids:
+                # if you didn't include it in feature_ids, no need to plot
+                continue
+            m_local = int(self.feature_ids.index(fid))
+            k = int(getattr(lf, "state_index", 0))
+
+            # --- read learned sine params ---
+            # SineCorridorResidual: y_hat = A sin(w x + phi) + bias
+            A = float(lf.A.detach().cpu().item()) if hasattr(lf, "A") else 1.0
+            w = float(lf.w.detach().cpu().item()) if hasattr(lf, "w") else 1.0
+            phi = float(lf.phi.detach().cpu().item()) if hasattr(lf, "phi") else 0.0
+            bias = float(lf.bias.detach().cpu().item()) if hasattr(lf, "bias") else 0.0
+
+            # --- add Gaussian mean of residual (convert from z -> raw) ---
+            mu_z = 0.0
+            try:
+                gm = self.feature_models[k][m_local]
+                if hasattr(gm, "mu") and gm.mu is not None:
+                    mu_z = float(gm.mu)
+            except Exception:
+                mu_z = 0.0
+
+            # lf stores internal stats for raw residual: z = (g_raw - mean_) / std_
+            mu_raw = mu_z * float(lf.std_.detach().cpu().item()) + float(lf.mean_.detach().cpu().item())
+
+            ys = A * np.sin(w * xs + phi) + bias + mu_raw
+
+            plt.figure(figsize=(8, 6))
+            for X in self.demos:
+                X = np.asarray(X, float)
+                if X.ndim != 2 or X.shape[1] < 2:
+                    continue
+                plt.scatter(X[:, 0], X[:, 1], s=10, alpha=0.25, c='green')
+            plt.scatter(state0_xy[:, 0], state0_xy[:, 1], s=10, label="demos (state0)", c='blue')
+
+            plt.plot(xs, ys, linewidth=2.0)
+            plt.xlabel("x")
+            plt.ylabel("y")
+            plt.title(
+                f"Learned sine in xy (feature='{getattr(lf, 'name', 'sine')}', "
+                f"state={k})\n"
+                f"y = A sin(w x + phi) + bias + mu_raw,  mu_raw={mu_raw:.4f} (from mu_z={mu_z:.4f})"
+            )
+            plt.grid(True, alpha=0.25)
+
+            plt.show()
+
+
+# ---- helper: collect points assigned to a specific state ----
+def _collect_xy_for_state(demos, gammas, state_id=0, thresh=0.6):
+    """
+    demos: list of (T, D)
+    gammas: list of (T, K) responsibilities
+    return: (N, 2) xy points with gamma[:, state_id] > thresh
+    """
+    if gammas is None:
+        raise RuntimeError("No state responsibilities found (self.gammas / self.gamma_list missing).")
+
+    xy_list = []
+    for X, G in zip(demos, gammas):
+        X = np.asarray(X, float)
+        G = np.asarray(G, float)
+
+        if X.ndim != 2 or X.shape[1] < 2:
+            continue
+        if G.ndim != 2 or G.shape[0] != X.shape[0]:
+            continue
+        if state_id >= G.shape[1]:
+            continue
+
+        mask = G[:, state_id] > thresh
+        if np.any(mask):
+            xy_list.append(X[mask, :2])
+
+    if len(xy_list) == 0:
+        return None
+    return np.concatenate(xy_list, axis=0)
 
 
 

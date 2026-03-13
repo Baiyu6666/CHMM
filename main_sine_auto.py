@@ -81,7 +81,7 @@ def run_experiment(
             A_init=env.A,
             w_init=env.omega,
             phi_init=env.phase,
-            state_index=0,  # 主约束在 stage1
+            state_index=0,  # 主约束在 stage1，所以绑定在第0维（x）。更新的时候只用 stage1 的数据，但是是否应该使用所有stage的数据存疑
         )
     ]
 
@@ -91,23 +91,25 @@ def run_experiment(
         env=env,
         true_taus=true_taus,
 
-        g1_init="true_tau",
+        g1_init="random",
         g2_init="heuristic",
 
-        feature_ids=[1,4],                 # 默认用所有 raw feature（含 learnable）
+        feature_ids=[4], # 默认用所有 raw feature（含 learnable）
         feature_types=None,  # 按 raw index 设置每维 emission type
 
-        auto_feature_select=not True,
+        auto_feature_select=not True, #feature select优先级高于fixed feature
+        # fixed_feature_mask = [[1],[1]],  # 如果 auto_feature_select=False，则用这个 mask 指定哪些 feature 用于哪一阶段
         r_sparse_lambda=0.3,  # 你可以在这里扫一下 lambda 看 Sensitivity
 
         learned_features=learned_features,
         f_lr=1e-2,
-        f_mstep_steps=5,  # 每次 EM 对 g 做 5 个小步
+        f_mstep_steps=20,  # 每次 EM 对 g 做 5 个小步
 
         # ===== EM 权重 / 超参 =====
         feat_weight=1.0,
-        prog_weight=1.0,
-        trans_weight=1.0,
+        prog_weight=1,
+        trans_weight=1,
+        posterior_temp = 1.0,
 
         prog_kappa1=8.0,
         prog_kappa2=6.0,
@@ -115,20 +117,20 @@ def run_experiment(
         fixed_sigma_irrelevant=1.0,
 
         trans_eps=1e-6,
-        delta_init=0.15,
-        learn_delta=True,
-        lr_delta=5e-4,
+        delta_init=0.05,
+        trans_b_init=-2.0,
+        learn_transition=False,  # None -> follow learn_delta
+        lr_delta=5e-3,
+        lr_b=5e-3,
 
-        vmf_steps=3,
-        vmf_lr=5e-4,
-        g_step=0.1,
+        g_steps=10,
+        g_lr=10e-4,
         g_grad_clip=None,
         g1_vmf_weight=1.0,
-        g1_trans_weight=1.0,
+        g1_trans_weight=1,
 
-        plot_every=19990,                   # 每 10 轮画一次 4panel（最后一轮一定会画）
+        plot_every=12222,                   # 每 10 轮画一次 4panel（最后一轮一定会画）
     )
-
     print("Training GoalHMM3D on sine corridor demos …")
     posts = learner.fit(max_iter=max_iter, verbose=True)
 
@@ -139,17 +141,10 @@ def run_experiment(
 
 def main():
     learner, posts = run_experiment(
-        seed=0,
+        seed=426,   #421 靠左  #425远远靠左 ，426 靠右
         n_demos=12,
-        max_iter=30,
+        max_iter=60,
     )
-
-def foo():
-    pass
-
-def bar():
-    foo()
-
 
 if __name__ == "__main__":
     main()

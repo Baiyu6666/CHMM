@@ -139,14 +139,11 @@ def run_experiment_2d(
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,
-        delta_init=0.15,
-        learn_delta=True,
-        vmf_lr=8e-4,
-        g_step=0.2,
-        vmf_steps=3,
+        g_steps=5,
+        g_lr=5e-4,
         plot_every=max_iter,  # 只在最后一轮画 4-panel（如果你在 plot 里有调用）
         feature_ids=[0, 1],
-        auto_feature_select=not True,
+        auto_feature_select=True,
         r_sparse_lambda=0.3,
         feature_types=["margin_exp_lower",  # 0: 距离 -> 下界不等式
                        "gauss",  # 1: 速度 -> 等式/窄带

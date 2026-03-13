@@ -56,6 +56,7 @@ class LearnedFeatureBase(nn.Module):
         all_X_list: list[np.ndarray (T_d, D)]
         用当前参数下的 g_raw(X) 重新估计 mean/std。
         """
+        # return
         vals = []
         for X in all_X_list:
             vals.append(self.eval_raw_numpy(X))   # 注意是 raw

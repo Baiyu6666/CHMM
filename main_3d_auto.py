@@ -218,7 +218,7 @@ def run_experiment(
     use_3d=True,
     max_iter=40,
     run_baseline=not True,
-    render=True,
+    render=not True,
 ):
     np.random.seed(seed)
 
@@ -266,11 +266,11 @@ def run_experiment(
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,
-        delta_init=0.15,
-        learn_delta=True,
-        vmf_lr=8e-4,
-        g_step=0.2,
-        vmf_steps=3,
+        posterior_temp=10,
+
+        g1_init='random',
+        g_steps=10,
+        g_lr=10e-4,
         plot_every=max_iter,
         feature_ids=[0, 1, 2, 3],
         feature_types=["margin_exp_lower",  # 0: 距离 -> 下界不等式
@@ -305,6 +305,7 @@ def run_experiment(
     # ========================================================
 
     if render and use_3d:
+        assert (learner.feature_ids is None) or (0 in learner.feature_ids and 1 in learner.feature_ids)
         # =====================================================================
         # 从 learner 中提取约束阈值：d_safe_min (stage1) 与 v2_max (stage2)
         # =====================================================================
@@ -423,9 +424,9 @@ def run_experiment(
 if __name__ == "__main__":
     run_experiment(
         n_demos=10,
-        seed=431227,
+        seed=43122,  # 43122在stage2   # 832, 圆柱左边
         use_3d=True,
-        max_iter=45,
+        max_iter=60,
         run_baseline=True,
         render=True,
     )
