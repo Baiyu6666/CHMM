@@ -2,16 +2,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from .gmm_hmm import GMMHMMSegmenter
-from .hmm_family import HMMFamilySegmenter
+from .wrappers.sequential_baseline import SequentialBaselineSegmenter
+
+JOINT_METHODS = frozenset({"segcons"})
+SEQUENTIAL_METHODS = frozenset({"cghmm", "arhmm", "changepoint"})
+ALL_METHODS = tuple(sorted(JOINT_METHODS | SEQUENTIAL_METHODS))
+
+
+def method_pipeline_kind(method_name: str) -> str:
+    if method_name in JOINT_METHODS:
+        return "joint"
+    if method_name in SEQUENTIAL_METHODS:
+        return "sequential"
+    raise ValueError(
+        f"Unknown method '{method_name}'. "
+        f"Available: {', '.join(ALL_METHODS)}"
+    )
 
 
 def build_sequential_method(method_name: str, **kwargs: Any):
-    if method_name == "gmmhmm":
-        return GMMHMMSegmenter(kwargs=kwargs)
-    if method_name in {"hdphmm", "arhmm", "changepoint"}:
-        return HMMFamilySegmenter(method=method_name, kwargs=kwargs)
+    if method_name in SEQUENTIAL_METHODS:
+        return SequentialBaselineSegmenter(method=method_name, kwargs=kwargs)
     raise ValueError(
         f"Unknown sequential method '{method_name}'. "
-        "Available: gmmhmm, hdphmm, arhmm, changepoint"
+        f"Available: {', '.join(sorted(SEQUENTIAL_METHODS))}"
     )

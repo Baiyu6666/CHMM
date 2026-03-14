@@ -1,0 +1,19 @@
+{
+  "name": "cghmm",
+  "segmenter": {
+    "max_iter": 30,
+    "verbose": true,
+    "tau_init_mode": "uniform_taus",
+    "gmm_K": 3,
+    "gmm_reg": 1e-6,
+    "use_xy_vel": false,
+    "standardize_x": true,
+    "standardize_feat": true
+  },
+  "constraints": {
+    "refine_steps": 5,
+    "auto_feature_select": false,
+    "r_sparse_lambda": 0.3,
+    "feat_weight": 1.0
+  }
+}

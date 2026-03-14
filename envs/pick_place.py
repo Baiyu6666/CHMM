@@ -21,6 +21,17 @@ class PickPlaceEnv:
         self.subgoal = None
         self.goal = None
         self.true_constraints = None
+        self.feature_schema = self.get_feature_schema()
+
+    def get_feature_schema(self):
+        return [
+            {"id": 0, "name": "x", "description": "x position"},
+            {"id": 1, "name": "z", "description": "z position"},
+            {"id": 2, "name": "grip", "description": "Gripper openness"},
+            {"id": 3, "name": "force", "description": "Contact force proxy"},
+            {"id": 4, "name": "position_radius", "description": "Radius in x-z plane"},
+            {"id": 5, "name": "speed", "description": "Planar speed magnitude"},
+        ]
 
     def generate_demo(
         self,
@@ -82,7 +93,6 @@ class PickPlaceEnv:
         force = np.clip(force + rng.randn(*force.shape) * self.noise_misc, 0.0, None)
 
         demo = np.stack([x, z, grip, force], axis=1)
-        demo = np.vstack([demo, demo[-1][None, :]])
         labels = np.repeat(np.arange(len(seg_lengths)), seg_lengths)
         return demo, labels
 
@@ -107,19 +117,29 @@ def load_pick_place(
     n_demos: int = 6,
     seg_lengths=(50, 10, 80, 10, 30),
     seed: int = 100,
+    env_kwargs=None,
+    demo_kwargs=None,
 ) -> TaskBundle:
-    env = PickPlaceEnv(seg_lengths=seg_lengths)
+    env_cfg = {"seg_lengths": seg_lengths}
+    if env_kwargs:
+        env_cfg.update(env_kwargs)
+
+    run_kwargs = {}
+    if demo_kwargs:
+        run_kwargs.update(demo_kwargs)
+
+    env = PickPlaceEnv(**env_cfg)
     demos = []
     labels = []
     for i in range(n_demos):
-        demo, z = env.generate_demo(seed=seed + i)
+        demo, z = env.generate_demo(seed=seed + i, **run_kwargs)
         demos.append(np.asarray(demo, dtype=float))
         labels.append(np.asarray(z, dtype=int))
 
-    seg_lengths = np.array(seg_lengths, dtype=int)
+    seg_lengths = np.array(env.seg_lengths, dtype=int)
     pick_idx = int(seg_lengths[0] - 1)
     place_idx = int(seg_lengths[:3].sum() - 1)
-    retreat_idx = int(sum(seg_lengths))
+    retreat_idx = int(sum(seg_lengths) - 1)
     env.pick_point = np.mean([x[pick_idx, :2] for x in demos], axis=0)
     env.place_point = np.mean([x[place_idx, :2] for x in demos], axis=0)
     env.retreat_point = np.mean([x[retreat_idx, :2] for x in demos], axis=0)
@@ -132,5 +152,8 @@ def load_pick_place(
         env=env,
         true_taus=None,
         true_labels=labels,
+        feature_schema=env.get_feature_schema(),
+        true_constraints=env.true_constraints,
+        constraint_specs=getattr(env, "constraint_specs", None),
         meta={"seed": seed, "cutpoints": [c.tolist() for c in cutpoints], "task_name": "PickPlace"},
     )

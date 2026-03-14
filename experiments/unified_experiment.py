@@ -10,11 +10,23 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from envs import load_env
+from experiments.config_loader import deep_merge, load_json
+from methods import ALL_METHODS, JOINT_METHODS, SEQUENTIAL_METHODS
 from pipelines import JointPipeline, SequentialPipeline
 
 
-JOINT_METHODS = {"segcons"}
-SEQUENTIAL_METHODS = {"gmmhmm", "hdphmm", "arhmm", "changepoint"}
+def _load_env_config(dataset_name: str) -> Dict[str, Any]:
+    path = PROJECT_ROOT / "configs" / "envs" / f"{dataset_name}.json"
+    cfg = dict(load_json(path))
+    cfg.pop("name", None)
+    return cfg
+
+
+def _load_method_config(method_name: str) -> Dict[str, Any]:
+    path = PROJECT_ROOT / "configs" / "methods" / f"{method_name}.json"
+    cfg = dict(load_json(path))
+    cfg.pop("name", None)
+    return cfg
 
 
 def run_experiment(
@@ -43,7 +55,7 @@ def run_experiment(
 
     raise ValueError(
         f"Unknown method '{method_name}'. "
-        f"Joint: {sorted(JOINT_METHODS)}. Sequential: {sorted(SEQUENTIAL_METHODS)}"
+        f"Available: {list(ALL_METHODS)}"
     )
 
 
@@ -52,18 +64,30 @@ def main():
     parser.add_argument("--dataset", type=str, default="2DObsAvoid")
     parser.add_argument("--method", type=str, default="segcons")
     parser.add_argument("--n-demos", type=int, default=10)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--dataset-seed", type=int, default=42)
+    parser.add_argument("--method-seed", type=int, default=0)
     parser.add_argument("--max-iter", type=int, default=30)
     args = parser.parse_args()
 
-    dataset_kwargs = {"n_demos": args.n_demos, "seed": args.seed}
+    dataset_cfg = _load_env_config(args.dataset)
+    dataset_method_overrides = dict(dataset_cfg.pop("method_overrides", {}))
+    dataset_kwargs = dataset_cfg
+    dataset_kwargs = deep_merge(dataset_kwargs, {"n_demos": args.n_demos, "seed": args.dataset_seed})
+    method_kwargs = _load_method_config(args.method)
+    method_kwargs = deep_merge(method_kwargs, dataset_method_overrides.get(args.method, {}))
     if args.method == "segcons":
-        method_kwargs = {"max_iter": args.max_iter, "verbose": True}
+        method_kwargs = deep_merge(
+            method_kwargs,
+            {"max_iter": args.max_iter, "verbose": True, "seed": args.method_seed},
+        )
     else:
-        method_kwargs = {
-            "segmenter": {"max_iter": args.max_iter, "verbose": True, "seed": args.seed},
-            "constraints": {"refine_steps": 5},
-        }
+        method_kwargs = deep_merge(
+            method_kwargs,
+            {
+                "segmenter": {"max_iter": args.max_iter, "verbose": True, "seed": args.method_seed},
+                "constraints": {"refine_steps": 5},
+            },
+        )
 
     results = run_experiment(
         dataset_name=args.dataset,

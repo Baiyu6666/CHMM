@@ -41,7 +41,21 @@ def _load_method_config(config_root: Path, method_name: str) -> dict[str, Any]:
     return cfg
 
 
-def _default_plot_dir(outdir: Path, method_name: str, dataset_name: str, seed: int) -> str:
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _deep_merge(dict(merged[key]), value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _default_plot_dir(outdir: Path, method_name: str, dataset_name: str, method_seed: int) -> str:
     return str(outdir.parent / "plots" / method_name / dataset_name)
 
 
@@ -61,13 +75,14 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["method", "dataset", "seed", *metric_keys])
+        writer.writerow(["method", "dataset", "dataset_seed", "method_seed", *metric_keys])
         for row in rows:
             writer.writerow(
                 [
                     row["method"],
                     row["dataset"],
-                    row["seed"],
+                    row["dataset_seed"],
+                    row["method_seed"],
                     *[row["metrics"].get(key, "") for key in metric_keys],
                 ]
             )
@@ -76,7 +91,8 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 def run_benchmark(
     methods: list[str],
     datasets: list[str],
-    seeds: list[int],
+    method_seeds: list[int],
+    dataset_seed: int = 0,
     config_root: str | Path = "configs",
     outdir: str | Path = "outputs/experiments",
     dataset_overrides: dict[str, dict[str, Any]] | None = None,
@@ -95,25 +111,32 @@ def run_benchmark(
 
     rows: list[dict[str, Any]] = []
     for method_name in methods:
-        method_cfg = _load_method_config(config_root, method_name)
-        method_cfg.update(method_overrides.get(method_name, {}))
+        base_method_cfg = _load_method_config(config_root, method_name)
+        external_method_override = method_overrides.get(method_name, {})
         for dataset_name in datasets:
             base_dataset_cfg = _load_env_config(config_root, dataset_name)
-            base_dataset_cfg.update(dataset_overrides.get(dataset_name, {}))
-            for seed in seeds:
+            dataset_method_overrides = dict(base_dataset_cfg.pop("method_overrides", {}))
+            env_method_override = dataset_method_overrides.get(method_name, {})
+            external_dataset_override = dataset_overrides.get(dataset_name, {})
+            base_dataset_cfg.setdefault("seed", int(dataset_seed))
+            for method_seed in method_seeds:
                 dataset_cfg = dict(base_dataset_cfg)
-                dataset_cfg["seed"] = seed
-                run_method_cfg = dict(method_cfg)
-                plot_dir = _default_plot_dir(outdir, method_name, dataset_name, seed)
+                run_method_cfg = dict(base_method_cfg)
+                plot_dir = _default_plot_dir(outdir, method_name, dataset_name, method_seed)
                 if method_name == "segcons":
                     run_method_cfg.setdefault("plot_dir", plot_dir)
+                    run_method_cfg.setdefault("seed", int(method_seed))
                 else:
                     segmenter_cfg = dict(run_method_cfg.get("segmenter", {}))
                     constraint_cfg = dict(run_method_cfg.get("constraints", {}))
                     segmenter_cfg.setdefault("plot_dir", plot_dir)
+                    segmenter_cfg.setdefault("seed", int(method_seed))
                     constraint_cfg.setdefault("plot_dir", plot_dir)
                     run_method_cfg["segmenter"] = segmenter_cfg
                     run_method_cfg["constraints"] = constraint_cfg
+                dataset_cfg = _deep_merge(dataset_cfg, external_dataset_override)
+                run_method_cfg = _deep_merge(run_method_cfg, env_method_override)
+                run_method_cfg = _deep_merge(run_method_cfg, external_method_override)
                 result = run_experiment(
                     dataset_name=dataset_name,
                     method_name=method_name,
@@ -124,7 +147,8 @@ def run_benchmark(
                     {
                         "method": method_name,
                         "dataset": dataset_name,
-                        "seed": seed,
+                        "dataset_seed": int(dataset_seed),
+                        "method_seed": int(method_seed),
                         "metrics": _extract_metrics(method_name, result),
                     }
                 )
@@ -132,7 +156,8 @@ def run_benchmark(
     summary = {
         "methods": methods,
         "datasets": datasets,
-        "seeds": seeds,
+        "dataset_seed": int(dataset_seed),
+        "method_seeds": method_seeds,
         "results": rows,
     }
     _write_json(outdir / "benchmark_results.json", summary)
@@ -142,27 +167,31 @@ def run_benchmark(
 
 def main():
     parser = argparse.ArgumentParser(description="Run CHMM benchmark over methods, datasets, and seeds.")
-    parser.add_argument("--methods", default="segcons,gmmhmm,hdphmm,arhmm,changepoint")
+    parser.add_argument("--methods", default="segcons,cghmm,arhmm,changepoint")
     parser.add_argument("--datasets", default="2DObsAvoid")
-    parser.add_argument("--seeds", default="0")
+    parser.add_argument("--method-seeds", default="0")
+    parser.add_argument("--dataset-seed", type=int, default=0)
+    parser.add_argument("--seeds", default=None)
     parser.add_argument("--config-root", default="configs")
     parser.add_argument("--outdir", default="outputs/experiments")
     args = parser.parse_args()
 
     methods = _split_csv(args.methods)
     datasets = _split_csv(args.datasets)
-    seeds = [int(seed) for seed in _split_csv(args.seeds)]
+    method_seed_text = args.method_seeds if args.seeds is None else args.seeds
+    method_seeds = [int(seed) for seed in _split_csv(method_seed_text)]
 
     summary = run_benchmark(
         methods=methods,
         datasets=datasets,
-        seeds=seeds,
+        method_seeds=method_seeds,
+        dataset_seed=args.dataset_seed,
         config_root=args.config_root,
         outdir=args.outdir,
     )
     print(
         f"Completed {len(summary['results'])} runs "
-        f"for methods={methods}, datasets={datasets}, seeds={seeds}."
+        f"for methods={methods}, datasets={datasets}, dataset_seed={args.dataset_seed}, method_seeds={method_seeds}."
     )
 
 

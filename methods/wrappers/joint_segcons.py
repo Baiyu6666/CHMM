@@ -7,7 +7,8 @@ import numpy as np
 
 from envs.base import TaskBundle
 from evaluation import eval_goalhmm_auto
-from .segcons import SegCons
+from ..common.tau_init import extract_taus_hat
+from ..cores.segcons import SegmentConstraintModel
 
 
 @dataclass
@@ -16,24 +17,22 @@ class JointSegConsMethod:
 
     def fit(self, dataset: TaskBundle) -> Dict[str, Any]:
         if dataset.env is None:
-            raise ValueError("SegCons requires a dataset env.")
+            raise ValueError("segcons requires a dataset env.")
         max_iter = self.kwargs.get("max_iter", 30)
         plot_every = self.kwargs.get("plot_every")
         if plot_every is None:
             plot_every = max_iter
 
-        learner = SegCons(
+        learner = SegmentConstraintModel(
             demos=dataset.demos,
             env=dataset.env,
             true_taus=dataset.true_taus,
-            g1_init=self.kwargs.get("g1_init", "heuristic"),
             g2_init=self.kwargs.get("g2_init", None),
             tau_init=self.kwargs.get("tau_init"),
-            feature_ids=self.kwargs.get("feature_ids"),
-            feature_types=self.kwargs.get("feature_types"),
-            learned_features=self.kwargs.get("learned_features"),
-            f_lr=self.kwargs.get("f_lr", 1e-2),
-            f_mstep_steps=self.kwargs.get("f_mstep_steps", 5),
+            tau_init_mode=self.kwargs.get("tau_init_mode", "uniform_taus"),
+            seed=self.kwargs.get("seed", 0),
+            selected_raw_feature_ids=self.kwargs.get("selected_raw_feature_ids"),
+            feature_model_types=self.kwargs.get("feature_model_types"),
             auto_feature_select=self.kwargs.get("auto_feature_select", True),
             fixed_feature_mask=self.kwargs.get("fixed_feature_mask"),
             r_sparse_lambda=self.kwargs.get("r_sparse_lambda", 0.3),
@@ -64,11 +63,7 @@ class JointSegConsMethod:
             max_iter=max_iter,
             verbose=self.kwargs.get("verbose", True),
         )
-        taus_hat: List[int] = []
-        for gamma in gammas:
-            idx = np.where(gamma[:, 1] > 0.5)[0]
-            tau_hat = int(idx[0]) if len(idx) > 0 else int(np.argmax(gamma[:, 1]))
-            taus_hat.append(tau_hat)
+        taus_hat: List[int] = extract_taus_hat(gammas)
         return {
             "model": learner,
             "gammas": gammas,

@@ -1,67 +1,39 @@
-# utils/vmf.py
+from __future__ import annotations
+
 import math
 import numpy as np
 
-try:
-    from scipy.special import iv  # type: ignore
-except ModuleNotFoundError:
-    iv = None
+
+def _unit(x):
+    x = np.asarray(x, float)
+    if x.ndim == 1:
+        n = np.linalg.norm(x)
+        return x / max(n, 1e-12)
+    n = np.linalg.norm(x, axis=1, keepdims=True)
+    return x / np.maximum(n, 1e-12)
 
 
-def _approx_iv(nu: float, kappa: float) -> float:
-    if kappa <= 1e-8:
-        return (0.5 * max(kappa, 1e-12)) ** nu / math.exp(math.lgamma(nu + 1.0))
-    if kappa < 10.0:
-        return (0.5 * kappa) ** nu / math.exp(math.lgamma(nu + 1.0))
-    return math.exp(kappa) / math.sqrt(2.0 * math.pi * kappa)
+def vmf_logC_d(kappa: float, dim: int) -> float:
+    # Lightweight approximation sufficient for relative scoring and plotting.
+    kappa = float(max(kappa, 1e-12))
+    dim = int(dim)
+    return (dim / 2.0 - 1.0) * math.log(kappa + 1e-12) - (dim / 2.0) * math.log(2.0 * math.pi) - kappa
 
 
-def _unit(x, eps=1e-12):
-    n = np.linalg.norm(x, axis=-1, keepdims=True)
-    return x / np.clip(n, eps, None)
+def vmf_grad_wrt_g(X: np.ndarray, g: np.ndarray, kappa: float = 1.0) -> np.ndarray:
+    X = np.asarray(X, float)
+    g = np.asarray(g, float)
+    if len(X) < 2:
+        return np.zeros_like(g)
+    v = X[1] - X[0]
+    v_n = np.linalg.norm(v)
+    if v_n < 1e-12:
+        return np.zeros_like(g)
+    v_hat = v / v_n
 
+    u = g - X[0]
+    r = np.linalg.norm(u)
+    if r < 1e-12:
+        return np.zeros_like(g)
 
-def vmf_logC_d(kappa: float, d: int) -> float:
-    """
-    log C_d(kappa) for vMF on S^{d-1} embedded in R^d:
-    C_d(kappa)=kappa^{d/2-1}/((2π)^{d/2} I_{d/2-1}(kappa))
-    """
-    kappa = float(kappa)
-    if kappa <= 0:
-        return - (d/2) * np.log(2*np.pi)
-    nu = d/2 - 1.0
-    bessel = iv(nu, kappa) if iv is not None else _approx_iv(nu, kappa)
-    return (nu)*np.log(kappa + 1e-12) - (d/2)*np.log(2*np.pi) - np.log(bessel + 1e-300)
-
-
-def vmf_segment_loglike(Xseg: np.ndarray, g: np.ndarray, kappa: float) -> float:
-    D = Xseg.shape[1]
-    logC = vmf_logC_d(kappa, D)
-    Vs = _unit(Xseg[1:] - Xseg[:-1])
-    Us = _unit(g[None, :] - Xseg[:-1])
-    cos = np.sum(Vs * Us, axis=1)
-    return float((kappa * cos).sum() + len(cos) * logC)
-
-
-def vmf_grad_wrt_g(Xseg: np.ndarray, g: np.ndarray, kappa: float) -> np.ndarray:
-    """
-    ∂/∂g [kappa * <v_hat, u_hat>] =
-       kappa * (I/||u|| - uu^T/||u||^3) @ v_hat
-    """
-    D = Xseg.shape[1]
-    grad = np.zeros(D, dtype=float)
-    for t in range(len(Xseg)-1):
-        v = Xseg[t+1] - Xseg[t]
-        v_n = np.linalg.norm(v)
-        if v_n < 1e-12:
-            continue
-        v_hat = v / v_n
-
-        u = g - Xseg[t]
-        r = np.linalg.norm(u)
-        if r < 1e-12:
-            continue
-
-        Jv = v_hat / r - (u * (np.dot(u, v_hat))) / (r**3 + 1e-12)
-        grad += kappa * Jv
-    return grad
+    return float(kappa) * (v_hat / r - (u * np.dot(u, v_hat)) / (r ** 3 + 1e-12))

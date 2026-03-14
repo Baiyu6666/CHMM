@@ -2,5 +2,6 @@
   "name": "segcons",
   "max_iter": 30,
   "verbose": true,
+  "tau_init_mode": "uniform_taus",
   "plot_every": null
 }

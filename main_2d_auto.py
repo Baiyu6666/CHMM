@@ -5,28 +5,34 @@ from runners.run_benchmark import run_benchmark
 
 def run_experiment_2d(
     n_demos: int = 10,
-    seed: int = 42,
+    dataset_seed: int = 42,
+    method_seed: int = 0,
     max_iter: int = 40,
     run_baseline: bool = True,
-    init_mode: str = "heuristic",
+    init_mode: str = "uniform_taus",
 ):
-    methods = ["segcons", "gmmhmm"] if run_baseline else ["segcons"]
+    methods = ["segcons", "cghmm"] if run_baseline else ["segcons"]
     return run_benchmark(
         methods=methods,
         datasets=["2DObsAvoid"],
-        seeds=[seed],
+        method_seeds=[method_seed],
+        dataset_seed=dataset_seed,
         dataset_overrides={"2DObsAvoid": {"n_demos": n_demos}},
         method_overrides={
             "segcons": {
                 "max_iter": max_iter,
-                "g1_init": init_mode,
-                "feature_ids": [0, 1],
-                "feature_types": ["margin_exp_lower", "gauss", "gauss", "gauss"],
+                "tau_init_mode": init_mode,
+                "seed": method_seed,
                 "plot_every": max_iter,
             },
-            "gmmhmm": {
-                "segmenter": {"max_iter": max_iter, "verbose": True, "seed": seed, "plot_every": max_iter},
-                "constraints": {"refine_steps": 5},
+            "cghmm": {
+                "segmenter": {
+                    "max_iter": max_iter,
+                    "verbose": True,
+                    "seed": method_seed,
+                    "plot_every": max_iter,
+                },
+                "constraints": {"refine_steps": 5, "auto_feature_select": False},
             },
         },
     )
@@ -35,7 +41,8 @@ def run_experiment_2d(
 if __name__ == "__main__":
     run_experiment_2d(
         n_demos=10,
-        seed=2224519,
+        dataset_seed=2224519,
+        method_seed=0,
         max_iter=45,
         run_baseline=True,
     )

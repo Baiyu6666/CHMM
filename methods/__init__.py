@@ -1,17 +1,18 @@
 from .base import SegmentationResult
-from .gmm_hmm import GMMHMMSegmenter
-from .segcons import SegCons
-from .hmm_family import HMMFamilySegmenter
-from .joint_segcons import JointSegConsMethod
-from .posthoc_constraints import PostHocConstraintLearner
-from .registry import build_sequential_method
+from .cores import CGHMM, SegmentConstraintModel
+from .wrappers import JointSegConsMethod, PostHocConstraintLearner, SequentialBaselineSegmenter
+from .registry import ALL_METHODS, JOINT_METHODS, SEQUENTIAL_METHODS, build_sequential_method, method_pipeline_kind
 
 __all__ = [
     "SegmentationResult",
-    "GMMHMMSegmenter",
-    "SegCons",
-    "HMMFamilySegmenter",
+    "CGHMM",
+    "SegmentConstraintModel",
+    "SequentialBaselineSegmenter",
     "JointSegConsMethod",
     "PostHocConstraintLearner",
+    "JOINT_METHODS",
+    "SEQUENTIAL_METHODS",
+    "ALL_METHODS",
+    "method_pipeline_kind",
     "build_sequential_method",
 ]

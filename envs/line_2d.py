@@ -21,10 +21,20 @@ class Line2DEnv:
         self.noise_scale = float(noise_scale)
         self.smooth_coeff = float(smooth_coeff)
         self.dt = float(dt)
-        self.eval_tag = "2Dline"
+        self.eval_tag = "2DLine"
         self.subgoal = None
         self.goal = None
         self.true_constraints = None
+        self.feature_schema = self.get_feature_schema()
+
+    def get_feature_schema(self):
+        return [
+            {"id": 0, "name": "x", "description": "x coordinate"},
+            {"id": 1, "name": "y", "description": "y coordinate"},
+            {"id": 2, "name": "dist_center", "description": "Distance to trajectory mean center"},
+            {"id": 3, "name": "speed", "description": "2D speed magnitude"},
+            {"id": 4, "name": "noise_aux", "description": "Deterministic auxiliary sinusoidal feature"},
+        ]
 
     def generate_demo(self, seed: int, waypoints=None):
         rng = np.random.RandomState(seed)
@@ -62,7 +72,7 @@ class Line2DEnv:
             if s < n_segments - 1:
                 seg = np.linspace(start, end, steps, endpoint=False)
             else:
-                seg = np.linspace(start, end, steps + 1, endpoint=True)
+                seg = np.linspace(start, end, steps, endpoint=True)
             segments.append(seg)
 
         traj = np.vstack(segments)
@@ -106,12 +116,25 @@ def load_line_2d(
     horizon: int = 120,
     n_segments: int = 3,
     seed: int = 2025,
+    env_kwargs=None,
+    demo_kwargs=None,
 ) -> TaskBundle:
-    env = Line2DEnv(horizon=horizon, n_segments=n_segments)
+    env_cfg = {
+        "horizon": horizon,
+        "n_segments": n_segments,
+    }
+    if env_kwargs:
+        env_cfg.update(env_kwargs)
+
+    run_kwargs = {}
+    if demo_kwargs:
+        run_kwargs.update(demo_kwargs)
+
+    env = Line2DEnv(**env_cfg)
     demos = []
     labels = []
     for i in range(n_demos):
-        demo, z = env.generate_demo(seed=seed + i)
+        demo, z = env.generate_demo(seed=seed + i, **run_kwargs)
         demos.append(np.asarray(demo, dtype=float))
         labels.append(np.asarray(z, dtype=int))
 
@@ -120,10 +143,13 @@ def load_line_2d(
     cutpoints = [np.where(np.diff(z) != 0)[0] for z in labels]
     true_taus = [int(c[0]) for c in cutpoints] if n_segments == 2 else None
     return TaskBundle(
-        name="2Dline",
+        name="2DLine",
         demos=demos,
         env=env,
         true_taus=true_taus,
         true_labels=labels,
-        meta={"seed": seed, "cutpoints": [c.tolist() for c in cutpoints], "task_name": "2Dline"},
+        feature_schema=env.get_feature_schema(),
+        true_constraints=env.true_constraints,
+        constraint_specs=getattr(env, "constraint_specs", None),
+        meta={"seed": seed, "cutpoints": [c.tolist() for c in cutpoints], "task_name": "2DLine"},
     )

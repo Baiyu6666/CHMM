@@ -1,47 +1,60 @@
-# utils/subgoals.py
+from __future__ import annotations
+
 import numpy as np
-from typing import List, Tuple, Optional, Sequence
 
-def compute_per_demo_lastpoint_subgoals(
-    X_list: List[np.ndarray],
-    Z_list: List[np.ndarray],
-    cl_dims: Optional[Sequence[int]] = None,
-) -> Tuple[List[List[np.ndarray]], int]:
-    out=[]; K_global=0
-    for X,z in zip(X_list, Z_list):
-        X=np.asarray(X,float); z=np.asarray(z,int)
-        Xv = X if cl_dims is None else X[:, cl_dims]
-        K_i = int(z.max())+1 if z.size>0 else 0
-        K_global=max(K_global,K_i)
-        goals=[]
-        if K_i>0:
-            T=len(z); t=0
-            while t<T:
-                k=int(z[t]); s=t
-                while t+1<T and z[t+1]==k: t+=1
-                e=t; goals.append(Xv[e].copy()); t+=1
-        out.append(goals)
-    return out, K_global
 
-def average_subgoals_from_per_demo(subgoals_per_demo: List[List[np.ndarray]], K_target=None):
-    if K_target is None: K_target=max((len(sgi) for sgi in subgoals_per_demo), default=0)
-    if K_target==0: return np.zeros((0,0))
-    first=None
-    for sgi in subgoals_per_demo:
-        if len(sgi): first=sgi[0]; break
-    pos_dim=0 if first is None else first.shape[0]
-    out=[]
+def compute_per_demo_lastpoint_subgoals(X_full, Z_list, cl_dims=None):
+    per_demo = []
+    max_segments = 0
+    for x, z in zip(X_full, Z_list):
+        x = np.asarray(x, float)
+        z = np.asarray(z, int)
+        cut_idxs = np.where(np.diff(z) != 0)[0]
+        endpoints = [x[idx] for idx in cut_idxs]
+        vec = np.asarray(endpoints, float) if endpoints else np.zeros((0, x.shape[1]), dtype=float)
+        if cl_dims is not None and vec.size > 0:
+            vec = vec[:, cl_dims]
+        per_demo.append(vec)
+        max_segments = max(max_segments, len(vec))
+    return per_demo, max_segments
+
+
+def average_subgoals_from_per_demo(per_demo_vec, K_target=None):
+    if K_target is None:
+        K_target = max((len(v) for v in per_demo_vec), default=0)
+    if K_target <= 0:
+        return np.zeros((0, 0), dtype=float)
+    dim = 0
+    for vec in per_demo_vec:
+        if len(vec) > 0:
+            dim = vec.shape[1]
+            break
+    if dim == 0:
+        return np.zeros((K_target, 0), dtype=float)
+    out = []
     for k in range(K_target):
-        pts=[sgi[k] for sgi in subgoals_per_demo if k < len(sgi)]
-        out.append(np.zeros((pos_dim,),float) if len(pts)==0 else np.mean(np.vstack(pts),axis=0))
-    return np.vstack(out)
+        pts = [vec[k] for vec in per_demo_vec if len(vec) > k]
+        if pts:
+            out.append(np.mean(np.stack(pts, axis=0), axis=0))
+        else:
+            out.append(np.full(dim, np.nan))
+    return np.asarray(out, float)
 
-def take_first2_for_plot(subgoals_vecs: List[List[np.ndarray]]):
-    out=[]
-    for sgi in subgoals_vecs:
-        out.append([g[:2].copy() for g in sgi])
+
+def take_first2_for_plot(per_demo_vec):
+    out = []
+    for vec in per_demo_vec:
+        arr = np.asarray(vec, float)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+        out.append(arr[:, :2] if arr.size > 0 else np.zeros((0, 2), dtype=float))
     return out
 
+
 def take_first2_array(arr):
-    if arr is None or arr.size==0: return None
-    return arr[:, :2].copy()
+    arr = np.asarray(arr, float)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    if arr.size == 0:
+        return np.zeros((0, 2), dtype=float)
+    return arr[:, :2]

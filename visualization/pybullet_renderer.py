@@ -30,18 +30,18 @@ class PyBulletRenderer3D:
     def __init__(
         self,
         env,
-        panda_base_pos=(-0.25, -0.55, 0.0),  # z 视为“相对桌面高度”，setup 里会挪到桌面上
+        panda_base_pos=(-0.25, -0.55, 0.0),  # z   "      ",setup        
         panda_base_rpy=(0, 0, 1.57),
 
-        table_size=(1.6, 1.2, 0.75),   # fallback box 桌子的尺寸
+        table_size=(1.6, 1.2, 0.75),   # fallback box      
         animate_fps=120,
 
-        sphere_radius=0.012,           # 轨迹点半径
-        world_scale=0.5,               # 缩小 env 尺度，方便 Panda reach
-        world_offset=(0.0, 0.0, 0.0),  # env -> world 的平移（x,y,z），z 会再加到桌面高度上
+        sphere_radius=0.012,           #      
+        world_scale=0.5,               #    env   ,   Panda reach
+        world_offset=(0.0, 0.0, 0.0),  # env -> world    (x,y,z),z          
 
-        cylinder_height=0.6,           # 透明圆柱的高度
-        mug_scale=2.,                 # 桌上杯子的放大倍数
+        cylinder_height=0.6,           #        
+        mug_scale=2.,                 #          
     ):
         self.env = env
         self.panda_base_pos = panda_base_pos
@@ -57,7 +57,7 @@ class PyBulletRenderer3D:
         self.cylinder_height = float(cylinder_height)
         self.mug_scale = float(mug_scale)
 
-        # 这些会在 setup_scene 里填充
+        # English comment omitted during cleanup.
         self.table_top_z = None
         self.table_id = None
         self.panda_id = None
@@ -69,19 +69,19 @@ class PyBulletRenderer3D:
         self.arm_ranges = []
         self.arm_rest = []
 
-        # 抓在手里的物体
+        # English comment omitted during cleanup.
         self.held_obj_id = None
         self.held_constraint_id = None
-        self._last_q_arm = None  # 保存上一帧的关节角
+        self._last_q_arm = None  #          
 
 
     # ==========================================================
-    # 坐标变换：env -> world（桌面坐标系）
+    # English comment omitted during cleanup.
     # ==========================================================
     def _world(self, pos):
         """
-        pos: (2,) 或 (3,) in env coordinates.
-        返回: (3,) in PyBullet world coordinates, z 自动加到桌面高度之上。
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
         """
         pos = np.asarray(pos, dtype=float)
         if pos.shape[0] == 2:
@@ -107,13 +107,13 @@ class PyBulletRenderer3D:
         return body
 
     # ==========================================================
-    # 桌子
+    # English comment omitted during cleanup.
     # ==========================================================
     def _load_table(self):
         """
-        1) 优先用 pybullet_data/table/table.urdf（带木纹）
-        2) 否则用 box + 贴 texture（checker/wood）
-        设置: self.table_id, self.table_top_z
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
         """
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
 
@@ -152,7 +152,7 @@ class PyBulletRenderer3D:
             basePosition=[0, 0, H / 2]
         )
 
-        # 尝试加载木纹 / 棋盘纹理
+        # English comment omitted during cleanup.
         tex_id = None
         for tex_name in ["wood.png", "checker_grid.jpg", "checker_blue.png"]:
             try:
@@ -173,13 +173,13 @@ class PyBulletRenderer3D:
     def _load_panda(self):
         panda_urdf = pybullet_data.getDataPath() + "/franka_panda/panda.urdf"
 
-        # 让 base 落在桌面上方一点
+        # English comment omitted during cleanup.
         pb = list(self.panda_base_pos)
         if self.table_top_z is None:
             raise RuntimeError("table_top_z is None, call _load_table() first.")
         if pb[2] < self.table_top_z - 1e-4:
             pb[2] = self.table_top_z
-        pb[2] += 1e-3  # 避免 z-fighting
+        pb[2] += 1e-3  #    z-fighting
         self.panda_base_pos = tuple(pb)
 
         self.panda_id = p.loadURDF(
@@ -189,7 +189,7 @@ class PyBulletRenderer3D:
             useFixedBase=True
         )
 
-        # --- 收集 arm joints & ee link ---
+        # English comment omitted during cleanup.
         self.arm_joints = []
         self.arm_lower = []
         self.arm_upper = []
@@ -215,9 +215,9 @@ class PyBulletRenderer3D:
                 self.ee_link = j
 
         if self.ee_link is None:
-            self.ee_link = 11  # 常见 panda hand index
+            self.ee_link = 11  #    panda hand index
 
-        # 打开手指一点
+        # English comment omitted during cleanup.
         for j in range(num_joints):
             info = p.getJointInfo(self.panda_id, j)
             j_name = info[1].decode("utf-8")
@@ -226,10 +226,10 @@ class PyBulletRenderer3D:
 
     def _spawn_held_object_at_ee(self):
         """
-        在当前 EE 位置生成一个长方体，并用 JOINT_FIXED 绑定。
-        注意：这里用的是 world 坐标，不再经过 _world()，避免 scale 偏移。
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
         """
-        # 删掉旧的
+        # English comment omitted during cleanup.
         if self.held_constraint_id is not None:
             p.removeConstraint(self.held_constraint_id)
             self.held_constraint_id = None
@@ -237,12 +237,12 @@ class PyBulletRenderer3D:
             p.removeBody(self.held_obj_id)
             self.held_obj_id = None
 
-        # 当前末端位姿（world）
+        # English comment omitted during cleanup.
         ls = p.getLinkState(self.panda_id, self.ee_link, computeForwardKinematics=True)
         ee_pos = ls[0]
         ee_orn = ls[1]
 
-        # 方块大小（看得比较清楚）
+        # English comment omitted during cleanup.
         half_extents = [0.02, 0.02, 0.03]  # 8cm x 8cm x 12cm
 
         col_id = p.createCollisionShape(
@@ -262,7 +262,7 @@ class PyBulletRenderer3D:
             baseOrientation=ee_orn
         )
 
-        # 固定约束：直接用 0 offset，让方块中心对齐 hand link frame
+        # English comment omitted during cleanup.
         self.held_constraint_id = p.createConstraint(
             parentBodyUniqueId=self.panda_id,
             parentLinkIndex=self.ee_link,
@@ -275,31 +275,31 @@ class PyBulletRenderer3D:
         )
 
     # ==========================================================
-    # 障碍物 / 约束可视化
-    #   - 普通 ObsAvoid3D：杯子 + 透明圆柱
-    #   - SineCorridor3D：半透明的正弦“带子”（corridor）
+    # English comment omitted during cleanup.
+    # English comment omitted during cleanup.
+    # English comment omitted during cleanup.
     # ==========================================================
     def _load_obstacle(self):
         """
-        根据 env 类型选择可视化形式：
+        English documentation omitted during cleanup.
 
-        - 若 env 有 centerline(x) 方法（我们约定 SineCorridor3D 提供）：
-              画一条半透明的正弦带，表示等式约束 manifold；
-        - 否则退回旧逻辑：杯子 + 透明圆柱。
+        English documentation omitted during cleanup.
+              English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
         """
-        # ---- Sine corridor 模式（新环境）----
+        # English comment omitted during cleanup.
         if hasattr(self.env, "centerline"):
             self._load_sine_surface()
             return
 
-        # ---- 默认：圆柱 + 杯子（原来的 ObsAvoid3D 可视化）----
+        # English comment omitted during cleanup.
         cx, cy = self.env.obs_center_xy
         r = self.env.obs_radius
 
-        # 杯子：用杯子的 URDF，放在圆柱中心附近
+        # English comment omitted during cleanup.
         try:
             mug_urdf = "objects/mug.urdf"
-            mug_pos = self._world([cx, cy, 0.10])  # 杯子底大概在桌上
+            mug_pos = self._world([cx, cy, 0.10])  #         
             p.loadURDF(
                 mug_urdf,
                 basePosition=mug_pos.tolist(),
@@ -311,7 +311,7 @@ class PyBulletRenderer3D:
         except Exception as e:
             print("[Renderer] Mug load failed:", e)
 
-        # 透明约束圆柱（只做可视化，不参与碰撞）
+        # English comment omitted during cleanup.
         cyl_vis = p.createVisualShape(
             p.GEOM_CYLINDER,
             radius=r * self.world_scale,
@@ -326,7 +326,7 @@ class PyBulletRenderer3D:
         )
 
     # ==========================================================
-    # Sine corridor 的半透明“平面”
+    # English comment omitted during cleanup.
     # ==========================================================
     def _load_sine_surface(
             self,
@@ -335,48 +335,48 @@ class PyBulletRenderer3D:
             height_world: float | None = None,
     ):
         """
-        用一串细长的半透明 box 近似一条 3D 正弦带：
+        English documentation omitted during cleanup.
 
-            - x 方向分成 n_segments 段
+            English documentation omitted during cleanup.
             - y = centerline(x)
-            - 在 y 方向给一点厚度 thickness_env（env 坐标系）
-            - z 方向给定高度 height_world（world 坐标系）
+            English documentation omitted during cleanup.
+            English documentation omitted during cleanup.
 
-        这里只做 visual，不做 collision。
+        English documentation omitted during cleanup.
         """
         if height_world is None:
-            height_world = self.cylinder_height  # 直接复用圆柱高度作为视觉高度
+            height_world = self.cylinder_height  #               
 
-        # ---- 估计 x 取值范围 ----
+        # English comment omitted during cleanup.
         xs_candidates = []
 
-        # 如果新 env 有 x_start_range / x_end_range 之类的，可以直接用
+        # English comment omitted during cleanup.
         if hasattr(self.env, "x_start_range"):
             try:
                 xs_candidates.extend(list(self.env.x_start_range))
             except Exception:
                 pass
 
-        # 把 subgoal / goal 的 x 也纳入范围
+        # English comment omitted during cleanup.
         if hasattr(self.env, "subgoal"):
             xs_candidates.append(float(self.env.subgoal[0]))
         if hasattr(self.env, "goal"):
             xs_candidates.append(float(self.env.goal[0]))
 
         if len(xs_candidates) == 0:
-            # fallback：给个大致范围，方便先 debug
+            # English comment omitted during cleanup.
             x_min_env, x_max_env = -1., 1.5
         else:
             x_min_env = min(xs_candidates) - 0.2
             x_max_env = max(xs_candidates) + 0.2
 
-        # ---- 准备可视化 shape ----
+        # English comment omitted during cleanup.
         dx_env = (x_max_env - x_min_env) / float(n_segments)
         dx_world = dx_env * self.world_scale
         thickness_world = thickness_env * self.world_scale
         h_world = float(height_world)
 
-        # 单个 segment 的 box（细长砖块）
+        # English comment omitted during cleanup.
         half_extents = [
             dx_world / 2.0,
             thickness_world / 2.0,
@@ -386,25 +386,25 @@ class PyBulletRenderer3D:
         vis_id = p.createVisualShape(
             p.GEOM_BOX,
             halfExtents=half_extents,
-            rgbaColor=[0.2, 0.7, 1.0, 0.35],  # 半透明蓝色带
+            rgbaColor=[0.2, 0.7, 1.0, 0.35],  #       
         )
 
-        # 不需要碰撞
+        # English comment omitted during cleanup.
         col_id = -1
 
-        # ---- 沿着 x 方向铺一条带 ----
+        # English comment omitted during cleanup.
         for i in range(n_segments):
             x_env = x_min_env + (i + 0.5) * dx_env
-            # SineCorridor3D 需要提供 centerline(x_env) -> y_env
+            # English comment omitted during cleanup.
             try:
                 y_env = float(self.env.centerline(x_env))
             except Exception:
-                # 如果 centerline 出错，就直接跳过这一 segment
+                # English comment omitted during cleanup.
                 continue
 
-            # 在 env 坐标中 z 取 h_world/2，这样转换到 world 后刚好从桌面往上“竖”一条带
+            # English comment omitted during cleanup.
             pos_env = [x_env, y_env, h_world / 2.0]
-            pos_w = self._world(pos_env)  # 会自动把 z 加到桌面高度上
+            pos_w = self._world(pos_env)  #      z        
 
             p.createMultiBody(
                 baseMass=0,
@@ -415,11 +415,11 @@ class PyBulletRenderer3D:
 
         print(
             f"[Renderer] Loaded sine corridor surface: "
-            f"x∈[{x_min_env:.2f},{x_max_env:.2f}], segments={n_segments}"
+            f"xin[{x_min_env:.2f},{x_max_env:.2f}], segments={n_segments}"
         )
 
     # ==========================================================
-    # 摄像机
+    # English comment omitted during cleanup.
     # ==========================================================
     def _reset_camera(self):
         target = [0.2, 0.0, self.table_top_z]
@@ -431,19 +431,19 @@ class PyBulletRenderer3D:
         )
 
     # ==========================================================
-    # IK 求解
+    # English comment omitted during cleanup.
     # ==========================================================
     def _solve_ik(self, target_pos_w, target_orn_w=None):
         """
-        连续 IK：
-        - restPoses 优先用上一帧的关节角 self._last_q_arm
-        - 如果还没有，就用初始的 self.arm_rest
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
         """
         if target_orn_w is None:
             cur = p.getLinkState(self.panda_id, self.ee_link)
             target_orn_w = cur[1]
 
-        # 如果有上一帧的解，就用它当 rest pose，避免 IK 突然跳解
+        # English comment omitted during cleanup.
         if self._last_q_arm is not None:
             rest = list(self._last_q_arm)
         else:
@@ -464,7 +464,7 @@ class PyBulletRenderer3D:
 
         q_arm = q_full[:len(self.arm_joints)]
 
-        # 记住这一次的解，下一帧用作 rest pose
+        # English comment omitted during cleanup.
         self._last_q_arm = list(q_arm)
         return q_arm
 
@@ -479,7 +479,7 @@ class PyBulletRenderer3D:
 
         p.loadURDF("plane.urdf")
 
-        # 1) 桌子
+        # English comment omitted during cleanup.
         self._load_table()
 
         # 2) Panda
@@ -487,38 +487,38 @@ class PyBulletRenderer3D:
 
         self._last_q_arm = None
 
-        # 3) 先走几帧，让一切 settle 一下
+        # English comment omitted during cleanup.
         for _ in range(30):
             p.stepSimulation()
             time.sleep(1.0 / self.animate_fps)
 
-        # 4) 在当前 EE 位置生成一个方块并抓住
+        # English comment omitted during cleanup.
         self._spawn_held_object_at_ee()
 
-        # 5) 杯子 + 透明圆柱
+        # English comment omitted during cleanup.
         self._load_obstacle()
 
-        # 6) 设置摄像机
+        # English comment omitted during cleanup.
         self._reset_camera()
 
     # ==========================================================
-    # IK 动画：自然速度 + 插值 + tau 处丢物体
+    # English comment omitted during cleanup.
     # ==========================================================
     def animate_demo_with_ik(self, X, tau=None,
-                             v_target=0.25,   # 期望末端线速度 (m/s)
-                             min_dt=1/120,    # 每小段最少时间
-                             max_dt=0.12,     # 每小段最多时间
+                             v_target=0.25,   #         (m/s)
+                             min_dt=1/120,    #        
+                             max_dt=0.12,     #        
                              debug_print=False):
         """
         X: (T,3) env coords
-        tau: cutpoint index (用于掉落与着色)
+        English documentation omitted during cleanup.
         """
         X = np.asarray(X, dtype=float)
         T = len(X)
         if T < 2:
             return
 
-        # --- 0) warm-up: 把 EE 平滑对齐到 X[0] ---
+        # English comment omitted during cleanup.
         first_pos_w = self._world(X[0])
         cur_ls = p.getLinkState(self.panda_id, self.ee_link)
         cur_pos = np.array(cur_ls[0])
@@ -534,14 +534,14 @@ class PyBulletRenderer3D:
             p.stepSimulation()
             time.sleep(1.0 / self.animate_fps)
 
-        # --- 1) 可选：画点云（不再 stepSimulation，避免再次“瞬移”） ---
+        # English comment omitted during cleanup.
         if tau is not None:
             for t in range(T):
                 pos_w = self._world(X[t])
                 c = (0.2, 0.4, 1, 0.9) if t <= tau else (1, 0.3, 0.3, 0.9)
                 self._create_sphere(pos_w, color=c)
 
-            # g1/g2 如果你想画，可以从 env 拼
+            # English comment omitted during cleanup.
             if hasattr(self.env, "subgoal_xy") and hasattr(self.env, "subgoal_z"):
                 g1 = np.array([self.env.subgoal_xy[0], self.env.subgoal_xy[1], self.env.subgoal_z])
                 self._create_sphere(self._world(g1), color=(1, 0.5, 0, 1))
@@ -549,8 +549,8 @@ class PyBulletRenderer3D:
                 g2 = np.array([self.env.goal_xy[0], self.env.goal_xy[1], self.env.goal_z])
                 self._create_sphere(self._world(g2), color=(0, 1, 0, 1))
 
-        # --- 2) 沿轨迹播放（线性插值 + v_target 控制速度） ---
-        # tau 用于 drop 物体
+        # English comment omitted during cleanup.
+        # English comment omitted during cleanup.
         dropped = False
 
         for t in range(1, T):
@@ -560,12 +560,12 @@ class PyBulletRenderer3D:
             if d < 1e-6:
                 d = 1e-6
 
-            # 理论上这一段应该花的时间
+            # English comment omitted during cleanup.
             dt_segment = np.clip(d / v_target, min_dt, max_dt)
-            # 对应多少帧（向上取整）
+            # English comment omitted during cleanup.
             n_sub = max(2, int(dt_segment * self.animate_fps))
 
-            # 线性插值
+            # English comment omitted during cleanup.
             for k in range(n_sub):
                 alpha = (k + 1) / n_sub
                 pos_env = (1 - alpha) * p0 + alpha * p1
@@ -581,7 +581,7 @@ class PyBulletRenderer3D:
             if debug_print:
                 print(f"[IK] t={t}/{T}, d={d:.3f}, dt_seg={dt_segment:.4f}, n_sub={n_sub}")
 
-            # 在 tau 处丢物体（解除约束，让方块掉到桌面/杯子边上）
+            # English comment omitted during cleanup.
             if (tau is not None) and (not dropped) and (t >= tau):
                 if self.held_constraint_id is not None:
                     p.removeConstraint(self.held_constraint_id)
@@ -591,12 +591,12 @@ class PyBulletRenderer3D:
                         print(f"[IK] Drop object at t={t} (tau={tau})")
 
     # ==========================================================
-    # 渲染接口（给 main.py 用）
+    # English comment omitted during cleanup.
     # ==========================================================
     def render_demo(self, X, tau, g1, g2, delay=0.003):
         """
-        如果你只是想画静态点云，可以用这个。
-        IK 动画请用 play_all（内部调 animate_demo_with_ik）。
+        English documentation omitted during cleanup.
+        English documentation omitted during cleanup.
         """
         X = np.asarray(X, dtype=float)
         T = len(X)
@@ -621,12 +621,12 @@ class PyBulletRenderer3D:
         """
         demos: list of (T_i,3) arrays in env coords
         taus:  list of int cutpoints
-        g1, g2: np.array(3,) learned goals（目前只用于 log，可不用）
+        English documentation omitted during cleanup.
         """
         for i, (X, tau) in enumerate(zip(demos, taus)):
             print(f"[PyBullet] Demo {i}, T={len(X)}, tau={tau}")
 
-            # 每条 demo 重新在手上生成一个方块
+            # English comment omitted during cleanup.
             self._spawn_held_object_at_ee()
 
             self.animate_demo_with_ik(
@@ -643,17 +643,17 @@ class PyBulletRenderer3D:
 
 def _compute_all_features_for_demo(env, X):
     """
-    通用 feature 提取：优先用 env.compute_all_features_matrix(traj)，
-    否则回退到 env.compute_features_all(traj)（distance, speed）。
+    English documentation omitted during cleanup.
+    English documentation omitted during cleanup.
 
-    返回:
+    English documentation omitted during cleanup.
         F: ndarray, shape = (T, M)
-        feat_names: list[str]，长度 M 的 feature 名称（用于 legend）
+        English documentation omitted during cleanup.
     """
     X = np.asarray(X, float)
     T = len(X)
 
-    # 新接口：直接矩阵
+    # English comment omitted during cleanup.
     if hasattr(env, "compute_all_features_matrix"):
         F = env.compute_all_features_matrix(X)
         F = np.asarray(F, float)
@@ -661,13 +661,13 @@ def _compute_all_features_for_demo(env, X):
         feat_names = [f"f{m}" for m in range(M)]
         return F, feat_names
 
-    # 旧接口：distance + speed
+    # English comment omitted during cleanup.
     elif hasattr(env, "compute_features_all"):
         d_raw, s_raw = env.compute_features_all(X)  # list/ndarray
         d_raw = np.asarray(d_raw, float)
         s_raw = np.asarray(s_raw, float)
 
-        # speed 通常是 T-1，补到 T
+        # English comment omitted during cleanup.
         if len(s_raw) < T:
             if len(s_raw) == 0:
                 s_raw = np.zeros(T)
@@ -679,7 +679,7 @@ def _compute_all_features_for_demo(env, X):
         return F, feat_names
 
     else:
-        # 实在没有 feature 接口，就只画个 dummy
+        # English comment omitted during cleanup.
         F = np.zeros((T, 1), float)
         feat_names = ["dummy"]
         return F, feat_names
@@ -689,20 +689,20 @@ def _compute_all_features_for_demo(env, X):
 
 def main():
     """
-    小测试入口：
-      - mode = "obs3d"       : 标准 3D 障碍物环境
-      - mode = "sine_corridor": 正弦走廊环境（等式约束）
+    English documentation omitted during cleanup.
+      English documentation omitted during cleanup.
+      English documentation omitted during cleanup.
     """
     from envs.obs_avoid_3d import ObsAvoidEnv3D
     from envs.sine_corridor_3d import SineCorridorEnv3D
 
-    # -------- 选环境 --------
-    mode = "sine_corridor"   # 手动改成 "obs3d" / "sine_corridor" 来测试不同环境
+    # English comment omitted during cleanup.
+    mode = "sine_corridor"   #      "obs3d" / "sine_corridor"        
 
     if mode == "obs3d":
-        # 标准 3D 障碍环境
+        # English comment omitted during cleanup.
         env = ObsAvoidEnv3D()
-        # 生成一条 3D demo（用 env 自带的 API）
+        # English comment omitted during cleanup.
         traj3d, tau = env.generate_demo_3d()
         g1 = env.subgoal
         g2 = env.goal
@@ -710,21 +710,21 @@ def main():
     elif mode == "sine_corridor":
         if SineCorridorEnv3D is None:
             raise RuntimeError(
-                "env.sine_corridor_3d.SineCorridorEnv3D 未找到，"
-                "请确认文件名和类名一致。"
+                "env.sine_corridor_3d.SineCorridorEnv3D    ,"
+                "            "
             )
-        # 你自己的正弦走廊环境，建议实现 generate_demo_3d 或类似接口
+        # English comment omitted during cleanup.
         env = SineCorridorEnv3D()
-        # 假设你实现了 generate_demo_3d(n_demos=1) -> (demos, taus)
+        # English comment omitted during cleanup.
         demos, taus = env.generate_demos(n_demos=2)
         traj3d, tau = demos[0], int(taus[0])
 
-        # 约定 env.subgoal / env.goal 为 3D np.array
+        # English comment omitted during cleanup.
         g1 = env.subgoal
         g2 = env.goal
 
         # ==========================================================
-        # Feature vs time 可视化（用第一条 demo）
+        # English comment omitted during cleanup.
         # ==========================================================
         X0 = demos[0]
         tau0 = int(taus[0]) if (taus is not None and len(taus) > 0) else None
@@ -754,7 +754,7 @@ def main():
     else:
         raise ValueError(f"Unknown mode '{mode}'")
 
-    # -------- 启动 renderer 并播放轨迹 --------
+    # English comment omitted during cleanup.
     renderer = PyBulletRenderer3D(
         env,
         world_scale=0.5,

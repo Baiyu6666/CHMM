@@ -4,10 +4,13 @@
     "n_states": 2,
     "standardize": true,
     "use_velocity": true,
+    "use_env_features": true,
+    "selected_raw_feature_ids": null,
     "cost_type": "gaussian",
     "min_len": 1
   },
   "constraints": {
-    "refine_steps": 5
+    "refine_steps": 5,
+    "auto_feature_select": false
   }
 }

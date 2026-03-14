@@ -20,3 +20,13 @@ def load_experiment_config(
         "dataset": dataset_cfg,
         "method": method_cfg,
     }
+
+
+def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = deep_merge(dict(merged[key]), value)
+        else:
+            merged[key] = value
+    return merged
