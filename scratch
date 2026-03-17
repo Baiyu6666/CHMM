@@ -1,0 +1,235 @@
+Method: Stage-wise Constraint Learning with Segment Gain Model and Dynamic Programming
+
+2. Stage-wise explicit constraint model
+
+和之前方法一样，使用gaussian或者marginexp等
+
+3. Completion region (simple, no completion classifier)
+
+Define a shared completion region for stage k:
+  mu_k in R^{p_k}
+  W_k in R^{p_k x p_k}, positive semi-definite
+
+Completion/end cost for candidate segment [s,e]:
+  L_end(d,k,e) = (phi_e^(d) - mu_k)^T W_k (phi_e^(d) - mu_k)
+
+Interpretation:
+- the end of stage k should lie in the shared completion region of stage k
+
+4. Segment gain model
+
+Core idea:
+Do NOT define progress as a pointwise scalar ratio.
+Instead, learn whether the whole segment from x_s to x_e achieves the expected stage-k progression.
+
+4.1 Input of segment gain model
+
+For candidate segment [s,e] in demo d, define:
+  z_gain(d,k,s,e) =
+    [
+      phi_s^(d),
+      phi_e^(d),
+      phi_e^(d) - phi_s^(d),
+      phi_s^(d) - mu_k,
+      phi_e^(d) - mu_k,
+      summary(d,s,e),
+      emb_k
+    ]
+
+Where:
+- phi_s^(d) = phi(x_s^(d))
+- phi_e^(d) = phi(x_e^(d))
+- psi_k(phi_s^(d)) - mu_k = start offset from stage-k completion region
+- psi_k(phi_e^(d)) - mu_k = end offset from stage-k completion region
+- emb_k = stage-k embedding or one-hot stage indicator
+- summary(d,s,e) is optional segment summary, for example:
+    duration = e - s + 1
+    mean_{t=s:e}(phi_t^(d))
+    std_{t=s:e}(phi_t^(d))
+    sum_{t=s:e} R_k(phi_t^(d))
+    event counts within the segment
+    average velocity-like features
+    any precomputable segment statistics
+
+4.2 Output of segment gain model
+
+Define:
+  g_k(z_gain) in (0,1)
+
+Interpretation:
+- probability / confidence that segment [s,e] performs a valid stage-k progression
+
+Segment gain loss inside DP:
+  L_gain(d,k,s,e) = -log g_k(z_gain(d,k,s,e))
+
+Important:
+- this is not a pointwise progress score
+- it directly scores start-to-end progression of the segment
+
+5. Duration prior
+
+For each stage k, define a duration prior or penalty:
+  L_dur(d,k,s,e) = Omega_k(e - s + 1)
+
+Examples:
+- quadratic penalty around mean duration
+- negative log Gaussian duration density
+- simply hard min/max duration bounds
+
+Optional hard constraints:
+  L_k_min <= e - s + 1 <= L_k_max
+
+6. Full segment cost
+
+For candidate segment [s,e] assigned to stage k in demo d:
+  C(d,k,s,e) =
+      lambda_c * L_constraint(d,k,s,e)
+    + lambda_e * L_end(d,k,e)
+    + lambda_g * L_gain(d,k,s,e)
+    + lambda_d * L_dur(d,k,s,e)
+
+Optional extra term if needed:
+- event cue penalty
+- smoothness of stage boundaries
+But first version should keep only the four terms above.
+
+7. Dynamic programming for ordered K-stage segmentation
+
+For demo d, define DP table:
+  F_d(k,t) = minimum cost of assigning the prefix x_1^(d), ..., x_t^(d)
+             to the first k stages
+
+Initialization:
+  F_d(0,0) = 0
+  F_d(0,t>0) = +infinity
+
+Recurrence:
+  F_d(k,t) = min over s < t of
+               [ F_d(k-1,s) + C(d,k,s+1,t) ]
+
+If duration bounds are used:
+  F_d(k,t) = min over s in [t - L_k_max, t - L_k_min] of
+               [ F_d(k-1,s) + C(d,k,s+1,t) ]
+
+Backtracking:
+- store argmin s for each F_d(k,t)
+- recover tau_1^(d), ..., tau_{K-1}^(d)
+
+8. Multi-demo joint objective
+
+Shared parameters:
+- stage-wise constraint parameters Theta_k
+- completion region parameters (mu_k, W_k)
+- segment gain model parameters theta_gain_k
+- duration prior parameters
+
+Objective:
+  J =
+    sum over demos d
+    sum over stages k
+      C(d,k, tau_{k-1}^(d)+1, tau_k^(d))
+    + regularization terms
+
+Regularization may include:
+- weight decay on gain model
+- covariance regularization on W_k
+- regularization on atom thresholds / scales
+- optional sparsity on active atom set
+
+9. Alternating optimization
+
+Repeat until convergence:
+
+Step A. Segmentation update
+- fix all stage parameters
+- for each demo d:
+    run DP to compute best segmentation
+    update tau^(d)
+
+Step B. Update stage-wise atom constraints
+For each stage k:
+使用和之前类似方法更新每个feature的约束
+
+Step C. Update completion region
+For each stage k:
+- collect all stage-k end points:
+    E_k = { psi_k(phi_{tau_k^(d)}^(d)) : d = 1,...,D }
+- update:
+    mu_k = mean(E_k)
+    Sigma_k = covariance(E_k) + epsilon * I
+    W_k = inverse(Sigma_k)   or   diagonal inverse variance
+
+Optional damping:
+  mu_k <- (1 - alpha_mu) * mu_k_old + alpha_mu * mu_k_new
+
+Step D. Update segment gain model
+For each stage k:
+
+Positive samples:
+- current stage-k segments:
+    (x_{s}^{(d)}, x_{e}^{(d)}) where
+    s = tau_{k-1}^(d) + 1
+    e = tau_k^(d)
+
+Negative samples:
+- boundary-shifted variants:
+    (s + delta_s, e + delta_e) with small offsets
+- random windows of similar length
+- true segments from other stages
+- windows whose end is near completion but whose full segment is wrong
+- windows whose start/end relation does not reflect valid stage-k progression
+
+Construct z_gain(d,k,s,e) for each positive/negative sample.
+
+Train gain model:
+  g_k(z) = sigmoid(MLP_k(z))
+
+Binary classification loss:
+  L_gain-cls_k =
+    - sum_{z in Pos_k} log g_k(z)
+    - sum_{z in Neg_k} log(1 - g_k(z))
+
+Important implementation note:
+- keep gain model small
+- use strong regularization
+- use hard negatives around wrong boundaries
+- do not make the gain model too powerful at first
+
+Step E. Check convergence
+Possible criteria:
+- total objective J stops decreasing
+- boundaries stop moving
+- max iterations reached
+
+11.1 Feature design
+Use features that are:
+- object-relative
+- target-relative
+- task-relevant
+- as invariant as possible to different demo start states
+
+11.2 Gain model architecture
+Use a small model first:
+  g_k(z) = sigmoid(MLP_k(z))
+with 1-2 hidden layers
+
+
+11.3 Optional segment summary
+If desired, define:
+  summary(d,s,e) =
+    [
+      mean_{t=s:e}(phi_t),
+      std_{t=s:e}(phi_t),
+      phi_e - phi_s,
+      sum_{t=s:e} R_k(phi_t),
+      duration
+    ]
+
+Many summary terms can be precomputed using prefix sums.
+
+11.4 Duration bounds
+Strongly recommended in first version:
+- each stage has min and max duration
+- reduces DP search space
+- improves identifiability
+

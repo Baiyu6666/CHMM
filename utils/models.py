@@ -129,11 +129,21 @@ class ZeroMeanGaussianModel(GaussianModel):
 class MarginExpLowerEmission(BaseEmissionModel):
     model_type = "margin_exp_lower"
 
-    def __init__(self, b_init=0.0, lam_init=1.0, q_low=0.1, q_high=0.9):
+    def __init__(
+        self,
+        b_init=0.0,
+        lam_init=1.0,
+        q_low=0.1,
+        q_high=0.9,
+        violation_tau=0.25,
+        violation_scale=2.0,
+    ):
         self.b = float(b_init)
         self.lam = max(float(lam_init), 1e-6)
         self.q_low = float(q_low)
         self.q_high = float(q_high)
+        self.violation_tau = max(float(violation_tau), 1e-6)
+        self.violation_scale = max(float(violation_scale), 0.0)
         self._update_interval()
 
     def _update_interval(self):
@@ -144,10 +154,10 @@ class MarginExpLowerEmission(BaseEmissionModel):
 
     def logpdf(self, x):
         x = np.asarray(x, float)
-        out = np.full_like(x, -1e6, dtype=float)
-        mask = x >= self.b
-        out[mask] = -math.log(self.lam) - (x[mask] - self.b) / self.lam
-        return out
+        residual = x - self.b
+        positive_cost = np.maximum(residual, 0.0) / self.lam
+        violation_barrier = self.violation_scale * np.log1p(np.exp((-residual) / self.violation_tau))
+        return -math.log(self.lam) - positive_cost - violation_barrier
 
     def m_step_update(self, xs, ws=None):
         vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
@@ -177,4 +187,6 @@ class MarginExpLowerEmission(BaseEmissionModel):
             "lam": float(self.lam),
             "L": float(self.L),
             "U": float(self.U),
+            "violation_tau": float(self.violation_tau),
+            "violation_scale": float(self.violation_scale),
         }

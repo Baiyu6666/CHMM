@@ -335,7 +335,8 @@ class ARHMM:
                 iter_metrics = compute_tau_metrics(taus_cur, true_taus, X)
                 for name in hist_metrics:
                     hist_metrics[name].append(iter_metrics.get(name, np.nan))
-            if verbose:
+            should_log = ((it + 1) % 10 == 0) or (it == n_iter - 1)
+            if verbose and should_log:
                 print(format_training_log("ARHMM", it, losses={"loss": avg_ll}, metrics=iter_metrics))
         Z=[self.viterbi(x) for x in X]
         hist = {"loglik": hist_loglik}

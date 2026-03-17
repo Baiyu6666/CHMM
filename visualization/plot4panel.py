@@ -100,6 +100,113 @@ def _xy_point(point):
 
 
 
+def plot_demos_goals_snapshot(ax, learner, taus, gammas, title=None, show_legend=True):
+    if plt is None:
+        return ax
+
+    current_g1 = learner.g1_hist[-1] if hasattr(learner, "g1_hist") and len(learner.g1_hist) > 0 else learner.g1
+    current_g2 = learner.g2_hist[-1] if hasattr(learner, "g2_hist") and len(learner.g2_hist) > 0 else learner.g2
+    X_dim = learner.demos[0].shape[1]
+    if title is not None:
+        ax.set_title(title, fontsize=PAPER_TITLE_SIZE, pad=4)
+
+    if X_dim == 3:
+        for i, (X, tau_hat, gamma) in enumerate(zip(learner.demos, taus, gammas)):
+            X = np.asarray(X)
+            T = len(X)
+            th = int(tau_hat)
+            X_pre = X[:th + 1]
+            X_post = X[th + 1:] if th + 1 < T else None
+            ax.scatter(X_pre[:, 0], X_pre[:, 1], X_pre[:, 2], c='orange', s=3, alpha=0.35, depthshade=False)
+            if X_post is not None and len(X_post) > 0:
+                ax.scatter(X_post[:, 0], X_post[:, 1], X_post[:, 2], c='red', s=3, alpha=0.35, depthshade=False)
+            ax.scatter(X[th, 0], X[th, 1], X[th, 2], c='blue', marker='x', s=24, linewidths=1.0,
+                       label='learned cutpoint' if i == 0 else "", depthshade=False, zorder=12)
+            if learner.true_taus[i] is not None:
+                tt = int(learner.true_taus[i])
+                ax.scatter(X[tt, 0], X[tt, 1], X[tt, 2], c='green', marker='x', s=24, linewidths=1.0,
+                           label='true cutpoint' if i == 0 else "", depthshade=False, zorder=12)
+    else:
+        for i, (X, tau_hat, gamma) in enumerate(zip(learner.demos, taus, gammas)):
+            X = np.asarray(X)
+            T = len(X)
+            th = int(tau_hat)
+            X_pre = X[:th + 1]
+            X_post = X[th + 1:] if th + 1 < T else None
+            ax.scatter(X_pre[:, 0], X_pre[:, 1], c='orange', s=4, alpha=0.35)
+            if X_post is not None and len(X_post) > 0:
+                ax.scatter(X_post[:, 0], X_post[:, 1], c='red', s=4, alpha=0.35)
+            ax.scatter(X[th, 0], X[th, 1], c='blue', marker='x', s=18, linewidths=1.0,
+                       label='learned cutpoint' if i == 0 else "", zorder=10)
+            if learner.true_taus[i] is not None:
+                tt = int(learner.true_taus[i])
+                ax.scatter(X[tt, 0], X[tt, 1], c='green', marker='x', s=18, linewidths=1.0,
+                           label='true cutpoint' if i == 0 else "", zorder=10)
+
+    if X_dim != 3 and _env_has_xy_obstacle(learner.env):
+        cx, cy = learner.env.obs_center
+        r = learner.env.obs_radius
+        ax.add_patch(plt.Circle((cx, cy), r, color='gray', fill=False, linestyle='-', label='obstacle'))
+
+    if X_dim == 3:
+        sg = learner.env.subgoal
+        gg = learner.env.goal
+        ax.scatter(sg[0], sg[1], sg[2], c='green', marker='*', s=28, label='true subgoal')
+        ax.scatter(gg[0], gg[1], gg[2], c='green', marker='P', s=28, label='true goal')
+    elif not _is_pickplace(learner.env):
+        sg = _xy_point(learner.env.subgoal)
+        gg = _xy_point(learner.env.goal)
+        ax.scatter(sg[0], sg[1], c='green', marker='*', s=28, label='true subgoal')
+        ax.scatter(gg[0], gg[1], c='green', marker='P', s=28, label='true goal')
+
+    if len(learner.g1_hist) > 1:
+        G1 = np.stack(learner.g1_hist, axis=0)
+        if X_dim == 3:
+            ax.plot(G1[:, 0], G1[:, 1], G1[:, 2], '-', lw=1.0, alpha=0.35, color='blue', label='g1 history')
+            ax.scatter(G1[:, 0], G1[:, 1], G1[:, 2], s=4, alpha=0.25, color='blue')
+        else:
+            ax.plot(G1[:, 0], G1[:, 1], '-', lw=1.0, alpha=0.35, color='blue', label='g1 history')
+            ax.scatter(G1[:, 0], G1[:, 1], s=4, alpha=0.25, color='blue')
+    if len(learner.g2_hist) > 1:
+        G2 = np.stack(learner.g2_hist, axis=0)
+        if X_dim == 3:
+            ax.plot(G2[:, 0], G2[:, 1], G2[:, 2], '-', lw=1.0, alpha=0.35, color='navy', label='g2 history')
+            ax.scatter(G2[:, 0], G2[:, 1], G2[:, 2], s=4, alpha=0.25, color='navy')
+        else:
+            ax.plot(G2[:, 0], G2[:, 1], '-', lw=1.0, alpha=0.35, color='navy', label='g2 history')
+            ax.scatter(G2[:, 0], G2[:, 1], s=4, alpha=0.25, color='navy')
+
+    if X_dim == 3:
+        ax.scatter(current_g1[0], current_g1[1], current_g1[2], c='blue', marker='D', s=24, label='est. subgoal g1')
+        ax.scatter(current_g2[0], current_g2[1], current_g2[2], c='navy', marker='P', s=24, label='est. goal g2')
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")
+    else:
+        g1_xy = _xy_point(current_g1)
+        g2_xy = _xy_point(current_g2)
+        ax.scatter(g1_xy[0], g1_xy[1], c='blue', marker='D', s=24, label='est. subgoal g1')
+        ax.scatter(g2_xy[0], g2_xy[1], c='navy', marker='P', s=24, label='est. goal g2')
+        ax.set_xlabel("x")
+        ax.set_ylabel("z" if _is_pickplace(learner.env) else "y")
+        ax.set_aspect("equal", adjustable="box")
+
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = {}
+    for h, l in zip(handles, labels):
+        if l is None:
+            continue
+        l = str(l).strip()
+        if l == "" or l.startswith("_"):
+            continue
+        if l not in by_label:
+            by_label[l] = h
+    if show_legend and by_label:
+        ax.legend(by_label.values(), by_label.keys(), fontsize=PAPER_LEGEND_SIZE, frameon=False, loc='best')
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    return ax
+
+
 def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_list):
     if plt is None:
         return
@@ -174,7 +281,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             # learned cutpoint (blue x)
             ax.scatter(
                 X[th, 0], X[th, 1], X[th, 2],
-                c='blue', marker='x', s=34, linewidths=1.1,
+                c='blue', marker='x', s=24, linewidths=1.0,
                 label='learned cutpoint' if i == 0 else "",
                 depthshade=False, zorder=12
             )
@@ -184,7 +291,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
                 tt = int(learner.true_taus[i])
                 ax.scatter(
                     X[tt, 0], X[tt, 1], X[tt, 2],
-                    c='green', marker='x', s=34, linewidths=1.1,
+                    c='green', marker='x', s=24, linewidths=1.0,
                     label='true cutpoint' if i == 0 else "",
                     depthshade=False, zorder=12
                 )
@@ -212,7 +319,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
 
             ax.scatter(
                 X[th, 0], X[th, 1],
-                c='blue', marker='x', s=24, linewidths=1.1,
+                c='blue', marker='x', s=18, linewidths=1.0,
                 label='learned cutpoint' if i == 0 else "", zorder=10
             )
 
@@ -220,7 +327,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
                 tt = int(learner.true_taus[i])
                 ax.scatter(
                     X[tt, 0], X[tt, 1],
-                    c='green', marker='x', s=24, linewidths=1.1,
+                    c='green', marker='x', s=18, linewidths=1.0,
                     label='true cutpoint' if i == 0 else "", zorder=10
                 )
 
@@ -258,11 +365,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
         gg = learner.env.goal
         ax.scatter(
             sg[0], sg[1], sg[2],
-            c='green', marker='*', s=40, label='true subgoal'
+            c='green', marker='*', s=28, label='true subgoal'
         )
         ax.scatter(
             gg[0], gg[1], gg[2],
-            c='green', marker='P', s=40, label='true goal'
+            c='green', marker='P', s=28, label='true goal'
         )
     else:
         # English comment omitted during cleanup.
@@ -271,11 +378,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             gg = _xy_point(learner.env.goal)
             ax.scatter(
                 sg[0], sg[1],
-                c='green', marker='*', s=40, label='true subgoal'
+                c='green', marker='*', s=28, label='true subgoal'
             )
             ax.scatter(
                 gg[0], gg[1],
-                c='green', marker='P', s=40, label='true goal'
+                c='green', marker='P', s=28, label='true goal'
             )
 
     # ================== g history ==================
@@ -325,17 +432,17 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     if X_dim == 3:
         ax.scatter(
             current_g1[0], current_g1[1], current_g1[2],
-            c='blue', marker='D', s=34, label='est. subgoal g1'
+            c='blue', marker='D', s=24, label='est. subgoal g1'
         )
         ax.scatter(
             current_g2[0], current_g2[1], current_g2[2],
-            c='navy', marker='P', s=34, label='est. goal g2'
+            c='navy', marker='P', s=24, label='est. goal g2'
         )
     else:
         g1_xy = _xy_point(current_g1)
         g2_xy = _xy_point(current_g2)
-        ax.scatter(g1_xy[0], g1_xy[1], c='blue', marker='D', s=34, label='est. subgoal g1')
-        ax.scatter(g2_xy[0], g2_xy[1], c='navy', marker='P', s=34, label='est. goal g2')
+        ax.scatter(g1_xy[0], g1_xy[1], c='blue', marker='D', s=24, label='est. subgoal g1')
+        ax.scatter(g2_xy[0], g2_xy[1], c='navy', marker='P', s=24, label='est. goal g2')
 
     # ================== axes labels + scaling ==================
     if X_dim == 3:

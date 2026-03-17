@@ -59,8 +59,40 @@ def _default_plot_dir(outdir: Path, method_name: str, dataset_name: str, method_
     return str(outdir.parent / "plots" / method_name / dataset_name)
 
 
+def _should_replace_plot_dir(value: Any) -> bool:
+    if value is None:
+        return True
+    text = str(value).strip()
+    return text in {"", "outputs/plots"}
+
+
+def _apply_runtime_plot_defaults(
+    method_name: str,
+    method_cfg: dict[str, Any],
+    plot_dir: str,
+    method_seed: int,
+) -> dict[str, Any]:
+    cfg = dict(method_cfg)
+    if method_name in {"segcons", "ccp"}:
+        if _should_replace_plot_dir(cfg.get("plot_dir")):
+            cfg["plot_dir"] = plot_dir
+        cfg.setdefault("seed", int(method_seed))
+        return cfg
+
+    segmenter_cfg = dict(cfg.get("segmenter", {}))
+    constraint_cfg = dict(cfg.get("constraints", {}))
+    if _should_replace_plot_dir(segmenter_cfg.get("plot_dir")):
+        segmenter_cfg["plot_dir"] = plot_dir
+    if _should_replace_plot_dir(constraint_cfg.get("plot_dir")):
+        constraint_cfg["plot_dir"] = plot_dir
+    segmenter_cfg.setdefault("seed", int(method_seed))
+    cfg["segmenter"] = segmenter_cfg
+    cfg["constraints"] = constraint_cfg
+    return cfg
+
+
 def _extract_metrics(method_name: str, result: dict[str, Any]) -> dict[str, Any]:
-    if method_name == "segcons":
+    if method_name in {"segcons", "ccp"}:
         return dict(result["joint_result"]["metrics"])
     return dict(result["constraints"]["metrics"])
 
@@ -123,19 +155,11 @@ def run_benchmark(
                 dataset_cfg = dict(base_dataset_cfg)
                 run_method_cfg = dict(base_method_cfg)
                 plot_dir = _default_plot_dir(outdir, method_name, dataset_name, method_seed)
-                if method_name == "segcons":
-                    run_method_cfg.setdefault("plot_dir", plot_dir)
-                    run_method_cfg.setdefault("seed", int(method_seed))
-                else:
-                    segmenter_cfg = dict(run_method_cfg.get("segmenter", {}))
-                    constraint_cfg = dict(run_method_cfg.get("constraints", {}))
-                    segmenter_cfg.setdefault("plot_dir", plot_dir)
-                    segmenter_cfg.setdefault("seed", int(method_seed))
-                    constraint_cfg.setdefault("plot_dir", plot_dir)
-                    run_method_cfg["segmenter"] = segmenter_cfg
-                    run_method_cfg["constraints"] = constraint_cfg
                 dataset_cfg = _deep_merge(dataset_cfg, external_dataset_override)
                 run_method_cfg = _deep_merge(run_method_cfg, env_method_override)
+                run_method_cfg = _apply_runtime_plot_defaults(
+                    method_name, run_method_cfg, plot_dir, method_seed
+                )
                 run_method_cfg = _deep_merge(run_method_cfg, external_method_override)
                 result = run_experiment(
                     dataset_name=dataset_name,
@@ -167,7 +191,7 @@ def run_benchmark(
 
 def main():
     parser = argparse.ArgumentParser(description="Run CHMM benchmark over methods, datasets, and seeds.")
-    parser.add_argument("--methods", default="segcons,cghmm,arhmm,changepoint")
+    parser.add_argument("--methods", default="segcons")
     parser.add_argument("--datasets", default="2DObsAvoid")
     parser.add_argument("--method-seeds", default="0")
     parser.add_argument("--dataset-seed", type=int, default=0)

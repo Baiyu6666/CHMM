@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any, Callable, Dict
 
 from .base import TaskBundle
+from .dock_corridor_2d import load_2d_dock_corridor
 from .line_2d import load_line_2d
+from .narrow_passage_2d import load_2d_narrow_passage
 from .obs_avoid_2d import load_2d_obs_avoid
 from .obs_avoid_3d import load_3d_obs_avoid
 from .pick_place import load_pick_place
@@ -12,6 +14,8 @@ from .sine_corridor_3d import load_3d_sine_corridor
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
     "2DObsAvoid": load_2d_obs_avoid,
+    "2DNarrowPassage": load_2d_narrow_passage,
+    "2DDockCorridor": load_2d_dock_corridor,
     "3DObsAvoid": load_3d_obs_avoid,
     "3DSineCorridor": load_3d_sine_corridor,
     "2DLine": load_line_2d,

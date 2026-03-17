@@ -122,7 +122,8 @@ class PostHocConstraintLearner:
             metrics = eval_goalhmm_auto(learner, gammas, dummy_xis)
             for name, value in metrics.items():
                 learner.metrics_hist.setdefault(name, []).append(value)
-            if verbose:
+            should_log = ((it + 1) % 10 == 0) or (it == refine_steps - 1)
+            if verbose and should_log:
                 print(
                     format_training_log(
                         "POSTHOC",

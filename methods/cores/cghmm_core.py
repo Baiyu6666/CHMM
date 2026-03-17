@@ -711,7 +711,8 @@ class CGHMM:
             for name, value in metrics.items():
                 self.metrics_hist.setdefault(name, []).append(value)
 
-            if verbose:
+            should_log = ((it + 1) % 10 == 0) or (it == max_iter - 1)
+            if verbose and should_log:
                 print(
                     format_training_log(
                         "CGHMM",

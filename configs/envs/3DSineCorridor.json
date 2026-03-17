@@ -8,7 +8,16 @@
       "feature_model_types": {
         "dist_centerline": "margin_exp_lower",
         "speed": "gauss"
-      }
+      },
+      "fixed_feature_mask": [[1, 0], [0, 1]]
+    },
+    "ccp": {
+      "selected_raw_feature_ids": ["dist_centerline", "speed"],
+      "feature_model_types": {
+        "dist_centerline": "margin_exp_lower",
+        "speed": "gauss"
+      },
+      "fixed_feature_mask": [[1, 0], [0, 1]]
     },
     "cghmm": {
       "segmenter": {

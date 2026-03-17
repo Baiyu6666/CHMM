@@ -1,0 +1,70 @@
+{
+  "name": "2DDockCorridor",
+  "n_demos": 10,
+  "seed": 42,
+  "method_overrides": {
+    "segcons": {
+      "selected_raw_feature_ids": ["lateral_offset", "speed"],
+      "feature_model_types": {
+        "lateral_offset": "gauss",
+        "speed": "gauss"
+      },
+      "fixed_feature_mask": [[1, 0], [0, 1]]
+    },
+    "ccp": {
+      "selected_raw_feature_ids": ["lateral_offset", "speed"],
+      "feature_model_types": {
+        "lateral_offset": "gauss",
+        "speed": "gauss"
+      },
+      "fixed_feature_mask": [[1, 0], [0, 1]]
+    },
+    "cghmm": {
+      "segmenter": {
+        "selected_raw_feature_ids": ["lateral_offset", "speed"],
+        "feature_model_types": {
+          "lateral_offset": "gauss",
+          "speed": "gauss"
+        },
+        "fixed_feature_mask": [[1, 0], [0, 1]]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "selected_raw_feature_ids": ["lateral_offset", "speed"],
+        "feature_model_types": {
+          "lateral_offset": "gauss",
+          "speed": "gauss"
+        },
+        "fixed_feature_mask": [[1, 0], [0, 1]]
+      }
+    },
+    "arhmm": {
+      "segmenter": {
+        "selected_raw_feature_ids": ["lateral_offset", "speed"]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "selected_raw_feature_ids": ["lateral_offset", "speed"],
+        "feature_model_types": {
+          "lateral_offset": "gauss",
+          "speed": "gauss"
+        },
+        "fixed_feature_mask": [[1, 0], [0, 1]]
+      }
+    },
+    "changepoint": {
+      "segmenter": {
+        "selected_raw_feature_ids": ["lateral_offset", "speed"]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "selected_raw_feature_ids": ["lateral_offset", "speed"],
+        "feature_model_types": {
+          "lateral_offset": "gauss",
+          "speed": "gauss"
+        },
+        "fixed_feature_mask": [[1, 0], [0, 1]]
+      }
+    }
+  }
+}

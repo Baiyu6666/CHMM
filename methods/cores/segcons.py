@@ -59,6 +59,9 @@ class SegmentConstraintModel:
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=1.0,
+        use_subgoal_consistency=True,
+        use_transition_term=True,
+        progress_term_type="vmf",
 
         posterior_temp = 1.0,
 
@@ -112,8 +115,16 @@ class SegmentConstraintModel:
 
         # English comment omitted during cleanup.
         self.feat_weight = float(feat_weight)
-        self.prog_weight = float(prog_weight)
-        self.trans_weight = float(trans_weight)
+        self.use_subgoal_consistency = bool(use_subgoal_consistency)
+        self.use_transition_term = bool(use_transition_term)
+        self.progress_term_type = str(progress_term_type)
+        if self.progress_term_type not in {"vmf", "distance_delta"}:
+            raise ValueError(
+                f"Unknown progress_term_type '{self.progress_term_type}'. "
+                "Expected one of {'vmf', 'distance_delta'}."
+            )
+        self.prog_weight = float(prog_weight) if self.use_subgoal_consistency else 0.0
+        self.trans_weight = float(trans_weight) if self.use_transition_term else 0.0
         self.posterior_temp = float(posterior_temp)
 
         self.prog_kappa1 = float(prog_kappa1)
@@ -169,6 +180,12 @@ class SegmentConstraintModel:
                 else:
                     raise ValueError(f"Unknown emission type '{kind}' for feature {m}")
             self.feature_models.append(row)
+        self.progress_models = None
+        if self.progress_term_type == "distance_delta":
+            self.progress_models = [
+                GaussianModel(mu=0.05, sigma=0.05, fixed_sigma=None),
+                GaussianModel(mu=0.05, sigma=0.05, fixed_sigma=None),
+            ]
 
         # English comment omitted during cleanup.
         self.auto_feature_select = bool(auto_feature_select)
@@ -486,6 +503,46 @@ class SegmentConstraintModel:
         self._init_g1_from_taus(taus_init)
         self._init_feature_models_from_taus(taus_init)
         self._init_g2_from_taus(taus_init, g2_init)
+        self._init_progress_models_from_taus(taus_init)
+
+    def _progress_delta(self, X, goal):
+        X = np.asarray(X, float)
+        if len(X) <= 1:
+            return np.zeros(0, dtype=float)
+        d0 = np.linalg.norm(X[:-1] - goal[None, :], axis=1)
+        d1 = np.linalg.norm(X[1:] - goal[None, :], axis=1)
+        return d0 - d1
+
+    def _progress_grad_distance_delta(self, x0, x1, goal, model):
+        x0 = np.asarray(x0, float)
+        x1 = np.asarray(x1, float)
+        goal = np.asarray(goal, float)
+        r0 = goal - x0
+        r1 = goal - x1
+        n0 = max(float(np.linalg.norm(r0)), 1e-12)
+        n1 = max(float(np.linalg.norm(r1)), 1e-12)
+        y = n0 - n1
+        mu = float(model.mu)
+        sigma = max(float(model.sigma), 1e-6)
+        dy_dg = (r0 / n0) - (r1 / n1)
+        coeff = -(y - mu) / (sigma ** 2)
+        return coeff * dy_dg
+
+    def _init_progress_models_from_taus(self, taus_init):
+        if self.progress_models is None:
+            return
+        ys_state = [[], []]
+        for X, tau in zip(self.demos, taus_init):
+            tau = self._clip_tau(X, tau)
+            y0 = self._progress_delta(X[: tau + 1], self.g1)
+            y1 = self._progress_delta(X[tau:], self.g2)
+            if len(y0) > 0:
+                ys_state[0].append(y0)
+            if len(y1) > 0:
+                ys_state[1].append(y1)
+        for k in range(self.num_states):
+            xs = ys_state[k] if ys_state[k] else [np.zeros(1, dtype=float)]
+            self.progress_models[k].init_from_data(xs, ws=None)
 
     # ==========================================================
     # English comment omitted during cleanup.
@@ -537,18 +594,24 @@ class SegmentConstraintModel:
         # English comment omitted during cleanup.
         ll_prog = np.zeros((T, K))
         if self.prog_weight > 0.0 and T > 1:
-            D = X.shape[1]
-            logC1 = vmf_logC_d(self.prog_kappa1, D)
-            logC2 = vmf_logC_d(self.prog_kappa2, D)
+            if self.progress_term_type == "vmf":
+                D = X.shape[1]
+                logC1 = vmf_logC_d(self.prog_kappa1, D)
+                logC2 = vmf_logC_d(self.prog_kappa2, D)
 
-            Vs = _unit(X[1:] - X[:-1])
-            U1 = _unit(self.g1[None, :] - X[:-1])
-            U2 = _unit(self.g2[None, :] - X[:-1])
+                Vs = _unit(X[1:] - X[:-1])
+                U1 = _unit(self.g1[None, :] - X[:-1])
+                U2 = _unit(self.g2[None, :] - X[:-1])
 
-            cos1 = np.sum(Vs * U1, axis=1)
-            cos2 = np.sum(Vs * U2, axis=1)
-            ll_prog[:-1, 0] = (logC1 + self.prog_kappa1 * cos1)
-            ll_prog[:-1, 1] = (logC2 + self.prog_kappa2 * cos2)
+                cos1 = np.sum(Vs * U1, axis=1)
+                cos2 = np.sum(Vs * U2, axis=1)
+                ll_prog[:-1, 0] = (logC1 + self.prog_kappa1 * cos1)
+                ll_prog[:-1, 1] = (logC2 + self.prog_kappa2 * cos2)
+            else:
+                y0 = self._progress_delta(X, self.g1)
+                y1 = self._progress_delta(X, self.g2)
+                ll_prog[:-1, 0] = self.progress_models[0].logpdf(y0)
+                ll_prog[:-1, 1] = self.progress_models[1].logpdf(y1)
 
         # English comment omitted during cleanup.
         ll_emit = np.zeros((T, 2))
@@ -569,6 +632,17 @@ class SegmentConstraintModel:
             logA = np.zeros((0, 2, 2))
             if return_aux:
                 return logA, {"dists": np.zeros(T), "p12": np.zeros(T), "logit": np.zeros(T)}
+            return logA
+
+        if self.trans_weight <= 0.0:
+            p12 = np.full(T, 0.5, dtype=float)
+            logA = np.full((T - 1, 2, 2), -np.inf)
+            logA[:, 0, 1] = np.log(0.5)
+            logA[:, 0, 0] = np.log(0.5)
+            logA[:, 1, 1] = 0.0
+            logA[:, 1, 0] = -np.inf
+            if return_aux:
+                return logA, {"dists": np.zeros(T), "p12": p12, "logit": np.zeros(T)}
             return logA
 
         # log-linear transition (no progress term here):
@@ -677,6 +751,24 @@ class SegmentConstraintModel:
                 model = self.feature_models[k][m]
                 model.m_step_update(xs, ws)
 
+    def _mstep_update_progress_models(self, gammas):
+        if self.progress_models is None or self.prog_weight <= 0.0:
+            return
+        ys_state = [[], []]
+        ws_state = [[], []]
+        for X, gamma in zip(self.demos, gammas):
+            y0 = self._progress_delta(X, self.g1)
+            y1 = self._progress_delta(X, self.g2)
+            if len(y0) > 0:
+                ys_state[0].append(y0)
+                ws_state[0].append(gamma[:-1, 0])
+            if len(y1) > 0:
+                ys_state[1].append(y1)
+                ws_state[1].append(gamma[:-1, 1])
+        for k in range(self.num_states):
+            if ys_state[k]:
+                self.progress_models[k].m_step_update(ys_state[k], ws_state[k])
+
     # ==========================================================
     # English comment omitted during cleanup.
     # ==========================================================
@@ -744,7 +836,7 @@ class SegmentConstraintModel:
             w1_sum = 0.0
             w2_sum = 0.0
 
-            # vMF gradient
+            # progress gradient
             if self.prog_weight > 0.0:
                 for X, gamma in zip(self.demos, gammas):
                     T = len(X)
@@ -752,14 +844,24 @@ class SegmentConstraintModel:
                         w1 = gamma[t, 0]
                         w2 = gamma[t, 1]
                         if w1 > 0:
-                            g1_grad_vmf += w1 * vmf_grad_wrt_g(
-                                X[t : t + 2], self.g1, self.prog_kappa1
-                            )
+                            if self.progress_term_type == "vmf":
+                                g1_grad_vmf += w1 * vmf_grad_wrt_g(
+                                    X[t : t + 2], self.g1, self.prog_kappa1
+                                )
+                            else:
+                                g1_grad_vmf += w1 * self._progress_grad_distance_delta(
+                                    X[t], X[t + 1], self.g1, self.progress_models[0]
+                                )
                             w1_sum += w1
                         if w2 > 0:
-                            g2_grad_vmf += w2 * vmf_grad_wrt_g(
-                                X[t : t + 2], self.g2, self.prog_kappa2
-                            )
+                            if self.progress_term_type == "vmf":
+                                g2_grad_vmf += w2 * vmf_grad_wrt_g(
+                                    X[t : t + 2], self.g2, self.prog_kappa2
+                                )
+                            else:
+                                g2_grad_vmf += w2 * self._progress_grad_distance_delta(
+                                    X[t], X[t + 1], self.g2, self.progress_models[1]
+                                )
                             w2_sum += w2
 
             if w1_sum > 1e-12:
@@ -879,6 +981,7 @@ class SegmentConstraintModel:
 
             self._mstep_update_features(gammas)
             self._mstep_update_feature_mask(gammas)
+            self._mstep_update_progress_models(gammas)
             self._mstep_update_goals(gammas, xis_list, aux_list)
             self._mstep_update_transition(gammas, xis_list, aux_list)
 
@@ -910,7 +1013,8 @@ class SegmentConstraintModel:
                         estep_post["aux_list"],
                     )
 
-            if verbose:
+            should_log = ((it + 1) % 10 == 0) or (it == max_iter - 1)
+            if verbose and should_log:
                 print(
                     format_training_log(
                         "SEGCONS",
@@ -923,6 +1027,8 @@ class SegmentConstraintModel:
                         },
                         metrics=metrics,
                         extras={
+                            "prog_term": self.progress_term_type if self.use_subgoal_consistency else "off",
+                            "trans_term": "on" if self.use_transition_term else "off",
                             "trans_delta": f"{self.trans_delta:.4f}",
                             "b": f"{getattr(self, 'trans_b', 0.0):.3f}",
                             "taus": estep_post["taus_hat"],
