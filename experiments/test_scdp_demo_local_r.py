@@ -110,7 +110,7 @@ def main():
     method_cfg["max_iter"] = int(args.max_iter)
     method_cfg["plot_every"] = None
     method_cfg["verbose"] = False
-    method_cfg["demo_local_baseline_gate"] = True
+    method_cfg["feature_activation_mode"] = "score"
     method_cfg["equality_w70_ratio_threshold"] = float(args.equality_w70_ratio_threshold)
 
     dataset = load_env(dataset_name, **dataset_cfg)

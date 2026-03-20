@@ -54,7 +54,58 @@ def _xy_point(point):
     return arr[:2]
 
 
-def _draw_trajectories(ax, learner, it):
+def _draw_trajectories(ax, learner, it, demo_idx=0):
+    X = np.asarray(learner.demos[demo_idx], dtype=float)
+    stage_ends = learner.stage_ends_[demo_idx]
+    starts, ends = _segment_bounds(stage_ends)
+    colors = ["orange", "red"]
+    for k, (s, e) in enumerate(zip(starts, ends)):
+        ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], c=colors[k], s=5, alpha=0.45)
+        ax.scatter(
+            X[e, 0],
+            X[e, 1],
+            c="blue" if k == 0 else "navy",
+            marker="x",
+            s=24,
+            linewidths=1.0,
+            label="pred stage end" if k == 0 else "",
+        )
+    if learner.true_taus[demo_idx] is not None:
+        tt = int(learner.true_taus[demo_idx])
+        ax.scatter(X[tt, 0], X[tt, 1], c="green", marker="x", s=20, linewidths=0.9, label="true boundary")
+
+    if hasattr(learner.env, "obs_radius") and (hasattr(learner.env, "obs_center") or hasattr(learner.env, "obs_center_xy")):
+        center = getattr(learner.env, "obs_center", None)
+        if center is None:
+            center = getattr(learner.env, "obs_center_xy")
+        cx, cy = np.asarray(center, dtype=float).reshape(-1)[:2]
+        r = learner.env.obs_radius
+        ax.add_patch(plt.Circle((cx, cy), r, color="gray", fill=False, linestyle="-", label="obstacle"))
+    if hasattr(learner.env, "subgoal"):
+        sg = _xy_point(learner.env.subgoal)
+        ax.scatter(sg[0], sg[1], c="green", marker="*", s=28, label="true subgoal")
+    if hasattr(learner.env, "goal"):
+        gg = _xy_point(learner.env.goal)
+        ax.scatter(gg[0], gg[1], c="green", marker="P", s=28, label="true goal")
+    if getattr(learner, "g1", None) is not None:
+        g1 = _xy_point(learner.g1)
+        ax.scatter(g1[0], g1[1], c="blue", marker="D", s=24, label="shared g1")
+    if getattr(learner, "g2", None) is not None:
+        g2 = _xy_point(learner.g2)
+        ax.scatter(g2[0], g2[1], c="navy", marker="P", s=24, label="shared g2")
+    if getattr(learner, "current_stage_params_per_demo", None):
+        local_g1 = _xy_point(learner.current_stage_params_per_demo[demo_idx][0].subgoal)
+        ax.scatter(local_g1[0], local_g1[1], c="purple", marker="D", s=22, label="local g1")
+
+    ax.set_title(f"Iter {int(it)}: demo {demo_idx} trajectory & goals", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE)
+    ax.set_aspect("equal", adjustable="box")
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _legend(ax)
+
+
+def _draw_trajectories_overview(ax, learner, it):
     for i, X in enumerate(learner.demos):
         X = np.asarray(X, dtype=float)
         stage_ends = learner.stage_ends_[i]
@@ -110,14 +161,24 @@ def _draw_learning_curves(ax, learner):
     iters = np.arange(len(learner.loss_total))
     weighted_constraint = learner.lambda_constraint * np.asarray(learner.loss_constraint, dtype=float)
     weighted_progress = learner.lambda_progress * np.asarray(learner.loss_progress, dtype=float)
-    weighted_consensus = np.asarray(learner.consensus_lambda_hist[: len(learner.loss_consensus)], dtype=float) * np.asarray(
-        learner.loss_consensus,
-        dtype=float,
+    weighted_subgoal_consensus = (
+        np.asarray(learner.subgoal_consensus_lambda_hist[: len(learner.loss_subgoal_consensus)], dtype=float)
+        * np.asarray(learner.loss_subgoal_consensus, dtype=float)
+    )
+    weighted_param_consensus = (
+        np.asarray(learner.param_consensus_lambda_hist[: len(learner.loss_param_consensus)], dtype=float)
+        * np.asarray(learner.loss_param_consensus, dtype=float)
+    )
+    weighted_feature_score_consensus = (
+        np.asarray(learner.feature_score_consensus_lambda_hist[: len(learner.loss_feature_score_consensus)], dtype=float)
+        * np.asarray(learner.loss_feature_score_consensus, dtype=float)
     )
     ax.plot(iters, learner.loss_total, color="black", lw=1.3, label="total")
     ax.plot(iters, weighted_constraint, color="tab:red", lw=1.0, label="constraint")
     ax.plot(iters, weighted_progress, color="tab:orange", lw=1.0, label="progress")
-    ax.plot(iters, weighted_consensus, color="tab:purple", lw=1.0, label="consensus")
+    ax.plot(iters, weighted_subgoal_consensus, color="tab:purple", lw=1.0, label="subgoal_consensus")
+    ax.plot(iters, weighted_param_consensus, color="tab:cyan", lw=1.0, label="param_consensus")
+    ax.plot(iters, weighted_feature_score_consensus, color="tab:brown", lw=1.0, label="feature_score_consensus")
     ax.set_title("SCDP learning curves", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xlabel("iteration", fontsize=PAPER_LABEL_SIZE)
     ax.set_ylabel("objective", fontsize=PAPER_LABEL_SIZE)
@@ -125,23 +186,49 @@ def _draw_learning_curves(ax, learner):
     _legend(ax)
 
 
-def _draw_feature_bands(ax, learner):
+def _draw_constraint_cost_matrix(ax, learner, demo_idx=0):
     if not getattr(learner, "current_stage_params_per_demo", None):
         ax.axis("off")
         return
-    X0 = learner.demos[0]
+    score_matrix = np.asarray(
+        [stage_params.feature_scores for stage_params in learner.current_stage_params_per_demo[demo_idx]],
+        dtype=float,
+    ).T
+    if score_matrix.size == 0:
+        ax.axis("off")
+        return
+    im = ax.imshow(score_matrix, cmap="viridis_r", aspect="auto")
+    stage_labels = [f"s{i + 1}" for i in range(score_matrix.shape[1])]
+    feature_labels = [_feature_name(learner, i) for i in range(score_matrix.shape[0])]
+    ax.set_title(f"Demo {demo_idx} constraint scores", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xticks(range(score_matrix.shape[1]))
+    ax.set_xticklabels(stage_labels)
+    ax.set_yticks(range(score_matrix.shape[0]))
+    ax.set_yticklabels(feature_labels)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    for i in range(score_matrix.shape[0]):
+        for j in range(score_matrix.shape[1]):
+            ax.text(j, i, f"{score_matrix[i, j]:.2f}", ha="center", va="center", color="white", fontsize=8)
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+
+def _draw_feature_bands(ax, learner, demo_idx=0):
+    if not getattr(learner, "current_stage_params_per_demo", None):
+        ax.axis("off")
+        return
+    X0 = learner.demos[demo_idx]
     T0 = len(X0)
     t_axis = np.arange(T0)
-    Fz = learner.standardized_features[0]
+    Fz = learner.standardized_features[demo_idx]
     raw_values = (
         Fz * learner.feat_std[learner.selected_feature_columns][None, :]
         + learner.feat_mean[learner.selected_feature_columns][None, :]
     )
     max_features = min(learner.num_features, 6)
     colors = plt.cm.tab10(np.linspace(0.0, 1.0, max_features))
-    stage_ends = learner.stage_ends_[0]
+    stage_ends = learner.stage_ends_[demo_idx]
     starts, ends = _segment_bounds(stage_ends)
-    local_stage_params = learner.current_stage_params_per_demo[0]
+    local_stage_params = learner.current_stage_params_per_demo[demo_idx]
     for k, (s, e) in enumerate(zip(starts, ends)):
         ax.axvspan(s, e, color=("orange" if k == 0 else "red"), alpha=0.035)
     for m in range(max_features):
@@ -167,11 +254,11 @@ def _draw_feature_bands(ax, learner):
                 color=colors[m],
                 alpha=0.12 if k == 0 else 0.08,
             )
-    tau_hat0 = int(learner.stage_ends_[0][0])
+    tau_hat0 = int(learner.stage_ends_[demo_idx][0])
     ax.axvline(tau_hat0, color="black", linestyle="--", lw=1.0, label="pred boundary")
-    if learner.true_taus[0] is not None:
-        ax.axvline(int(learner.true_taus[0]), color="green", linestyle=":", lw=1.0, label="true boundary")
-    ax.set_title("Demo0 local feature constraints", fontsize=PAPER_TITLE_SIZE, pad=4)
+    if learner.true_taus[demo_idx] is not None:
+        ax.axvline(int(learner.true_taus[demo_idx]), color="green", linestyle=":", lw=1.0, label="true boundary")
+    ax.set_title(f"Demo {demo_idx} local feature constraints", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xlabel("time", fontsize=PAPER_LABEL_SIZE)
     ax.set_ylabel("raw feature value", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
@@ -190,39 +277,48 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
     total = []
     constraint = []
     progress = []
-    consensus = []
-    r_consensus = []
+    subgoal_consensus = []
+    param_consensus = []
+    feature_score_consensus = []
     for tau in candidate_taus:
-        lam_consensus = float(getattr(learner, "current_consensus_lambda", 0.0))
-        lam_r_consensus = lam_consensus * float(getattr(learner, "lambda_r_consensus", 0.0))
+        lam_subgoal_consensus = float(getattr(learner, "current_subgoal_consensus_lambda", 0.0))
+        lam_param_consensus = float(getattr(learner, "current_param_consensus_lambda", 0.0))
+        lam_feature_score_consensus = float(getattr(learner, "current_feature_score_consensus_lambda", 0.0))
         info = learner._candidate_cost(
             demo_idx=demo_idx,
             tau=int(tau),
-            lam_consensus=lam_consensus,
-            lam_r_consensus=lam_r_consensus,
+            lam_subgoal_consensus=lam_subgoal_consensus,
+            lam_param_consensus=lam_param_consensus,
+            lam_feature_score_consensus=lam_feature_score_consensus,
             shared_stage_subgoals=learner.shared_stage_subgoals,
             shared_param_vectors=learner.shared_param_vectors,
             shared_r_mean=getattr(learner, "shared_r_mean", None),
+            shared_feature_score_mean=getattr(learner, "shared_feature_score_mean", None),
         )
         if info is None:
             total.append(np.nan)
             constraint.append(np.nan)
             progress.append(np.nan)
-            consensus.append(np.nan)
-            r_consensus.append(np.nan)
+            subgoal_consensus.append(np.nan)
+            param_consensus.append(np.nan)
+            feature_score_consensus.append(np.nan)
             continue
         constraint.append(learner.lambda_constraint * float(info["constraint"]))
         progress.append(learner.lambda_progress * float(info["progress"]))
-        consensus.append(lam_consensus * float(info["consensus"]))
-        r_consensus.append(lam_r_consensus * float(info.get("r_consensus", 0.0)))
+        subgoal_consensus.append(lam_subgoal_consensus * float(info["subgoal_consensus"]))
+        param_consensus.append(lam_param_consensus * float(info["param_consensus"]))
+        feature_score_consensus.append(lam_feature_score_consensus * float(info.get("feature_score_consensus", 0.0)))
         total.append(float(info["total"]))
 
     ax.plot(candidate_taus, total, color="black", lw=1.4, label="total")
     ax.plot(candidate_taus, constraint, color="tab:red", lw=1.0, label="constraint")
     ax.plot(candidate_taus, progress, color="tab:orange", lw=1.0, label="progress")
-    ax.plot(candidate_taus, consensus, color="tab:purple", lw=1.0, label="consensus")
-    if np.any(np.isfinite(np.asarray(r_consensus, dtype=float))):
-        ax.plot(candidate_taus, r_consensus, color="tab:brown", lw=1.0, label="r_consensus")
+    if np.any(np.isfinite(np.asarray(subgoal_consensus, dtype=float))):
+        ax.plot(candidate_taus, subgoal_consensus, color="tab:purple", lw=1.0, label="subgoal_consensus")
+    if np.any(np.isfinite(np.asarray(param_consensus, dtype=float))):
+        ax.plot(candidate_taus, param_consensus, color="tab:cyan", lw=1.0, label="param_consensus")
+    if np.any(np.isfinite(np.asarray(feature_score_consensus, dtype=float))):
+        ax.plot(candidate_taus, feature_score_consensus, color="tab:brown", lw=1.0, label="feature_score_consensus")
 
     pred_tau = int(learner.stage_ends_[demo_idx][0])
     ax.axvline(pred_tau, color="black", linestyle="--", lw=1.0, label="pred boundary")
@@ -232,26 +328,46 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
         prev_tau = int(learner.segmentation_history[-2][demo_idx][0])
         ax.axvline(prev_tau, color="dimgray", linestyle="-.", lw=1.0, label="prev pred boundary")
 
-    ax.set_title("Demo0 local-tau cost profile", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_title(f"Demo {demo_idx} local-tau cost profile", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xlabel("boundary index", fontsize=PAPER_LABEL_SIZE)
     ax.set_ylabel("cost", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     _legend(ax)
 
 
-def plot_scdp_results_4panel(learner, it):
+def plot_scdp_results_4panel(learner, it, demo_idx=0):
     if plt is None:
         return
     fig = plt.figure(figsize=PAPER_FIGSIZE)
 
     ax1 = fig.add_subplot(2, 2, 1)
-    _draw_trajectories(ax1, learner, it)
+    _draw_trajectories(ax1, learner, it, demo_idx=demo_idx)
+
+    ax2 = fig.add_subplot(2, 2, 2)
+    _draw_constraint_cost_matrix(ax2, learner, demo_idx=demo_idx)
+
+    ax3 = fig.add_subplot(2, 2, 3)
+    _draw_feature_bands(ax3, learner, demo_idx=demo_idx)
+
+    ax4 = fig.add_subplot(2, 2, 4)
+    _draw_cost_profile(ax4, learner, demo_idx=demo_idx)
+
+    save_figure(fig, learner_plot_dir(learner) / f"plot4panel_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png", dpi=220)
+
+
+def plot_scdp_results_4panel_overview(learner, it):
+    if plt is None:
+        return
+    fig = plt.figure(figsize=PAPER_FIGSIZE)
+
+    ax1 = fig.add_subplot(2, 2, 1)
+    _draw_trajectories_overview(ax1, learner, it)
 
     ax2 = fig.add_subplot(2, 2, 2)
     _draw_learning_curves(ax2, learner)
 
     ax3 = fig.add_subplot(2, 2, 3)
-    _draw_feature_bands(ax3, learner)
+    _draw_feature_bands(ax3, learner, demo_idx=0)
 
     ax4 = fig.add_subplot(2, 2, 4)
     _draw_cost_profile(ax4, learner, demo_idx=0)

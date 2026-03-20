@@ -7,10 +7,9 @@ import numpy as np
 
 from evaluation import eval_goalhmm_auto
 from methods.base import format_training_log
-from methods.common.tau_init import clip_tau_for_sequence, resolve_tau_init_for_demos
 from utils.models import GaussianModel, MarginExpLowerEmission, StudentTModel, ZeroMeanGaussianModel
-from visualization.scdp_4panel import plt as scdp_plot_plt, plot_scdp_results_4panel
-from visualization.scdp_activation import plot_scdp_activation_masks, plot_scdp_demo_avg_costs
+from visualization.scdp_4panel import plt as scdp_plot_plt, plot_scdp_results_4panel, plot_scdp_results_4panel_overview
+from visualization.scdp_activation import plot_scdp_activation_masks
 
 
 def _feature_schema(env):
@@ -83,6 +82,7 @@ class _StageParams:
     model_summaries: List[dict]
     subgoal: np.ndarray
     active_mask: np.ndarray | None = None
+    feature_scores: np.ndarray | None = None
 
 
 class SegmentConsensusDPModel:
@@ -92,24 +92,22 @@ class SegmentConsensusDPModel:
         env,
         true_taus=None,
         n_states=2,
-        tau_init=None,
-        tau_init_mode="uniform_taus",
         seed=0,
         selected_raw_feature_ids=None,
         feature_model_types=None,
         fixed_feature_mask=None,
         lambda_constraint=1.0,
         lambda_progress=1.0,
-        lambda_consensus=1.0,
-        lambda_r_consensus=1.0,
+        lambda_subgoal_consensus=1.0,
+        lambda_param_consensus=1.0,
+        lambda_feature_score_consensus=1.0,
         consensus_schedule="linear",
         progress_delta_scale=20.0,
         duration_min=None,
         duration_max=None,
         sigma_floor=0.1,
         lam_floor=0.1,
-        auto_feature_activation=False,
-        demo_local_baseline_gate=False,
+        feature_activation_mode="fixed_mask",
         equality_w70_ratio_threshold=0.2,
         plot_every=None,
         plot_dir="outputs/plots",
@@ -123,19 +121,23 @@ class SegmentConsensusDPModel:
         self.num_states = 2
         self.seed = int(seed)
         self.rng = np.random.RandomState(self.seed)
-        self.tau_init_mode = str(tau_init_mode)
         self.selected_raw_feature_ids = selected_raw_feature_ids
         self.feature_model_types_raw = feature_model_types
         self.fixed_feature_mask = fixed_feature_mask
         self.lambda_constraint = float(lambda_constraint)
         self.lambda_progress = float(lambda_progress)
-        self.lambda_consensus = float(lambda_consensus)
-        self.lambda_r_consensus = float(lambda_r_consensus)
+        self.lambda_subgoal_consensus = float(lambda_subgoal_consensus)
+        self.lambda_param_consensus = float(lambda_param_consensus)
+        self.lambda_feature_score_consensus = float(lambda_feature_score_consensus)
         self.consensus_schedule = str(consensus_schedule)
         self.progress_delta_scale = max(float(progress_delta_scale), 1e-6)
         self.sigma_floor = max(float(sigma_floor), 1e-6)
         self.lam_floor = max(float(lam_floor), 1e-6)
-        self.auto_feature_activation = bool(auto_feature_activation or demo_local_baseline_gate)
+        feature_activation_mode = str(feature_activation_mode).lower()
+        if feature_activation_mode not in {"fixed_mask", "score"}:
+            raise ValueError("feature_activation_mode must be one of {'fixed_mask', 'score'}.")
+        self.feature_activation_mode = feature_activation_mode
+        self.use_score_mode = self.feature_activation_mode == "score"
         self.equality_w70_ratio_threshold = float(equality_w70_ratio_threshold)
         self.plot_every = plot_every
         self.plot_dir = plot_dir
@@ -163,12 +165,17 @@ class SegmentConsensusDPModel:
         self.loss_total: List[float] = []
         self.loss_constraint: List[float] = []
         self.loss_progress: List[float] = []
-        self.loss_consensus: List[float] = []
-        self.loss_r_consensus: List[float] = []
+        self.loss_subgoal_consensus: List[float] = []
+        self.loss_param_consensus: List[float] = []
+        self.loss_feature_score_consensus: List[float] = []
         self.metrics_hist: Dict[str, List[float]] = {}
         self.segmentation_history: List[List[List[int]]] = []
-        self.consensus_lambda_hist: List[float] = []
-        self.current_consensus_lambda = 0.0
+        self.subgoal_consensus_lambda_hist: List[float] = []
+        self.param_consensus_lambda_hist: List[float] = []
+        self.feature_score_consensus_lambda_hist: List[float] = []
+        self.current_subgoal_consensus_lambda = 0.0
+        self.current_param_consensus_lambda = 0.0
+        self.current_feature_score_consensus_lambda = 0.0
         self.current_stage_params_per_demo: List[List[_StageParams]] = []
         self.demo_r_matrices_: List[np.ndarray] = []
         self.current_demo_cost_breakdown: List[Dict[str, float]] = []
@@ -182,22 +189,9 @@ class SegmentConsensusDPModel:
         self.shared_param_vectors: List[List[np.ndarray | None]] = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
         self.shared_stage_subgoals: List[np.ndarray] = [np.zeros(self.state_dim, dtype=float) for _ in range(self.num_states)]
         self.shared_r_mean: np.ndarray | None = None
-
-        if tau_init is not None:
-            self.tau_init = np.asarray(tau_init, dtype=int)
-        else:
-            self.tau_init = resolve_tau_init_for_demos(
-                self.demos,
-                tau_init=None,
-                tau_init_mode=self.tau_init_mode,
-                env=self.env,
-                seed=self.seed,
-                use_velocity=False,
-                vel_weight=1.0,
-                standardize=False,
-                use_env_features=True,
-                selected_raw_feature_ids=selected_raw_feature_ids,
-            )
+        self.shared_feature_score_mean: np.ndarray | None = None
+        self.demo_feature_score_matrices_: List[np.ndarray] = []
+        self.posthoc_activation_summary_: Dict[str, object] | None = None
 
     def _normalize_feature_model_types(self, num_features):
         types = self.feature_model_types_raw
@@ -344,31 +338,33 @@ class SegmentConsensusDPModel:
         summaries = []
         chosen_losses = []
         active_mask = np.zeros(self.num_features, dtype=int)
+        feature_scores = np.zeros(self.num_features, dtype=float)
         for feat_idx, kind in enumerate(self.feature_model_types):
             model = self._fit_local_model(kind, F[:, feat_idx])
             summary = model.get_summary()
             summaries.append(summary)
             fitted_loss = -np.asarray(model.logpdf(F[:, feat_idx]), dtype=float)
-            if self.auto_feature_activation:
+            fitted_step = float(np.mean(fitted_loss))
+            baseline_model = GaussianModel(
+                mu=float(np.mean(F[:, feat_idx])),
+                sigma=float(max(np.std(F[:, feat_idx]), 1e-6)),
+            )
+            baseline_loss = -np.asarray(baseline_model.logpdf(F[:, feat_idx]), dtype=float)
+            baseline_step = float(np.mean(baseline_loss))
+            ll_gain = baseline_step - fitted_step
+            if self.use_score_mode:
                 kind_l = str(kind).lower()
-                if kind_l in {"gauss", "gaussian", "student_t", "studentt", "t"}:
+                if kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}:
                     stage_w70 = float(_shortest_coverage_width(F[:, feat_idx], coverage=0.7))
                     demo_global_w70 = float(max(_shortest_coverage_width(F_demo[:, feat_idx], coverage=0.7), 1e-6))
-                    w70_ratio = stage_w70 / demo_global_w70
-                    if w70_ratio < self.equality_w70_ratio_threshold:
-                        chosen_losses.append(fitted_loss)
-                        active_mask[feat_idx] = 1
+                    score = stage_w70 / demo_global_w70
                 else:
-                    baseline_model = GaussianModel(
-                        mu=float(np.mean(F[:, feat_idx])),
-                        sigma=float(max(np.std(F[:, feat_idx]), 1e-6)),
-                    )
-                    baseline_loss = -np.asarray(baseline_model.logpdf(F[:, feat_idx]), dtype=float)
-                    if float(np.mean(fitted_loss)) <= float(np.mean(baseline_loss)):
-                        chosen_losses.append(fitted_loss)
-                        active_mask[feat_idx] = 1
+                    score = -ll_gain
+                feature_scores[feat_idx] = float(score)
+                chosen_losses.append(np.full(len(F[:, feat_idx]), float(score), dtype=float))
             else:
                 if self.r[stage_idx, feat_idx]:
+                    feature_scores[feat_idx] = -ll_gain
                     chosen_losses.append(fitted_loss)
                     active_mask[feat_idx] = 1
         if chosen_losses:
@@ -377,7 +373,65 @@ class SegmentConsensusDPModel:
             constraint_cost = 0.0
         subgoal = np.asarray(self.demos[demo_idx][e if stage_idx == 0 else -1], dtype=float)
         progress_cost = self._progress_cost(self.demos[demo_idx], s, e, subgoal)
-        return _StageParams(model_summaries=summaries, subgoal=subgoal, active_mask=active_mask), constraint_cost, progress_cost
+        return _StageParams(
+            model_summaries=summaries,
+            subgoal=subgoal,
+            active_mask=active_mask,
+            feature_scores=feature_scores,
+        ), constraint_cost, progress_cost
+
+    def _is_equality_feature(self, feat_idx: int) -> bool:
+        kind_l = str(self.feature_model_types[feat_idx]).lower()
+        return kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
+
+    def _compute_posthoc_activation_summary(self):
+        if not self.demo_feature_score_matrices_:
+            return None
+
+        scores = np.asarray(self.demo_feature_score_matrices_, dtype=float)
+        thresholds = np.zeros((self.num_states, self.num_features), dtype=float)
+        for feat_idx in range(self.num_features):
+            thr = 0.2 if self._is_equality_feature(feat_idx) else -0.5
+            thresholds[:, feat_idx] = float(thr)
+
+        activated = scores < thresholds[None, :, :]
+        activation_rate = np.mean(activated.astype(float), axis=0)
+        feature_names = []
+        for local_idx in range(self.num_features):
+            selected_col = int(self.selected_feature_columns[local_idx])
+            name = None
+            for i, spec in enumerate(self.raw_feature_specs):
+                if int(spec.get("column_idx", i)) == selected_col:
+                    name = str(spec.get("name", f"f{local_idx}"))
+                    break
+            feature_names.append(name or f"f{local_idx}")
+
+        by_stage = []
+        for stage_idx in range(self.num_states):
+            stage_items = []
+            for feat_idx in range(self.num_features):
+                stage_items.append(
+                    {
+                        "feature_idx": int(feat_idx),
+                        "feature_name": feature_names[feat_idx],
+                        "score_type": "w70_ratio" if self._is_equality_feature(feat_idx) else "-ll_gain",
+                        "threshold": float(thresholds[stage_idx, feat_idx]),
+                        "activation_rate": float(activation_rate[stage_idx, feat_idx]),
+                        "mean_score": float(np.mean(scores[:, stage_idx, feat_idx])),
+                        "median_score": float(np.median(scores[:, stage_idx, feat_idx])),
+                        "activated_demo_indices": [
+                            int(i) for i in np.where(activated[:, stage_idx, feat_idx])[0].tolist()
+                        ],
+                    }
+                )
+            by_stage.append(stage_items)
+
+        return {
+            "thresholds": thresholds.tolist(),
+            "activation_rate_matrix": activation_rate.tolist(),
+            "activated_mask_per_demo": activated.astype(int).tolist(),
+            "by_stage": by_stage,
+        }
 
     def _summary_to_vector(self, kind, summary):
         kind = str(kind).lower()
@@ -404,16 +458,20 @@ class SegmentConsensusDPModel:
             return MarginExpLowerEmission(b_init=float(vec[0]), lam_init=float(np.exp(vec[1])))
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
-    def _consensus_cost(self, candidate_stage_params, shared_stage_subgoals, shared_param_vectors):
+    def _subgoal_consensus_cost(self, candidate_stage_params, shared_stage_subgoals):
         total = 0.0
         for stage_idx in range(self.num_states):
             diff = np.asarray(candidate_stage_params[stage_idx].subgoal, dtype=float) - np.asarray(shared_stage_subgoals[stage_idx], dtype=float)
             total += float(np.dot(diff, diff))
+        return total
+
+    def _param_consensus_cost(self, candidate_stage_params, shared_param_vectors):
+        if self.use_score_mode:
+            return 0.0
+        total = 0.0
+        for stage_idx in range(self.num_states):
             for feat_idx, kind in enumerate(self.feature_model_types):
-                if self.auto_feature_activation:
-                    if candidate_stage_params[stage_idx].active_mask is None or not candidate_stage_params[stage_idx].active_mask[feat_idx]:
-                        continue
-                elif not self.r[stage_idx, feat_idx]:
+                if not self.r[stage_idx, feat_idx]:
                     continue
                 local_vec = self._summary_to_vector(kind, candidate_stage_params[stage_idx].model_summaries[feat_idx])
                 shared_vec = shared_param_vectors[stage_idx][feat_idx]
@@ -424,7 +482,7 @@ class SegmentConsensusDPModel:
         return total
 
     def _r_consensus_cost(self, candidate_stage_params, shared_r_mean):
-        if not self.auto_feature_activation or shared_r_mean is None:
+        if shared_r_mean is None:
             return 0.0
         total = 0.0
         for stage_idx in range(self.num_states):
@@ -435,7 +493,30 @@ class SegmentConsensusDPModel:
             total += float(np.dot(delta, delta))
         return total
 
-    def _candidate_cost(self, demo_idx, tau, lam_consensus, lam_r_consensus, shared_stage_subgoals, shared_param_vectors, shared_r_mean):
+    def _feature_score_consensus_cost(self, candidate_stage_params, shared_feature_score_mean):
+        if not self.use_score_mode or shared_feature_score_mean is None:
+            return 0.0
+        total = 0.0
+        for stage_idx in range(self.num_states):
+            scores = candidate_stage_params[stage_idx].feature_scores
+            if scores is None:
+                continue
+            delta = np.asarray(scores, dtype=float) - np.asarray(shared_feature_score_mean[stage_idx], dtype=float)
+            total += float(np.dot(delta, delta))
+        return total
+
+    def _candidate_cost(
+        self,
+        demo_idx,
+        tau,
+        lam_subgoal_consensus,
+        lam_param_consensus,
+        lam_feature_score_consensus,
+        shared_stage_subgoals,
+        shared_param_vectors,
+        shared_r_mean,
+        shared_feature_score_mean=None,
+    ):
         bounds = self._segment_bounds_from_tau(tau, len(self.demos[demo_idx]))
         candidate_stage_params = []
         constraint_cost = 0.0
@@ -448,17 +529,24 @@ class SegmentConsensusDPModel:
             candidate_stage_params.append(stage_params)
             constraint_cost += c_cost
             progress_cost += p_cost
-        consensus_cost = 0.0
-        if lam_consensus > 0.0:
-            consensus_cost = self._consensus_cost(candidate_stage_params, shared_stage_subgoals, shared_param_vectors)
-        r_consensus_cost = 0.0
-        if lam_r_consensus > 0.0:
-            r_consensus_cost = self._r_consensus_cost(candidate_stage_params, shared_r_mean)
+        subgoal_consensus_cost = 0.0
+        if lam_subgoal_consensus > 0.0:
+            subgoal_consensus_cost = self._subgoal_consensus_cost(candidate_stage_params, shared_stage_subgoals)
+        param_consensus_cost = 0.0
+        if lam_param_consensus > 0.0:
+            param_consensus_cost = self._param_consensus_cost(candidate_stage_params, shared_param_vectors)
+        feature_score_consensus_cost = 0.0
+        if lam_feature_score_consensus > 0.0:
+            if self.use_score_mode:
+                feature_score_consensus_cost = self._feature_score_consensus_cost(candidate_stage_params, shared_feature_score_mean)
+            else:
+                feature_score_consensus_cost = self._r_consensus_cost(candidate_stage_params, shared_r_mean)
         total = (
             self.lambda_constraint * constraint_cost
             + self.lambda_progress * progress_cost
-            + lam_consensus * consensus_cost
-            + lam_r_consensus * r_consensus_cost
+            + lam_subgoal_consensus * subgoal_consensus_cost
+            + lam_param_consensus * param_consensus_cost
+            + lam_feature_score_consensus * feature_score_consensus_cost
         )
         return {
             "tau": int(tau),
@@ -466,24 +554,11 @@ class SegmentConsensusDPModel:
             "stage_params": candidate_stage_params,
             "constraint": float(constraint_cost),
             "progress": float(progress_cost),
-            "consensus": float(consensus_cost),
-            "r_consensus": float(r_consensus_cost),
+            "subgoal_consensus": float(subgoal_consensus_cost),
+            "param_consensus": float(param_consensus_cost),
+            "feature_score_consensus": float(feature_score_consensus_cost),
             "total": float(total),
         }
-
-    def _initial_stage_ends(self):
-        stage_ends = []
-        if self.tau_init is not None:
-            if len(self.tau_init) != len(self.demos):
-                raise ValueError("tau_init must match the number of demos.")
-            for X, tau in zip(self.demos, self.tau_init):
-                cut = clip_tau_for_sequence(X, int(tau))
-                stage_ends.append([int(cut), len(X) - 1])
-            return stage_ends
-        for X in self.demos:
-            tau = clip_tau_for_sequence(X, int(round(0.5 * (len(X) - 1))))
-            stage_ends.append([int(tau), len(X) - 1])
-        return stage_ends
 
     def _shared_from_selected(self, selected_infos):
         shared_stage_subgoals = []
@@ -492,23 +567,16 @@ class SegmentConsensusDPModel:
                 np.mean([info["stage_params"][stage_idx].subgoal for info in selected_infos], axis=0)
             )
         shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
+        if self.use_score_mode:
+            return shared_stage_subgoals, shared_param_vectors
         for stage_idx in range(self.num_states):
             for feat_idx, kind in enumerate(self.feature_model_types):
-                if self.auto_feature_activation:
-                    vectors = [
-                        self._summary_to_vector(kind, info["stage_params"][stage_idx].model_summaries[feat_idx])
-                        for info in selected_infos
-                        if info["stage_params"][stage_idx].active_mask is not None and info["stage_params"][stage_idx].active_mask[feat_idx]
-                    ]
-                    if not vectors:
-                        continue
-                else:
-                    if not self.r[stage_idx, feat_idx]:
-                        continue
-                    vectors = [
-                        self._summary_to_vector(kind, info["stage_params"][stage_idx].model_summaries[feat_idx])
-                        for info in selected_infos
-                    ]
+                if not self.r[stage_idx, feat_idx]:
+                    continue
+                vectors = [
+                    self._summary_to_vector(kind, info["stage_params"][stage_idx].model_summaries[feat_idx])
+                    for info in selected_infos
+                ]
                 shared_param_vectors[stage_idx][feat_idx] = np.mean(np.stack(vectors, axis=0), axis=0)
         return shared_stage_subgoals, shared_param_vectors
 
@@ -526,42 +594,35 @@ class SegmentConsensusDPModel:
                     continue
                 self.feature_models[stage_idx][feat_idx] = self._vector_to_model(kind, vec)
 
-    def _current_consensus_lambda(self, iteration, max_iter):
+    def _current_scheduled_lambda(self, base_lambda, iteration, max_iter):
         frac = 1.0 if max_iter <= 1 else float(iteration) / float(max_iter - 1)
         if self.consensus_schedule == "linear":
-            return self.lambda_consensus * frac
+            return float(base_lambda) * frac
         if self.consensus_schedule == "quadratic":
-            return self.lambda_consensus * frac * frac
+            return float(base_lambda) * frac * frac
         raise ValueError(f"Unsupported consensus_schedule '{self.consensus_schedule}'.")
 
     def fit(self, max_iter=30, verbose=True):
-        self.stage_ends_ = self._initial_stage_ends()
-        init_infos = []
-        zero_goals = [np.zeros(self.state_dim, dtype=float), np.zeros(self.state_dim, dtype=float)]
-        zero_params = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
-        for demo_idx, stage_ends in enumerate(self.stage_ends_):
-            init_infos.append(self._candidate_cost(demo_idx, int(stage_ends[0]), 0.0, 0.0, zero_goals, zero_params, None))
-        shared_stage_subgoals, shared_param_vectors = self._shared_from_selected(init_infos)
-        self._apply_shared_state(shared_stage_subgoals, shared_param_vectors)
-        if self.auto_feature_activation and init_infos:
-            self.shared_r_mean = np.mean(
-                np.stack(
-                    [
-                        np.stack([stage_params.active_mask for stage_params in info["stage_params"]], axis=0)
-                        for info in init_infos
-                    ],
-                    axis=0,
-                ),
-                axis=0,
-            )
-        else:
-            self.shared_r_mean = None
+        self.stage_ends_ = []
+        self.shared_r_mean = None
+        self.shared_feature_score_mean = None
+        shared_stage_subgoals = [np.zeros(self.state_dim, dtype=float) for _ in range(self.num_states)]
+        shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
 
         for iteration in range(int(max_iter)):
-            lam_consensus = self._current_consensus_lambda(iteration, int(max_iter))
-            lam_r_consensus = self._current_consensus_lambda(iteration, int(max_iter)) * self.lambda_r_consensus
-            self.consensus_lambda_hist.append(float(lam_consensus))
-            self.current_consensus_lambda = float(lam_consensus)
+            lam_subgoal_consensus = self._current_scheduled_lambda(self.lambda_subgoal_consensus, iteration, int(max_iter))
+            lam_param_consensus = self._current_scheduled_lambda(self.lambda_param_consensus, iteration, int(max_iter))
+            lam_feature_score_consensus = self._current_scheduled_lambda(
+                self.lambda_feature_score_consensus,
+                iteration,
+                int(max_iter),
+            )
+            self.subgoal_consensus_lambda_hist.append(float(lam_subgoal_consensus))
+            self.param_consensus_lambda_hist.append(float(lam_param_consensus))
+            self.feature_score_consensus_lambda_hist.append(float(lam_feature_score_consensus))
+            self.current_subgoal_consensus_lambda = float(lam_subgoal_consensus)
+            self.current_param_consensus_lambda = float(lam_param_consensus)
+            self.current_feature_score_consensus_lambda = float(lam_feature_score_consensus)
             selected_infos = []
             for demo_idx, X in enumerate(self.demos):
                 best_info = None
@@ -569,11 +630,13 @@ class SegmentConsensusDPModel:
                     info = self._candidate_cost(
                         demo_idx,
                         tau,
-                        lam_consensus,
-                        lam_r_consensus,
+                        lam_subgoal_consensus,
+                        lam_param_consensus,
+                        lam_feature_score_consensus,
                         shared_stage_subgoals,
                         shared_param_vectors,
                         self.shared_r_mean,
+                        self.shared_feature_score_mean,
                     )
                     if info is None:
                         continue
@@ -589,8 +652,9 @@ class SegmentConsensusDPModel:
                 {
                     "constraint": self.lambda_constraint * float(info["constraint"]),
                     "progress": self.lambda_progress * float(info["progress"]),
-                    "consensus": lam_consensus * float(info["consensus"]),
-                    "r_consensus": lam_r_consensus * float(info.get("r_consensus", 0.0)),
+                    "subgoal_consensus": lam_subgoal_consensus * float(info["subgoal_consensus"]),
+                    "param_consensus": lam_param_consensus * float(info["param_consensus"]),
+                    "feature_score_consensus": lam_feature_score_consensus * float(info.get("feature_score_consensus", 0.0)),
                     "total": float(info["total"]),
                 }
                 for info in selected_infos
@@ -599,26 +663,34 @@ class SegmentConsensusDPModel:
                 np.stack([stage_params.active_mask for stage_params in info["stage_params"]], axis=0)
                 for info in selected_infos
             ]
-            if self.auto_feature_activation and self.demo_r_matrices_:
-                self.shared_r_mean = np.mean(np.stack(self.demo_r_matrices_, axis=0), axis=0)
+            self.demo_feature_score_matrices_ = [
+                np.stack([stage_params.feature_scores for stage_params in info["stage_params"]], axis=0)
+                for info in selected_infos
+            ]
+            if self.use_score_mode and self.demo_feature_score_matrices_:
+                self.shared_feature_score_mean = np.mean(np.stack(self.demo_feature_score_matrices_, axis=0), axis=0)
+                self.posthoc_activation_summary_ = self._compute_posthoc_activation_summary()
             self.segmentation_history.append([list(item) for item in self.stage_ends_])
             shared_stage_subgoals, shared_param_vectors = self._shared_from_selected(selected_infos)
             self._apply_shared_state(shared_stage_subgoals, shared_param_vectors)
 
             total_constraint = float(np.sum([info["constraint"] for info in selected_infos]))
             total_progress = float(np.sum([info["progress"] for info in selected_infos]))
-            total_consensus = float(np.sum([info["consensus"] for info in selected_infos]))
-            total_r_consensus = float(np.sum([info.get("r_consensus", 0.0) for info in selected_infos]))
+            total_subgoal_consensus = float(np.sum([info["subgoal_consensus"] for info in selected_infos]))
+            total_param_consensus = float(np.sum([info["param_consensus"] for info in selected_infos]))
+            total_feature_score_consensus = float(np.sum([info.get("feature_score_consensus", 0.0) for info in selected_infos]))
             total_loss = float(
                 self.lambda_constraint * total_constraint
                 + self.lambda_progress * total_progress
-                + lam_consensus * total_consensus
-                + lam_r_consensus * total_r_consensus
+                + lam_subgoal_consensus * total_subgoal_consensus
+                + lam_param_consensus * total_param_consensus
+                + lam_feature_score_consensus * total_feature_score_consensus
             )
             self.loss_constraint.append(total_constraint)
             self.loss_progress.append(total_progress)
-            self.loss_consensus.append(total_consensus)
-            self.loss_r_consensus.append(total_r_consensus)
+            self.loss_subgoal_consensus.append(total_subgoal_consensus)
+            self.loss_param_consensus.append(total_param_consensus)
+            self.loss_feature_score_consensus.append(total_feature_score_consensus)
             self.loss_total.append(total_loss)
 
             gammas = _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_states)
@@ -635,20 +707,26 @@ class SegmentConsensusDPModel:
                             "total": total_loss,
                             "constraint": total_constraint,
                             "progress": total_progress,
-                            "consensus": total_consensus,
-                            "r_consensus": total_r_consensus,
+                            "subgoal_consensus": total_subgoal_consensus,
+                            "param_consensus": total_param_consensus,
+                            "feature_score_consensus": total_feature_score_consensus,
                         },
                         metrics=metrics,
                         extras={
-                            "lam_consensus": f"{lam_consensus:.3f}",
-                            "lam_r_consensus": f"{lam_r_consensus:.3f}",
+                            "lam_subgoal_consensus": f"{lam_subgoal_consensus:.3f}",
+                            "lam_param_consensus": f"{lam_param_consensus:.3f}",
+                            "lam_feature_score_consensus": f"{lam_feature_score_consensus:.3f}",
                         },
                     )
                 )
             if self.plot_every is not None and (iteration + 1) % int(self.plot_every) == 0:
-                plot_scdp_results_4panel(self, iteration + 1)
-                if self.auto_feature_activation:
+                if self.use_score_mode:
                     plot_scdp_activation_masks(self, iteration + 1)
-                    plot_scdp_demo_avg_costs(self, iteration + 1)
+
+        if self.plot_every is not None:
+            final_it = int(max_iter)
+            plot_scdp_results_4panel_overview(self, final_it)
+            for demo_idx in range(len(self.demos)):
+                plot_scdp_results_4panel(self, final_it, demo_idx=demo_idx)
 
         return _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_states)
