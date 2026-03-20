@@ -45,9 +45,10 @@ def plot_ccp_progress_heatmaps(learner, it, demo_idx=0):
 
         stage_end = int(stage_ends[stage_idx])
         stage_start = prev_end + 1
-        assigned_end = max(stage_start, stage_end - 1)
-        if assigned_end >= stage_start:
-            ax.axvspan(stage_start, assigned_end, color="tab:blue", alpha=0.10, label="assigned stage span")
+        assigned_start = max(stage_start - 1, 0)
+        assigned_end = min(stage_end - 1, len(costs) - 1)
+        if assigned_end >= assigned_start:
+            ax.axvspan(assigned_start, assigned_end, color="tab:blue", alpha=0.10, label="assigned stage span")
         ax.axvline(stage_end, color="black", linestyle="--", lw=1.0, label="stage boundary")
 
         center = np.asarray(learner.end_mu[stage_idx], dtype=float).reshape(-1)

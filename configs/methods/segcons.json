@@ -8,7 +8,7 @@
   "seed": 0,
   "selected_raw_feature_ids": null,
   "feature_model_types": null,
-  "auto_feature_select": true,
+  "auto_feature_select": null,
   "fixed_feature_mask": null,
   "r_sparse_lambda": 0.3,
   "feat_weight": 1.0,

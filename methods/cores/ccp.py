@@ -9,7 +9,7 @@ import numpy as np
 from evaluation import eval_goalhmm_auto
 from methods.base import format_training_log
 from methods.common.tau_init import clip_tau_for_sequence, resolve_tau_init_for_demos
-from utils.models import GaussianModel, MarginExpLowerEmission, ZeroMeanGaussianModel
+from utils.models import GaussianModel, MarginExpLowerEmission, StudentTModel, ZeroMeanGaussianModel
 from visualization import plot_ccp_progress_boundary_profile, plot_ccp_progress_heatmaps, plot_ccp_results_4panel
 from visualization.ccp_4panel import plt as ccp_plot_plt
 
@@ -310,6 +310,8 @@ class ConstraintCompletionProgressModel:
                 kind = str(kind).lower()
                 if kind in {"gauss", "gaussian"}:
                     cur.append(GaussianModel(mu=0.0, sigma=1.0))
+                elif kind in {"student_t", "studentt", "t"}:
+                    cur.append(StudentTModel(mu=0.0, sigma=1.0))
                 elif kind in {"zero_gauss", "zero_gaussian"}:
                     cur.append(ZeroMeanGaussianModel(sigma=1.0))
                 elif kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
@@ -572,11 +574,15 @@ class ConstraintCompletionProgressModel:
         return self._softplus_progress_delta(delta)
 
     def _segment_step_progress_costs(self, demo_idx, stage_idx, s, e):
-        if e <= s:
+        if e < s:
             return np.zeros(0, dtype=float)
         X = self.demos[demo_idx]
+        start_t = max(int(s) - 1, 0)
+        end_t = min(int(e) - 1, len(X) - 2)
+        if end_t < start_t:
+            return np.zeros(0, dtype=float)
         return np.asarray(
-            [self._step_progress_cost(stage_idx, X[t], X[t + 1]) for t in range(int(s), int(e))],
+            [self._step_progress_cost(stage_idx, X[t], X[t + 1]) for t in range(start_t, end_t + 1)],
             dtype=float,
         )
 

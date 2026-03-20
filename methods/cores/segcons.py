@@ -26,7 +26,7 @@ from evaluation import eval_goalhmm_auto
 from ..base import format_training_log
 from ..common.tau_init import extract_taus_hat, resolve_tau_init_for_demos
 from utils.vmf import _unit, vmf_logC_d, vmf_grad_wrt_g
-from utils.models import GaussianModel, MarginExpLowerEmission, ZeroMeanGaussianModel
+from utils.models import GaussianModel, MarginExpLowerEmission, StudentTModel, ZeroMeanGaussianModel
 
 try:
     import matplotlib.pyplot as plt
@@ -166,12 +166,14 @@ class SegmentConstraintModel:
         for k in range(self.num_states):
             row = []
             for m in range(self.num_features):
-                kind = self.feature_model_types[m]
-                if kind == "gauss":
+                kind = str(self.feature_model_types[m]).lower()
+                if kind in {"gauss", "gaussian"}:
                     row.append(GaussianModel(mu=None, sigma=None, fixed_sigma=None))
-                elif kind == "zero_gauss":
+                elif kind in {"student_t", "studentt", "t"}:
+                    row.append(StudentTModel(mu=None, sigma=None))
+                elif kind in {"zero_gauss", "zero_gaussian"}:
                     row.append(ZeroMeanGaussianModel(sigma=None, fixed_sigma=None))
-                elif kind == "margin_exp_lower":
+                elif kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
                     # English comment omitted during cleanup.
                     row.append(MarginExpLowerEmission(b_init=0.0, lam_init=1.0))
                 # English comment omitted during cleanup.

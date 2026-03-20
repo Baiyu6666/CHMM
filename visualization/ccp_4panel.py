@@ -148,6 +148,8 @@ def _draw_boundary_cost_profile(ax, learner, demo_idx, stage_idx=0):
     constraint = []
     end = []
     progress = []
+    edge_stage1 = []
+    edge_stage2 = []
     for tau in candidate_taus:
         p1 = learner._segment_cost_parts(demo_idx, 0, 0, int(tau))
         p2 = learner._segment_cost_parts(demo_idx, 1, int(tau) + 1, T - 1)
@@ -161,14 +163,24 @@ def _draw_boundary_cost_profile(ax, learner, demo_idx, stage_idx=0):
         constraint.append(weighted_constraint)
         end.append(weighted_end)
         progress.append(weighted_progress)
+        edge_stage1.append(
+            learner.lambda_progress * learner._step_progress_cost(0, learner.demos[demo_idx][max(int(tau) - 1, 0)], learner.demos[demo_idx][int(tau)])
+            if int(tau) >= 1 else 0.0
+        )
+        edge_stage2.append(
+            learner.lambda_progress * learner._step_progress_cost(1, learner.demos[demo_idx][int(tau)], learner.demos[demo_idx][int(tau) + 1])
+            if int(tau) + 1 < T else 0.0
+        )
     ax.plot(candidate_taus, total, color="black", lw=1.4, label="total")
     ax.plot(candidate_taus, constraint, color="tab:red", lw=1.0, label="constraint")
     ax.plot(candidate_taus, end, color="tab:blue", lw=1.0, label="completion")
     ax.plot(candidate_taus, progress, color="tab:orange", lw=1.2, label="progress", linestyle="-")
+    ax.plot(candidate_taus, edge_stage1, color="tab:purple", lw=0.9, linestyle="--", label="edge tau-1->tau (s1)")
+    ax.plot(candidate_taus, edge_stage2, color="tab:green", lw=0.9, linestyle="--", label="edge tau->tau+1 (s2)")
 
     left_max = max(
         [0.0]
-        + [float(np.max(series)) for series in (total, constraint, end, progress) if len(series) > 0]
+        + [float(np.max(series)) for series in (total, constraint, end, progress, edge_stage1, edge_stage2) if len(series) > 0]
     )
     ax.set_ylim(top=min(left_max * 1.05 if left_max > 0.0 else 1.0, 250.0))
 
@@ -232,9 +244,9 @@ def plot_ccp_results_4panel(learner, it):
             gg = np.asarray(learner.env.goal, dtype=float)
             ax1.scatter(gg[0], gg[1], gg[2], c="green", marker="P", s=28, label="true goal")
         if getattr(learner, "g1", None) is not None:
-            ax1.scatter(learner.g1[0], learner.g1[1], learner.g1[2], c="blue", marker="D", s=24, label="mu1 / g1")
+            ax1.scatter(learner.g1[0], learner.g1[1], learner.g1[2], c="blue", marker="D", s=24, label="prev mu1 / g1")
         if getattr(learner, "g2", None) is not None:
-            ax1.scatter(learner.g2[0], learner.g2[1], learner.g2[2], c="navy", marker="P", s=24, label="mu2 / g2")
+            ax1.scatter(learner.g2[0], learner.g2[1], learner.g2[2], c="navy", marker="P", s=24, label="prev mu2 / g2")
         if _env_has_3d_obstacle(learner.env):
             pass
         ax1.set_xlabel("x", fontsize=PAPER_LABEL_SIZE)
@@ -267,11 +279,11 @@ def plot_ccp_results_4panel(learner, it):
             ax1.scatter(gg[0], gg[1], c="green", marker="P", s=28, label="true goal")
         if getattr(learner, "g1", None) is not None:
             g1 = _xy_point(learner.g1)
-            ax1.scatter(g1[0], g1[1], c="blue", marker="D", s=24, label="mu1 / g1")
+            ax1.scatter(g1[0], g1[1], c="blue", marker="D", s=24, label="prev mu1 / g1")
             _draw_completion_ellipse_2d(ax1, learner.g1, learner.end_precision[0], "blue", "stage1 completion")
         if getattr(learner, "g2", None) is not None:
             g2 = _xy_point(learner.g2)
-            ax1.scatter(g2[0], g2[1], c="navy", marker="P", s=24, label="mu2 / g2")
+            ax1.scatter(g2[0], g2[1], c="navy", marker="P", s=24, label="prev mu2 / g2")
             if learner.num_states > 1:
                 _draw_completion_ellipse_2d(ax1, learner.g2, learner.end_precision[1], "navy", "stage2 completion")
         if hasattr(learner, "g1_hist") and len(learner.g1_hist) > 1:

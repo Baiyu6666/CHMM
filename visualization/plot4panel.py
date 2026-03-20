@@ -7,6 +7,10 @@ try:
 except ModuleNotFoundError:
     plt = None
 try:
+    from matplotlib.patches import Ellipse
+except ModuleNotFoundError:
+    Ellipse = None
+try:
     from mpl_toolkits.mplot3d import Axes3D  # noqa
 except ModuleNotFoundError:
     Axes3D = None
@@ -99,6 +103,95 @@ def _xy_point(point):
     return arr[:2]
 
 
+def _draw_cghmm_gmms(ax, learner, x_dim: int):
+    if plt is None:
+        return
+    if not all(hasattr(learner, attr) for attr in ("gmm_weights", "gmm_means", "gmm_covs")):
+        return
+    state_colors = ["tab:orange", "tab:red"]
+    x_mean = np.asarray(getattr(learner, "x_mean", np.zeros((1, x_dim))), dtype=float).reshape(-1)
+    x_std = np.asarray(getattr(learner, "x_std", np.ones((1, x_dim))), dtype=float).reshape(-1)
+    if x_mean.size < 2:
+        x_mean = np.pad(x_mean, (0, 2 - x_mean.size), constant_values=0.0)
+    if x_std.size < 2:
+        x_std = np.pad(x_std, (0, 2 - x_std.size), constant_values=1.0)
+    mean_xy = x_mean[:2]
+    std_xy = np.maximum(x_std[:2], 1e-12)
+
+    if x_dim == 3:
+        for state_idx, (weights, means) in enumerate(zip(learner.gmm_weights, learner.gmm_means)):
+            means = np.asarray(means, dtype=float)
+            if means.ndim != 2 or means.shape[1] < 3:
+                continue
+            for comp_idx, (w, mu) in enumerate(zip(weights, means)):
+                mu_raw = np.asarray(mu[:3], dtype=float).copy()
+                raw_std = np.ones_like(mu_raw)
+                raw_mean = np.zeros_like(mu_raw)
+                raw_std[: min(len(x_std), 3)] = x_std[: min(len(x_std), 3)]
+                raw_mean[: min(len(x_mean), 3)] = x_mean[: min(len(x_mean), 3)]
+                mu_raw = mu_raw * raw_std + raw_mean
+                alpha = float(np.clip(w, 0.15, 0.95))
+                ax.scatter(
+                    mu_raw[0],
+                    mu_raw[1],
+                    mu_raw[2],
+                    c=state_colors[state_idx],
+                    marker="o",
+                    s=20 + 40 * float(w),
+                    alpha=alpha,
+                    depthshade=False,
+                    label=f"state {state_idx + 1} GMM mean" if comp_idx == 0 else "",
+                    zorder=11,
+                )
+        return
+
+    if Ellipse is None:
+        return
+    for state_idx, (weights, means, covs) in enumerate(zip(learner.gmm_weights, learner.gmm_means, learner.gmm_covs)):
+        means = np.asarray(means, dtype=float)
+        covs = np.asarray(covs, dtype=float)
+        if means.ndim != 2 or means.shape[1] < 2 or covs.ndim != 3 or covs.shape[1] < 2 or covs.shape[2] < 2:
+            continue
+        for comp_idx, (w, mu, cov) in enumerate(zip(weights, means, covs)):
+            mu_raw = np.asarray(mu[:2], dtype=float) * std_xy + mean_xy
+            cov_xy = np.asarray(cov[:2, :2], dtype=float)
+            cov_raw = np.diag(std_xy) @ cov_xy @ np.diag(std_xy)
+            try:
+                eigvals, eigvecs = np.linalg.eigh(cov_raw)
+            except np.linalg.LinAlgError:
+                continue
+            eigvals = np.clip(eigvals, 1e-9, None)
+            order = np.argsort(eigvals)[::-1]
+            eigvals = eigvals[order]
+            eigvecs = eigvecs[:, order]
+            angle = float(np.degrees(np.arctan2(eigvecs[1, 0], eigvecs[0, 0])))
+            width = 4.0 * np.sqrt(eigvals[0])
+            height = 4.0 * np.sqrt(eigvals[1])
+            alpha = float(np.clip(w, 0.18, 0.75))
+            ell = Ellipse(
+                xy=(float(mu_raw[0]), float(mu_raw[1])),
+                width=float(width),
+                height=float(height),
+                angle=angle,
+                facecolor="none",
+                edgecolor=state_colors[state_idx],
+                linewidth=1.0,
+                alpha=alpha,
+                linestyle="-" if state_idx == 0 else "--",
+                label=f"state {state_idx + 1} GMM" if comp_idx == 0 else "",
+                zorder=6,
+            )
+            ax.add_patch(ell)
+            ax.scatter(
+                float(mu_raw[0]),
+                float(mu_raw[1]),
+                c=state_colors[state_idx],
+                s=12 + 28 * float(w),
+                alpha=alpha,
+                zorder=7,
+            )
+
+
 
 def plot_demos_goals_snapshot(ax, learner, taus, gammas, title=None, show_legend=True):
     if plt is None:
@@ -147,6 +240,8 @@ def plot_demos_goals_snapshot(ax, learner, taus, gammas, title=None, show_legend
         cx, cy = learner.env.obs_center
         r = learner.env.obs_radius
         ax.add_patch(plt.Circle((cx, cy), r, color='gray', fill=False, linestyle='-', label='obstacle'))
+
+    _draw_cghmm_gmms(ax, learner, X_dim)
 
     if X_dim == 3:
         sg = learner.env.subgoal
@@ -357,6 +452,8 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             label='obstacle'
         )
         ax.add_patch(circle)
+
+    _draw_cghmm_gmms(ax, learner, X_dim)
 
     # ================== true goals ==================
     if X_dim == 3:
@@ -812,6 +909,14 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     ll_feat2 = ll_feat_state[:, 1]
     d_feat = ll_feat2 - ll_feat1
 
+    ll_emit_full = learner._emission_loglik(X0)
+    ll_x_state = ll_emit_full - ll_feat_state
+    ll_x1 = ll_x_state[:, 0]
+    ll_x2 = ll_x_state[:, 1]
+    d_x = ll_x2 - ll_x1
+    mean_abs_dx = float(np.mean(np.abs(d_x)))
+    mean_abs_dfeat = float(np.mean(np.abs(d_feat)))
+
     # English comment omitted during cleanup.
     ll_prog1 = np.zeros(T0)
     ll_prog2 = np.zeros(T0)
@@ -857,9 +962,12 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     xi01_pad = np.r_[xi01, 0.0]
 
     # ---------- Plot ----------
+    plt.plot(t_axis, d_x, '-', lw=1.2, color='tab:cyan', label=' _x')
     plt.plot(t_axis, d_feat, '-', lw=1.1, color='tab:red', label=' _feat')
-    plt.plot(t_axis, d_prog, '-', lw=1.1, color='tab:blue', label=' _prog')
-    plt.plot(t_axis, d_trans, '--', lw=1.2, color='tab:orange', label=' _trans')
+    if getattr(learner, "prog_weight", 0.0) > 0:
+        plt.plot(t_axis, d_prog, '-', lw=1.1, color='tab:blue', label=' _prog')
+    if not getattr(learner, "plot_context", "") == "cghmm":
+        plt.plot(t_axis, d_trans, '--', lw=1.2, color='tab:orange', label=' _trans')
     # English comment omitted during cleanup.
 
     # plt.plot(t_axis, alpha_odds, '-.', lw=2, color='tab:purple',
@@ -884,7 +992,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     ax2 = ax.twinx()
     # English comment omitted during cleanup.
     ax2.set_ylabel('prob.', fontsize=PAPER_LABEL_SIZE)
-    ax2.plot(t_axis, gammas[0][:, 0], '-', lw=1.1, color='purple', label='gamma(0)')
+    ax2.plot(t_axis, gammas[0][:, 0], '-', lw=1.1, color='purple', label='P(z_t=0 | X)')
     ax2.set_ylim([0.0, 1.0])
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     ax2.tick_params(labelsize=PAPER_TICK_SIZE)

@@ -29,8 +29,8 @@ from visualization.plot4panel import plot_demos_goals_snapshot
 
 
 DATASET_NAME = "2DObsAvoid"
-RANDOM_TAU_RUNS = 7
-MODELS = ["ccp"]
+RANDOM_TAU_RUNS = 6
+MODELS = ["cghmm"]
 SAVE_PATH = Path("outputs/experiments/exp_init_sensitivity_results.json")
 SAVE_PATH = PROJECT_ROOT / SAVE_PATH
 
@@ -68,6 +68,8 @@ def _effective_joint_method_kwargs(method_name, method_seed, tau_init, extra_met
     method_cfg["plot_every"] = None
     if extra_method_kwargs:
         method_cfg = deep_merge(method_cfg, extra_method_kwargs)
+    if method_name == "segcons" and method_cfg.get("fixed_feature_mask") is not None:
+        method_cfg["auto_feature_select"] = False
     return method_cfg
 
 def sample_taus_from_mode(demos, dataset, mode, seed):
@@ -151,6 +153,12 @@ def _extract_metrics(method_name, result):
         learner = result["joint_result"]["model"]
         metrics = dict(result["joint_result"]["metrics"])
         gammas = result["joint_result"]["gammas"]
+    elif method_name == "cghmm":
+        learner = result["segmentation"].model
+        metrics = dict(result["constraints"]["metrics"])
+        gammas = result["segmentation"].extras.get("gammas")
+        if gammas is None:
+            raise ValueError("cghmm segmentation result is missing gammas in extras.")
     else:
         learner = result["constraints"]["model"]
         metrics = dict(result["constraints"]["metrics"])
@@ -194,31 +202,24 @@ def run_single_ccp(taus_init, seed, extra_method_kwargs=None):
 
 
 def run_single_cghmm(taus_init, seed, extra_method_kwargs=None):
-    method_kwargs = {
-        "segmenter": {
-            "tau_init": taus_init,
-            "plot_every": None,
-            "max_iter": MAX_ITER,
-            "verbose": False,
-            "seed": seed,
-        },
-        "constraints": {
-            "refine_steps": 5,
-            "verbose": False,
-        },
-    }
+    dataset_kwargs = _effective_dataset_kwargs(DATASET_NAME, "cghmm")
+    _, base_method_cfg = _load_joint_config(DATASET_NAME, "cghmm")
+    method_kwargs = dict(base_method_cfg)
+    segmenter_cfg = dict(method_kwargs.get("segmenter", {}))
+    constraints_cfg = dict(method_kwargs.get("constraints", {}))
+    segmenter_cfg["tau_init"] = np.asarray(taus_init, dtype=int)
+    segmenter_cfg["seed"] = int(seed)
+    segmenter_cfg["verbose"] = False
+    segmenter_cfg["plot_every"] = None
+    constraints_cfg["verbose"] = False
+    method_kwargs["segmenter"] = segmenter_cfg
+    method_kwargs["constraints"] = constraints_cfg
     if extra_method_kwargs:
-        for key, value in extra_method_kwargs.items():
-            if key == "segmenter" and isinstance(value, dict):
-                method_kwargs["segmenter"].update(value)
-            elif key == "constraints" and isinstance(value, dict):
-                method_kwargs["constraints"].update(value)
-            else:
-                method_kwargs[key] = value
+        method_kwargs = deep_merge(method_kwargs, extra_method_kwargs)
     result = run_experiment(
         dataset_name=DATASET_NAME,
         method_name="cghmm",
-        dataset_kwargs={"n_demos": N_DEMOS, "seed": DEMO_SEED},
+        dataset_kwargs=dataset_kwargs,
         method_kwargs=method_kwargs,
     )
     return _extract_metrics("cghmm", result)
@@ -272,7 +273,7 @@ def plot_boxplots(results, metric_names, group_names):
 def plot_goal_grids(goal_records, dataset, group_names):
     if plt is None:
         return
-    runs_per_row = 6
+    runs_per_row = 4
     for model in MODELS:
         row_blocks_per_scheme = {
             scheme: int(np.ceil(max(len(goal_records[scheme][model]), 1) / runs_per_row))

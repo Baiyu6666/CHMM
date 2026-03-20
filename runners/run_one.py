@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from experiments.config_loader import deep_merge, load_experiment_config
 from experiments.unified_experiment import run_experiment
+from methods import JOINT_METHODS
 
 
 def _default_plot_dir(method_name: str, dataset_name: str, seed: int) -> str:
@@ -21,6 +23,19 @@ def _should_replace_plot_dir(value) -> bool:
         return True
     text = str(value).strip()
     return text in {"", "outputs/plots"}
+
+
+def _clear_plot_dir(plot_dir: object) -> None:
+    path = Path(plot_dir)
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    if not path.exists():
+        return
+    for child in path.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
 
 def main():
@@ -45,9 +60,10 @@ def main():
         dataset_cfg["seed"] = int(args.dataset_seed)
     dataset_seed = int(dataset_cfg.get("seed", 0))
     plot_dir = _default_plot_dir(method_name, dataset_name, dataset_seed)
-    if method_name in {"segcons", "ccp"}:
+    if method_name in JOINT_METHODS:
         if _should_replace_plot_dir(method_cfg.get("plot_dir")):
             method_cfg["plot_dir"] = plot_dir
+        _clear_plot_dir(method_cfg["plot_dir"])
         method_cfg.setdefault("seed", 0 if args.method_seed is None else int(args.method_seed))
         if args.method_seed is not None:
             method_cfg["seed"] = int(args.method_seed)
@@ -65,6 +81,9 @@ def main():
             segmenter_cfg["max_iter"] = int(args.max_iter)
         if _should_replace_plot_dir(constraint_cfg.get("plot_dir")):
             constraint_cfg["plot_dir"] = plot_dir
+        _clear_plot_dir(segmenter_cfg["plot_dir"])
+        if str(Path(constraint_cfg["plot_dir"])) != str(Path(segmenter_cfg["plot_dir"])):
+            _clear_plot_dir(constraint_cfg["plot_dir"])
         method_cfg["segmenter"] = segmenter_cfg
         method_cfg["constraints"] = constraint_cfg
 
@@ -75,7 +94,7 @@ def main():
         method_kwargs=method_cfg,
     )
 
-    if method_name in {"segcons", "ccp"}:
+    if method_name in JOINT_METHODS:
         print(results["joint_result"]["metrics"])
     else:
         print(results["constraints"]["metrics"])

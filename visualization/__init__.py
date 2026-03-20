@@ -3,6 +3,7 @@ from .ccp_progress_boundary import plot_ccp_progress_boundary_profile
 from .ccp_progress_heatmap import plot_ccp_progress_heatmaps
 from .io import DEFAULT_PLOT_ROOT, learner_plot_dir, plot_root, save_figure
 from .plot4panel import plot_feature_model_debug, plot_results_4panel
+from .scdp_4panel import plot_scdp_results_4panel
 
 PyBulletRenderer3D = None
 

@@ -7,7 +7,7 @@
 
 import numpy as np
 from evaluation import eval_goalhmm_auto
-from utils.models import GaussianModel, MarginExpLowerEmission, ZeroMeanGaussianModel
+from utils.models import GaussianModel, MarginExpLowerEmission, StudentTModel, ZeroMeanGaussianModel
 from visualization.plot4panel import plot_results_4panel
 from ..common.tau_init import extract_taus_hat, resolve_tau_init_for_demos
 from ..base import format_training_log
@@ -117,12 +117,14 @@ class CGHMM:
         for k in range(self.num_states):
             row = []
             for m in range(self.num_features):
-                kind = self.feature_model_types[m]
-                if kind == "gauss":
+                kind = str(self.feature_model_types[m]).lower()
+                if kind in {"gauss", "gaussian"}:
                     row.append(GaussianModel(mu=None, sigma=None, fixed_sigma=None))
-                elif kind == "zero_gauss":
+                elif kind in {"student_t", "studentt", "t"}:
+                    row.append(StudentTModel(mu=None, sigma=None))
+                elif kind in {"zero_gauss", "zero_gaussian"}:
                     row.append(ZeroMeanGaussianModel(sigma=None, fixed_sigma=None))
-                elif kind == "margin_exp_lower":
+                elif kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
                     row.append(MarginExpLowerEmission(b_init=0.0, lam_init=1.0))
                 else:
                     raise ValueError(f"Unknown emission type '{kind}' for feature {m}")

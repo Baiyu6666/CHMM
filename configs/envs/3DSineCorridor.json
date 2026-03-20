@@ -7,7 +7,7 @@
       "selected_raw_feature_ids": ["dist_centerline", "speed"],
       "feature_model_types": {
         "dist_centerline": "margin_exp_lower",
-        "speed": "gauss"
+        "speed": "student_t"
       },
       "fixed_feature_mask": [[1, 0], [0, 1]]
     },
@@ -15,7 +15,15 @@
       "selected_raw_feature_ids": ["dist_centerline", "speed"],
       "feature_model_types": {
         "dist_centerline": "margin_exp_lower",
-        "speed": "gauss"
+        "speed": "student_t"
+      },
+      "fixed_feature_mask": [[1, 0], [0, 1]]
+    },
+    "scdp": {
+      "selected_raw_feature_ids": ["dist_centerline", "speed"],
+      "feature_model_types": {
+        "dist_centerline": "margin_exp_lower",
+        "speed": "student_t"
       },
       "fixed_feature_mask": [[1, 0], [0, 1]]
     },
@@ -24,7 +32,7 @@
         "selected_raw_feature_ids": ["dist_centerline", "speed"],
         "feature_model_types": {
           "dist_centerline": "margin_exp_lower",
-          "speed": "gauss"
+          "speed": "student_t"
         },
         "fixed_feature_mask": [[1, 0], [0, 1]]
       },
@@ -33,7 +41,7 @@
         "selected_raw_feature_ids": ["dist_centerline", "speed"],
         "feature_model_types": {
           "dist_centerline": "margin_exp_lower",
-          "speed": "gauss"
+          "speed": "student_t"
         },
         "fixed_feature_mask": [[1, 0], [0, 1]]
       }
@@ -47,7 +55,7 @@
         "selected_raw_feature_ids": ["dist_centerline", "speed"],
         "feature_model_types": {
           "dist_centerline": "margin_exp_lower",
-          "speed": "gauss"
+          "speed": "student_t"
         },
         "fixed_feature_mask": [[1, 0], [0, 1]]
       }
@@ -61,7 +69,7 @@
         "selected_raw_feature_ids": ["dist_centerline", "speed"],
         "feature_model_types": {
           "dist_centerline": "margin_exp_lower",
-          "speed": "gauss"
+          "speed": "student_t"
         },
         "fixed_feature_mask": [[1, 0], [0, 1]]
       }

@@ -11,7 +11,7 @@
   "auto_feature_select": false,
   "fixed_feature_mask": null,
   "r_sparse_lambda": 0.0,
-  "lambda_constraint": 0.02,
+  "lambda_constraint": 0.0,
   "lambda_end": 0.0,
   "lambda_progress": 1.0,
   "progress_term_type": "delta",
@@ -26,6 +26,6 @@
   "hard_negative_radius": 2,
   "random_negative_per_demo": 4,
   "end_precision_floor": 0.001,
-  "plot_every": 2,
+  "plot_every": 1,
   "plot_dir": "outputs/plots"
 }

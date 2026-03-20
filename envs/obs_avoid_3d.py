@@ -26,9 +26,9 @@ class ObsAvoidEnv3D:
         stage2_speed_max=0.06,
         stage1_accel_max=0.06,
         stage2_accel_max=0.04,
-        start_z_range=(0.2, 0.6),
+        start_z_range=(0.2, 0.7),
         subgoal_z=0.4,
-        goal_z=0.6,
+        goal_z=0.05,
         dt=1.0,
         noise_std=0.01,
     ):
@@ -63,6 +63,8 @@ class ObsAvoidEnv3D:
             clearance=clearance,
             stage1_speed_max=stage1_speed_max,
             stage2_speed_max=stage2_speed_max,
+            stage1_accel_max=stage1_accel_max,
+            stage2_accel_max=stage2_accel_max,
             dt=dt,
             noise_std=noise_std,
         )
@@ -207,29 +209,8 @@ def load_3d_obs_avoid(
     env_kwargs=None,
     demo_kwargs=None,
 ) -> TaskBundle:
-    env_cfg = {
-        "start_xy": (-1.5, 0.0),
-        "subgoal_xy": (0.5, 0.0),
-        "goal_xy": (-0.2, 0.5),
-        "obs_center_xy": (-0.5, 0.0),
-        "obs_radius": 0.3,
-        "clearance": 0.1,
-        "stage1_speed_max": 0.12,
-        "stage2_speed_max": 0.06,
-        "stage1_accel_max": 0.06,
-        "stage2_accel_max": 0.04,
-        "start_z_range": (0.2, 0.7),
-        "subgoal_z": 0.4,
-        "goal_z": 0.05,
-        "dt": 1.0,
-        "noise_std": 0.01,
-    }
-    if env_kwargs:
-        env_cfg.update(env_kwargs)
-
-    run_kwargs = {"n1": 24, "direction": None}
-    if demo_kwargs:
-        run_kwargs.update(demo_kwargs)
+    env_cfg = dict(env_kwargs or {})
+    run_kwargs = dict(demo_kwargs or {})
 
     rng = np.random.RandomState(seed)
     env = ObsAvoidEnv3D(**env_cfg)
