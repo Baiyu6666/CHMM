@@ -15,7 +15,6 @@ try:
 except ModuleNotFoundError:
     Axes3D = None
 
-from utils.vmf import _unit, vmf_logC_d
 from .io import learner_plot_dir, save_figure
 
 PAPER_FIGSIZE = (7.2, 5.2)
@@ -23,6 +22,94 @@ PAPER_TITLE_SIZE = 9
 PAPER_LABEL_SIZE = 8
 PAPER_TICK_SIZE = 7
 PAPER_LEGEND_SIZE = 6.5
+STAGE_COLORS = ["#D55E00", "#0072B2", "#CC79A7", "#009E73"]
+
+
+def _true_first_cutpoint(learner, demo_idx: int):
+    true_cutpoints = getattr(learner, "true_cutpoints", None)
+    if true_cutpoints is not None and demo_idx < len(true_cutpoints):
+        cuts = true_cutpoints[demo_idx]
+        if cuts is not None:
+            arr = np.asarray(cuts, dtype=int).reshape(-1)
+            if arr.size > 0:
+                return int(arr[0])
+    if getattr(learner, "true_taus", None) is not None and learner.true_taus[demo_idx] is not None:
+        return int(learner.true_taus[demo_idx])
+    return None
+
+
+def _true_cutpoints(learner, demo_idx: int):
+    true_cutpoints = getattr(learner, "true_cutpoints", None)
+    if true_cutpoints is not None and demo_idx < len(true_cutpoints):
+        cuts = true_cutpoints[demo_idx]
+        if cuts is None:
+            return []
+        return [int(x) for x in np.asarray(cuts, dtype=int).reshape(-1).tolist()]
+    first = _true_first_cutpoint(learner, demo_idx)
+    return [] if first is None else [int(first)]
+
+
+def _stage_colors(num_states: int):
+    return [STAGE_COLORS[i % len(STAGE_COLORS)] for i in range(max(int(num_states), 1))]
+
+
+def _stage_ends_from_gamma(gamma):
+    z = np.argmax(np.asarray(gamma, dtype=float), axis=1).astype(int)
+    return np.where(np.diff(z) != 0)[0].astype(int).tolist() + [int(len(z) - 1)]
+
+
+def _coerce_stage_ends(boundary_like, gamma, T: int):
+    if boundary_like is None:
+        return _stage_ends_from_gamma(gamma)
+    arr = np.asarray(boundary_like)
+    if arr.ndim == 0:
+        tau = int(arr)
+        return [tau, int(T - 1)]
+    flat = np.asarray(arr, dtype=int).reshape(-1).tolist()
+    if not flat:
+        return [int(T - 1)]
+    if flat[-1] != T - 1:
+        flat = flat + [int(T - 1)]
+    return [int(x) for x in flat]
+
+
+def _segment_bounds(stage_ends):
+    starts = []
+    ends = []
+    prev = -1
+    for end in stage_ends:
+        starts.append(prev + 1)
+        ends.append(int(end))
+        prev = int(end)
+    return starts, ends
+
+
+def _shared_stage_subgoals(learner):
+    subgoals = getattr(learner, "stage_subgoals", None)
+    if subgoals is not None:
+        return [np.asarray(g, dtype=float) for g in subgoals]
+    out = []
+    if getattr(learner, "g1", None) is not None:
+        out.append(np.asarray(learner.g1, dtype=float))
+    if getattr(learner, "g2", None) is not None:
+        out.append(np.asarray(learner.g2, dtype=float))
+    return out
+
+
+def _stage_subgoals_hist(learner, stage_idx: int):
+    hist = getattr(learner, "stage_subgoals_hist", None)
+    if hist:
+        pts = []
+        for item in hist:
+            if stage_idx < len(item):
+                pts.append(np.asarray(item[stage_idx], dtype=float))
+        if pts:
+            return np.stack(pts, axis=0)
+    if stage_idx == 0 and getattr(learner, "g1_hist", None):
+        return np.stack(learner.g1_hist, axis=0)
+    if stage_idx == 1 and getattr(learner, "g2_hist", None):
+        return np.stack(learner.g2_hist, axis=0)
+    return None
 
 
 def _feature_column_idx(learner, local_idx: int) -> int:
@@ -197,44 +284,34 @@ def plot_demos_goals_snapshot(ax, learner, taus, gammas, title=None, show_legend
     if plt is None:
         return ax
 
-    current_g1 = learner.g1_hist[-1] if hasattr(learner, "g1_hist") and len(learner.g1_hist) > 0 else learner.g1
-    current_g2 = learner.g2_hist[-1] if hasattr(learner, "g2_hist") and len(learner.g2_hist) > 0 else learner.g2
+    shared_subgoals = _shared_stage_subgoals(learner)
+    colors = _stage_colors(getattr(learner, "num_states", len(shared_subgoals) or 2))
     X_dim = learner.demos[0].shape[1]
     if title is not None:
         ax.set_title(title, fontsize=PAPER_TITLE_SIZE, pad=4)
 
     if X_dim == 3:
-        for i, (X, tau_hat, gamma) in enumerate(zip(learner.demos, taus, gammas)):
+        for i, (X, boundary_like, gamma) in enumerate(zip(learner.demos, taus, gammas)):
             X = np.asarray(X)
             T = len(X)
-            th = int(tau_hat)
-            X_pre = X[:th + 1]
-            X_post = X[th + 1:] if th + 1 < T else None
-            ax.scatter(X_pre[:, 0], X_pre[:, 1], X_pre[:, 2], c='orange', s=3, alpha=0.35, depthshade=False)
-            if X_post is not None and len(X_post) > 0:
-                ax.scatter(X_post[:, 0], X_post[:, 1], X_post[:, 2], c='red', s=3, alpha=0.35, depthshade=False)
-            ax.scatter(X[th, 0], X[th, 1], X[th, 2], c='blue', marker='x', s=24, linewidths=1.0,
-                       label='learned cutpoint' if i == 0 else "", depthshade=False, zorder=12)
-            if learner.true_taus[i] is not None:
-                tt = int(learner.true_taus[i])
-                ax.scatter(X[tt, 0], X[tt, 1], X[tt, 2], c='green', marker='x', s=24, linewidths=1.0,
-                           label='true cutpoint' if i == 0 else "", depthshade=False, zorder=12)
+            stage_ends = _coerce_stage_ends(boundary_like, gamma, T)
+            starts, ends = _segment_bounds(stage_ends)
+            for k, (s, e) in enumerate(zip(starts, ends)):
+                ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], X[s : e + 1, 2], color=colors[k], s=3, alpha=0.35, depthshade=False)
+            for j, tt in enumerate(_true_cutpoints(learner, i)):
+                ax.scatter(X[tt, 0], X[tt, 1], X[tt, 2], color='black', marker='x', s=24, linewidths=1.0,
+                           label='true cutpoint' if i == 0 and j == 0 else "", depthshade=False, zorder=12)
     else:
-        for i, (X, tau_hat, gamma) in enumerate(zip(learner.demos, taus, gammas)):
+        for i, (X, boundary_like, gamma) in enumerate(zip(learner.demos, taus, gammas)):
             X = np.asarray(X)
             T = len(X)
-            th = int(tau_hat)
-            X_pre = X[:th + 1]
-            X_post = X[th + 1:] if th + 1 < T else None
-            ax.scatter(X_pre[:, 0], X_pre[:, 1], c='orange', s=4, alpha=0.35)
-            if X_post is not None and len(X_post) > 0:
-                ax.scatter(X_post[:, 0], X_post[:, 1], c='red', s=4, alpha=0.35)
-            ax.scatter(X[th, 0], X[th, 1], c='blue', marker='x', s=18, linewidths=1.0,
-                       label='learned cutpoint' if i == 0 else "", zorder=10)
-            if learner.true_taus[i] is not None:
-                tt = int(learner.true_taus[i])
-                ax.scatter(X[tt, 0], X[tt, 1], c='green', marker='x', s=18, linewidths=1.0,
-                           label='true cutpoint' if i == 0 else "", zorder=10)
+            stage_ends = _coerce_stage_ends(boundary_like, gamma, T)
+            starts, ends = _segment_bounds(stage_ends)
+            for k, (s, e) in enumerate(zip(starts, ends)):
+                ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], color=colors[k], s=4, alpha=0.35)
+            for j, tt in enumerate(_true_cutpoints(learner, i)):
+                ax.scatter(X[tt, 0], X[tt, 1], color='black', marker='x', s=18, linewidths=1.0,
+                           label='true cutpoint' if i == 0 and j == 0 else "", zorder=10)
 
     if X_dim != 3 and _env_has_xy_obstacle(learner.env):
         cx, cy = learner.env.obs_center
@@ -244,44 +321,40 @@ def plot_demos_goals_snapshot(ax, learner, taus, gammas, title=None, show_legend
     _draw_cghmm_gmms(ax, learner, X_dim)
 
     if X_dim == 3:
-        sg = learner.env.subgoal
-        gg = learner.env.goal
-        ax.scatter(sg[0], sg[1], sg[2], c='green', marker='*', s=28, label='true subgoal')
-        ax.scatter(gg[0], gg[1], gg[2], c='green', marker='P', s=28, label='true goal')
+        if hasattr(learner.env, "subgoal"):
+            sg = learner.env.subgoal
+            ax.scatter(sg[0], sg[1], sg[2], color='black', marker='X', s=28, label='true stage end')
+        if hasattr(learner.env, "goal"):
+            gg = learner.env.goal
+            ax.scatter(gg[0], gg[1], gg[2], color='black', marker='X', s=28, label='true stage end')
     elif not _is_pickplace(learner.env):
-        sg = _xy_point(learner.env.subgoal)
-        gg = _xy_point(learner.env.goal)
-        ax.scatter(sg[0], sg[1], c='green', marker='*', s=28, label='true subgoal')
-        ax.scatter(gg[0], gg[1], c='green', marker='P', s=28, label='true goal')
+        if hasattr(learner.env, "subgoal"):
+            sg = _xy_point(learner.env.subgoal)
+            ax.scatter(sg[0], sg[1], color='black', marker='X', s=28, label='true stage end')
+        if hasattr(learner.env, "goal"):
+            gg = _xy_point(learner.env.goal)
+            ax.scatter(gg[0], gg[1], color='black', marker='X', s=28, label='true stage end')
 
-    if len(learner.g1_hist) > 1:
-        G1 = np.stack(learner.g1_hist, axis=0)
-        if X_dim == 3:
-            ax.plot(G1[:, 0], G1[:, 1], G1[:, 2], '-', lw=1.0, alpha=0.35, color='blue', label='g1 history')
-            ax.scatter(G1[:, 0], G1[:, 1], G1[:, 2], s=4, alpha=0.25, color='blue')
-        else:
-            ax.plot(G1[:, 0], G1[:, 1], '-', lw=1.0, alpha=0.35, color='blue', label='g1 history')
-            ax.scatter(G1[:, 0], G1[:, 1], s=4, alpha=0.25, color='blue')
-    if len(learner.g2_hist) > 1:
-        G2 = np.stack(learner.g2_hist, axis=0)
-        if X_dim == 3:
-            ax.plot(G2[:, 0], G2[:, 1], G2[:, 2], '-', lw=1.0, alpha=0.35, color='navy', label='g2 history')
-            ax.scatter(G2[:, 0], G2[:, 1], G2[:, 2], s=4, alpha=0.25, color='navy')
-        else:
-            ax.plot(G2[:, 0], G2[:, 1], '-', lw=1.0, alpha=0.35, color='navy', label='g2 history')
-            ax.scatter(G2[:, 0], G2[:, 1], s=4, alpha=0.25, color='navy')
+    for k, sg in enumerate(shared_subgoals):
+        hist = _stage_subgoals_hist(learner, k)
+        if hist is not None and len(hist) > 1:
+            if X_dim == 3:
+                ax.plot(hist[:, 0], hist[:, 1], hist[:, 2], '-', lw=1.0, alpha=0.35, color=colors[k], label=f'g{k + 1} history')
+                ax.scatter(hist[:, 0], hist[:, 1], hist[:, 2], s=4, alpha=0.25, color=colors[k])
+            else:
+                ax.plot(hist[:, 0], hist[:, 1], '-', lw=1.0, alpha=0.35, color=colors[k], label=f'g{k + 1} history')
+                ax.scatter(hist[:, 0], hist[:, 1], s=4, alpha=0.25, color=colors[k])
 
     if X_dim == 3:
-        ax.scatter(current_g1[0], current_g1[1], current_g1[2], c='blue', marker='D', s=24, label='est. subgoal g1')
-        ax.scatter(current_g2[0], current_g2[1], current_g2[2], c='navy', marker='P', s=24, label='est. goal g2')
+        for k, sg in enumerate(shared_subgoals):
+            ax.scatter(sg[0], sg[1], sg[2], color=colors[k], marker='D', s=24, edgecolors='black', linewidths=0.8, label=f'est. stage {k + 1} end')
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
     else:
-        g1_xy = _xy_point(current_g1)
-        g2_xy = _xy_point(current_g2)
-        ax.scatter(g1_xy[0], g1_xy[1], c='blue', marker='D', s=24, label='est. subgoal g1')
-        ax.scatter(g2_xy[0], g2_xy[1], c='navy', marker='P', s=24, label='est. goal g2')
+        for k, sg in enumerate(shared_subgoals):
+            g_xy = _xy_point(sg)
+            ax.scatter(g_xy[0], g_xy[1], color=colors[k], marker='D', s=24, edgecolors='black', linewidths=0.8, label=f'est. stage {k + 1} end')
         ax.set_xlabel("x")
         ax.set_ylabel("z" if _is_pickplace(learner.env) else "y")
         ax.set_aspect("equal", adjustable="box")
@@ -321,8 +394,8 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     """
 
     plot_context = getattr(learner, "plot_context", "joint")
-    current_g1 = learner.g1_hist[-1] if hasattr(learner, "g1_hist") and len(learner.g1_hist) > 0 else learner.g1
-    current_g2 = learner.g2_hist[-1] if hasattr(learner, "g2_hist") and len(learner.g2_hist) > 0 else learner.g2
+    shared_subgoals = _shared_stage_subgoals(learner)
+    stage_colors = _stage_colors(getattr(learner, "num_states", len(shared_subgoals) or 2))
     learning_title = {
         "joint": "Joint learning curves",
         "posthoc": "Posthoc constraint curves",
@@ -350,80 +423,37 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
 
     # ================== demos + cutpoints ==================
     if X_dim == 3:
-        # English comment omitted during cleanup.
-        for i, (X, tau_hat, gamma) in enumerate(zip(learner.demos, taus, gammas)):
+        for i, (X, boundary_like, gamma) in enumerate(zip(learner.demos, taus, gammas)):
             X = np.asarray(X)
             T = len(X)
-            th = int(tau_hat)
-
-            # split
-            X_pre = X[:th + 1]
-            X_post = X[th + 1:] if th + 1 < T else None
-
-            # pre-cutpoint (orange)
-            ax.scatter(
-                X_pre[:, 0], X_pre[:, 1], X_pre[:, 2],
-                c='orange', s=3, alpha=0.35, depthshade=False
-            )
-
-            # post-cutpoint (red)
-            if X_post is not None and len(X_post) > 0:
+            stage_ends = _coerce_stage_ends(boundary_like, gamma, T)
+            starts, ends = _segment_bounds(stage_ends)
+            for k, (s, e) in enumerate(zip(starts, ends)):
                 ax.scatter(
-                    X_post[:, 0], X_post[:, 1], X_post[:, 2],
-                    c='red', s=3, alpha=0.35, depthshade=False
+                    X[s : e + 1, 0], X[s : e + 1, 1], X[s : e + 1, 2],
+                    color=stage_colors[k], s=3, alpha=0.35, depthshade=False
                 )
-
-            # learned cutpoint (blue x)
-            ax.scatter(
-                X[th, 0], X[th, 1], X[th, 2],
-                c='blue', marker='x', s=24, linewidths=1.0,
-                label='learned cutpoint' if i == 0 else "",
-                depthshade=False, zorder=12
-            )
-
-            # true cutpoint (green x)
-            if learner.true_taus[i] is not None:
-                tt = int(learner.true_taus[i])
+            for j, tt in enumerate(_true_cutpoints(learner, i)):
                 ax.scatter(
                     X[tt, 0], X[tt, 1], X[tt, 2],
-                    c='green', marker='x', s=24, linewidths=1.0,
-                    label='true cutpoint' if i == 0 else "",
+                    color='black', marker='x', s=24, linewidths=1.0,
+                    label='true cutpoint' if i == 0 and j == 0 else "",
                     depthshade=False, zorder=12
                 )
 
     else:
-        # English comment omitted during cleanup.
-        for i, (X, tau_hat, gamma) in enumerate(zip(learner.demos, taus, gammas)):
+        for i, (X, boundary_like, gamma) in enumerate(zip(learner.demos, taus, gammas)):
             X = np.asarray(X)
             T = len(X)
-            th = int(tau_hat)
-
-            X_pre = X[:th + 1]
-            X_post = X[th + 1:] if th + 1 < T else None
-
-            ax.scatter(
-                X_pre[:, 0], X_pre[:, 1],
-                c='orange', s=4, alpha=0.35
-            )
-
-            if X_post is not None and len(X_post) > 0:
-                ax.scatter(
-                    X_post[:, 0], X_post[:, 1],
-                    c='red', s=4, alpha=0.35
-                )
-
-            ax.scatter(
-                X[th, 0], X[th, 1],
-                c='blue', marker='x', s=18, linewidths=1.0,
-                label='learned cutpoint' if i == 0 else "", zorder=10
-            )
-
-            if learner.true_taus[i] is not None:
-                tt = int(learner.true_taus[i])
+            stage_ends = _coerce_stage_ends(boundary_like, gamma, T)
+            starts, ends = _segment_bounds(stage_ends)
+            for k, (s, e) in enumerate(zip(starts, ends)):
+                ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], color=stage_colors[k], s=4, alpha=0.35)
+            for j, tt in enumerate(_true_cutpoints(learner, i)):
                 ax.scatter(
                     X[tt, 0], X[tt, 1],
-                    c='green', marker='x', s=18, linewidths=1.0,
-                    label='true cutpoint' if i == 0 else "", zorder=10
+                    color='black', marker='x', s=18, linewidths=1.0,
+                    label='true cutpoint' if i == 0 and j == 0 else "", zorder=10
                 )
 
     # ================== obstacle ==================
@@ -458,88 +488,38 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     # ================== true goals ==================
     if X_dim == 3:
         # English comment omitted during cleanup.
-        sg = learner.env.subgoal
-        gg = learner.env.goal
-        ax.scatter(
-            sg[0], sg[1], sg[2],
-            c='green', marker='*', s=28, label='true subgoal'
-        )
-        ax.scatter(
-            gg[0], gg[1], gg[2],
-            c='green', marker='P', s=28, label='true goal'
-        )
+        if hasattr(learner.env, "subgoal"):
+            sg = learner.env.subgoal
+            ax.scatter(sg[0], sg[1], sg[2], color='black', marker='X', s=28, label='true stage end')
+        if hasattr(learner.env, "goal"):
+            gg = learner.env.goal
+            ax.scatter(gg[0], gg[1], gg[2], color='black', marker='X', s=28, label='true stage end')
     else:
-        # English comment omitted during cleanup.
         if not _is_pickplace(learner.env):
-            sg = _xy_point(learner.env.subgoal)
-            gg = _xy_point(learner.env.goal)
-            ax.scatter(
-                sg[0], sg[1],
-                c='green', marker='*', s=28, label='true subgoal'
-            )
-            ax.scatter(
-                gg[0], gg[1],
-                c='green', marker='P', s=28, label='true goal'
-            )
+            if hasattr(learner.env, "subgoal"):
+                sg = _xy_point(learner.env.subgoal)
+                ax.scatter(sg[0], sg[1], color='black', marker='X', s=28, label='true stage end')
+            if hasattr(learner.env, "goal"):
+                gg = _xy_point(learner.env.goal)
+                ax.scatter(gg[0], gg[1], color='black', marker='X', s=28, label='true stage end')
 
-    # ================== g history ==================
-    if len(learner.g1_hist) > 1:
-        G1 = np.stack(learner.g1_hist, axis=0)
-        if X_dim == 3:
-            ax.plot(
-                G1[:, 0], G1[:, 1], G1[:, 2],
-                '-', lw=1.0, alpha=0.35, color='blue', label='g1 history'
-            )
-            ax.scatter(
-                G1[:, 0], G1[:, 1], G1[:, 2],
-                s=4, alpha=0.25, color='blue'
-            )
-        else:
-            ax.plot(
-                G1[:, 0], G1[:, 1],
-                '-', lw=1.0, alpha=0.35, color='blue', label='g1 history'
-            )
-            ax.scatter(
-                G1[:, 0], G1[:, 1],
-                s=4, alpha=0.25, color='blue'
-            )
+    for k, sg in enumerate(shared_subgoals):
+        hist = _stage_subgoals_hist(learner, k)
+        if hist is not None and len(hist) > 1:
+            if X_dim == 3:
+                ax.plot(hist[:, 0], hist[:, 1], hist[:, 2], '-', lw=1.0, alpha=0.35, color=stage_colors[k], label=f'g{k + 1} history')
+                ax.scatter(hist[:, 0], hist[:, 1], hist[:, 2], s=4, alpha=0.25, color=stage_colors[k])
+            else:
+                ax.plot(hist[:, 0], hist[:, 1], '-', lw=1.0, alpha=0.35, color=stage_colors[k], label=f'g{k + 1} history')
+                ax.scatter(hist[:, 0], hist[:, 1], s=4, alpha=0.25, color=stage_colors[k])
 
-    if len(learner.g2_hist) > 1:
-        G2 = np.stack(learner.g2_hist, axis=0)
-        if X_dim == 3:
-            ax.plot(
-                G2[:, 0], G2[:, 1], G2[:, 2],
-                '-', lw=1.0, alpha=0.35, color='navy', label='g2 history'
-            )
-            ax.scatter(
-                G2[:, 0], G2[:, 1], G2[:, 2],
-                s=4, alpha=0.25, color='navy'
-            )
-        else:
-            ax.plot(
-                G2[:, 0], G2[:, 1],
-                '-', lw=1.0, alpha=0.35, color='navy', label='g2 history'
-            )
-            ax.scatter(
-                G2[:, 0], G2[:, 1],
-                s=4, alpha=0.25, color='navy'
-            )
-
-    # ================== estimated goals ==================
     if X_dim == 3:
-        ax.scatter(
-            current_g1[0], current_g1[1], current_g1[2],
-            c='blue', marker='D', s=24, label='est. subgoal g1'
-        )
-        ax.scatter(
-            current_g2[0], current_g2[1], current_g2[2],
-            c='navy', marker='P', s=24, label='est. goal g2'
-        )
+        for k, sg in enumerate(shared_subgoals):
+            ax.scatter(sg[0], sg[1], sg[2], color=stage_colors[k], marker='D', s=24, edgecolors='black', linewidths=0.8, label=f'est. stage {k + 1} end')
     else:
-        g1_xy = _xy_point(current_g1)
-        g2_xy = _xy_point(current_g2)
-        ax.scatter(g1_xy[0], g1_xy[1], c='blue', marker='D', s=24, label='est. subgoal g1')
-        ax.scatter(g2_xy[0], g2_xy[1], c='navy', marker='P', s=24, label='est. goal g2')
+        for k, sg in enumerate(shared_subgoals):
+            g_xy = _xy_point(sg)
+            ax.scatter(g_xy[0], g_xy[1], color=stage_colors[k], marker='D', s=24, edgecolors='black', linewidths=0.8, label=f'est. stage {k + 1} end')
 
     # ================== axes labels + scaling ==================
     if X_dim == 3:
@@ -561,10 +541,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
         xyz_all.append(learner.env.goal[None, :])
 
         # learned goals + history
-        xyz_all.append(np.asarray(learner.g1_hist))
-        xyz_all.append(np.asarray(learner.g2_hist))
-        xyz_all.append(np.asarray(current_g1)[None, :])
-        xyz_all.append(np.asarray(current_g2)[None, :])
+        for k in range(len(shared_subgoals)):
+            hist = _stage_subgoals_hist(learner, k)
+            if hist is not None:
+                xyz_all.append(np.asarray(hist))
+            xyz_all.append(np.asarray(shared_subgoals[k])[None, :])
 
         # English comment omitted during cleanup.
         if _env_has_3d_obstacle(learner.env):
@@ -666,11 +647,25 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             if not seq:
                 continue
             Tm = min(len(seq), len(iters))
-            valid_seq = [float(v) for v in seq[:Tm] if np.isfinite(v)]
+            plot_seq = []
+            seq_values = []
+            for v in seq[:Tm]:
+                if not np.isscalar(v):
+                    plot_seq.append(np.nan)
+                    continue
+                v_f = float(v)
+                if np.isfinite(v_f):
+                    seq_values.append(v_f)
+                    plot_seq.append(v_f)
+                else:
+                    plot_seq.append(np.nan)
+            valid_seq = seq_values
+            if not valid_seq:
+                continue
             metric_values.extend(valid_seq)
             ax2.plot(
                 iters[:Tm],
-                seq[:Tm],
+                np.asarray(plot_seq, dtype=float),
                 linestyle='--',
                 linewidth=1.0,
                 label=name,
@@ -726,7 +721,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
         feature_label = (
             learner.feature_specs[m]["name"]
             if hasattr(learner, "feature_specs") and m < len(learner.feature_specs)
-            else f"f{selected_raw_feature_ids[m]}"
+            else f"f{m}"
         )
         ax_main.plot(
             t_axis,
@@ -736,115 +731,73 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             label=f"{feature_label}(t)",
         )
 
-    # ---------- cutpoints ----------
-    tau_hat0 = taus[0]
-    true_tau0 = learner.true_taus[0]
-
-    ax_main.axvline(
-        tau_hat0,
-        color="blue",
-        linestyle="--",
-        label="learned cutpoint",
-    )
-    if true_tau0 is not None:
-        ax_main.axvline(
-            true_tau0,
-            color="green",
-            linestyle="--",
-            label="true cutpoint",
-        )
+    stage_ends0 = _coerce_stage_ends(taus[0], gamma0, T0)
+    starts0, ends0 = _segment_bounds(stage_ends0)
+    for k, (s, e) in enumerate(zip(starts0, ends0)):
+        ax_main.axvspan(s, e, color=stage_colors[k], alpha=0.035)
+    for j, cp in enumerate(stage_ends0[:-1]):
+        ax_main.axvline(cp, color="black", linestyle="--", label="learned cutpoint" if j == 0 else "")
+    true_cutpoints0 = _true_cutpoints(learner, 0)
+    for j, cp in enumerate(true_cutpoints0):
+        ax_main.axvline(cp, color="gray", linestyle=":", label="true cutpoint" if j == 0 else "")
 
     ax_main.set_xlabel("t", fontsize=PAPER_LABEL_SIZE)
     ax_main.set_ylabel("feature values", fontsize=PAPER_LABEL_SIZE)
     ax_main.tick_params(labelsize=PAPER_TICK_SIZE)
 
-    # English comment omitted during cleanup.
-    t1 = t_axis[: tau_hat0 + 1]
-    t2 = t_axis[tau_hat0:] if tau_hat0 < T0 else np.array([tau_hat0])
-
     for m in range(M):
         color_m = color_cycle[m]
-
-        # ---- stage1 bands ----
-        if learner.r[0, m] == 1 and len(t1) > 0:
-            model1 = learner.feature_models[0][m]
-            info1 = model1.get_summary()
-            t1_type = info1.get("type", "base")
-
-            if t1_type in ("gauss", "margin_exp_lower", "gauss_zero"):
-                z_low1 = float(model1.L)
-                z_up1 = float(model1.U)
-
-                fid = feature_column_indices[m]
-                L1_raw = z_low1 * learner.feat_std[fid] + learner.feat_mean[fid]
-                U1_raw = z_up1 * learner.feat_std[fid] + learner.feat_mean[fid]
-
+        feature_name = (
+            learner.feature_specs[m]["name"]
+            if hasattr(learner, "feature_specs") and m < len(learner.feature_specs)
+            else f"f{m}"
+        )
+        fid = feature_column_indices[m]
+        for stage_idx, (s, e) in enumerate(zip(starts0, ends0)):
+            t_seg = t_axis[s : e + 1]
+            if len(t_seg) == 0 or learner.r[stage_idx, m] != 1:
+                continue
+            model = learner.feature_models[stage_idx][m]
+            info = model.get_summary()
+            model_type = info.get("type", "base")
+            if model_type in ("gauss", "margin_exp_lower", "gauss_zero"):
+                z_low = float(model.L)
+                z_up = float(model.U)
+                low_raw = z_low * learner.feat_std[fid] + learner.feat_mean[fid]
+                up_raw = z_up * learner.feat_std[fid] + learner.feat_mean[fid]
                 ax_main.fill_between(
-                    t1, L1_raw, U1_raw,
+                    t_seg, low_raw, up_raw,
                     color=color_m,
-                    alpha=0.12,
+                    alpha=max(0.05, 0.12 - 0.02 * stage_idx),
                     linewidth=0,
                 )
-                feature_name = (
-                    learner.feature_specs[m]["name"]
-                    if hasattr(learner, "feature_specs") and m < len(learner.feature_specs)
-                    else f"f{m}"
-                )
-                ref_value = _reference_constraint_value(learner.env, feature_name, stage=0)
-                if ref_value is not None:
-                    ax_main.axhline(float(ref_value), color=color_m, linestyle='--', linewidth=0.8, alpha=0.6)
-
-        # ---- stage2 bands ----
-        if learner.r[1, m] == 1 and len(t2) > 0:
-            model2 = learner.feature_models[1][m]
-            info2 = model2.get_summary()
-            t2_type = info2.get("type", "base")
-
-            if t2_type in ("gauss", "margin_exp_lower", "gauss_zero"):
-                z_low2 = float(model2.L)
-                z_up2 = float(model2.U)
-
-                fid = feature_column_indices[m]
-                L2_raw = z_low2 * learner.feat_std[fid] + learner.feat_mean[fid]
-                U2_raw = z_up2 * learner.feat_std[fid] + learner.feat_mean[fid]
-
-                ax_main.fill_between(
-                    t2, L2_raw, U2_raw,
-                    color=color_m,
-                    alpha=0.06,
-                    linewidth=0,
-                )
-                feature_name = (
-                    learner.feature_specs[m]["name"]
-                    if hasattr(learner, "feature_specs") and m < len(learner.feature_specs)
-                    else f"f{m}"
-                )
-                ref_value = _reference_constraint_value(learner.env, feature_name, stage=1)
+                ref_value = _reference_constraint_value(learner.env, feature_name, stage=stage_idx)
                 if ref_value is not None:
                     ax_main.axhline(float(ref_value), color=color_m, linestyle='--', linewidth=0.8, alpha=0.6)
 
     # English comment omitted during cleanup.
     ax_prob = ax_main.twinx()
-    ax_prob.plot(
-        t_axis,
-        gamma0[:, 0],
-        "--",
-        color="tab:green",
-        label="P(z_t=1 | X)",
-    )
-
-    logA0 = learner._transition_logprob(X0, return_aux=False)
-    p12 = np.zeros(T0)
-    if logA0.shape[0] > 0:
-        p12[:-1] = np.exp(logA0[:, 0, 1])
-        p12[-1] = p12[-2]
-    ax_prob.plot(
-        t_axis,
-        p12,
-        ":",
-        color="tab:orange",
-        label="P(1->2 | x_t)",
-    )
+    for stage_idx in range(min(gamma0.shape[1], len(stage_colors))):
+        ax_prob.plot(
+            t_axis,
+            gamma0[:, stage_idx],
+            "--",
+            color=stage_colors[stage_idx],
+            label=f"P(z_t={stage_idx + 1} | X)",
+        )
+    if learner.num_states == 2:
+        logA0 = learner._transition_logprob(X0, return_aux=False)
+        p12 = np.zeros(T0)
+        if logA0.shape[0] > 0:
+            p12[:-1] = np.exp(logA0[:, 0, 1])
+            p12[-1] = p12[-2]
+        ax_prob.plot(
+            t_axis,
+            p12,
+            ":",
+            color="tab:orange",
+            label="P(1->2 | x_t)",
+        )
 
     ax_prob.set_ylim(-0.05, 1.05)
     ax_prob.set_ylabel("prob.", fontsize=PAPER_LABEL_SIZE)
@@ -861,7 +814,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     plt.title("Feature evolution", fontsize=PAPER_TITLE_SIZE, pad=4)
 
     # ==========================================================
-    # (4) Dominance split with alpha & beta decomposition (new multi-feature version)
+    # (4) Posterior decomposition / state evidence
     # ==========================================================
     plt.subplot(2, 2, 4)
 
@@ -904,103 +857,87 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
 
     ll_feat_state *= learner.feat_weight
 
-    # English comment omitted during cleanup.
-    ll_feat1 = ll_feat_state[:, 0]
-    ll_feat2 = ll_feat_state[:, 1]
-    d_feat = ll_feat2 - ll_feat1
-
     ll_emit_full = learner._emission_loglik(X0)
     ll_x_state = ll_emit_full - ll_feat_state
-    ll_x1 = ll_x_state[:, 0]
-    ll_x2 = ll_x_state[:, 1]
-    d_x = ll_x2 - ll_x1
-    mean_abs_dx = float(np.mean(np.abs(d_x)))
-    mean_abs_dfeat = float(np.mean(np.abs(d_feat)))
-
-    # English comment omitted during cleanup.
-    ll_prog1 = np.zeros(T0)
-    ll_prog2 = np.zeros(T0)
-    if learner.prog_weight > 0 and T0 > 1:
-        from utils.vmf import _unit, vmf_logC_d
-
-        D = X0.shape[1]
-        logC1 = vmf_logC_d(learner.prog_kappa1, D)
-        logC2 = vmf_logC_d(learner.prog_kappa2, D)
-
-        Vs = _unit(X0[1:] - X0[:-1])
-        U1 = _unit(np.asarray(current_g1)[None, :] - X0[:-1])
-        U2 = _unit(np.asarray(current_g2)[None, :] - X0[:-1])
-
-        cos1 = np.sum(Vs * U1, axis=1)
-        cos2 = np.sum(Vs * U2, axis=1)
-
-        ll_prog1[:-1] = learner.prog_weight * (logC1 + learner.prog_kappa1 * cos1)
-        ll_prog2[:-1] = learner.prog_weight * (logC2 + learner.prog_kappa2 * cos2)
-
-    d_prog = ll_prog2 - ll_prog1
-
-    # ---------- Emission total difference ----------
-    d_emit = d_feat + d_prog
-
-    # English comment omitted during cleanup.
-    logA0 = learner._transition_logprob(X0, return_aux=False)
-    p12 = np.zeros(T0)
-    if logA0.shape[0] > 0:
-        # logA0.shape[0] = T0-1
-        p12[:-1] = np.exp(logA0[:, 0, 1])
-        p12[-1] = p12[-2]  #      ,      
-    d_trans = np.log((p12 + eps) / (1.0 - p12 + eps))
-
-    # ---------- alpha / beta / posterior log-odds ----------
-    alpha_odds = alpha0[:, 1] - alpha0[:, 0]
-    beta_odds = beta0[:, 1] - beta0[:, 0]
-    post_odds = np.log((gamma0[:, 1] + eps) / (gamma0[:, 0] + eps))
-
-    # ---------- Jump posterior: xi(0->1) ----------
-    xi0 = xis_list[0]  # (T0-1, K, K)
-    xi01 = xi0[:, 0, 1]  # length T0-1
-    xi01_pad = np.r_[xi01, 0.0]
-
-    # ---------- Plot ----------
-    plt.plot(t_axis, d_x, '-', lw=1.2, color='tab:cyan', label=' _x')
-    plt.plot(t_axis, d_feat, '-', lw=1.1, color='tab:red', label=' _feat')
-    if getattr(learner, "prog_weight", 0.0) > 0:
-        plt.plot(t_axis, d_prog, '-', lw=1.1, color='tab:blue', label=' _prog')
-    if not getattr(learner, "plot_context", "") == "cghmm":
-        plt.plot(t_axis, d_trans, '--', lw=1.2, color='tab:orange', label=' _trans')
-    # English comment omitted during cleanup.
-
-    # plt.plot(t_axis, alpha_odds, '-.', lw=2, color='tab:purple',
-    #          label='alpha log-odds (past evidence)')
-    # plt.plot(t_axis, beta_odds, '-', lw=2, color='tab:green',
-    #          label='beta log-odds (future evidence)')
-    plt.plot(t_axis, post_odds, '-', lw=1.6, color='black', label='posterior log-odds')
-
-    # cutpoints
-    plt.axvline(tau_hat0, color='blue', linestyle='--', label='learned cutpoint')
-    if learner.true_taus[0] is not None:
-        plt.axvline(learner.true_taus[0], color='green', linestyle='--', label='true cutpoint')
-
-    plt.axhline(0, color='gray', lw=1, alpha=0.4)
-    plt.title(decomposition_title, fontsize=PAPER_TITLE_SIZE, pad=4)
-    plt.xlabel("t", fontsize=PAPER_LABEL_SIZE)
-    plt.ylabel("log-odds diff", fontsize=PAPER_LABEL_SIZE)
-    plt.legend(loc='best', fontsize=PAPER_LEGEND_SIZE, frameon=False, handlelength=1.2, borderpad=0.2)
-    plt.ylim([-30, 20])
-
     ax = plt.gca()
-    ax2 = ax.twinx()
-    # English comment omitted during cleanup.
-    ax2.set_ylabel('prob.', fontsize=PAPER_LABEL_SIZE)
-    ax2.plot(t_axis, gammas[0][:, 0], '-', lw=1.1, color='purple', label='P(z_t=0 | X)')
-    ax2.set_ylim([0.0, 1.0])
-    ax.tick_params(labelsize=PAPER_TICK_SIZE)
-    ax2.tick_params(labelsize=PAPER_TICK_SIZE)
+    if K == 2:
+        current_g1 = shared_subgoals[0]
+        current_g2 = shared_subgoals[1]
+        ll_feat1 = ll_feat_state[:, 0]
+        ll_feat2 = ll_feat_state[:, 1]
+        d_feat = ll_feat2 - ll_feat1
+        ll_x1 = ll_x_state[:, 0]
+        ll_x2 = ll_x_state[:, 1]
+        d_x = ll_x2 - ll_x1
 
-    # English comment omitted during cleanup.
-    lines1, labels1 = ax.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(lines1 + lines2, labels1 + labels2, loc='best', fontsize=PAPER_LEGEND_SIZE, frameon=False, handlelength=1.2, borderpad=0.2)
+        ll_prog1 = np.zeros(T0)
+        ll_prog2 = np.zeros(T0)
+        if getattr(learner, "prog_weight", 0.0) > 0 and T0 > 1:
+            progress_delta_scale = float(getattr(learner, "progress_delta_scale", 10.0))
+            X_next = X0[1:]
+            d1_curr = np.linalg.norm(X0[:-1] - np.asarray(current_g1)[None, :], axis=1)
+            d1_next = np.linalg.norm(X_next - np.asarray(current_g1)[None, :], axis=1)
+            d2_curr = np.linalg.norm(X0[:-1] - np.asarray(current_g2)[None, :], axis=1)
+            d2_next = np.linalg.norm(X_next - np.asarray(current_g2)[None, :], axis=1)
+            delta1 = d1_next - d1_curr
+            delta2 = d2_next - d2_curr
+            ll_prog1[:-1] = learner.prog_weight * (
+                np.log1p(np.exp(np.clip(progress_delta_scale * delta1, -60.0, 60.0))) / progress_delta_scale
+            )
+            ll_prog2[:-1] = learner.prog_weight * (
+                np.log1p(np.exp(np.clip(progress_delta_scale * delta2, -60.0, 60.0))) / progress_delta_scale
+            )
+        d_prog = ll_prog2 - ll_prog1
+        logA0 = learner._transition_logprob(X0, return_aux=False)
+        p12 = np.zeros(T0)
+        if logA0.shape[0] > 0:
+            p12[:-1] = np.exp(logA0[:, 0, 1])
+            p12[-1] = p12[-2]
+        d_trans = np.log((p12 + eps) / (1.0 - p12 + eps))
+        post_odds = np.log((gamma0[:, 1] + eps) / (gamma0[:, 0] + eps))
+        ax.plot(t_axis, d_x, '-', lw=1.2, color='tab:cyan', label='x diff')
+        ax.plot(t_axis, d_feat, '-', lw=1.1, color='tab:red', label='feat diff')
+        if getattr(learner, "prog_weight", 0.0) > 0:
+            ax.plot(t_axis, d_prog, '-', lw=1.1, color='tab:blue', label='prog diff')
+        if not getattr(learner, "plot_context", "") == "cghmm":
+            ax.plot(t_axis, d_trans, '--', lw=1.2, color='tab:orange', label='trans diff')
+        ax.plot(t_axis, post_odds, '-', lw=1.6, color='black', label='posterior log-odds')
+        for j, cp in enumerate(stage_ends0[:-1]):
+            ax.axvline(cp, color='black', linestyle='--', label='learned cutpoint' if j == 0 else "")
+        for j, cp in enumerate(true_cutpoints0):
+            ax.axvline(cp, color='gray', linestyle=':', label='true cutpoint' if j == 0 else "")
+        ax.axhline(0, color='gray', lw=1, alpha=0.4)
+        ax.set_ylabel("log-odds diff", fontsize=PAPER_LABEL_SIZE)
+        ax2 = ax.twinx()
+        ax2.set_ylabel('prob.', fontsize=PAPER_LABEL_SIZE)
+        ax2.plot(t_axis, gammas[0][:, 0], '-', lw=1.1, color='purple', label='P(z_t=1 | X)')
+        ax2.set_ylim([0.0, 1.0])
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, loc='best', fontsize=PAPER_LEGEND_SIZE, frameon=False, handlelength=1.2, borderpad=0.2)
+        ax2.tick_params(labelsize=PAPER_TICK_SIZE)
+    else:
+        for stage_idx in range(K):
+            ax.plot(t_axis, ll_x_state[:, stage_idx], '-', lw=1.0, color=stage_colors[stage_idx], alpha=0.65, label=f'x score s{stage_idx + 1}')
+            ax.plot(t_axis, ll_feat_state[:, stage_idx], '--', lw=1.0, color=stage_colors[stage_idx], alpha=0.95, label=f'feat score s{stage_idx + 1}')
+        for j, cp in enumerate(stage_ends0[:-1]):
+            ax.axvline(cp, color='black', linestyle='--', label='learned cutpoint' if j == 0 else "")
+        for j, cp in enumerate(true_cutpoints0):
+            ax.axvline(cp, color='gray', linestyle=':', label='true cutpoint' if j == 0 else "")
+        ax.set_ylabel("state score", fontsize=PAPER_LABEL_SIZE)
+        ax2 = ax.twinx()
+        for stage_idx in range(K):
+            ax2.plot(t_axis, gamma0[:, stage_idx], '-', lw=1.0, color=stage_colors[stage_idx], label=f'P(z={stage_idx + 1}|X)')
+        ax2.set_ylabel('prob.', fontsize=PAPER_LABEL_SIZE)
+        ax2.set_ylim([0.0, 1.0])
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, loc='best', fontsize=PAPER_LEGEND_SIZE, frameon=False, handlelength=1.2, borderpad=0.2)
+        ax2.tick_params(labelsize=PAPER_TICK_SIZE)
+
+    ax.set_title(decomposition_title, fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlabel("t", fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
 
     fig.tight_layout(pad=0.5, w_pad=0.6, h_pad=0.8)
     save_figure(fig, learner_plot_dir(learner) / f"plot4panel_iter_{int(it):04d}.png", dpi=220)

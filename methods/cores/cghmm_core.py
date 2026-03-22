@@ -23,6 +23,8 @@ class CGHMM:
         demos,
         env,
         true_taus=None,
+        true_cutpoints=None,
+        n_states=2,
         g2_init=None,
         tau_init=None,
         tau_init_mode="uniform_taus",
@@ -52,11 +54,16 @@ class CGHMM:
     ):
         self.demos = list(demos)
         self.env = env
-        self.true_taus = list(true_taus) if true_taus is not None else [None] * len(
-            self.demos
-        )
+        self.num_states = int(n_states)
+        if self.num_states < 2:
+            raise ValueError("CGHMM requires at least 2 states.")
+        self.true_cutpoints = self._normalize_true_cutpoints(true_taus=true_taus, true_cutpoints=true_cutpoints)
+        self.true_taus = [
+            None if cuts is None or len(cuts) != 1 else int(cuts[0])
+            for cuts in self.true_cutpoints
+        ]
 
-        self.K_state = 2
+        self.K_state = self.num_states
         self.use_xy_vel = bool(use_xy_vel)
         self.standardize_x = bool(standardize_x)
 
@@ -69,18 +76,21 @@ class CGHMM:
         self.rng = np.random.RandomState(self.seed)
 
         self.tau_init_mode = str(tau_init_mode)
-        self.tau_init = resolve_tau_init_for_demos(
-            self.demos,
-            tau_init=tau_init,
-            tau_init_mode=self.tau_init_mode,
-            env=self.env,
-            seed=self.seed,
-            use_velocity=self.use_xy_vel,
-            vel_weight=1.0,
-            standardize=self.standardize_x,
-            use_env_features=True,
-            selected_raw_feature_ids=selected_raw_feature_ids,
-        )
+        self.tau_init = None
+        if self.num_states == 2:
+            self.tau_init = resolve_tau_init_for_demos(
+                self.demos,
+                tau_init=tau_init,
+                tau_init_mode=self.tau_init_mode,
+                env=self.env,
+                seed=self.seed,
+                use_velocity=self.use_xy_vel,
+                vel_weight=1.0,
+                standardize=self.standardize_x,
+                use_env_features=True,
+                selected_raw_feature_ids=selected_raw_feature_ids,
+            )
+        self.stage_ends_ = self._initial_stage_ends(tau_init=tau_init)
 
         self.sigma_irrel = float(fixed_sigma_irrelevant)
         self.feat_weight = float(feat_weight)
@@ -96,21 +106,11 @@ class CGHMM:
         self.q_low = float(q_low)
         self.q_high = float(q_high)
 
-        self.g1 = np.mean([X[t] for X, t in zip(self.demos, self.tau_init)], axis=0)
-
-        if g2_init is None:
-            self.g2 = np.mean([X[-1] for X in self.demos], axis=0)
-        else:
-            self.g2 = np.array(g2_init, float)
-
         self.g1_vis_alpha = float(g1_vis_alpha)
-        self.g1_hist = [self.g1.copy()]
-        self.g2_hist = [self.g2.copy()]
         self.selected_raw_feature_ids = selected_raw_feature_ids
         self.feature_model_types_raw = feature_model_types
         self.fixed_feature_mask = fixed_feature_mask
 
-        self.num_states = 2
         self._init_feature_preprocessing()
         self._init_gmm_preprocessing()
         self.feature_models = []
@@ -137,6 +137,7 @@ class CGHMM:
                 raise ValueError("fixed_feature_mask must have shape (2, num_selected_features).")
         self.model_feat = self.feature_models
         self._initialize_feature_models()
+        self._initialize_stage_subgoals(g2_init=g2_init)
 
         # English comment omitted during cleanup.
         self.loss_loglik = []
@@ -155,16 +156,6 @@ class CGHMM:
         self.gmm_means = []
         self.gmm_covs = []
 
-        seg1_list, seg2_list = [], []
-        for X, tau in zip(self.demos, self.tau_init):
-            X_aug = self._X_for_gmm(X)
-            tau = int(np.clip(int(tau), 1, len(X_aug) - 2))
-            seg1_list.append(X_aug[: tau + 1])
-            seg2_list.append(X_aug[tau + 1 :])
-
-        seg1 = np.concatenate(seg1_list, axis=0)
-        seg2 = np.concatenate(seg2_list, axis=0)
-
         def _init_gmm_from_segment(seg):
             N = len(seg)
             if N < self.gmm_K:
@@ -176,26 +167,101 @@ class CGHMM:
             covs = np.stack([cov_base.copy() for _ in range(self.gmm_K)], axis=0)
             return means, covs
 
-        m0, C0 = _init_gmm_from_segment(seg1)
-        m1, C1 = _init_gmm_from_segment(seg2)
-        self.gmm_means = [m0, m1]
-        self.gmm_covs = [C0, C1]
+        per_state_segments = [[] for _ in range(self.num_states)]
+        for X, stage_ends in zip(self.demos, self.stage_ends_):
+            X_aug = self._X_for_gmm(X)
+            start = 0
+            for k, end in enumerate(stage_ends):
+                per_state_segments[k].append(X_aug[start : int(end) + 1])
+                start = int(end) + 1
+        for k in range(self.num_states):
+            seg = np.concatenate(per_state_segments[k], axis=0)
+            means, covs = _init_gmm_from_segment(seg)
+            self.gmm_means.append(means)
+            self.gmm_covs.append(covs)
 
         # ---------------- HMM transitions & initial state ----------------
         if A_init is None:
-            A = np.array([[0.8, 0.2], [0.0, 1.0]], float)
+            A = np.zeros((self.num_states, self.num_states), float)
+            for i in range(self.num_states):
+                A[i, i] = 0.8
+                if i + 1 < self.num_states:
+                    A[i, i + 1] = 0.2
+                else:
+                    A[i, i] = 1.0
+            A = A / np.maximum(A.sum(axis=1, keepdims=True), 1e-12)
         else:
             A = np.array(A_init, float)
-            A[1, 0] = 0.0
-            A[1, 1] = 1.0
-            A[0] = A[0] / (A[0].sum() + 1e-12)
+            if A.shape != (self.num_states, self.num_states):
+                raise ValueError(f"A_init must have shape {(self.num_states, self.num_states)}.")
+            for i in range(self.num_states):
+                A[i, :i] = 0.0
+                if i == self.num_states - 1:
+                    A[i, :] = 0.0
+                    A[i, i] = 1.0
+                else:
+                    A[i] = A[i] / (A[i].sum() + 1e-12)
         self.logA = np.log(A + 1e-12)
 
         if pi_init is None:
-            pi = np.array([0.5, 0.5], float)
+            pi = np.zeros(self.num_states, float)
+            pi[0] = 1.0
         else:
             pi = np.array(pi_init, float)
         self.logpi = np.log(pi + 1e-12)
+
+    def _normalize_true_cutpoints(self, true_taus=None, true_cutpoints=None):
+        if true_cutpoints is not None:
+            out = []
+            for X, cuts in zip(self.demos, true_cutpoints):
+                if cuts is None:
+                    out.append(None)
+                    continue
+                arr = np.asarray(cuts, dtype=int).reshape(-1)
+                arr = np.sort(arr[(arr >= 0) & (arr < len(X) - 1)])
+                out.append(arr.astype(int))
+            return out
+        if true_taus is not None:
+            return [None if tau is None else np.asarray([int(tau)], dtype=int) for tau in true_taus]
+        return [None for _ in self.demos]
+
+    def _initial_stage_ends(self, tau_init=None):
+        out = []
+        for demo_idx, X in enumerate(self.demos):
+            T = len(X)
+            if self.num_states == 2:
+                if tau_init is not None:
+                    tau = int(np.asarray(tau_init, dtype=int)[demo_idx])
+                elif self.tau_init is not None:
+                    tau = int(self.tau_init[demo_idx])
+                else:
+                    tau = max(1, T // 2)
+                tau = int(np.clip(tau, 1, T - 2))
+                out.append([tau, T - 1])
+                continue
+            ends = np.linspace(0, T, self.num_states + 1, dtype=int)[1:] - 1
+            ends[-1] = T - 1
+            for k in range(self.num_states - 1):
+                min_end = k
+                max_end = ends[k + 1] - 1
+                ends[k] = int(np.clip(ends[k], min_end, max_end))
+            out.append([int(x) for x in ends.tolist()])
+        return out
+
+    def _initialize_stage_subgoals(self, g2_init=None):
+        self.stage_subgoals = []
+        for stage_idx in range(self.num_states):
+            pts = [np.asarray(X[int(stage_ends[stage_idx])], dtype=float) for X, stage_ends in zip(self.demos, self.stage_ends_)]
+            if stage_idx == self.num_states - 1 and g2_init is not None:
+                sg = np.array(g2_init, float)
+            else:
+                sg = np.mean(np.stack(pts, axis=0), axis=0)
+            self.stage_subgoals.append(sg)
+        self.stage_subgoals_hist = [[sg.copy() for sg in self.stage_subgoals]]
+        self.g1 = self.stage_subgoals[0].copy()
+        self.g2 = self.stage_subgoals[1].copy() if self.num_states >= 2 else self.stage_subgoals[0].copy()
+        self.g1_hist = [self.g1.copy()]
+        self.g2_hist = [self.g2.copy()]
 
     def _get_env_feature_schema(self, m_env):
         schema = None
@@ -314,26 +380,21 @@ class CGHMM:
             spec["type"] = kind
 
     def _initialize_feature_models(self):
-        if self.tau_init is None:
-            taus = np.asarray([max(1, len(X) // 2) for X in self.demos], dtype=int)
-        else:
-            taus = np.asarray(self.tau_init, dtype=int)
         per_state_xs = [[[] for _ in range(self.num_features)] for _ in range(self.num_states)]
         per_state_ws = [[[] for _ in range(self.num_features)] for _ in range(self.num_states)]
-        for X, tau in zip(self.demos, taus):
+        for X, stage_ends in zip(self.demos, self.stage_ends_):
             Fz = self._features_for_demo_matrix(X)
             T = len(X)
-            tau = int(np.clip(tau, 1, T - 2))
-            gamma0 = np.zeros(T, dtype=float)
-            gamma1 = np.zeros(T, dtype=float)
-            gamma0[: tau + 1] = 1.0
-            gamma1[tau + 1 :] = 1.0
+            gammas = np.zeros((self.num_states, T), dtype=float)
+            start = 0
+            for stage_idx, end in enumerate(stage_ends):
+                gammas[stage_idx, start : int(end) + 1] = 1.0
+                start = int(end) + 1
             for m in range(self.num_features):
                 phi = Fz[:, m]
-                per_state_xs[0][m].append(phi)
-                per_state_xs[1][m].append(phi)
-                per_state_ws[0][m].append(gamma0)
-                per_state_ws[1][m].append(gamma1)
+                for stage_idx in range(self.num_states):
+                    per_state_xs[stage_idx][m].append(phi)
+                    per_state_ws[stage_idx][m].append(gammas[stage_idx])
         for k in range(self.num_states):
             for m in range(self.num_features):
                 if self.r[k, m] == 1:
@@ -432,8 +493,8 @@ class CGHMM:
         Fz = self._features_for_demo_matrix(X)
         X_aug = self._X_for_gmm(X)
 
-        ll_emit = np.zeros((T, 2))
-        for k in range(2):
+        ll_emit = np.zeros((T, self.num_states))
+        for k in range(self.num_states):
             ll_x = np.array(
                 [
                     self._gmm_logpdf(
@@ -488,29 +549,32 @@ class CGHMM:
         """
         T = len(X)
         if T <= 1:
-            logA = np.zeros((0, 2, 2))
+            logA = np.zeros((0, self.num_states, self.num_states))
             if return_aux:
-                aux = {
-                    "p12": np.zeros(T),
-                    "dists": np.zeros(T),
-                }
+                aux = {}
+                if self.num_states == 2:
+                    aux["p12"] = np.zeros(T)
+                    aux["dists"] = np.zeros(T)
                 return logA, aux
             return logA
 
-        logA = np.broadcast_to(self.logA, (T - 1, 2, 2)).copy()
-        logA[:, 1, 0] = -np.inf
-        logA[:, 1, 1] = 0.0
+        logA = np.broadcast_to(self.logA, (T - 1, self.num_states, self.num_states)).copy()
+        for i in range(self.num_states):
+            logA[:, i, :i] = -np.inf
+        logA[:, self.num_states - 1, :] = -np.inf
+        logA[:, self.num_states - 1, self.num_states - 1] = 0.0
 
         if not return_aux:
             return logA
 
-        # English comment omitted during cleanup.
-        p01 = float(np.exp(self.logA[0, 1]))
-        p12 = np.full(T, p01, dtype=float)
-        aux = {
-            "p12": p12,
-            "dists": np.zeros(T),
-        }
+        aux = {}
+        if self.num_states == 2:
+            p01 = float(np.exp(self.logA[0, 1]))
+            p12 = np.full(T, p01, dtype=float)
+            aux = {
+                "p12": p12,
+                "dists": np.zeros(T),
+            }
         return logA, aux
 
     # ------------------------------------------------------------
@@ -566,18 +630,20 @@ class CGHMM:
         g0 = g0 / (g0.sum() + 1e-12)
         self.logpi = np.log(g0 + 1e-12)
 
-        xi_sum = np.zeros((2, 2))
-        g_sum = np.zeros((2,))
+        xi_sum = np.zeros((self.num_states, self.num_states))
+        g_sum = np.zeros((self.num_states,))
         for xi, g in zip(xis, gammas):
             xi_sum += xi.sum(axis=0)
             g_sum += g[:-1].sum(axis=0)
 
-        A = np.zeros((2, 2))
-        A[0, 0] = xi_sum[0, 0] / (g_sum[0] + 1e-12)
-        A[0, 1] = xi_sum[0, 1] / (g_sum[0] + 1e-12)
-        A[0] = A[0] / (A[0].sum() + 1e-12)
-        A[1, 0] = 0.0
-        A[1, 1] = 1.0
+        A = np.zeros((self.num_states, self.num_states))
+        for i in range(self.num_states):
+            if i == self.num_states - 1:
+                A[i, i] = 1.0
+                continue
+            for j in range(i, min(i + 2, self.num_states)):
+                A[i, j] = xi_sum[i, j] / (g_sum[i] + 1e-12)
+            A[i] = A[i] / (A[i].sum() + 1e-12)
         self.logA = np.log(A + 1e-12)
 
     def _mstep_update_features(self, gammas):
@@ -604,7 +670,7 @@ class CGHMM:
         Xcat = np.concatenate(demos_aug, axis=0)
         Wcat_states = np.concatenate(gammas, axis=0)
 
-        for state in range(2):
+        for state in range(self.num_states):
             Wcat = Wcat_states[:, state]
             N = len(Xcat)
             R = np.zeros((N, self.gmm_K))
@@ -662,9 +728,12 @@ class CGHMM:
                 xis.append(xi)
                 total_ll += ll
 
-                q = xi[:, 0, 1]
-                qn = q / (q.max() + 1e-12)
-                aux_list.append({"p12": np.concatenate([qn, [qn[-1]]])})
+                if self.num_states == 2 and len(xi) > 0:
+                    q = xi[:, 0, 1]
+                    qn = q / (q.max() + 1e-12)
+                    aux_list.append({"p12": np.concatenate([qn, [qn[-1]]])})
+                else:
+                    aux_list.append({})
 
             # --------- M-step ----------
             self._mstep_update_transitions(gammas, xis)
@@ -685,33 +754,38 @@ class CGHMM:
                 xis.append(xi)
                 total_ll += ll
 
-                q = xi[:, 0, 1]
-                qn = q / (q.max() + 1e-12)
-                aux_list.append({"p12": np.concatenate([qn, [qn[-1]]])})
+                if self.num_states == 2 and len(xi) > 0:
+                    q = xi[:, 0, 1]
+                    qn = q / (q.max() + 1e-12)
+                    aux_list.append({"p12": np.concatenate([qn, [qn[-1]]])})
+                else:
+                    aux_list.append({})
 
             self.loss_loglik.append(total_ll)
             self.loss_feat.append(0.0)
             self.loss_prog.append(0.0)
             self.loss_trans.append(0.0)
 
-            taus_map = np.asarray(extract_taus_hat(gammas, xis), dtype=int)
-            sub_pts = []
-            goal_pts = []
-            for X, tau_hat in zip(self.demos, taus_map):
-                T = len(X)
-                tau_hat = max(1, min(T - 2, int(tau_hat)))
-                sub_pts.append(X[tau_hat])
-                goal_pts.append(X[-1])
-
-            self.g1 = np.mean(np.stack(sub_pts, axis=0), axis=0)
-            self.g2 = np.mean(np.stack(goal_pts, axis=0), axis=0)
+            labels = [np.argmax(gamma, axis=1).astype(int) for gamma in gammas]
+            self.stage_ends_ = [np.where(np.diff(z) != 0)[0].astype(int).tolist() + [len(z) - 1] for z in labels]
+            points_per_stage = [[] for _ in range(self.num_states)]
+            for X, stage_ends in zip(self.demos, self.stage_ends_):
+                for stage_idx, end in enumerate(stage_ends):
+                    points_per_stage[stage_idx].append(np.asarray(X[int(end)], dtype=float))
+            self.stage_subgoals = [np.mean(np.stack(pts, axis=0), axis=0) for pts in points_per_stage]
+            self.stage_subgoals_hist.append([sg.copy() for sg in self.stage_subgoals])
+            self.g1 = self.stage_subgoals[0].copy()
+            self.g2 = self.stage_subgoals[1].copy() if self.num_states >= 2 else self.stage_subgoals[0].copy()
             self.g1_hist.append(self.g1.copy())
             self.g2_hist.append(self.g2.copy())
             posts = gammas
 
             metrics = eval_goalhmm_auto(self, gammas, xis)
             for name, value in metrics.items():
-                self.metrics_hist.setdefault(name, []).append(value)
+                if np.isscalar(value):
+                    value_f = float(value)
+                    if np.isfinite(value_f):
+                        self.metrics_hist.setdefault(name, []).append(value_f)
 
             should_log = ((it + 1) % 10 == 0) or (it == max_iter - 1)
             if verbose and should_log:
@@ -721,12 +795,13 @@ class CGHMM:
                         it,
                         losses={"loss": total_ll},
                         metrics=metrics,
-                        extras={"taus": taus_map.tolist()},
+                        extras={"stage_ends": self.stage_ends_},
                     )
                 )
 
             # English comment omitted during cleanup.
-            if self.plot_every is not None:
+            if self.plot_every is not None and self.num_states == 2:
+                taus_map = np.asarray(extract_taus_hat(gammas, xis), dtype=int)
                 if (it + 1) % self.plot_every == 0 or it == max_iter - 1:
                     plot_results_4panel(
                         self,

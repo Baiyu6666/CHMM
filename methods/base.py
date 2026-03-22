@@ -30,27 +30,36 @@ def labels_to_taus(labels: List[np.ndarray]) -> Optional[List[int]]:
     return taus
 
 
-def compute_tau_metrics(
-    taus_hat: List[int] | np.ndarray | None,
-    true_taus: List[int] | np.ndarray | None,
+def compute_cutpoint_metrics(
+    cutpoints_hat: List[np.ndarray] | List[List[int]] | None,
+    true_cutpoints: List[np.ndarray] | List[List[int]] | None,
     demos: List[np.ndarray],
 ) -> Dict[str, float]:
-    if taus_hat is None or true_taus is None:
+    if cutpoints_hat is None or true_cutpoints is None:
         return {}
 
     mae_list: List[float] = []
-    nmae_list: List[float] = []
-    for tau_hat, tau_true, X in zip(taus_hat, true_taus, demos):
-        if tau_true is None:
+    exact_match: List[float] = []
+    for pred, true, X in zip(cutpoints_hat, true_cutpoints, demos):
+        if true is None:
             continue
-        err = abs(int(tau_hat) - int(tau_true))
-        mae_list.append(float(err))
-        nmae_list.append(float(err / max(len(X), 1)))
+        pred_arr = np.asarray(pred, dtype=int).reshape(-1)
+        true_arr = np.asarray(true, dtype=int).reshape(-1)
+        if pred_arr.size != true_arr.size:
+            exact_match.append(0.0)
+            continue
+        errs = np.abs(pred_arr - true_arr)
+        if errs.size > 0:
+            mae_list.append(float(np.mean(errs)))
+        else:
+            mae_list.append(0.0)
+        exact_match.append(float(np.all(errs == 0)))
 
     metrics: Dict[str, float] = {}
     if mae_list:
-        metrics["MAE_tau"] = float(np.mean(mae_list))
-        metrics["NMAE_tau"] = float(np.mean(nmae_list))
+        metrics["MeanAbsCutpointError"] = float(np.mean(mae_list))
+    if exact_match:
+        metrics["CutpointExactMatchRate"] = float(np.mean(exact_match))
     return metrics
 
 
@@ -73,9 +82,12 @@ def format_training_log(
     if metrics:
         for name in sorted(metrics.keys()):
             value = metrics[name]
-            if value is None or not np.isfinite(value):
+            if value is None:
                 continue
-            parts.append(f"{name}={float(value):.3f}")
+            if np.isscalar(value):
+                value_f = float(value)
+                if np.isfinite(value_f):
+                    parts.append(f"{name}={value_f:.3f}")
 
     if extras:
         for name, value in extras.items():

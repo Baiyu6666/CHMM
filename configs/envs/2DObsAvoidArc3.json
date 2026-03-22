@@ -1,0 +1,71 @@
+{
+  "name": "2DObsAvoidArc3",
+  "n_demos": 10,
+  "seed": 422,
+  "method_overrides": {
+    "scdp": {
+      "n_states": 3,
+      "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"],
+      "feature_model_types": {
+        "dist_main_obstacle": "margin_exp_lower",
+        "speed": "student_t",
+        "terminal_arc_distance": "student_t"
+      },
+      "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]]
+    },
+    "cghmm": {
+      "segmenter": {
+        "n_states": 3,
+        "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"],
+        "feature_model_types": {
+          "dist_main_obstacle": "margin_exp_lower",
+          "speed": "student_t",
+          "terminal_arc_distance": "student_t"
+        },
+        "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"],
+        "feature_model_types": {
+          "dist_main_obstacle": "margin_exp_lower",
+          "speed": "student_t",
+          "terminal_arc_distance": "student_t"
+        },
+        "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]]
+      }
+    },
+    "arhmm": {
+      "segmenter": {
+        "n_states": 3,
+        "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"],
+        "feature_model_types": {
+          "dist_main_obstacle": "margin_exp_lower",
+          "speed": "student_t",
+          "terminal_arc_distance": "student_t"
+        },
+        "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]]
+      }
+    },
+    "changepoint": {
+      "segmenter": {
+        "n_states": 3,
+        "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"],
+        "feature_model_types": {
+          "dist_main_obstacle": "margin_exp_lower",
+          "speed": "student_t",
+          "terminal_arc_distance": "student_t"
+        },
+        "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]]
+      }
+    }
+  }
+}

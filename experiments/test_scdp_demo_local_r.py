@@ -79,12 +79,29 @@ def _build_eval_state(learner, taus: list[int]):
     return stage_ends, stage_params_per_demo, demo_r_matrices
 
 
+def _resolve_dataset_eval_taus(dataset) -> list[int]:
+    true_cutpoints = getattr(dataset, "true_cutpoints", None)
+    if true_cutpoints is not None:
+        taus = []
+        for cuts in true_cutpoints:
+            if cuts is None:
+                raise ValueError("ground_truth cutpoints requested, but a demo has no true_cutpoints.")
+            arr = np.asarray(cuts, dtype=int).reshape(-1)
+            if arr.size != 1:
+                raise ValueError("This debug script only supports a single ground-truth cutpoint per demo.")
+            taus.append(int(arr[0]))
+        return taus
+    if getattr(dataset, "true_taus", None):
+        return [int(tau) for tau in dataset.true_taus]
+    raise ValueError("ground_truth cutpoints requested, but dataset.true_cutpoints/true_taus is unavailable.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Test SCDP with per-demo local R chosen by min(fitted, baseline) avg NLL.")
     parser.add_argument("--env-config", default="configs/envs/2DObsAvoid.json", type=str)
     parser.add_argument("--method-config", default="configs/methods/scdp.json", type=str)
     parser.add_argument("--max-iter", type=int, default=10)
-    parser.add_argument("--equality-w70-ratio-threshold", type=float, default=0.2)
+    parser.add_argument("--equality-dispersion-ratio-threshold", type=float, default=0.1)
     parser.add_argument("--plots-dir", type=str, default=None, help="Directory to save per-demo debug feature-cost plots.")
     parser.add_argument("--no-plots", action="store_true", help="Skip per-demo debug plots.")
     parser.add_argument(
@@ -111,16 +128,14 @@ def main():
     method_cfg["plot_every"] = None
     method_cfg["verbose"] = False
     method_cfg["feature_activation_mode"] = "score"
-    method_cfg["equality_w70_ratio_threshold"] = float(args.equality_w70_ratio_threshold)
+    method_cfg["equality_dispersion_ratio_threshold"] = float(args.equality_dispersion_ratio_threshold)
 
     dataset = load_env(dataset_name, **dataset_cfg)
     result = JointSCDPMethod(kwargs=method_cfg).fit(dataset)
     learner = result["model"]
 
     if args.cutpoints_source == "ground_truth":
-        if not dataset.true_taus:
-            raise ValueError("ground_truth cutpoints requested, but dataset.true_taus is unavailable.")
-        eval_taus = [int(tau) for tau in dataset.true_taus]
+        eval_taus = _resolve_dataset_eval_taus(dataset)
     else:
         eval_taus = [int(tau) for tau in result["taus_hat"]]
 
@@ -185,7 +200,7 @@ def main():
                             learner,
                             demo_idx,
                             output_path,
-                            equality_w70_ratio_threshold=args.equality_w70_ratio_threshold,
+                            equality_dispersion_ratio_threshold=args.equality_dispersion_ratio_threshold,
                             stage_ends=eval_stage_ends[demo_idx],
                             stage_params=eval_stage_params_per_demo[demo_idx],
                         )

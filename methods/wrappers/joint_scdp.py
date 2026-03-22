@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from envs.base import TaskBundle
+from evaluation import eval_goalhmm_auto
+from visualization import plot_evaluation_summary
 
 from ..cores.scdp import SegmentConsensusDPModel
 
@@ -20,12 +22,14 @@ class JointSCDPMethod:
             demos=dataset.demos,
             env=dataset.env,
             true_taus=dataset.true_taus,
+            true_cutpoints=getattr(dataset, "true_cutpoints", None),
             n_states=self.kwargs.get("n_states", 2),
             seed=self.kwargs.get("seed", 0),
             selected_raw_feature_ids=self.kwargs.get("selected_raw_feature_ids"),
             feature_model_types=self.kwargs.get("feature_model_types"),
             fixed_feature_mask=self.kwargs.get("fixed_feature_mask"),
-            lambda_constraint=self.kwargs.get("lambda_constraint", 1.0),
+            lambda_eq_constraint=self.kwargs.get("lambda_eq_constraint", self.kwargs.get("lambda_constraint", 1.0)),
+            lambda_ineq_constraint=self.kwargs.get("lambda_ineq_constraint", self.kwargs.get("lambda_constraint", 1.0)),
             lambda_progress=self.kwargs.get("lambda_progress", 1.0),
             lambda_subgoal_consensus=self.kwargs.get(
                 "lambda_subgoal_consensus",
@@ -43,7 +47,10 @@ class JointSCDPMethod:
             sigma_floor=self.kwargs.get("sigma_floor", 0.1),
             lam_floor=self.kwargs.get("lam_floor", 0.1),
             feature_activation_mode=self.kwargs.get("feature_activation_mode", "fixed_mask"),
-            equality_w70_ratio_threshold=self.kwargs.get("equality_w70_ratio_threshold", 0.2),
+            equality_dispersion_ratio_threshold=self.kwargs.get("equality_dispersion_ratio_threshold", 0.1),
+            equality_dispersion_uncertainty_c=self.kwargs.get("equality_dispersion_uncertainty_c", 0.1),
+            inequality_score_activation_threshold=self.kwargs.get("inequality_score_activation_threshold", -0.5),
+            fixed_true_cutpoint_prefix=self.kwargs.get("fixed_true_cutpoint_prefix", 0),
             plot_every=self.kwargs.get("plot_every"),
             plot_dir=self.kwargs.get("plot_dir", "outputs/plots"),
         )
@@ -51,12 +58,22 @@ class JointSCDPMethod:
             max_iter=self.kwargs.get("max_iter", 30),
             verbose=self.kwargs.get("verbose", True),
         )
-        taus_hat: List[int] = [int(ends[0]) for ends in learner.stage_ends_]
+        metrics = eval_goalhmm_auto(learner, gammas, None)
+        plot_evaluation_summary(
+            learner,
+            metrics,
+            method_name="scdp",
+            plot_dir=self.kwargs.get("plot_dir", "outputs/plots"),
+        )
+        cutpoints_hat: List[List[int]] = [[int(x) for x in ends[:-1]] for ends in learner.stage_ends_]
+        taus_hat: List[int] = [cuts[0] for cuts in cutpoints_hat] if learner.num_states == 2 else []
         return {
             "model": learner,
             "gammas": gammas,
             "taus_hat": taus_hat,
-            "metrics": {k: v[-1] for k, v in learner.metrics_hist.items()} if learner.metrics_hist else {},
+            "cutpoints_hat": cutpoints_hat,
+            "stage_ends_hat": [list(map(int, ends)) for ends in learner.stage_ends_],
+            "metrics": metrics,
             "demo_r_matrices": [r.tolist() for r in learner.demo_r_matrices_],
             "demo_feature_score_matrices": [m.tolist() for m in getattr(learner, "demo_feature_score_matrices_", [])],
             "posthoc_activation_summary": getattr(learner, "posthoc_activation_summary_", None),

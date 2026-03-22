@@ -147,6 +147,7 @@ def load_line_2d(
         demos=demos,
         env=env,
         true_taus=true_taus,
+        true_cutpoints=[np.asarray(c, dtype=int) for c in cutpoints],
         true_labels=labels,
         feature_schema=env.get_feature_schema(),
         true_constraints=env.true_constraints,

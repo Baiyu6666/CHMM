@@ -256,11 +256,14 @@ def load_3d_sine_corridor(
     rng = np.random.RandomState(seed)
     env = SineCorridorEnv3D(**env_cfg)
     demos, true_taus = env.generate_demos(rng=rng, **run_kwargs)
+    true_taus = [int(t) for t in true_taus]
+    true_cutpoints = [np.asarray([int(t)], dtype=int) for t in true_taus]
     return TaskBundle(
         name="3DSineCorridor",
         demos=demos,
         env=env,
-        true_taus=[int(t) for t in true_taus],
+        true_taus=true_taus,
+        true_cutpoints=true_cutpoints,
         feature_schema=env.get_feature_schema(),
         true_constraints=dict(env.true_constraints),
         constraint_specs=env.get_constraint_specs(),

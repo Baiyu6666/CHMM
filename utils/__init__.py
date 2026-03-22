@@ -5,7 +5,6 @@ from .subgoals import (
     take_first2_array,
     take_first2_for_plot,
 )
-from .vmf import _unit, vmf_grad_wrt_g, vmf_logC_d
 
 __all__ = [
     "GaussianModel",
@@ -15,7 +14,4 @@ __all__ = [
     "compute_per_demo_lastpoint_subgoals",
     "take_first2_array",
     "take_first2_for_plot",
-    "_unit",
-    "vmf_grad_wrt_g",
-    "vmf_logC_d",
 ]

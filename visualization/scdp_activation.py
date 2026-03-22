@@ -25,13 +25,31 @@ def _feature_names(learner):
     return names
 
 
+def _score_thresholds(learner):
+    eq_thr = float(getattr(learner, "equality_dispersion_ratio_threshold", 0.1))
+    ineq_thr = float(getattr(learner, "inequality_score_activation_threshold", -0.5))
+    return np.asarray(
+        [eq_thr if hasattr(learner, "_is_equality_feature") and learner._is_equality_feature(i) else ineq_thr for i in range(learner.num_features)],
+        dtype=float,
+    )
+
+
+def _matrix_text_color(value, vmax):
+    if not np.isfinite(value):
+        return "black"
+    threshold = 0.55 * float(max(vmax, 1e-6))
+    return "white" if abs(float(value)) >= threshold else "black"
+
+
 def plot_scdp_activation_masks(learner, it):
     if plt is None:
         return None
     if getattr(learner, "feature_activation_mode", "fixed_mask") == "score":
-        matrices = [np.asarray(m, dtype=float) for m in getattr(learner, "demo_feature_score_matrices_", [])]
-        title = "SCDP feature scores"
-        cmap = "viridis_r"
+        raw_matrices = [np.asarray(m, dtype=float) for m in getattr(learner, "demo_feature_score_matrices_", [])]
+        thresholds = _score_thresholds(learner)
+        matrices = [thresholds[None, :] - m for m in raw_matrices]
+        title = "SCDP constraint margins"
+        cmap = "RdBu_r"
         value_formatter = lambda x: f"{float(x):.2f}"
     else:
         matrices = [np.asarray(r, dtype=float) for r in getattr(learner, "demo_r_matrices_", [])]
@@ -62,7 +80,7 @@ def plot_scdp_activation_masks(learner, it):
             ax.set_title("activation rate")
             vmin, vmax = 0.0, 1.0
         elif show_std_panel and panel_idx == std_panel_idx:
-            matrix = np.std(np.asarray(learner.demo_feature_score_matrices_, dtype=float), axis=0).T
+            matrix = np.std(np.asarray(matrices, dtype=float), axis=0).T
             ax.set_title("score std")
             vmin = float(np.nanmin(matrix))
             vmax = float(np.nanmax(matrix))
@@ -70,8 +88,13 @@ def plot_scdp_activation_masks(learner, it):
             demo_idx = panel_idx
             matrix = matrices[demo_idx].T
             ax.set_title(f"demo {demo_idx}")
-            vmin = 0.0 if getattr(learner, "feature_activation_mode", "fixed_mask") != "score" else float(np.nanmin(matrix))
-            vmax = 1.0 if getattr(learner, "feature_activation_mode", "fixed_mask") != "score" else float(np.nanmax(matrix))
+            if getattr(learner, "feature_activation_mode", "fixed_mask") != "score":
+                vmin, vmax = 0.0, 1.0
+            else:
+                vmax = float(np.nanmax(np.abs(matrix)))
+                if not np.isfinite(vmax) or vmax <= 0.0:
+                    vmax = 1.0
+                vmin = -vmax
         if not np.isfinite(vmin):
             vmin = 0.0
         if not np.isfinite(vmax) or vmax <= vmin:
@@ -83,40 +106,16 @@ def plot_scdp_activation_masks(learner, it):
         ax.set_yticklabels(feature_names)
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
-                ax.text(j, i, value_formatter(matrix[i, j]), ha="center", va="center", color="white", fontsize=8)
+                value = float(matrix[i, j]) if np.isscalar(matrix[i, j]) else np.nan
+                ax.text(
+                    j, i, value_formatter(matrix[i, j]),
+                    ha="center", va="center",
+                    color=_matrix_text_color(value, max(abs(vmin), abs(vmax))),
+                    fontsize=8,
+                )
 
     fig.suptitle(title, fontsize=12)
     fig.subplots_adjust(left=0.12, right=0.92, bottom=0.10, top=0.88, wspace=0.35, hspace=0.40)
     out = learner_plot_dir(learner) / f"activation_masks_iter_{int(it):04d}.png"
-    save_figure(fig, out, dpi=220)
-    return out
-
-
-def plot_scdp_demo_avg_costs(learner, it):
-    if plt is None or not getattr(learner, "current_demo_cost_breakdown", None):
-        return None
-
-    labels = ["constraint", "progress", "subgoal_consensus", "param_consensus", "feature_score_consensus", "total"]
-    rows = []
-    for demo_idx, costs in enumerate(learner.current_demo_cost_breakdown):
-        T = max(len(learner.demos[demo_idx]), 1)
-        rows.append([float(costs.get(label, 0.0)) / float(T) for label in labels])
-    values = np.asarray(rows, dtype=float)
-
-    fig_w = max(5.2, 1.0 + 0.85 * len(labels))
-    fig_h = max(3.4, 1.0 + 0.45 * len(rows))
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    im = ax.imshow(values, cmap="magma", aspect="auto")
-    ax.set_title("Per-demo average step costs")
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=20, ha="right")
-    ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels([f"demo {i}" for i in range(len(rows))])
-    for i in range(values.shape[0]):
-        for j in range(values.shape[1]):
-            ax.text(j, i, f"{values[i, j]:.3f}", ha="center", va="center", color="white", fontsize=8)
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    fig.tight_layout()
-    out = learner_plot_dir(learner) / f"demo_avg_costs_iter_{int(it):04d}.png"
     save_figure(fig, out, dpi=220)
     return out

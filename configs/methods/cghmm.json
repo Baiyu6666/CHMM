@@ -3,6 +3,7 @@
   "segmenter": {
     "max_iter": 30,
     "verbose": true,
+    "n_states": 2,
     "g2_init": null,
     "tau_init": null,
     "tau_init_mode": "uniform_taus",

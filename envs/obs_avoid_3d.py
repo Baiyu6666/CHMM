@@ -219,11 +219,13 @@ def load_3d_obs_avoid(
         X, tau = env.generate_demo_3d(rng=rng, **run_kwargs)
         demos.append(X)
         true_taus.append(int(tau))
+    true_cutpoints = [np.asarray([int(tau)], dtype=int) for tau in true_taus]
     return TaskBundle(
         name="3DObsAvoid",
         demos=demos,
         env=env,
         true_taus=true_taus,
+        true_cutpoints=true_cutpoints,
         feature_schema=env.get_feature_schema(),
         true_constraints=dict(env.true_constraints),
         constraint_specs=env.get_constraint_specs(),

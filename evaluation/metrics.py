@@ -1,6 +1,10 @@
-# evaluation/metrics.py
 import numpy as np
+
+from methods.base import compute_cutpoint_metrics
 from methods.common.tau_init import extract_taus_hat
+
+
+_EQUALITY_MODEL_TYPES = {"gauss", "gaussian", "student_t", "studentt", "t", "gauss_zero", "zero_gaussian"}
 
 
 def _get_env_feature_schema(env):
@@ -52,126 +56,221 @@ def _raw_feature_column_index(learner, raw_feature_id):
     return int(raw_feature_id)
 
 
-def _feature_is_selected_for_stage(learner, stage_idx, local_feature_idx):
-    if local_feature_idx is None:
-        return False
-    r = getattr(learner, "r", None)
-    if r is None:
+def _normalize_true_cutpoints(learner):
+    true_cutpoints = getattr(learner, "true_cutpoints", None)
+    if true_cutpoints is not None:
+        return true_cutpoints
+
+    true_taus = getattr(learner, "true_taus", None)
+    if true_taus is None:
+        return None
+    return [None if tau is None else np.asarray([int(tau)], dtype=int) for tau in true_taus]
+
+
+def _predicted_cutpoints(learner, gammas, xis_list):
+    stage_ends = getattr(learner, "stage_ends_", None)
+    if stage_ends is not None:
+        return [np.asarray(ends[:-1], dtype=int) for ends in stage_ends]
+
+    if gammas is not None:
+        cutpoints = []
+        for gamma in gammas:
+            labels = np.argmax(np.asarray(gamma, dtype=float), axis=1).astype(int)
+            cutpoints.append(np.where(np.diff(labels) != 0)[0].astype(int))
+        return cutpoints
+
+    if gammas is not None or xis_list is not None:
+        taus_hat = extract_taus_hat(gammas, xis_list)
+        if taus_hat is not None:
+            return [np.asarray([int(tau)], dtype=int) for tau in taus_hat]
+    return None
+
+
+def _compute_segmentation_metrics(learner, gammas, xis_list):
+    true_cutpoints = _normalize_true_cutpoints(learner)
+    cutpoints_hat = _predicted_cutpoints(learner, gammas, xis_list)
+    if true_cutpoints is None or cutpoints_hat is None:
+        return {}
+    return compute_cutpoint_metrics(cutpoints_hat, true_cutpoints, learner.demos)
+
+
+def _shared_stage_subgoals(learner):
+    stage_subgoals = getattr(learner, "stage_subgoals", None)
+    if stage_subgoals is not None:
+        return [np.asarray(x, dtype=float) for x in stage_subgoals]
+
+    g1 = getattr(learner, "g1", None)
+    g2 = getattr(learner, "g2", None)
+    if g1 is not None and g2 is not None:
+        return [np.asarray(g1, dtype=float), np.asarray(g2, dtype=float)]
+    return None
+
+
+def _compute_subgoal_metrics(learner):
+    true_cutpoints = _normalize_true_cutpoints(learner)
+    pred_subgoals = _shared_stage_subgoals(learner)
+    if true_cutpoints is None or pred_subgoals is None:
+        return {"MeanStageSubgoalError": np.nan}
+
+    errs = []
+    num_states = len(pred_subgoals)
+    for X, cuts in zip(learner.demos, true_cutpoints):
+        if cuts is None:
+            continue
+        stage_ends = list(np.asarray(cuts, dtype=int).reshape(-1)) + [len(X) - 1]
+        if len(stage_ends) != num_states:
+            continue
+        for stage_idx, end in enumerate(stage_ends):
+            errs.append(float(np.linalg.norm(np.asarray(pred_subgoals[stage_idx], dtype=float) - np.asarray(X[int(end)], dtype=float))))
+    return {"MeanStageSubgoalError": float(np.mean(errs)) if errs else np.nan}
+
+
+def _is_auto_feature_mode(learner):
+    if str(getattr(learner, "feature_activation_mode", "")).lower() == "score":
         return True
+    return bool(getattr(learner, "auto_feature_select", False))
+
+
+def _predicted_constraint_active_mask(learner):
+    num_states = int(getattr(learner, "num_states", 0))
+    num_features = int(getattr(learner, "num_features", 0))
+    mask = np.ones((num_states, num_features), dtype=bool)
+
+    if _is_auto_feature_mode(learner):
+        summary = getattr(learner, "posthoc_activation_summary_", None)
+        if isinstance(summary, dict) and "activation_rate_matrix" in summary:
+            activation_rate = np.asarray(summary["activation_rate_matrix"], dtype=float)
+            if activation_rate.shape == mask.shape:
+                return activation_rate >= 0.5
+
+    r = getattr(learner, "r", None)
+    if r is not None:
+        r_arr = np.asarray(r, dtype=int)
+        if r_arr.shape == mask.shape:
+            return r_arr.astype(bool)
+    return mask
+
+
+def _constraint_truth_matrices(learner):
+    specs = _get_constraint_specs(learner.env)
+    oracle = getattr(learner.env, "true_constraints", None)
+    num_states = int(getattr(learner, "num_states", 0))
+    num_features = int(getattr(learner, "num_features", 0))
+
+    true_active = np.zeros((num_states, num_features), dtype=bool)
+    target_matrix = np.full((num_states, num_features), np.nan, dtype=float)
+    semantics = np.full((num_states, num_features), "", dtype=object)
+
+    if not specs or not isinstance(oracle, dict):
+        return true_active, target_matrix, semantics
+
+    for spec in specs:
+        raw_feature_id = _raw_feature_id_from_name(learner.env, spec["feature_name"])
+        local_idx = _selected_feature_index(learner, raw_feature_id)
+        stage_idx = int(spec["stage"])
+        if local_idx is None or stage_idx < 0 or stage_idx >= num_states:
+            continue
+        oracle_key = str(spec["oracle_key"])
+        true_active[stage_idx, local_idx] = True
+        semantics[stage_idx, local_idx] = str(spec.get("semantics", ""))
+        if oracle_key in oracle:
+            target_matrix[stage_idx, local_idx] = float(oracle[oracle_key])
+
+    return true_active, target_matrix, semantics
+
+
+def _selected_feature_names(learner):
+    names = []
+    selected_columns = list(getattr(learner, "selected_feature_columns", list(range(int(getattr(learner, "num_features", 0))))))
+    raw_specs = list(getattr(learner, "raw_feature_specs", []))
+    for local_idx, column_idx in enumerate(selected_columns):
+        name = None
+        for spec_idx, spec in enumerate(raw_specs):
+            if int(spec.get("column_idx", spec_idx)) == int(column_idx):
+                name = str(spec.get("name", f"f{local_idx}"))
+                break
+        names.append(name or f"f{local_idx}")
+    return names
+
+
+def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
     try:
-        return bool(r[stage_idx, local_feature_idx])
+        model = learner.feature_models[stage_idx][local_feature_idx]
     except Exception:
-        return False
-
-
-def _compute_segmentation_metrics(learner, taus_hat):
-    mae_list, nmae_list = [], []
-    if learner.true_taus is not None:
-        for tau_hat, tau_true, X in zip(taus_hat, learner.true_taus, learner.demos):
-            if tau_true is None:
-                continue
-            tau_true = int(tau_true)
-            err = abs(int(tau_hat) - tau_true)
-            mae_list.append(float(err))
-            nmae_list.append(float(err / max(len(X), 1)))
-    return {
-        "MAE_tau": float(np.mean(mae_list)) if mae_list else np.nan,
-        "NMAE_tau": float(np.mean(nmae_list)) if nmae_list else np.nan,
-    }
-
-
-def _compute_goal_metrics(learner):
-    if hasattr(learner.env, "subgoal") and hasattr(learner.env, "goal"):
-        g1_true = np.asarray(learner.env.subgoal, float)
-        g2_true = np.asarray(learner.env.goal, float)
-        return {
-            "e_g1": float(np.linalg.norm(np.asarray(learner.g1, float) - g1_true)),
-            "e_g2": float(np.linalg.norm(np.asarray(learner.g2, float) - g2_true)),
-        }
-    return {"e_g1": np.nan, "e_g2": np.nan}
-
-
-def _estimate_constraint_value(learner, spec):
-    feature_name = spec["feature_name"]
-    stage_idx = int(spec["stage"])
-    semantics = str(spec["semantics"])
-    estimator = str(spec.get("estimator", "bound"))
-
-    raw_feature_id = _raw_feature_id_from_name(learner.env, feature_name)
-    local_idx = _selected_feature_index(learner, raw_feature_id)
-    if raw_feature_id is None or local_idx is None:
-        return np.nan
-    if not _feature_is_selected_for_stage(learner, stage_idx, local_idx):
         return np.nan
 
-    model = learner.feature_models[stage_idx][local_idx]
     summary = model.get_summary()
-    model_type = str(summary.get("type", "base"))
+    model_type = str(summary.get("type", "")).lower()
 
-    raw_column_idx = _raw_feature_column_index(learner, raw_feature_id)
+    raw_feature_id = None
+    if hasattr(learner, "feature_specs") and local_feature_idx < len(learner.feature_specs):
+        raw_feature_id = int(learner.feature_specs[local_feature_idx]["raw_id"])
+    raw_column_idx = _raw_feature_column_index(learner, raw_feature_id if raw_feature_id is not None else local_feature_idx)
     if raw_column_idx is None:
         return np.nan
 
-    raw_mean = float(learner.feat_mean[raw_column_idx])
-    raw_std = float(learner.feat_std[raw_column_idx])
+    raw_mean = float(np.asarray(learner.feat_mean, dtype=float)[raw_column_idx])
+    raw_std = float(np.asarray(learner.feat_std, dtype=float)[raw_column_idx])
 
     def to_raw(z_value):
         return float(z_value) * raw_std + raw_mean
 
-    if semantics == "lower_bound":
-        if hasattr(model, "L"):
-            return to_raw(model.L)
-        return np.nan
-
-    if semantics == "upper_bound":
-        if hasattr(model, "U"):
-            return to_raw(model.U)
-        return np.nan
-
-    if semantics == "target_value":
-        if estimator == "mean" and "mu" in summary:
-            return to_raw(summary["mu"])
-        if estimator == "center":
-            if hasattr(model, "L") and hasattr(model, "U"):
-                return 0.5 * (to_raw(model.L) + to_raw(model.U))
-            return np.nan
-        if estimator == "lower" and hasattr(model, "L"):
-            return to_raw(model.L)
-        if estimator == "upper" and hasattr(model, "U"):
-            return to_raw(model.U)
-        if model_type in ("gauss", "gauss_zero") and "mu" in summary:
-            return to_raw(summary["mu"])
-        return np.nan
-
+    if model_type in _EQUALITY_MODEL_TYPES and "mu" in summary:
+        return to_raw(summary["mu"])
+    if model_type == "margin_exp_lower" and "b" in summary:
+        return to_raw(summary["b"])
+    if "mu" in summary:
+        return to_raw(summary["mu"])
+    if "b" in summary:
+        return to_raw(summary["b"])
     return np.nan
 
 
 def _compute_constraint_metrics(learner):
-    metrics = {}
-    specs = _get_constraint_specs(learner.env)
-    oracle = getattr(learner.env, "true_constraints", None)
-    if not specs or not isinstance(oracle, dict):
-        return metrics
+    num_states = int(getattr(learner, "num_states", 0))
+    num_features = int(getattr(learner, "num_features", 0))
+    if num_states <= 0 or num_features <= 0:
+        return {}
 
-    for spec in specs:
-        metric_name = str(spec["metric"])
-        oracle_key = str(spec["oracle_key"])
-        if oracle_key not in oracle:
-            metrics[metric_name] = np.nan
-            continue
+    true_active, target_matrix, semantics = _constraint_truth_matrices(learner)
+    predicted_active = _predicted_constraint_active_mask(learner)
+    auto_mode = _is_auto_feature_mode(learner)
 
-        estimate = _estimate_constraint_value(learner, spec)
-        target = float(oracle[oracle_key])
-        metrics[metric_name] = float(abs(estimate - target)) if np.isfinite(estimate) else np.nan
-    return metrics
+    error_matrix = np.full((num_states, num_features), np.nan, dtype=float)
+    for stage_idx in range(num_states):
+        for feat_idx in range(num_features):
+            if not true_active[stage_idx, feat_idx]:
+                if auto_mode and predicted_active[stage_idx, feat_idx]:
+                    error_matrix[stage_idx, feat_idx] = np.nan
+                else:
+                    error_matrix[stage_idx, feat_idx] = 0.0
+                continue
+
+            if not predicted_active[stage_idx, feat_idx]:
+                error_matrix[stage_idx, feat_idx] = np.nan
+                continue
+
+            estimate = _estimate_constraint_value_raw(learner, stage_idx, feat_idx)
+            target = target_matrix[stage_idx, feat_idx]
+            if np.isfinite(estimate) and np.isfinite(target):
+                error_matrix[stage_idx, feat_idx] = float(abs(estimate - target))
+
+    finite_vals = error_matrix[np.isfinite(error_matrix)]
+    return {
+        "MeanConstraintError": float(np.mean(finite_vals)) if finite_vals.size > 0 else np.nan,
+        "ConstraintErrorMatrix": error_matrix.tolist(),
+        "ConstraintTrueActiveMask": true_active.astype(int).tolist(),
+        "ConstraintPredictedActiveMask": predicted_active.astype(int).tolist(),
+        "ConstraintTargetMatrix": target_matrix.tolist(),
+        "ConstraintSemanticsMatrix": semantics.tolist(),
+        "ConstraintFeatureNames": _selected_feature_names(learner),
+    }
 
 
 def eval_goalhmm_auto(learner, gammas, xis_list):
-    taus_hat = extract_taus_hat(gammas, xis_list)
-
     metrics = {}
-    metrics.update(_compute_segmentation_metrics(learner, taus_hat))
-    metrics.update(_compute_goal_metrics(learner))
+    metrics.update(_compute_segmentation_metrics(learner, gammas, xis_list))
+    metrics.update(_compute_subgoal_metrics(learner))
 
     constraint_metrics = _compute_constraint_metrics(learner)
     if constraint_metrics:

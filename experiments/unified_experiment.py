@@ -81,7 +81,7 @@ def run_experiment(
 def main():
     parser = argparse.ArgumentParser(description="Unified CHMM experiment entrypoint.")
     parser.add_argument("--dataset", type=str, default="2DObsAvoid")
-    parser.add_argument("--method", type=str, default="segcons")
+    parser.add_argument("--method", type=str, default="scdp")
     parser.add_argument("--n-demos", type=int, default=10)
     parser.add_argument("--dataset-seed", type=int, default=42)
     parser.add_argument("--method-seed", type=int, default=0)

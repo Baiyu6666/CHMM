@@ -8,40 +8,28 @@ import numpy as np
 from envs.base import TaskBundle
 from evaluation import eval_goalhmm_auto
 from ..base import SegmentationResult, format_training_log
-from ..cores.segcons import SegmentConstraintModel
+from ..cores.posthoc_constraint_model import FixedTauConstraintModel
+from visualization import plot_evaluation_summary
 from visualization.plot4panel import plot_results_4panel
 
 
-def _hard_gammas_from_taus(demos: List[np.ndarray], taus: List[int]) -> List[np.ndarray]:
+def _hard_gammas_from_labels(labels: List[np.ndarray], num_states: int) -> List[np.ndarray]:
     gammas = []
-    for X, tau in zip(demos, taus):
-        T = len(X)
-        t = int(np.clip(tau, 1, T - 2))
-        gamma = np.zeros((T, 2), dtype=float)
-        gamma[: t + 1, 0] = 1.0
-        gamma[t + 1 :, 1] = 1.0
+    for z in labels:
+        z = np.asarray(z, dtype=int).reshape(-1)
+        gamma = np.zeros((len(z), int(num_states)), dtype=float)
+        gamma[np.arange(len(z)), z] = 1.0
         gammas.append(gamma)
     return gammas
 
 
-def _resolve_single_cut_taus(dataset: TaskBundle, segmentation: SegmentationResult) -> List[int]:
-    if segmentation.taus is not None:
-        return [int(t) for t in segmentation.taus]
-
-    resolved: List[int] = []
-    invalid_examples: List[str] = []
-    for idx, (X, cuts) in enumerate(zip(dataset.demos, segmentation.cutpoints)):
-        if len(cuts) != 1:
-            invalid_examples.append(f"demo {idx}: {len(cuts)} cutpoints")
-            continue
-        resolved.append(int(cuts[0]))
-
-    if invalid_examples:
-        raise ValueError(
-            "Posthoc constraint learning requires a single-cut segmentation for every demo. "
-            f"Got incompatible cutpoints from '{segmentation.method_name}': {', '.join(invalid_examples)}"
-        )
-    return resolved
+def _stage_ends_from_labels(labels: List[np.ndarray]) -> List[List[int]]:
+    stage_ends = []
+    for z in labels:
+        z = np.asarray(z, dtype=int).reshape(-1)
+        cuts = np.where(np.diff(z) != 0)[0].astype(int)
+        stage_ends.append([int(x) for x in cuts.tolist()] + [int(len(z) - 1)])
+    return stage_ends
 
 
 def _compute_fixed_tau_objective(learner, gammas, xis_list, aux_list):
@@ -70,13 +58,17 @@ class PostHocConstraintLearner:
         if dataset.env is None:
             raise ValueError("Posthoc constraint learner requires a dataset env.")
         resolved_kwargs = dict(self.kwargs)
-        taus = _resolve_single_cut_taus(dataset, segmentation)
+        labels = [np.asarray(z, dtype=int) for z in segmentation.labels]
+        num_states = int(max(int(np.max(z)) for z in labels) + 1) if labels else 2
+        stage_ends = _stage_ends_from_labels(labels)
 
-        learner = SegmentConstraintModel(
+        learner = FixedTauConstraintModel(
             demos=dataset.demos,
             env=dataset.env,
             true_taus=dataset.true_taus,
-            tau_init=taus,
+            true_cutpoints=getattr(dataset, "true_cutpoints", None),
+            num_states=num_states,
+            stage_ends_init=stage_ends,
             g2_init=None,
             auto_feature_select=resolved_kwargs.get("auto_feature_select", False),
             fixed_feature_mask=resolved_kwargs.get("fixed_feature_mask"),
@@ -92,12 +84,12 @@ class PostHocConstraintLearner:
         )
         learner.plot_context = "posthoc"
 
-        gammas = _hard_gammas_from_taus(dataset.demos, taus)
-        dummy_xis = [np.zeros((len(X) - 1, 2, 2), dtype=float) for X in dataset.demos]
+        gammas = _hard_gammas_from_labels(labels, num_states=num_states)
+        dummy_xis = [np.zeros((len(X) - 1, num_states, num_states), dtype=float) for X in dataset.demos]
         dummy_aux = [None for _ in dataset.demos]
-        for gamma, xi in zip(gammas, dummy_xis):
-            xi[:, 0, 0] = gamma[:-1, 0]
-            xi[:, 1, 1] = gamma[:-1, 1]
+        for gamma, xi, z in zip(gammas, dummy_xis, labels):
+            for t in range(max(len(z) - 1, 0)):
+                xi[t, int(z[t]), int(z[t + 1])] = 1.0
 
         learner.loss_loglik = []
         learner.loss_feat = []
@@ -121,7 +113,10 @@ class PostHocConstraintLearner:
             learner.loss_trans.append(total_trans_ll)
             metrics = eval_goalhmm_auto(learner, gammas, dummy_xis)
             for name, value in metrics.items():
-                learner.metrics_hist.setdefault(name, []).append(value)
+                if np.isscalar(value):
+                    value_f = float(value)
+                    if np.isfinite(value_f):
+                        learner.metrics_hist.setdefault(name, []).append(value_f)
             should_log = ((it + 1) % 10 == 0) or (it == refine_steps - 1)
             if verbose and should_log:
                 print(
@@ -135,24 +130,32 @@ class PostHocConstraintLearner:
                             "trans": total_trans_ll,
                         },
                         metrics=metrics,
-                        extras={"taus": taus, "r": learner.r.tolist()},
+                        extras={"stage_ends": stage_ends, "r": learner.r.tolist()},
                     )
                 )
 
-        dummy_alphas = [np.zeros_like(gamma) for gamma in gammas]
-        dummy_betas = [np.zeros_like(gamma) for gamma in gammas]
-        plot_results_4panel(
-            learner,
-            taus,
-            refine_steps,
-            gammas,
-            dummy_alphas,
-            dummy_betas,
-            dummy_xis,
-            dummy_aux,
-        )
+        if num_states == 2:
+            taus = [int(ends[0]) for ends in stage_ends]
+            dummy_alphas = [np.zeros_like(gamma) for gamma in gammas]
+            dummy_betas = [np.zeros_like(gamma) for gamma in gammas]
+            plot_results_4panel(
+                learner,
+                taus,
+                refine_steps,
+                gammas,
+                dummy_alphas,
+                dummy_betas,
+                dummy_xis,
+                dummy_aux,
+            )
 
         metrics = eval_goalhmm_auto(learner, gammas, dummy_xis)
+        plot_evaluation_summary(
+            learner,
+            metrics,
+            method_name=str(segmentation.method_name),
+            plot_dir=resolved_kwargs.get("plot_dir", "outputs/plots"),
+        )
         return {
             "model": learner,
             "gammas": gammas,

@@ -3,22 +3,6 @@
   "n_demos": 12,
   "seed": 0,
   "method_overrides": {
-    "segcons": {
-      "selected_raw_feature_ids": ["dist_centerline", "speed"],
-      "feature_model_types": {
-        "dist_centerline": "margin_exp_lower",
-        "speed": "student_t"
-      },
-      "fixed_feature_mask": [[1, 0], [0, 1]]
-    },
-    "ccp": {
-      "selected_raw_feature_ids": ["dist_centerline", "speed"],
-      "feature_model_types": {
-        "dist_centerline": "margin_exp_lower",
-        "speed": "student_t"
-      },
-      "fixed_feature_mask": [[1, 0], [0, 1]]
-    },
     "scdp": {
       "selected_raw_feature_ids": ["dist_centerline", "speed"],
       "feature_model_types": {

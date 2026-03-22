@@ -73,7 +73,7 @@ def _apply_runtime_plot_defaults(
     method_seed: int,
 ) -> dict[str, Any]:
     cfg = dict(method_cfg)
-    if method_name in {"segcons", "ccp"}:
+    if method_name in {"scdp"}:
         if _should_replace_plot_dir(cfg.get("plot_dir")):
             cfg["plot_dir"] = plot_dir
         cfg.setdefault("seed", int(method_seed))
@@ -92,7 +92,7 @@ def _apply_runtime_plot_defaults(
 
 
 def _extract_metrics(method_name: str, result: dict[str, Any]) -> dict[str, Any]:
-    if method_name in {"segcons", "ccp"}:
+    if method_name in {"scdp"}:
         return dict(result["joint_result"]["metrics"])
     return dict(result["constraints"]["metrics"])
 
@@ -191,7 +191,7 @@ def run_benchmark(
 
 def main():
     parser = argparse.ArgumentParser(description="Run CHMM benchmark over methods, datasets, and seeds.")
-    parser.add_argument("--methods", default="segcons")
+    parser.add_argument("--methods", default="scdp")
     parser.add_argument("--datasets", default="2DObsAvoid")
     parser.add_argument("--method-seeds", default="0")
     parser.add_argument("--dataset-seed", type=int, default=0)

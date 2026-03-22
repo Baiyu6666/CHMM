@@ -3,6 +3,7 @@ from .dock_corridor_2d import DockCorridorEnv2D, load_2d_dock_corridor
 from .line_2d import Line2DEnv, load_line_2d
 from .narrow_passage_2d import NarrowPassageEnv2D, load_2d_narrow_passage
 from .obs_avoid_2d import ObsAvoidEnv, load_2d_obs_avoid
+from .obs_avoid_2d_arc3 import ObsAvoidArc3StageEnv, load_2d_obs_avoid_arc3
 from .obs_avoid_3d import ObsAvoidEnv3D, load_3d_obs_avoid
 from .pick_place import PickPlaceEnv, load_pick_place
 from .registry import ENV_REGISTRY, load_env
@@ -14,6 +15,7 @@ __all__ = [
     "Line2DEnv",
     "NarrowPassageEnv2D",
     "ObsAvoidEnv",
+    "ObsAvoidArc3StageEnv",
     "ObsAvoidEnv3D",
     "PickPlaceEnv",
     "SineCorridorEnv3D",
@@ -21,6 +23,7 @@ __all__ = [
     "load_2d_dock_corridor",
     "load_2d_narrow_passage",
     "load_2d_obs_avoid",
+    "load_2d_obs_avoid_arc3",
     "load_3d_obs_avoid",
     "load_3d_sine_corridor",
     "load_env",

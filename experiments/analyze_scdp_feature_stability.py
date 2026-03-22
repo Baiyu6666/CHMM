@@ -56,12 +56,20 @@ def _fit_scdp(env_config: str, method_config: str, max_iter: int | None = None):
     return dataset_name, dataset, result
 
 
+def _mean_abs_centered_dispersion(values) -> float:
+    xs = np.asarray(values, dtype=float).reshape(-1)
+    if xs.size == 0:
+        return np.nan
+    center = float(np.median(xs))
+    return float(np.mean(np.abs(xs - center)))
+
+
 def _plot_demo_feature_costs(
     dataset_name: str,
     learner,
     demo_idx: int,
     output_path: Path,
-    equality_w70_ratio_threshold: float | None = None,
+    equality_dispersion_ratio_threshold: float | None = None,
     stage_ends: list[int] | tuple[int, ...] | None = None,
     stage_params=None,
 ) -> Path:
@@ -139,8 +147,7 @@ def _plot_demo_feature_costs(
             baseline_neglog = -np.asarray(baseline_model.logpdf(vals), dtype=float)
             fitted_step = float(np.mean(fitted_neglog))
             baseline_step = float(np.mean(baseline_neglog))
-            stage_w70 = float(_shortest_coverage_width(vals, coverage=0.7))
-            full_demo_w70 = float(max(_shortest_coverage_width(full_vals, coverage=0.7), 1e-6))
+            stage_dispersion = float(_mean_abs_centered_dispersion(vals))
             info_lines = [
                 f"steps = {len(vals)}",
                 f"fitted avg NLL = {fitted_step:.3f}",
@@ -151,19 +158,21 @@ def _plot_demo_feature_costs(
             if kind_l in {"student_t", "studentt", "t"}:
                 stage_sigma = float(getattr(fitted_model, "sigma", np.nan))
                 info_lines.append(f"student-t sigma = {stage_sigma:.3f}")
-                if equality_w70_ratio_threshold is not None:
-                    info_lines.append(f"stage w70 = {stage_w70:.3f}")
-                    info_lines.append(f"full-demo w70 = {full_demo_w70:.3f}")
-                    info_lines.append(f"w70 ratio = {stage_w70 / full_demo_w70:.3f}")
-                    info_lines.append(f"ratio threshold = {float(equality_w70_ratio_threshold):.3f}")
+                if equality_dispersion_ratio_threshold is not None:
+                    uncertainty_bonus = 0.1 / np.sqrt(max(len(vals), 1))
+                    info_lines.append(f"local dispersion = {stage_dispersion:.3f}")
+                    info_lines.append(f"uncertainty bonus = {uncertainty_bonus:.3f}")
+                    info_lines.append(f"adjusted score = {stage_dispersion + uncertainty_bonus:.3f}")
+                    info_lines.append(f"ratio threshold = {float(equality_dispersion_ratio_threshold):.3f}")
             elif kind_l in {"gauss", "gaussian"}:
                 stage_sigma = float(getattr(fitted_model, "sigma", np.nan))
                 info_lines.append(f"gaussian sigma = {stage_sigma:.3f}")
-                if equality_w70_ratio_threshold is not None:
-                    info_lines.append(f"stage w70 = {stage_w70:.3f}")
-                    info_lines.append(f"full-demo w70 = {full_demo_w70:.3f}")
-                    info_lines.append(f"w70 ratio = {stage_w70 / full_demo_w70:.3f}")
-                    info_lines.append(f"ratio threshold = {float(equality_w70_ratio_threshold):.3f}")
+                if equality_dispersion_ratio_threshold is not None:
+                    uncertainty_bonus = 0.1 / np.sqrt(max(len(vals), 1))
+                    info_lines.append(f"local dispersion = {stage_dispersion:.3f}")
+                    info_lines.append(f"uncertainty bonus = {uncertainty_bonus:.3f}")
+                    info_lines.append(f"adjusted score = {stage_dispersion + uncertainty_bonus:.3f}")
+                    info_lines.append(f"ratio threshold = {float(equality_dispersion_ratio_threshold):.3f}")
 
             ax.set_title(f"Stage {stage_idx + 1} | {feature_names[feat_idx]}")
             ax.set_xlabel("standardized feature value")
@@ -573,7 +582,7 @@ def main():
     print("- Here, the first four tables are the cross-demo mean/std versions of those same per-demo quantities.")
     print("- `MEAN_AVG_NLL_GAIN` is the direct aggregate counterpart of the plot's `avg NLL gain`.")
     print("- `BASELINE_WORSE_FRAC` is the fraction of demos where baseline avg NLL is worse than fitted avg NLL; use it as reference only.")
-    print("- `W70_RATIO = stage_w70 / demo_global_w70` is the equality-style concentration score; smaller means the stage is tighter than the full demo.")
+    print("- `LOCAL_DISPERSION = mean(abs(x - median(stage)))` is the equality-style concentration score; smaller means the stage is tighter.")
     print("- `W80_RATIO = shortest 80%-coverage width(stage) / shortest 80%-coverage width(global demo)` is a more direct concentration score; smaller means more concentrated.")
     print("- `PARAM_STD_BY_STAGE_FEATURE` measures cross-demo parameter consistency; smaller key-param std means more consistent.")
     print("- `ADVANTAGE_SCORE` is now exactly `MEAN_AVG_NLL_GAIN`.")

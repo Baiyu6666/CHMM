@@ -226,12 +226,14 @@ def load_2d_dock_corridor(
         X, tau = env.generate_demo(rng=rng, **run_kwargs)
         demos.append(X)
         true_taus.append(int(tau))
+    true_cutpoints = [np.asarray([int(tau)], dtype=int) for tau in true_taus]
 
     return TaskBundle(
         name="2DDockCorridor",
         demos=demos,
         env=env,
         true_taus=true_taus,
+        true_cutpoints=true_cutpoints,
         feature_schema=env.get_feature_schema(),
         true_constraints=env.get_true_constraints(),
         constraint_specs=env.get_constraint_specs(),

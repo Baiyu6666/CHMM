@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import numpy as np
-from ..base import compute_tau_metrics, format_training_log
+from ..base import compute_cutpoint_metrics, format_training_log
 from ..common.tau_init import clip_tau_for_sequence, resolve_tau_init_for_demos
 
 # ---------- module-level switch for left-to-right constraint ----------
@@ -281,7 +281,7 @@ class ARHMM:
     def fit(self, X, n_iter=30, verbose=True, true_taus=None, tau_init=None):
         K,D=self.K,self.D
         hist_loglik = []
-        hist_metrics = {"MAE_tau": [], "NMAE_tau": []}
+        hist_metrics = {"MeanAbsCutpointError": [], "CutpointExactMatchRate": []}
         if tau_init is not None:
             self._warm_start_from_taus(X, tau_init)
         for it in range(n_iter):
@@ -331,17 +331,23 @@ class ARHMM:
             iter_metrics = {}
             if true_taus is not None:
                 Z_cur = [self.viterbi(x) for x in X]
-                taus_cur = [int(np.where(np.diff(z.astype(int)) != 0)[0][0]) if np.any(np.diff(z.astype(int)) != 0) else max(1, len(z) // 2) for z in Z_cur]
-                iter_metrics = compute_tau_metrics(taus_cur, true_taus, X)
+                cutpoints_cur = [np.where(np.diff(z.astype(int)) != 0)[0].astype(int) for z in Z_cur]
+                if self.K == 2:
+                    true_cutpoints = [None if t is None else np.asarray([int(t)], dtype=int) for t in true_taus]
+                else:
+                    true_cutpoints = [None if t is None else np.asarray(t, dtype=int).reshape(-1) for t in true_taus]
+                iter_metrics = compute_cutpoint_metrics(cutpoints_cur, true_cutpoints, X)
                 for name in hist_metrics:
-                    hist_metrics[name].append(iter_metrics.get(name, np.nan))
+                    if name in iter_metrics:
+                        hist_metrics[name].append(iter_metrics.get(name, np.nan))
             should_log = ((it + 1) % 10 == 0) or (it == n_iter - 1)
             if verbose and should_log:
                 print(format_training_log("ARHMM", it, losses={"loss": avg_ll}, metrics=iter_metrics))
         Z=[self.viterbi(x) for x in X]
         hist = {"loglik": hist_loglik}
-        if hist_metrics["MAE_tau"]:
-            hist.update(hist_metrics)
+        nonempty_metrics = {k: v for k, v in hist_metrics.items() if v}
+        if nonempty_metrics:
+            hist.update(nonempty_metrics)
         return Z, hist
 
     def viterbi(self, x):
@@ -420,7 +426,7 @@ def segment_with_hmm(
             n_iter=n_iter,
             verbose=verbose,
             true_taus=true_taus,
-            tau_init=tau_init_resolved,
+            tau_init=tau_init_resolved if int(K_try) == 2 else None,
         )
         return mdl, Z_list_, hist
 

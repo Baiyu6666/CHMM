@@ -12,6 +12,7 @@ class TaskBundle:
     demos: List[np.ndarray]
     env: Optional[Any] = None
     true_taus: Optional[List[int]] = None
+    true_cutpoints: Optional[List[np.ndarray]] = None
     true_labels: Optional[List[np.ndarray]] = None
     feature_schema: Optional[List[Dict[str, Any]]] = None
     true_constraints: Optional[Dict[str, Any]] = None

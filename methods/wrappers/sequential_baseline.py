@@ -33,6 +33,8 @@ class SequentialBaselineSegmenter:
                 demos=dataset.demos,
                 env=dataset.env,
                 true_taus=dataset.true_taus,
+                true_cutpoints=getattr(dataset, "true_cutpoints", None),
+                n_states=resolved_kwargs.get("n_states", 2),
                 g2_init=resolved_kwargs.get("g2_init"),
                 tau_init=resolved_kwargs.get("tau_init"),
                 tau_init_mode=resolved_kwargs.get("tau_init_mode", "uniform_taus"),

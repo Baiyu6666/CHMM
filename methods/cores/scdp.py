@@ -62,19 +62,41 @@ def _hard_gammas_from_stage_ends(lengths: Sequence[int], stage_ends_per_demo: Se
     return gammas
 
 
-def _shortest_coverage_width(values, coverage: float = 0.7) -> float:
-    xs = np.sort(np.asarray(values, dtype=float).reshape(-1))
-    n = xs.size
-    if n == 0:
+def _normalize_true_cutpoints(
+    demos: Sequence[np.ndarray],
+    true_taus: Sequence[int] | None = None,
+    true_cutpoints: Sequence[Sequence[int]] | None = None,
+):
+    normalized = []
+    if true_cutpoints is not None:
+        for X, cuts in zip(demos, true_cutpoints):
+            if cuts is None:
+                normalized.append(None)
+                continue
+            arr = np.asarray(cuts, dtype=int).reshape(-1)
+            if arr.size == 0:
+                normalized.append(np.zeros(0, dtype=int))
+                continue
+            arr = np.sort(arr)
+            arr = arr[(arr >= 0) & (arr < len(X) - 1)]
+            normalized.append(arr.astype(int))
+        return normalized
+    if true_taus is not None:
+        for tau in true_taus:
+            if tau is None:
+                normalized.append(None)
+            else:
+                normalized.append(np.asarray([int(tau)], dtype=int))
+        return normalized
+    return [None for _ in demos]
+
+
+def _mean_abs_centered_dispersion(values) -> float:
+    xs = np.asarray(values, dtype=float).reshape(-1)
+    if xs.size == 0:
         return np.nan
-    if n == 1:
-        return 0.0
-    coverage = float(np.clip(coverage, 1e-6, 1.0))
-    window = max(int(np.ceil(coverage * n)), 1)
-    if window >= n:
-        return float(xs[-1] - xs[0])
-    widths = xs[window - 1 :] - xs[: n - window + 1]
-    return float(np.min(widths))
+    center = float(np.median(xs))
+    return float(np.mean(np.abs(xs - center)))
 
 
 @dataclass
@@ -83,6 +105,7 @@ class _StageParams:
     subgoal: np.ndarray
     active_mask: np.ndarray | None = None
     feature_scores: np.ndarray | None = None
+    feature_constraint_costs: np.ndarray | None = None
 
 
 class SegmentConsensusDPModel:
@@ -91,12 +114,14 @@ class SegmentConsensusDPModel:
         demos,
         env,
         true_taus=None,
+        true_cutpoints=None,
         n_states=2,
         seed=0,
         selected_raw_feature_ids=None,
         feature_model_types=None,
         fixed_feature_mask=None,
-        lambda_constraint=1.0,
+        lambda_eq_constraint=1.0,
+        lambda_ineq_constraint=1.0,
         lambda_progress=1.0,
         lambda_subgoal_consensus=1.0,
         lambda_param_consensus=1.0,
@@ -108,23 +133,31 @@ class SegmentConsensusDPModel:
         sigma_floor=0.1,
         lam_floor=0.1,
         feature_activation_mode="fixed_mask",
-        equality_w70_ratio_threshold=0.2,
+        equality_dispersion_ratio_threshold=0.1,
+        equality_dispersion_uncertainty_c=0.1,
+        inequality_score_activation_threshold=-0.5,
+        fixed_true_cutpoint_prefix=0,
         plot_every=None,
         plot_dir="outputs/plots",
         eval_fn=eval_goalhmm_auto,
     ):
-        if int(n_states) != 2:
-            raise ValueError("scdp currently supports exactly 2 stages.")
         self.demos = [np.asarray(X, dtype=float) for X in demos]
         self.env = env
-        self.true_taus = list(true_taus) if true_taus is not None else [None] * len(self.demos)
-        self.num_states = 2
+        self.true_cutpoints = _normalize_true_cutpoints(self.demos, true_taus=true_taus, true_cutpoints=true_cutpoints)
+        self.true_taus = [
+            None if cuts is None or len(cuts) != 1 else int(cuts[0])
+            for cuts in self.true_cutpoints
+        ]
+        self.num_states = int(n_states)
+        if self.num_states < 2:
+            raise ValueError("scdp requires at least 2 stages.")
         self.seed = int(seed)
         self.rng = np.random.RandomState(self.seed)
         self.selected_raw_feature_ids = selected_raw_feature_ids
         self.feature_model_types_raw = feature_model_types
         self.fixed_feature_mask = fixed_feature_mask
-        self.lambda_constraint = float(lambda_constraint)
+        self.lambda_eq_constraint = float(lambda_eq_constraint)
+        self.lambda_ineq_constraint = float(lambda_ineq_constraint)
         self.lambda_progress = float(lambda_progress)
         self.lambda_subgoal_consensus = float(lambda_subgoal_consensus)
         self.lambda_param_consensus = float(lambda_param_consensus)
@@ -138,7 +171,10 @@ class SegmentConsensusDPModel:
             raise ValueError("feature_activation_mode must be one of {'fixed_mask', 'score'}.")
         self.feature_activation_mode = feature_activation_mode
         self.use_score_mode = self.feature_activation_mode == "score"
-        self.equality_w70_ratio_threshold = float(equality_w70_ratio_threshold)
+        self.equality_dispersion_ratio_threshold = float(equality_dispersion_ratio_threshold)
+        self.equality_dispersion_uncertainty_c = float(equality_dispersion_uncertainty_c)
+        self.inequality_score_activation_threshold = float(inequality_score_activation_threshold)
+        self.fixed_true_cutpoint_prefix = max(int(fixed_true_cutpoint_prefix), 0)
         self.plot_every = plot_every
         self.plot_dir = plot_dir
         self.eval_fn = eval_fn
@@ -179,7 +215,8 @@ class SegmentConsensusDPModel:
         self.current_stage_params_per_demo: List[List[_StageParams]] = []
         self.demo_r_matrices_: List[np.ndarray] = []
         self.current_demo_cost_breakdown: List[Dict[str, float]] = []
-
+        self.stage_subgoals: List[np.ndarray] = [np.full(self.state_dim, np.nan, dtype=float) for _ in range(self.num_states)]
+        self.stage_subgoals_hist: List[List[np.ndarray]] = []
         self.g1 = np.full(self.state_dim, np.nan, dtype=float)
         self.g2 = np.full(self.state_dim, np.nan, dtype=float)
         self.g1_hist: List[np.ndarray] = []
@@ -314,9 +351,18 @@ class SegmentConsensusDPModel:
             return model
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
-    def _segment_bounds_from_tau(self, tau, T):
-        tau = int(tau)
-        return [(0, tau), (tau + 1, T - 1)]
+    def _segment_bounds_from_stage_ends(self, stage_ends):
+        bounds = []
+        start = 0
+        for end in stage_ends:
+            end = int(end)
+            bounds.append((start, end))
+            start = end + 1
+        return bounds
+
+    def _stage_ends_from_cutpoints(self, cutpoints, T):
+        cutpoints = np.asarray(cutpoints, dtype=int).reshape(-1)
+        return [int(x) for x in cutpoints.tolist()] + [int(T - 1)]
 
     def _progress_cost(self, X, s, e, subgoal):
         if e <= s:
@@ -336,9 +382,10 @@ class SegmentConsensusDPModel:
         F = self.standardized_features[demo_idx][s : e + 1]
         F_demo = self.standardized_features[demo_idx]
         summaries = []
-        chosen_losses = []
         active_mask = np.zeros(self.num_features, dtype=int)
         feature_scores = np.zeros(self.num_features, dtype=float)
+        feature_constraint_costs = np.zeros(self.num_features, dtype=float)
+        active_fit_losses = [None for _ in range(self.num_features)]
         for feat_idx, kind in enumerate(self.feature_model_types):
             model = self._fit_local_model(kind, F[:, feat_idx])
             summary = model.get_summary()
@@ -355,29 +402,42 @@ class SegmentConsensusDPModel:
             if self.use_score_mode:
                 kind_l = str(kind).lower()
                 if kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}:
-                    stage_w70 = float(_shortest_coverage_width(F[:, feat_idx], coverage=0.7))
-                    demo_global_w70 = float(max(_shortest_coverage_width(F_demo[:, feat_idx], coverage=0.7), 1e-6))
-                    score = stage_w70 / demo_global_w70
+                    stage_dispersion = float(_mean_abs_centered_dispersion(F[:, feat_idx]))
+                    uncertainty_bonus = float(self.equality_dispersion_uncertainty_c / np.sqrt(max(len(F[:, feat_idx]), 1)))
+                    score = stage_dispersion + uncertainty_bonus
                 else:
                     score = -ll_gain
                 feature_scores[feat_idx] = float(score)
-                chosen_losses.append(np.full(len(F[:, feat_idx]), float(score), dtype=float))
+                weight = self.lambda_eq_constraint if self._is_equality_feature(feat_idx) else self.lambda_ineq_constraint
+                if self._is_equality_feature(feat_idx):
+                    avg_step_cost = min(float(score) - float(self.equality_dispersion_ratio_threshold), 0.0)
+                    feature_constraint_costs[feat_idx] = float(weight * len(F[:, feat_idx]) * avg_step_cost)
+                else:
+                    avg_step_cost = min(float(score) - float(self.inequality_score_activation_threshold), 0.0)
+                    feature_constraint_costs[feat_idx] = float(weight * len(F[:, feat_idx]) * avg_step_cost)
             else:
                 if self.r[stage_idx, feat_idx]:
                     feature_scores[feat_idx] = -ll_gain
-                    chosen_losses.append(fitted_loss)
                     active_mask[feat_idx] = 1
-        if chosen_losses:
-            constraint_cost = float(np.sum(np.mean(np.stack(chosen_losses, axis=1), axis=1)))
-        else:
-            constraint_cost = 0.0
-        subgoal = np.asarray(self.demos[demo_idx][e if stage_idx == 0 else -1], dtype=float)
+                    active_fit_losses[feat_idx] = fitted_loss
+        if not self.use_score_mode:
+            n_active = int(np.sum(active_mask))
+            if n_active > 0:
+                for feat_idx, kind in enumerate(self.feature_model_types):
+                    if not active_mask[feat_idx]:
+                        continue
+                    weight = self.lambda_eq_constraint if self._is_equality_feature(feat_idx) else self.lambda_ineq_constraint
+                    fitted_loss = np.asarray(active_fit_losses[feat_idx], dtype=float)
+                    feature_constraint_costs[feat_idx] = float(weight * np.sum(fitted_loss) / n_active)
+        constraint_cost = float(np.sum(feature_constraint_costs))
+        subgoal = np.asarray(self.demos[demo_idx][e], dtype=float)
         progress_cost = self._progress_cost(self.demos[demo_idx], s, e, subgoal)
         return _StageParams(
             model_summaries=summaries,
             subgoal=subgoal,
             active_mask=active_mask,
             feature_scores=feature_scores,
+            feature_constraint_costs=feature_constraint_costs,
         ), constraint_cost, progress_cost
 
     def _is_equality_feature(self, feat_idx: int) -> bool:
@@ -391,7 +451,7 @@ class SegmentConsensusDPModel:
         scores = np.asarray(self.demo_feature_score_matrices_, dtype=float)
         thresholds = np.zeros((self.num_states, self.num_features), dtype=float)
         for feat_idx in range(self.num_features):
-            thr = 0.2 if self._is_equality_feature(feat_idx) else -0.5
+            thr = self.equality_dispersion_ratio_threshold if self._is_equality_feature(feat_idx) else self.inequality_score_activation_threshold
             thresholds[:, feat_idx] = float(thr)
 
         activated = scores < thresholds[None, :, :]
@@ -414,7 +474,7 @@ class SegmentConsensusDPModel:
                     {
                         "feature_idx": int(feat_idx),
                         "feature_name": feature_names[feat_idx],
-                        "score_type": "w70_ratio" if self._is_equality_feature(feat_idx) else "-ll_gain",
+                        "score_type": "local_dispersion" if self._is_equality_feature(feat_idx) else "-ll_gain",
                         "threshold": float(thresholds[stage_idx, feat_idx]),
                         "activation_rate": float(activation_rate[stage_idx, feat_idx]),
                         "mean_score": float(np.mean(scores[:, stage_idx, feat_idx])),
@@ -505,10 +565,12 @@ class SegmentConsensusDPModel:
             total += float(np.dot(delta, delta))
         return total
 
-    def _candidate_cost(
+    def _segment_stage_cost_info(
         self,
         demo_idx,
-        tau,
+        stage_idx,
+        s,
+        e,
         lam_subgoal_consensus,
         lam_param_consensus,
         lam_feature_score_consensus,
@@ -517,7 +579,174 @@ class SegmentConsensusDPModel:
         shared_r_mean,
         shared_feature_score_mean=None,
     ):
-        bounds = self._segment_bounds_from_tau(tau, len(self.demos[demo_idx]))
+        stage_len = int(e - s + 1)
+        if stage_len < int(self.duration_min[stage_idx]) or stage_len > int(self.duration_max[stage_idx]):
+            return None
+        stage_params, constraint_cost, progress_cost = self._fit_segment_stage(demo_idx, stage_idx, s, e)
+        subgoal_consensus_cost = 0.0
+        if lam_subgoal_consensus > 0.0:
+            diff = np.asarray(stage_params.subgoal, dtype=float) - np.asarray(shared_stage_subgoals[stage_idx], dtype=float)
+            subgoal_consensus_cost = float(np.dot(diff, diff))
+        param_consensus_cost = 0.0
+        if lam_param_consensus > 0.0 and not self.use_score_mode:
+            for feat_idx, kind in enumerate(self.feature_model_types):
+                if not self.r[stage_idx, feat_idx]:
+                    continue
+                shared_vec = shared_param_vectors[stage_idx][feat_idx]
+                if shared_vec is None:
+                    continue
+                local_vec = self._summary_to_vector(kind, stage_params.model_summaries[feat_idx])
+                delta = local_vec - shared_vec
+                param_consensus_cost += float(np.dot(delta, delta))
+        feature_score_consensus_cost = 0.0
+        if lam_feature_score_consensus > 0.0:
+            if self.use_score_mode:
+                scores = stage_params.feature_scores
+                if scores is not None and shared_feature_score_mean is not None:
+                    delta = np.asarray(scores, dtype=float) - np.asarray(shared_feature_score_mean[stage_idx], dtype=float)
+                    feature_score_consensus_cost = float(np.dot(delta, delta))
+            else:
+                active_mask = stage_params.active_mask
+                if active_mask is not None and shared_r_mean is not None:
+                    delta = np.asarray(active_mask, dtype=float) - np.asarray(shared_r_mean[stage_idx], dtype=float)
+                    feature_score_consensus_cost = float(np.dot(delta, delta))
+        weighted_total = (
+            float(constraint_cost)
+            + self.lambda_progress * float(progress_cost)
+            + lam_subgoal_consensus * float(subgoal_consensus_cost)
+            + lam_param_consensus * float(param_consensus_cost)
+            + lam_feature_score_consensus * float(feature_score_consensus_cost)
+        )
+        return {
+            "stage_idx": int(stage_idx),
+            "s": int(s),
+            "e": int(e),
+            "stage_params": stage_params,
+            "constraint": float(constraint_cost),
+            "progress": float(progress_cost),
+            "subgoal_consensus": float(subgoal_consensus_cost),
+            "param_consensus": float(param_consensus_cost),
+            "feature_score_consensus": float(feature_score_consensus_cost),
+            "weighted_total": float(weighted_total),
+        }
+
+    def _best_segmentation_info(
+        self,
+        demo_idx,
+        lam_subgoal_consensus,
+        lam_param_consensus,
+        lam_feature_score_consensus,
+        shared_stage_subgoals,
+        shared_param_vectors,
+        shared_r_mean,
+        shared_feature_score_mean=None,
+        fixed_cutpoints=None,
+    ):
+        X = self.demos[demo_idx]
+        T = len(X)
+        fixed_cutpoints_arr = np.asarray([], dtype=int) if fixed_cutpoints is None else np.asarray(fixed_cutpoints, dtype=int).reshape(-1)
+        if fixed_cutpoints_arr.size > 0:
+            fixed_cutpoints_arr = np.sort(fixed_cutpoints_arr)
+            fixed_cutpoints_arr = fixed_cutpoints_arr[(fixed_cutpoints_arr >= 0) & (fixed_cutpoints_arr < T - 1)]
+        n_fixed = min(int(fixed_cutpoints_arr.size), self.num_states - 1)
+        fixed_cutpoints_arr = fixed_cutpoints_arr[:n_fixed]
+        suffix_min = np.zeros(self.num_states + 1, dtype=int)
+        suffix_max = np.zeros(self.num_states + 1, dtype=int)
+        for k in range(self.num_states - 1, -1, -1):
+            suffix_min[k] = suffix_min[k + 1] + int(self.duration_min[k])
+            suffix_max[k] = suffix_max[k + 1] + int(self.duration_max[k])
+
+        cache = {}
+
+        def seg_info(stage_idx, s, e):
+            key = (int(stage_idx), int(s), int(e))
+            if key not in cache:
+                cache[key] = self._segment_stage_cost_info(
+                    demo_idx=demo_idx,
+                    stage_idx=stage_idx,
+                    s=s,
+                    e=e,
+                    lam_subgoal_consensus=lam_subgoal_consensus,
+                    lam_param_consensus=lam_param_consensus,
+                    lam_feature_score_consensus=lam_feature_score_consensus,
+                    shared_stage_subgoals=shared_stage_subgoals,
+                    shared_param_vectors=shared_param_vectors,
+                    shared_r_mean=shared_r_mean,
+                    shared_feature_score_mean=shared_feature_score_mean,
+                )
+            return cache[key]
+
+        inf = float("inf")
+        best = np.full((self.num_states, T), inf, dtype=float)
+        back = np.full((self.num_states, T), -1, dtype=int)
+
+        for stage_idx in range(self.num_states):
+            for e in range(T):
+                if stage_idx < n_fixed and int(e) != int(fixed_cutpoints_arr[stage_idx]):
+                    continue
+                remaining_after = int(T - e - 1)
+                if remaining_after < int(suffix_min[stage_idx + 1]) or remaining_after > int(suffix_max[stage_idx + 1]):
+                    continue
+                if stage_idx == 0:
+                    s = 0
+                    info = seg_info(stage_idx, s, e)
+                    if info is not None:
+                        best[stage_idx, e] = float(info["weighted_total"])
+                    continue
+
+                for prev_end in range(stage_idx - 1, e):
+                    prev_total = float(best[stage_idx - 1, prev_end])
+                    if not np.isfinite(prev_total):
+                        continue
+                    s = int(prev_end + 1)
+                    info = seg_info(stage_idx, s, e)
+                    if info is None:
+                        continue
+                    total = prev_total + float(info["weighted_total"])
+                    if total < float(best[stage_idx, e]):
+                        best[stage_idx, e] = total
+                        back[stage_idx, e] = int(prev_end)
+
+        final_end = T - 1
+        if not np.isfinite(best[self.num_states - 1, final_end]):
+            raise RuntimeError(f"No feasible segmentation found for demo {demo_idx}.")
+
+        stage_ends = [final_end]
+        cur_end = final_end
+        for stage_idx in range(self.num_states - 1, 0, -1):
+            prev_end = int(back[stage_idx, cur_end])
+            if prev_end < 0:
+                raise RuntimeError(f"Broken DP backpointer for demo {demo_idx}, stage {stage_idx}.")
+            stage_ends.append(prev_end)
+            cur_end = prev_end
+        stage_ends = sorted(int(x) for x in stage_ends)
+        bounds = self._segment_bounds_from_stage_ends(stage_ends)
+        stage_infos = [seg_info(stage_idx, s, e) for stage_idx, (s, e) in enumerate(bounds)]
+        return {
+            "cutpoints": [int(x) for x in stage_ends[:-1]],
+            "stage_ends": [int(x) for x in stage_ends],
+            "stage_params": [info["stage_params"] for info in stage_infos],
+            "constraint": float(sum(info["constraint"] for info in stage_infos)),
+            "progress": float(sum(info["progress"] for info in stage_infos)),
+            "subgoal_consensus": float(sum(info["subgoal_consensus"] for info in stage_infos)),
+            "param_consensus": float(sum(info["param_consensus"] for info in stage_infos)),
+            "feature_score_consensus": float(sum(info["feature_score_consensus"] for info in stage_infos)),
+            "total": float(best[self.num_states - 1, final_end]),
+        }
+
+    def _candidate_cost(
+        self,
+        demo_idx,
+        stage_ends,
+        lam_subgoal_consensus,
+        lam_param_consensus,
+        lam_feature_score_consensus,
+        shared_stage_subgoals,
+        shared_param_vectors,
+        shared_r_mean,
+        shared_feature_score_mean=None,
+    ):
+        bounds = self._segment_bounds_from_stage_ends(stage_ends)
         candidate_stage_params = []
         constraint_cost = 0.0
         progress_cost = 0.0
@@ -542,15 +771,15 @@ class SegmentConsensusDPModel:
             else:
                 feature_score_consensus_cost = self._r_consensus_cost(candidate_stage_params, shared_r_mean)
         total = (
-            self.lambda_constraint * constraint_cost
+            constraint_cost
             + self.lambda_progress * progress_cost
             + lam_subgoal_consensus * subgoal_consensus_cost
             + lam_param_consensus * param_consensus_cost
             + lam_feature_score_consensus * feature_score_consensus_cost
         )
         return {
-            "tau": int(tau),
-            "stage_ends": [int(tau), len(self.demos[demo_idx]) - 1],
+            "cutpoints": [int(x) for x in stage_ends[:-1]],
+            "stage_ends": [int(x) for x in stage_ends],
             "stage_params": candidate_stage_params,
             "constraint": float(constraint_cost),
             "progress": float(progress_cost),
@@ -583,10 +812,14 @@ class SegmentConsensusDPModel:
     def _apply_shared_state(self, shared_stage_subgoals, shared_param_vectors):
         self.shared_stage_subgoals = [np.asarray(x, dtype=float).copy() for x in shared_stage_subgoals]
         self.shared_param_vectors = [[None if v is None else np.asarray(v, dtype=float).copy() for v in row] for row in shared_param_vectors]
-        self.g1 = np.asarray(shared_stage_subgoals[0], dtype=float).copy()
-        self.g2 = np.asarray(shared_stage_subgoals[1], dtype=float).copy()
-        self.g1_hist.append(self.g1.copy())
-        self.g2_hist.append(self.g2.copy())
+        self.stage_subgoals = [np.asarray(x, dtype=float).copy() for x in shared_stage_subgoals]
+        self.stage_subgoals_hist.append([x.copy() for x in self.stage_subgoals])
+        if self.num_states >= 1:
+            self.g1 = self.stage_subgoals[0].copy()
+            self.g1_hist.append(self.g1.copy())
+        if self.num_states >= 2:
+            self.g2 = self.stage_subgoals[1].copy()
+            self.g2_hist.append(self.g2.copy())
         for stage_idx in range(self.num_states):
             for feat_idx, kind in enumerate(self.feature_model_types):
                 vec = shared_param_vectors[stage_idx][feat_idx]
@@ -606,6 +839,9 @@ class SegmentConsensusDPModel:
         self.stage_ends_ = []
         self.shared_r_mean = None
         self.shared_feature_score_mean = None
+        self.stage_subgoals_hist = []
+        self.g1_hist = []
+        self.g2_hist = []
         shared_stage_subgoals = [np.zeros(self.state_dim, dtype=float) for _ in range(self.num_states)]
         shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
 
@@ -624,33 +860,29 @@ class SegmentConsensusDPModel:
             self.current_param_consensus_lambda = float(lam_param_consensus)
             self.current_feature_score_consensus_lambda = float(lam_feature_score_consensus)
             selected_infos = []
-            for demo_idx, X in enumerate(self.demos):
-                best_info = None
-                for tau in range(1, len(X) - 1):
-                    info = self._candidate_cost(
-                        demo_idx,
-                        tau,
-                        lam_subgoal_consensus,
-                        lam_param_consensus,
-                        lam_feature_score_consensus,
-                        shared_stage_subgoals,
-                        shared_param_vectors,
-                        self.shared_r_mean,
-                        self.shared_feature_score_mean,
+            for demo_idx in range(len(self.demos)):
+                fixed_cutpoints = None
+                if self.fixed_true_cutpoint_prefix > 0 and self.true_cutpoints[demo_idx] is not None:
+                    fixed_cutpoints = self.true_cutpoints[demo_idx][: self.fixed_true_cutpoint_prefix]
+                selected_infos.append(
+                    self._best_segmentation_info(
+                        demo_idx=demo_idx,
+                        lam_subgoal_consensus=lam_subgoal_consensus,
+                        lam_param_consensus=lam_param_consensus,
+                        lam_feature_score_consensus=lam_feature_score_consensus,
+                        shared_stage_subgoals=shared_stage_subgoals,
+                        shared_param_vectors=shared_param_vectors,
+                        shared_r_mean=self.shared_r_mean,
+                        shared_feature_score_mean=self.shared_feature_score_mean,
+                        fixed_cutpoints=fixed_cutpoints,
                     )
-                    if info is None:
-                        continue
-                    if best_info is None or info["total"] < best_info["total"]:
-                        best_info = info
-                if best_info is None:
-                    raise RuntimeError(f"No feasible segmentation found for demo {demo_idx}.")
-                selected_infos.append(best_info)
+                )
 
             self.stage_ends_ = [list(info["stage_ends"]) for info in selected_infos]
             self.current_stage_params_per_demo = [list(info["stage_params"]) for info in selected_infos]
             self.current_demo_cost_breakdown = [
                 {
-                    "constraint": self.lambda_constraint * float(info["constraint"]),
+                    "constraint": float(info["constraint"]),
                     "progress": self.lambda_progress * float(info["progress"]),
                     "subgoal_consensus": lam_subgoal_consensus * float(info["subgoal_consensus"]),
                     "param_consensus": lam_param_consensus * float(info["param_consensus"]),
@@ -680,7 +912,7 @@ class SegmentConsensusDPModel:
             total_param_consensus = float(np.sum([info["param_consensus"] for info in selected_infos]))
             total_feature_score_consensus = float(np.sum([info.get("feature_score_consensus", 0.0) for info in selected_infos]))
             total_loss = float(
-                self.lambda_constraint * total_constraint
+                total_constraint
                 + self.lambda_progress * total_progress
                 + lam_subgoal_consensus * total_subgoal_consensus
                 + lam_param_consensus * total_param_consensus
@@ -694,9 +926,12 @@ class SegmentConsensusDPModel:
             self.loss_total.append(total_loss)
 
             gammas = _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_states)
-            metrics = self.eval_fn(self, gammas, None)
+            metrics = self.eval_fn(self, gammas, None) if self.eval_fn is not None and self.num_states == 2 else {}
             for name, value in metrics.items():
-                self.metrics_hist.setdefault(name, []).append(float(value))
+                if np.isscalar(value):
+                    value_f = float(value)
+                    if np.isfinite(value_f):
+                        self.metrics_hist.setdefault(name, []).append(value_f)
 
             if verbose:
                 print(

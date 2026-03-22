@@ -68,8 +68,6 @@ def _effective_joint_method_kwargs(method_name, method_seed, tau_init, extra_met
     method_cfg["plot_every"] = None
     if extra_method_kwargs:
         method_cfg = deep_merge(method_cfg, extra_method_kwargs)
-    if method_name == "segcons" and method_cfg.get("fixed_feature_mask") is not None:
-        method_cfg["auto_feature_select"] = False
     return method_cfg
 
 def sample_taus_from_mode(demos, dataset, mode, seed):
@@ -142,18 +140,14 @@ def build_comparison_specs(dataset):
 
 
 def _ordered_metric_names(metrics_dict):
-    preferred = ["loglik", "MAE_tau", "NMAE_tau", "e_g1", "e_g2", "AbsErr_d", "AbsErr_centerline", "AbsErr_v"]
+    preferred = ["loglik", "MeanAbsCutpointError", "CutpointExactMatchRate", "MeanStageSubgoalError", "MeanConstraintError"]
     names = [name for name in preferred if name in metrics_dict]
     names.extend(sorted(name for name in metrics_dict if name not in names))
     return names
 
 
 def _extract_metrics(method_name, result):
-    if method_name in {"segcons", "ccp"}:
-        learner = result["joint_result"]["model"]
-        metrics = dict(result["joint_result"]["metrics"])
-        gammas = result["joint_result"]["gammas"]
-    elif method_name == "cghmm":
+    if method_name == "cghmm":
         learner = result["segmentation"].model
         metrics = dict(result["constraints"]["metrics"])
         gammas = result["segmentation"].extras.get("gammas")
@@ -165,40 +159,6 @@ def _extract_metrics(method_name, result):
         gammas = result["constraints"]["gammas"]
     metrics["loglik"] = float(learner.loss_loglik[-1]) if getattr(learner, "loss_loglik", None) else np.nan
     return metrics, learner, gammas
-
-
-def run_single_segcons(taus_init, seed, extra_method_kwargs=None):
-    dataset_kwargs = _effective_dataset_kwargs(DATASET_NAME, "segcons")
-    method_kwargs = _effective_joint_method_kwargs(
-        "segcons",
-        seed,
-        taus_init,
-        extra_method_kwargs=extra_method_kwargs,
-    )
-    result = run_experiment(
-        dataset_name=DATASET_NAME,
-        method_name="segcons",
-        dataset_kwargs=dataset_kwargs,
-        method_kwargs=method_kwargs,
-    )
-    return _extract_metrics("segcons", result)
-
-
-def run_single_ccp(taus_init, seed, extra_method_kwargs=None):
-    dataset_kwargs = _effective_dataset_kwargs(DATASET_NAME, "ccp")
-    method_kwargs = _effective_joint_method_kwargs(
-        "ccp",
-        seed,
-        taus_init,
-        extra_method_kwargs=extra_method_kwargs,
-    )
-    result = run_experiment(
-        dataset_name=DATASET_NAME,
-        method_name="ccp",
-        dataset_kwargs=dataset_kwargs,
-        method_kwargs=method_kwargs,
-    )
-    return _extract_metrics("ccp", result)
 
 
 def run_single_cghmm(taus_init, seed, extra_method_kwargs=None):
@@ -226,8 +186,6 @@ def run_single_cghmm(taus_init, seed, extra_method_kwargs=None):
 
 
 RUNNERS = {
-    "segcons": run_single_segcons,
-    "ccp": run_single_ccp,
     "cghmm": run_single_cghmm,
 }
 
@@ -375,7 +333,7 @@ def run_experiment_sensitivity():
                 goal_records[group][model_name].append(record)
 
             summary_bits = [
-                f"{model_name}={float(run_outputs[model_name][0].get('NMAE_tau', np.nan)):.3f}"
+                f"{model_name}={float(run_outputs[model_name][0].get('MeanAbsCutpointError', np.nan)):.3f}"
                 for model_name in MODELS
             ]
             print(f"[{group}][run={run}] " + " ".join(summary_bits))

@@ -3,22 +3,6 @@
   "n_demos": 10,
   "seed": 42,
   "method_overrides": {
-    "segcons": {
-      "selected_raw_feature_ids": ["lateral_offset", "speed"],
-      "feature_model_types": {
-        "lateral_offset": "student_t",
-        "speed": "student_t"
-      },
-      "fixed_feature_mask": [[1, 0], [0, 1]]
-    },
-    "ccp": {
-      "selected_raw_feature_ids": ["lateral_offset", "speed"],
-      "feature_model_types": {
-        "lateral_offset": "student_t",
-        "speed": "student_t"
-      },
-      "fixed_feature_mask": [[1, 0], [0, 1]]
-    },
     "scdp": {
       "selected_raw_feature_ids": ["lateral_offset", "speed"],
       "feature_model_types": {
