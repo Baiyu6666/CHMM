@@ -5,7 +5,15 @@ from typing import Any
 
 import numpy as np
 
-from utils.models import GaussianModel, MarginExpLowerEmission, StudentTModel, ZeroMeanGaussianModel
+from utils.models import (
+    GaussianModel,
+    MarginExpLowerEmission,
+    MarginExpLowerLeftHNEmission,
+    MarginExpUpperEmission,
+    MarginExpUpperRightHNEmission,
+    StudentTModel,
+    ZeroMeanGaussianModel,
+)
 
 
 def _feature_schema(env):
@@ -67,6 +75,7 @@ class FixedTauConstraintModel:
         feat_weight=1.0,
         prog_weight=1.0,
         trans_weight=0.0,
+        constraint_core_trim=0,
         plot_dir="outputs/plots",
         plot_every=None,
         eval_fn=None,
@@ -86,6 +95,7 @@ class FixedTauConstraintModel:
         self.feat_weight = float(feat_weight)
         self.prog_weight = float(prog_weight)
         self.trans_weight = float(trans_weight)
+        self.constraint_core_trim = max(int(constraint_core_trim), 0)
         self.plot_dir = plot_dir
         self.plot_every = plot_every
         self.eval_fn = eval_fn
@@ -223,6 +233,12 @@ class FixedTauConstraintModel:
             return ZeroMeanGaussianModel(sigma=1.0)
         if kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
             return MarginExpLowerEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+            return MarginExpLowerLeftHNEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
+            return MarginExpUpperEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+            return MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0)
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
     def _fit_local_model(self, kind, xs):
@@ -242,10 +258,25 @@ class FixedTauConstraintModel:
             model.m_step_update([xs])
             model._update_interval()
             return model
+        if kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+            model = MarginExpLowerLeftHNEmission(b_init=0.0, lam_init=1.0)
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
+            model = MarginExpUpperEmission(b_init=0.0, lam_init=1.0)
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+            model = MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0)
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
     def _features_for_demo_matrix(self, X):
-        demo_idx = next((i for i, demo in enumerate(self.demos) if demo is X), None)
+        demo_idx = self._demo_index(X)
         if demo_idx is not None:
             return self.standardized_features[demo_idx]
         F_raw = np.asarray(self.env.compute_all_features_matrix(X), dtype=float)
@@ -253,6 +284,56 @@ class FixedTauConstraintModel:
         mean_sel = self.feat_mean[self.selected_feature_columns]
         std_sel = self.feat_std[self.selected_feature_columns]
         return (F_sel - mean_sel[None, :]) / std_sel[None, :]
+
+    def _demo_index(self, X):
+        return next((i for i, demo in enumerate(self.demos) if demo is X), None)
+
+    @staticmethod
+    def _segment_bounds_from_stage_ends(stage_ends):
+        bounds = []
+        start = 0
+        for end in stage_ends:
+            end_i = int(end)
+            bounds.append((int(start), end_i))
+            start = end_i + 1
+        return bounds
+
+    def _normalize_stage_ends_for_demo(self, stage_ends, T):
+        arr = np.asarray(stage_ends, dtype=int).reshape(-1)
+        if arr.size == 0:
+            arr = np.asarray([int(T) - 1], dtype=int)
+        arr = np.sort(arr)
+        arr = np.clip(arr, 0, max(int(T) - 1, 0))
+        if arr.size < self.num_states:
+            pad = np.full(self.num_states - arr.size, int(T) - 1, dtype=int)
+            arr = np.concatenate([arr, pad], axis=0)
+        elif arr.size > self.num_states:
+            arr = arr[: self.num_states]
+        arr[-1] = int(T) - 1
+        return arr.astype(int).tolist()
+
+    def _segment_core_bounds(self, s, e):
+        s_i = int(s)
+        e_i = int(e)
+        trim = int(self.constraint_core_trim)
+        if trim <= 0:
+            return s_i, e_i
+        core_s = min(s_i + trim, e_i)
+        core_e = max(core_s, e_i - trim)
+        return int(core_s), int(core_e)
+
+    def _core_mask_for_demo_stage(self, demo_idx, stage_idx):
+        T = int(len(self.demos[demo_idx]))
+        mask = np.zeros(T, dtype=bool)
+        bounds = self._segment_bounds_from_stage_ends(self.stage_ends_[demo_idx])
+        if int(stage_idx) >= len(bounds):
+            return mask
+        s, e = bounds[int(stage_idx)]
+        if int(s) > int(e):
+            return mask
+        core_s, core_e = self._segment_core_bounds(s, e)
+        mask[core_s : core_e + 1] = True
+        return mask
 
     def _log_irrelevant(self, phi):
         phi = np.asarray(phi, dtype=float)
@@ -267,8 +348,9 @@ class FixedTauConstraintModel:
                 if self.r[stage_idx, feat_idx] != 1:
                     continue
                 xs = []
-                for F, gamma in zip(self.standardized_features, gammas):
+                for demo_idx, (F, gamma) in enumerate(zip(self.standardized_features, gammas)):
                     mask = np.asarray(gamma[:, stage_idx] > 0.5, dtype=bool)
+                    mask &= self._core_mask_for_demo_stage(demo_idx, stage_idx)
                     if np.any(mask):
                         xs.append(np.asarray(F[mask, feat_idx], dtype=float))
                 if xs:
@@ -284,7 +366,7 @@ class FixedTauConstraintModel:
         for X, gamma in zip(self.demos, gammas):
             z = np.argmax(gamma, axis=1)
             cuts = np.where(np.diff(z) != 0)[0].astype(int)
-            ends = cuts.tolist() + [len(X) - 1]
+            ends = self._normalize_stage_ends_for_demo(cuts.tolist() + [len(X) - 1], len(X))
             stage_ends.append([int(x) for x in ends])
             for stage_idx, end in enumerate(ends):
                 points_per_stage[stage_idx].append(np.asarray(X[int(end)], dtype=float))
@@ -298,6 +380,7 @@ class FixedTauConstraintModel:
 
     def _emission_loglik(self, X, return_parts=False):
         F = self._features_for_demo_matrix(X)
+        demo_idx = self._demo_index(X)
         T = len(X)
         ll_feat = np.zeros((T, self.num_states), dtype=float)
         for stage_idx in range(self.num_states):
@@ -307,7 +390,12 @@ class FixedTauConstraintModel:
             parts = []
             for feat_idx in active:
                 parts.append(np.asarray(self.feature_models[stage_idx][feat_idx].logpdf(F[:, feat_idx]), dtype=float))
-            ll_feat[:, stage_idx] = self.feat_weight * np.mean(np.stack(parts, axis=1), axis=1)
+            stage_ll = self.feat_weight * np.mean(np.stack(parts, axis=1), axis=1)
+            if demo_idx is None:
+                ll_feat[:, stage_idx] = stage_ll
+            else:
+                core_mask = self._core_mask_for_demo_stage(demo_idx, stage_idx)
+                ll_feat[core_mask, stage_idx] = stage_ll[core_mask]
         ll_prog = np.zeros((T, self.num_states), dtype=float)
         ll_emit = ll_feat + ll_prog
         if return_parts:

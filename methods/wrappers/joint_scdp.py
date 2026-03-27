@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from envs.base import TaskBundle
 from evaluation import eval_goalhmm_auto
-from visualization import plot_evaluation_summary
+from visualization.scdp_4panel import plot_scdp_results_4panel_overview
 
 from ..cores.scdp import SegmentConsensusDPModel
 
@@ -36,21 +36,31 @@ class JointSCDPMethod:
                 self.kwargs.get("lambda_consensus", 1.0),
             ),
             lambda_param_consensus=self.kwargs.get("lambda_param_consensus", 1.0),
-            lambda_feature_score_consensus=self.kwargs.get(
-                "lambda_feature_score_consensus",
-                self.kwargs.get("lambda_r_consensus", 1.0),
+            lambda_activation_consensus=self.kwargs.get(
+                "lambda_activation_consensus",
+                self.kwargs.get(
+                    "lambda_feature_score_consensus",
+                    self.kwargs.get("lambda_r_consensus", 1.0),
+                ),
             ),
             consensus_schedule=self.kwargs.get("consensus_schedule", "linear"),
             progress_delta_scale=self.kwargs.get("progress_delta_scale", 20.0),
             duration_min=self.kwargs.get("duration_min"),
             duration_max=self.kwargs.get("duration_max"),
-            sigma_floor=self.kwargs.get("sigma_floor", 0.1),
-            lam_floor=self.kwargs.get("lam_floor", 0.1),
             feature_activation_mode=self.kwargs.get("feature_activation_mode", "fixed_mask"),
+            equality_score_mode=self.kwargs.get("equality_score_mode", "dispersion"),
             equality_dispersion_ratio_threshold=self.kwargs.get("equality_dispersion_ratio_threshold", 0.1),
-            equality_dispersion_uncertainty_c=self.kwargs.get("equality_dispersion_uncertainty_c", 0.1),
+            constraint_core_trim=self.kwargs.get("constraint_core_trim", 0),
+            short_segment_penalty_c=self.kwargs.get(
+                "short_segment_penalty_c",
+                self.kwargs.get("equality_score_uncertainty_c", 0.1),
+            ),
+            equality_gaussian_score_activation_threshold=self.kwargs.get("equality_gaussian_score_activation_threshold", -0.5),
             inequality_score_activation_threshold=self.kwargs.get("inequality_score_activation_threshold", -0.5),
+            activation_proto_temperature=self.kwargs.get("activation_proto_temperature", 0.1),
+            joint_mask_search_max_masks=self.kwargs.get("joint_mask_search_max_masks", 4096),
             fixed_true_cutpoint_prefix=self.kwargs.get("fixed_true_cutpoint_prefix", 0),
+            fixed_true_cutpoint_indices=self.kwargs.get("fixed_true_cutpoint_indices"),
             plot_every=self.kwargs.get("plot_every"),
             plot_dir=self.kwargs.get("plot_dir", "outputs/plots"),
         )
@@ -59,10 +69,10 @@ class JointSCDPMethod:
             verbose=self.kwargs.get("verbose", True),
         )
         metrics = eval_goalhmm_auto(learner, gammas, None)
-        plot_evaluation_summary(
+        plot_scdp_results_4panel_overview(
             learner,
-            metrics,
-            method_name="scdp",
+            int(self.kwargs.get("max_iter", 30)),
+            metrics=metrics,
             plot_dir=self.kwargs.get("plot_dir", "outputs/plots"),
         )
         cutpoints_hat: List[List[int]] = [[int(x) for x in ends[:-1]] for ends in learner.stage_ends_]

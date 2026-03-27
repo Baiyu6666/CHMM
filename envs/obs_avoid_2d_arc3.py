@@ -41,7 +41,7 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
         terminal_arc_theta_start=0.5 * np.pi,
         terminal_arc_theta_end=-1.05,
         dt=0.8,
-        noise_std=0.003,
+        noise_std=0.011,
     ):
         self.stage1_end = np.asarray(stage1_end, dtype=float)
         self.stage2_end = np.asarray(stage2_end, dtype=float)
@@ -151,25 +151,87 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
         pts = np.asarray(traj, dtype=float)
         return np.linalg.norm(pts - self.terminal_arc_center[None, :], axis=1)
 
+    @staticmethod
+    def _segment_point_distance(a, b, p):
+        a = np.asarray(a, dtype=float)
+        b = np.asarray(b, dtype=float)
+        p = np.asarray(p, dtype=float)
+        ab = b - a
+        denom = float(np.dot(ab, ab))
+        if denom <= 1e-12:
+            return float(np.linalg.norm(p - a))
+        t = float(np.dot(p - a, ab) / denom)
+        t = float(np.clip(t, 0.0, 1.0))
+        closest = a + t * ab
+        return float(np.linalg.norm(p - closest))
+
+    def _add_terminal_arc_radial_jitter(self, path, jitter_scale, rng):
+        pts = np.asarray(path, dtype=float).copy()
+        if len(pts) <= 2 or jitter_scale <= 0.0:
+            return pts
+        rel = pts - self.terminal_arc_center[None, :]
+        radii = np.linalg.norm(rel, axis=1, keepdims=True)
+        unit = rel / np.maximum(radii, 1e-12)
+        envelope = np.sin(np.linspace(0.0, np.pi, len(pts)))[:, None]
+        radial_jitter = rng.randn(len(pts), 1) * float(jitter_scale) * envelope
+        pts = pts + radial_jitter * unit
+        pts[0] = path[0]
+        pts[-1] = path[-1]
+        return pts
+
+    @staticmethod
+    def _uniform_reparameterize_fixed_count(path, num_points):
+        pts = np.asarray(path, dtype=float)
+        n = int(num_points)
+        if len(pts) <= 1 or n <= 1:
+            return pts.copy()
+        seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        s = np.concatenate([[0.0], np.cumsum(seg)])
+        total_len = float(s[-1])
+        if total_len <= 1e-12:
+            out = np.repeat(pts[:1], n, axis=0)
+            out[0] = pts[0]
+            out[-1] = pts[-1]
+            return out
+        targets = np.linspace(0.0, total_len, n)
+        out = np.empty((n, pts.shape[1]), dtype=float)
+        out[0] = pts[0]
+        out[-1] = pts[-1]
+        j = 0
+        for i, target in enumerate(targets[1:-1], start=1):
+            while j + 1 < len(s) and s[j + 1] < target:
+                j += 1
+            frac = (target - s[j]) / max(s[j + 1] - s[j], 1e-12)
+            out[i] = (1.0 - frac) * pts[j] + frac * pts[j + 1]
+        return out
+
     def generate_demo(
         self,
         n1=24,
         direction=None,
         start_x_range=(-2., -0.5),
         start_y_range=(-0.5, 0.5),
+        easy_start_prob=0.2,
+        easy_start_x_range=(-0.95, -0.15),
+        easy_start_y_range=(0.5, 0.95),
+        direct_path_margin_scale=1.04,
         start_safe_scale=1.08,
         start_resample_tries=64,
-        start_angle_jitter_deg=22.0,
-        start_radius_jitter_frac=0.18,
-        start_tangent_jitter_frac=0.18,
-        subgoal_jitter_frac=0.05,
-        arc_entry_jitter_scale=0.006,
-        stage2_lateral_scale=0.003,
-        process_noise_scale=0.005,
-        process_noise_knots=3,
+        start_angle_jitter_deg=30.0,
+        start_radius_jitter_frac=0.24,
+        start_tangent_jitter_frac=0.24,
+        subgoal_jitter_frac=0.11,
+        arc_entry_jitter_scale=0.03,
+        stage2_lateral_scale=0.011,
+        stage3_arc_distance_noise_scale=0.028,
+        process_noise_scale=0.03,
+        process_noise_knots=7,
         stage1_speed_scale=1.0,
         stage2_speed_scale=1.0,
         stage3_speed_scale=1.0,
+        stage1_speed_scale_jitter=0.18,
+        stage2_speed_scale_jitter=0.14,
+        stage3_speed_scale_jitter=0.14,
         rng=None,
     ):
         rng = np.random if rng is None else rng
@@ -178,21 +240,46 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
 
         d_safe = float(self.true_constraints["d_safe"])
         seg_len = np.linalg.norm(self.stage3_end - self.stage1_end) + 1e-12
+        direct_safe_radius = d_safe * max(float(direct_path_margin_scale), 1.0)
+        stage1_speed_scale_local = float(stage1_speed_scale) * float(
+            rng.uniform(max(0.3, 1.0 - stage1_speed_scale_jitter), 1.0 + stage1_speed_scale_jitter)
+        )
+        stage2_speed_scale_local = float(stage2_speed_scale) * float(
+            rng.uniform(max(0.3, 1.0 - stage2_speed_scale_jitter), 1.0 + stage2_speed_scale_jitter)
+        )
+        stage3_speed_scale_local = float(stage3_speed_scale) * float(
+            rng.uniform(max(0.3, 1.0 - stage3_speed_scale_jitter), 1.0 + stage3_speed_scale_jitter)
+        )
 
         start_local = None
+        use_direct_stage1 = False
+        if float(easy_start_prob) > 0.0 and rng.rand() < float(easy_start_prob):
+            x_lo, x_hi = sorted([float(easy_start_x_range[0]), float(easy_start_x_range[1])])
+            y_lo, y_hi = sorted([float(easy_start_y_range[0]), float(easy_start_y_range[1])])
+            start_sign = -1.0 if rng.rand() < 0.5 else 1.0
+            for _ in range(max(int(start_resample_tries // 2), 8)):
+                candidate = np.array(
+                    [rng.uniform(x_lo, x_hi), start_sign * rng.uniform(y_lo, y_hi)],
+                    dtype=float,
+                )
+                if self._segment_point_distance(candidate, self.stage1_end, self.obs_center) >= direct_safe_radius:
+                    start_local = candidate
+                    use_direct_stage1 = True
+                    break
         if start_x_range is not None and start_y_range is not None:
             x_lo, x_hi = sorted([float(start_x_range[0]), float(start_x_range[1])])
             y_lo, y_hi = sorted([float(start_y_range[0]), float(start_y_range[1])])
             min_start_dist = d_safe * max(float(start_safe_scale), 1.0)
-            for _ in range(max(int(start_resample_tries), 1)):
-                candidate = np.array([rng.uniform(x_lo, x_hi), rng.uniform(y_lo, y_hi)], dtype=float)
-                if np.linalg.norm(candidate - self.obs_center) >= min_start_dist:
-                    start_local = candidate
-                    break
             if start_local is None:
-                corners = np.array([[x_lo, y_lo], [x_lo, y_hi], [x_hi, y_lo], [x_hi, y_hi]], dtype=float)
-                distances = np.linalg.norm(corners - self.obs_center[None, :], axis=1)
-                start_local = corners[int(np.argmax(distances))]
+                for _ in range(max(int(start_resample_tries), 1)):
+                    candidate = np.array([rng.uniform(x_lo, x_hi), rng.uniform(y_lo, y_hi)], dtype=float)
+                    if np.linalg.norm(candidate - self.obs_center) >= min_start_dist:
+                        start_local = candidate
+                        break
+                if start_local is None:
+                    corners = np.array([[x_lo, y_lo], [x_lo, y_hi], [x_hi, y_lo], [x_hi, y_hi]], dtype=float)
+                    distances = np.linalg.norm(corners - self.obs_center[None, :], axis=1)
+                    start_local = corners[int(np.argmax(distances))]
 
         if start_local is None:
             start_rel_base = self.start - self.obs_center
@@ -208,7 +295,11 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
             start_local = start_local + tangent_dir * (start_tangent_jitter_frac * seg_len * rng.uniform(-1.0, 1.0))
 
         stage1_end_local = self.stage1_end + rng.randn(2) * (subgoal_jitter_frac * seg_len)
-        arc_entry_local = self.arc_entry.copy()
+        arc_entry_theta_local = self.terminal_arc_theta_start + rng.uniform(
+            -float(arc_entry_jitter_scale),
+            float(arc_entry_jitter_scale),
+        ) / max(self.terminal_arc_radius, 1e-12)
+        arc_entry_local = self._arc_point(arc_entry_theta_local)
 
         start_rel = start_local - self.obs_center
         stage1_end_rel = stage1_end_local - self.obs_center
@@ -217,9 +308,12 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
         start_anchor = self.obs_center + d_safe * start_rel / max(np.linalg.norm(start_rel), 1e-12)
         end_anchor = self.obs_center + d_safe * stage1_end_rel / max(np.linalg.norm(stage1_end_rel), 1e-12)
 
-        arc = self._arc_points(theta_start, theta_end, direction, d_safe, n1)
-        stage1_ctrl = np.vstack([start_local, start_anchor, arc[1:-1], end_anchor, stage1_end_local])
-        stage1_ref = resample_polyline(stage1_ctrl, self.stage1_speed_max * stage1_speed_scale * self.dt)
+        if use_direct_stage1 and self._segment_point_distance(start_local, stage1_end_local, self.obs_center) >= direct_safe_radius:
+            stage1_ctrl = np.vstack([start_local, stage1_end_local])
+        else:
+            arc = self._arc_points(theta_start, theta_end, direction, d_safe, n1)
+            stage1_ctrl = np.vstack([start_local, start_anchor, arc[1:-1], end_anchor, stage1_end_local])
+        stage1_ref = resample_polyline(stage1_ctrl, self.stage1_speed_max * stage1_speed_scale_local * self.dt)
 
         def stage1_projector(path):
             out = np.asarray(path, dtype=float).copy()
@@ -234,7 +328,7 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
         stage1 = optimize_trajectory(
             stage1_ref,
             dt=self.dt,
-            v_max=self.stage1_speed_max * stage1_speed_scale,
+            v_max=self.stage1_speed_max * stage1_speed_scale_local,
             a_max=self.stage1_accel_max,
             projector=stage1_projector,
         )
@@ -254,23 +348,27 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
         stage2_ctrl = stage1_end_local[None, :] + u2[:, None] * stage2_vec[None, :] + wobble[:, None] * normal[None, :]
         stage2_ctrl[0] = stage1_end_local
         stage2_ctrl[-1] = arc_entry_local
-        stage2_ref = resample_polyline(stage2_ctrl, self.stage2_speed_max * stage2_speed_scale * self.dt)
+        stage2_ref = resample_polyline(stage2_ctrl, self.stage2_speed_max * stage2_speed_scale_local * self.dt)
         stage2 = optimize_trajectory(
             stage2_ref,
             dt=self.dt,
-            v_max=self.stage2_speed_max * stage2_speed_scale,
+            v_max=self.stage2_speed_max * stage2_speed_scale_local,
             a_max=self.stage2_accel_max,
             projector=None,
         )
 
-        stage3_ctrl = self._terminal_arc_points(num_points=36)
+        stage3_thetas = np.linspace(arc_entry_theta_local, self.terminal_arc_theta_end, 36)
+        stage3_ctrl = self.terminal_arc_center[None, :] + self.terminal_arc_radius * np.c_[
+            np.cos(stage3_thetas),
+            np.sin(stage3_thetas),
+        ]
         stage3_ctrl[0] = arc_entry_local
         stage3_ctrl[-1] = self.stage3_end
-        stage3_ref = resample_polyline(stage3_ctrl, self.stage3_speed_max * stage3_speed_scale * self.dt)
+        stage3_ref = resample_polyline(stage3_ctrl, self.stage3_speed_max * stage3_speed_scale_local * self.dt)
         stage3 = optimize_trajectory(
             stage3_ref,
             dt=self.dt,
-            v_max=self.stage3_speed_max * stage3_speed_scale,
+            v_max=self.stage3_speed_max * stage3_speed_scale_local,
             a_max=self.stage3_accel_max,
             projector=self._project_to_terminal_arc,
         )
@@ -287,27 +385,45 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
             rng,
         )
         if self.noise_std > 0.0:
-            traj = traj + rng.randn(*traj.shape) * (self.noise_std * 0.2)
+            traj = traj + rng.randn(*traj.shape) * (self.noise_std * 0.4)
             stage1_noisy = repair_trajectory_constraints(
                 traj[: tau1 + 1],
                 dt=self.dt,
-                v_max=self.stage1_speed_max * stage1_speed_scale,
+                v_max=self.stage1_speed_max * stage1_speed_scale_local,
                 a_max=self.stage1_accel_max,
                 projector=stage1_projector,
             )
             stage2_noisy = repair_trajectory_constraints(
                 traj[tau1 : tau2 + 1],
                 dt=self.dt,
-                v_max=self.stage2_speed_max * stage2_speed_scale,
+                v_max=self.stage2_speed_max * stage2_speed_scale_local,
                 a_max=self.stage2_accel_max,
                 projector=None,
+                n_rounds=16,
+            )
+            stage2_uniform = self._uniform_reparameterize_fixed_count(stage2_noisy, len(stage2_noisy))
+            stage2_noisy = 0.6 * stage2_noisy + 0.4 * stage2_uniform
+            stage2_noisy[0] = traj[tau1]
+            stage2_noisy[-1] = traj[tau2]
+            stage2_noisy = repair_trajectory_constraints(
+                stage2_noisy,
+                dt=self.dt,
+                v_max=self.stage2_speed_max * stage2_speed_scale_local,
+                a_max=self.stage2_accel_max,
+                projector=None,
+                n_rounds=8,
             )
             stage3_noisy = repair_trajectory_constraints(
                 traj[tau2:],
                 dt=self.dt,
-                v_max=self.stage3_speed_max * stage3_speed_scale,
+                v_max=self.stage3_speed_max * stage3_speed_scale_local,
                 a_max=self.stage3_accel_max,
                 projector=self._project_to_terminal_arc,
+            )
+            stage3_noisy = self._add_terminal_arc_radial_jitter(
+                stage3_noisy,
+                stage3_arc_distance_noise_scale * self.terminal_arc_radius,
+                rng,
             )
             traj = np.vstack([stage1_noisy, stage2_noisy[1:], stage3_noisy[1:]])
 
@@ -334,7 +450,7 @@ class ObsAvoidArc3StageEnv(ObsAvoidEnv):
 
         t = np.linspace(0.0, 2.0 * np.pi, T)
         phase = float(np.dot(traj.mean(axis=0), self.noise_vec) + self.noise_bias)
-        noise_feat = 0.2 * np.sin(5.0 * t + phase)
+        noise_feat = 0.38 * np.sin(5.0 * t + phase)
 
         F = np.stack([d_main, speeds, d_arc, d_far, noise_feat], axis=1)
         return F if feat_ids is None else F[:, feat_ids]

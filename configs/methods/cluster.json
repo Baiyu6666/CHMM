@@ -1,0 +1,33 @@
+{
+  "name": "cluster",
+  "segmenter": {
+    "n_states": 2,
+    "use_state": true,
+    "use_velocity": false,
+    "velocity_weight": 1.0,
+    "use_env_features": true,
+    "state_distance_weight": 0.0,
+    "velocity_distance_weight": 1.0,
+    "feature_distance_weight": 1.0,
+    "selected_raw_feature_ids": null,
+    "standardize": true,
+    "min_len": 3,
+    "max_iter": 20,
+    "n_init": 8,
+    "init_mode": "random_stage_ends",
+    "seed": 0,
+    "verbose": true
+  },
+  "constraints": {
+    "refine_steps": 5,
+    "verbose": true,
+    "auto_feature_select": false,
+    "fixed_feature_mask": null,
+    "selected_raw_feature_ids": null,
+    "feature_model_types": null,
+    "r_sparse_lambda": 0.3,
+    "feat_weight": 1.0,
+    "prog_weight": 1.0,
+    "plot_dir": "outputs/plots"
+  }
+}

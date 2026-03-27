@@ -24,7 +24,7 @@ def learner_plot_dir(learner, plot_dir: object = None) -> Path:
 
 def save_figure(fig, path: Path, close: bool = True, dpi: int = 160) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    fig.savefig(path, dpi=dpi)
     if close:
         try:
             import matplotlib.pyplot as plt

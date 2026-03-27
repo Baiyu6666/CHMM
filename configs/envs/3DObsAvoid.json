@@ -1,7 +1,7 @@
 {
   "name": "3DObsAvoid",
   "n_demos": 10,
-  "seed": 42,
+  "seed": 422,
   "method_overrides": {
     "scdp": {
       "selected_raw_feature_ids": ["dist_main_obstacle_xy", "speed"],
@@ -15,7 +15,7 @@
       "segmenter": {
         "selected_raw_feature_ids": ["dist_main_obstacle_xy", "speed"],
         "feature_model_types": {
-          "dist_main_obstacle_xy": "margin_exp_lower",
+          "dist_main_obstacle_xy": "student_t",
           "speed": "student_t"
         },
         "fixed_feature_mask": [[1, 0], [0, 1]]

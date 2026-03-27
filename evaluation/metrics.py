@@ -136,12 +136,11 @@ def _predicted_constraint_active_mask(learner):
     num_features = int(getattr(learner, "num_features", 0))
     mask = np.ones((num_states, num_features), dtype=bool)
 
-    if _is_auto_feature_mode(learner):
-        summary = getattr(learner, "posthoc_activation_summary_", None)
-        if isinstance(summary, dict) and "activation_rate_matrix" in summary:
-            activation_rate = np.asarray(summary["activation_rate_matrix"], dtype=float)
-            if activation_rate.shape == mask.shape:
-                return activation_rate >= 0.5
+    shared_activation = getattr(learner, "shared_feature_score_mean", None)
+    if shared_activation is not None:
+        shared_arr = np.asarray(shared_activation, dtype=float)
+        if shared_arr.shape == mask.shape:
+            return np.rint(shared_arr).astype(bool)
 
     r = getattr(learner, "r", None)
     if r is not None:
@@ -194,18 +193,59 @@ def _selected_feature_names(learner):
 
 
 def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
+    shared_param_vectors = getattr(learner, "shared_param_vectors", None)
+    feature_model_types = getattr(learner, "feature_model_types", None)
+    shared_vec = None
+    model_type = ""
     try:
-        model = learner.feature_models[stage_idx][local_feature_idx]
+        if shared_param_vectors is not None:
+            shared_vec = shared_param_vectors[stage_idx][local_feature_idx]
+        if feature_model_types is not None and local_feature_idx < len(feature_model_types):
+            model_type = str(feature_model_types[local_feature_idx]).lower()
     except Exception:
-        return np.nan
+        shared_vec = None
 
-    summary = model.get_summary()
-    model_type = str(summary.get("type", "")).lower()
+    z_value = np.nan
+    if shared_vec is not None:
+        vec = np.asarray(shared_vec, dtype=float).reshape(-1)
+        if vec.size > 0:
+            z_value = float(vec[0])
+
+    if not np.isfinite(z_value):
+        try:
+            model = learner.feature_models[stage_idx][local_feature_idx]
+        except Exception:
+            return np.nan
+        summary = model.get_summary()
+        model_type = str(summary.get("type", model_type)).lower()
+        if model_type in _EQUALITY_MODEL_TYPES and "mu" in summary:
+            z_value = float(summary["mu"])
+        elif model_type in {
+            "margin_exp_lower",
+            "margin_exp_lower_left_hn",
+            "margin_exp_upper",
+            "margin_exp_upper_right_hn",
+        } and "b" in summary:
+            z_value = float(summary["b"])
+        elif "mu" in summary:
+            z_value = float(summary["mu"])
+        elif "b" in summary:
+            z_value = float(summary["b"])
+        else:
+            return np.nan
 
     raw_feature_id = None
     if hasattr(learner, "feature_specs") and local_feature_idx < len(learner.feature_specs):
         raw_feature_id = int(learner.feature_specs[local_feature_idx]["raw_id"])
-    raw_column_idx = _raw_feature_column_index(learner, raw_feature_id if raw_feature_id is not None else local_feature_idx)
+    raw_column_idx = None
+    if raw_feature_id is not None:
+        raw_column_idx = _raw_feature_column_index(learner, raw_feature_id)
+    elif hasattr(learner, "selected_feature_columns"):
+        selected_columns = list(getattr(learner, "selected_feature_columns", []))
+        if local_feature_idx < len(selected_columns):
+            raw_column_idx = int(selected_columns[local_feature_idx])
+    if raw_column_idx is None:
+        raw_column_idx = int(local_feature_idx)
     if raw_column_idx is None:
         return np.nan
 
@@ -215,15 +255,7 @@ def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
     def to_raw(z_value):
         return float(z_value) * raw_std + raw_mean
 
-    if model_type in _EQUALITY_MODEL_TYPES and "mu" in summary:
-        return to_raw(summary["mu"])
-    if model_type == "margin_exp_lower" and "b" in summary:
-        return to_raw(summary["b"])
-    if "mu" in summary:
-        return to_raw(summary["mu"])
-    if "b" in summary:
-        return to_raw(summary["b"])
-    return np.nan
+    return to_raw(z_value)
 
 
 def _compute_constraint_metrics(learner):

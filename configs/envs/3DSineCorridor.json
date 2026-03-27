@@ -15,7 +15,7 @@
       "segmenter": {
         "selected_raw_feature_ids": ["dist_centerline", "speed"],
         "feature_model_types": {
-          "dist_centerline": "margin_exp_lower",
+          "dist_centerline": "student_t",
           "speed": "student_t"
         },
         "fixed_feature_mask": [[1, 0], [0, 1]]

@@ -9,6 +9,7 @@ from envs.base import TaskBundle
 
 from ..backends.changepoint import segment_changepoint
 from ..backends.hmm import segment_with_hmm
+from ..backends.ordered_cluster import segment_ordered_cluster
 from ..base import SegmentationResult, labels_to_cutpoints, labels_to_taus
 from ..common.tau_init import extract_taus_hat
 from ..cores.cghmm_core import CGHMM
@@ -105,6 +106,30 @@ class SequentialBaselineSegmenter:
             )
             model = None
             seg_hist = {}
+            extras = {"segmentation_history": seg_hist}
+        elif self.method == "cluster":
+            resolved_kwargs = dict(self.kwargs)
+            labels, model = segment_ordered_cluster(
+                dataset.demos,
+                env=dataset.env,
+                n_states=resolved_kwargs.get("n_states", 2),
+                selected_raw_feature_ids=resolved_kwargs.get("selected_raw_feature_ids"),
+                use_state=resolved_kwargs.get("use_state", True),
+                use_velocity=resolved_kwargs.get("use_velocity", False),
+                velocity_weight=resolved_kwargs.get("velocity_weight", 1.0),
+                use_env_features=resolved_kwargs.get("use_env_features", True),
+                state_distance_weight=resolved_kwargs.get("state_distance_weight", 1.0),
+                velocity_distance_weight=resolved_kwargs.get("velocity_distance_weight", 1.0),
+                feature_distance_weight=resolved_kwargs.get("feature_distance_weight", 1.0),
+                standardize=resolved_kwargs.get("standardize", True),
+                min_len=resolved_kwargs.get("min_len", 3),
+                max_iter=resolved_kwargs.get("max_iter", 20),
+                n_init=resolved_kwargs.get("n_init", 8),
+                init_mode=resolved_kwargs.get("init_mode", "random_stage_ends"),
+                seed=resolved_kwargs.get("seed", 0),
+                verbose=resolved_kwargs.get("verbose", True),
+            )
+            seg_hist = {"stage_ends": getattr(model, "segmentation_history_", None)}
             extras = {"segmentation_history": seg_hist}
         else:
             raise ValueError(f"Unsupported segmenter '{self.method}'.")

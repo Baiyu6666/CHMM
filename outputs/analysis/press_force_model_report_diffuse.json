@@ -1,0 +1,724 @@
+{
+  "stages": [
+    {
+      "stage_name": "stage0_free",
+      "stage_idx": 0,
+      "analysis_tag": "diffuse",
+      "demo_idx": 0,
+      "analysis_space": "standardized force feature used by current SCDP preprocessing",
+      "b_ref": -1.3072548319645827,
+      "constrained": false,
+      "notes": null,
+      "force_stats": {
+        "raw_mean": 0.5219778011171211,
+        "raw_std": 0.3992930745818525,
+        "force_column_idx": 1,
+        "force_local_idx": 1,
+        "demo_idx": 0
+      },
+      "summary": {
+        "n": 25,
+        "min": -1.2845451552548537,
+        "median": -1.280884521891657,
+        "mean": -1.2791889009549082,
+        "std": 0.0068899241160267875,
+        "max": -1.257166309840966
+      },
+      "fits_no_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": -1.2845451552548537,
+            "sigma": 0.002994401009278201,
+            "nu": 3.0
+          },
+          "b_hat": -1.2845451552548537,
+          "avg_loglik": 4.178145726761412,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": -0.19378643331202294,
+          "total_loglik": 104.4536431690353
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": -1.2810318738967925,
+            "sigma": 0.0026631873058265295,
+            "nu": 3.0,
+            "L": -1.2869433838470885,
+            "U": -1.2751203639464965
+          },
+          "b_hat": -1.2810318738967925,
+          "avg_loglik": 3.9843592934493888,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": 0.0,
+          "total_loglik": 99.60898233623472
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": -1.2845451552548537,
+            "scale": 0.0053562542999455245
+          },
+          "b_hat": -1.2845451552548537,
+          "avg_loglik": 4.22949037282821,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": -0.2451310793788215,
+          "total_loglik": 105.73725932070526
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": -1.2845451552548537,
+            "lam": 0.010712508599891049,
+            "tail_nu": 3.0
+          },
+          "b_hat": -1.2845451552548537,
+          "avg_loglik": 4.257141903715382,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": -0.2727826102659936,
+          "total_loglik": 106.42854759288457
+        }
+      ],
+      "fits_with_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": -1.2845451552548537,
+            "sigma": 0.002994401009278201,
+            "nu": 3.0
+          },
+          "b_hat": -1.2845451552548537,
+          "avg_loglik": 4.157943019443893,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": -0.17358372599450433,
+          "total_loglik": 103.94857548609733
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": -1.2810318738967925,
+            "sigma": 0.0026631873058265295,
+            "nu": 3.0,
+            "L": -1.2869433838470885,
+            "U": -1.2751203639464965
+          },
+          "b_hat": -1.2810318738967925,
+          "avg_loglik": 3.9843592934493888,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": 0.0,
+          "total_loglik": 99.60898233623472
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": -1.2845451552548537,
+            "scale": 0.0053562542999455245
+          },
+          "b_hat": -1.2845451552548537,
+          "avg_loglik": 4.20928766551069,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": -0.22492837206130112,
+          "total_loglik": 105.23219163776726
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": -1.2845451552548537,
+            "lam": 0.010712508599891049,
+            "tail_nu": 3.0
+          },
+          "b_hat": -1.2845451552548537,
+          "avg_loglik": 4.236939196397863,
+          "baseline_avg_loglik": 3.9843592934493888,
+          "training_score": -0.2525799029484741,
+          "total_loglik": 105.92347990994658
+        }
+      ]
+    },
+    {
+      "stage_name": "stage1_contact",
+      "stage_idx": 1,
+      "analysis_tag": "diffuse",
+      "demo_idx": 0,
+      "analysis_space": "standardized force feature used by current SCDP preprocessing",
+      "b_ref": -0.3054843894922511,
+      "constrained": true,
+      "notes": {
+        "slack_diffuse": {
+          "kind": "positive_slack_widening",
+          "mix_original": 0.35,
+          "mix_added": 0.65,
+          "gaussian_mean_before_abs": 0.038006801595243216,
+          "gaussian_std": 0.03496625746762375
+        }
+      },
+      "force_stats": {
+        "raw_mean": 0.5219778011171211,
+        "raw_std": 0.3992930745818525,
+        "force_column_idx": 1,
+        "force_local_idx": 1,
+        "demo_idx": 0
+      },
+      "summary": {
+        "n": 14,
+        "min": -0.27355094038863653,
+        "median": -0.21913267577273188,
+        "mean": -0.21196289249874978,
+        "std": 0.0419899039534491,
+        "max": -0.11980082573702157
+      },
+      "fits_no_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": -0.27355094038863653,
+            "sigma": 0.03844905437909952,
+            "nu": 3.0
+          },
+          "b_hat": -0.27355094038863653,
+          "avg_loglik": 1.654541026544059,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": 0.04946389541982876,
+          "total_loglik": 23.163574371616825
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": -0.21712693597849883,
+            "sigma": 0.03349830396481076,
+            "nu": 3.0,
+            "L": -0.2914835374735476,
+            "U": -0.14277033448345008
+          },
+          "b_hat": -0.21712693597849883,
+          "avg_loglik": 1.7040049219638878,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": 0.0,
+          "total_loglik": 23.85606890749443
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": -0.27355094038863653,
+            "scale": 0.061588047889886734
+          },
+          "b_hat": -0.27355094038863653,
+          "avg_loglik": 1.7872874550300637,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": -0.08328253306617595,
+          "total_loglik": 25.02202437042089
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": -0.27355094038863653,
+            "lam": 0.12317609577977347,
+            "tail_nu": 3.0
+          },
+          "b_hat": -0.27355094038863653,
+          "avg_loglik": 1.671445070261342,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": 0.03255985170254583,
+          "total_loglik": 23.400230983658787
+        }
+      ],
+      "fits_with_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": -0.27355094038863653,
+            "sigma": 0.03844905437909952,
+            "nu": 3.0
+          },
+          "b_hat": -0.27355094038863653,
+          "avg_loglik": 1.6343383192265395,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": 0.06966660273734826,
+          "total_loglik": 22.880736469171552
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": -0.21712693597849883,
+            "sigma": 0.03349830396481076,
+            "nu": 3.0,
+            "L": -0.2914835374735476,
+            "U": -0.14277033448345008
+          },
+          "b_hat": -0.21712693597849883,
+          "avg_loglik": 1.7040049219638878,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": 0.0,
+          "total_loglik": 23.85606890749443
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": -0.27355094038863653,
+            "scale": 0.061588047889886734
+          },
+          "b_hat": -0.27355094038863653,
+          "avg_loglik": 1.7670847477125438,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": -0.063079825748656,
+          "total_loglik": 24.739186467975614
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": -0.27355094038863653,
+            "lam": 0.12317609577977347,
+            "tail_nu": 3.0
+          },
+          "b_hat": -0.27355094038863653,
+          "avg_loglik": 1.6512423629438213,
+          "baseline_avg_loglik": 1.7040049219638878,
+          "training_score": 0.052762559020066435,
+          "total_loglik": 23.1173930812135
+        }
+      ]
+    },
+    {
+      "stage_name": "stage2_slide",
+      "stage_idx": 2,
+      "analysis_tag": "diffuse",
+      "demo_idx": 0,
+      "analysis_space": "standardized force feature used by current SCDP preprocessing",
+      "b_ref": 0.49593196448561394,
+      "constrained": true,
+      "notes": {
+        "slack_diffuse": {
+          "kind": "positive_slack_widening",
+          "mix_original": 0.35,
+          "mix_added": 0.65,
+          "gaussian_mean_before_abs": 0.02722732173465528,
+          "gaussian_std": 0.025049135995882855
+        }
+      },
+      "force_stats": {
+        "raw_mean": 0.5219778011171211,
+        "raw_std": 0.3992930745818525,
+        "force_column_idx": 1,
+        "force_local_idx": 1,
+        "demo_idx": 0
+      },
+      "summary": {
+        "n": 21,
+        "min": 0.5190305413554905,
+        "median": 0.5529944765060643,
+        "mean": 0.5624932699153826,
+        "std": 0.035254658692065816,
+        "max": 0.6361687678634761
+      },
+      "fits_no_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": 0.5190305413554905,
+            "sigma": 0.02989293914288721,
+            "nu": 3.0
+          },
+          "b_hat": 0.5190305413554905,
+          "avg_loglik": 2.0445890506437685,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": -0.1561167209570058,
+          "total_loglik": 42.936370063519135
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": 0.5549650178047469,
+            "sigma": 0.026811187803344648,
+            "nu": 3.0,
+            "L": 0.49545189113432114,
+            "U": 0.6144781444751727
+          },
+          "b_hat": 0.5549650178047469,
+          "avg_loglik": 1.8884723296867627,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": 0.0,
+          "total_loglik": 39.65791892342202
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": 0.5190305413554905,
+            "scale": 0.04346272855989211
+          },
+          "b_hat": 0.5190305413554905,
+          "avg_loglik": 2.1358515228781565,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": -0.2473791931913938,
+          "total_loglik": 44.85288198044129
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": 0.5190305413554905,
+            "lam": 0.08692545711978422,
+            "tail_nu": 3.0
+          },
+          "b_hat": 0.5190305413554905,
+          "avg_loglik": 2.056707907969889,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": -0.16823557828312619,
+          "total_loglik": 43.190866067367665
+        }
+      ],
+      "fits_with_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": 0.5190305413554905,
+            "sigma": 0.02989293914288721,
+            "nu": 3.0
+          },
+          "b_hat": 0.5190305413554905,
+          "avg_loglik": 2.024386343326248,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": -0.1359140136394854,
+          "total_loglik": 42.51211320985121
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": 0.5549650178047469,
+            "sigma": 0.026811187803344648,
+            "nu": 3.0,
+            "L": 0.49545189113432114,
+            "U": 0.6144781444751727
+          },
+          "b_hat": 0.5549650178047469,
+          "avg_loglik": 1.8884723296867627,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": 0.0,
+          "total_loglik": 39.65791892342202
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": 0.5190305413554905,
+            "scale": 0.04346272855989211
+          },
+          "b_hat": 0.5190305413554905,
+          "avg_loglik": 2.1156488155606374,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": -0.22717648587387473,
+          "total_loglik": 44.42862512677338
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": 0.5190305413554905,
+            "lam": 0.08692545711978422,
+            "tail_nu": 3.0
+          },
+          "b_hat": 0.5190305413554905,
+          "avg_loglik": 2.036505200652369,
+          "baseline_avg_loglik": 1.8884723296867627,
+          "training_score": -0.14803287096560624,
+          "total_loglik": 42.76660921369975
+        }
+      ]
+    },
+    {
+      "stage_name": "stage3_insert",
+      "stage_idx": 3,
+      "analysis_tag": "diffuse",
+      "demo_idx": 0,
+      "analysis_space": "standardized force feature used by current SCDP preprocessing",
+      "b_ref": 1.197171274216246,
+      "constrained": true,
+      "notes": {
+        "slack_diffuse": {
+          "kind": "positive_slack_widening",
+          "mix_original": 0.35,
+          "mix_added": 0.65,
+          "gaussian_mean_before_abs": 0.036669386973027226,
+          "gaussian_std": 0.033735836015185046
+        }
+      },
+      "force_stats": {
+        "raw_mean": 0.5219778011171211,
+        "raw_std": 0.3992930745818525,
+        "force_column_idx": 1,
+        "force_local_idx": 1,
+        "demo_idx": 0
+      },
+      "summary": {
+        "n": 18,
+        "min": 1.220957127806587,
+        "median": 1.2890243711036602,
+        "mean": 1.2895473677185976,
+        "std": 0.049546392776851356,
+        "max": 1.4079768450642978
+      },
+      "fits_no_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": 1.220957127806587,
+            "sigma": 0.052759079097707204,
+            "nu": 3.0
+          },
+          "b_hat": 1.220957127806587,
+          "avg_loglik": 1.6456912463912934,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": -0.08220700663821412,
+          "total_loglik": 29.622442435043283
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": 1.2832784905667645,
+            "sigma": 0.038034458299065495,
+            "nu": 3.0,
+            "L": 1.1988529309385954,
+            "U": 1.3677040501949336
+          },
+          "b_hat": 1.2832784905667645,
+          "avg_loglik": 1.5634842397530793,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": 0.0,
+          "total_loglik": 28.142716315555425
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": 1.220957127806587,
+            "scale": 0.0685902399120106
+          },
+          "b_hat": 1.220957127806587,
+          "avg_loglik": 1.6796050297075156,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": -0.11612078995443631,
+          "total_loglik": 30.23289053473528
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": 1.220957127806587,
+            "lam": 0.1371804798240212,
+            "tail_nu": 3.0
+          },
+          "b_hat": 1.220957127806587,
+          "avg_loglik": 1.5730841503073698,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": -0.009599910554290547,
+          "total_loglik": 28.315514705532657
+        }
+      ],
+      "fits_with_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": 1.220957127806587,
+            "sigma": 0.052759079097707204,
+            "nu": 3.0
+          },
+          "b_hat": 1.220957127806587,
+          "avg_loglik": 1.6254885390737739,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": -0.06200429932069462,
+          "total_loglik": 29.25879370332793
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": 1.2832784905667645,
+            "sigma": 0.038034458299065495,
+            "nu": 3.0,
+            "L": 1.1988529309385954,
+            "U": 1.3677040501949336
+          },
+          "b_hat": 1.2832784905667645,
+          "avg_loglik": 1.5634842397530793,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": 0.0,
+          "total_loglik": 28.142716315555425
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": 1.220957127806587,
+            "scale": 0.0685902399120106
+          },
+          "b_hat": 1.220957127806587,
+          "avg_loglik": 1.659402322389996,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": -0.09591808263691681,
+          "total_loglik": 29.86924180301993
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": 1.220957127806587,
+            "lam": 0.1371804798240212,
+            "tail_nu": 3.0
+          },
+          "b_hat": 1.220957127806587,
+          "avg_loglik": 1.5528814429898503,
+          "baseline_avg_loglik": 1.5634842397530793,
+          "training_score": 0.01060279676322895,
+          "total_loglik": 27.951865973817306
+        }
+      ]
+    },
+    {
+      "stage_name": "synthetic_gaussian",
+      "stage_idx": -1,
+      "analysis_tag": "diffuse",
+      "demo_idx": 0,
+      "analysis_space": "standardized force feature used by current SCDP preprocessing",
+      "b_ref": NaN,
+      "constrained": false,
+      "notes": {
+        "distribution": "Gaussian then standardized with learner force stats",
+        "raw_mean": 0.78,
+        "raw_std": 0.06,
+        "standardized_by_force_mean": 0.5219778011171211,
+        "standardized_by_force_std": 0.3992930745818525,
+        "seed": 20260325
+      },
+      "force_stats": null,
+      "summary": {
+        "n": 320,
+        "min": 0.27059034846820385,
+        "median": 0.6490186408729435,
+        "mean": 0.6503183097247269,
+        "std": 0.13640918481140984,
+        "max": 0.97831736402957
+      },
+      "fits_no_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": 0.3444417933089823,
+            "sigma": 0.12951882495397596,
+            "nu": 3.0
+          },
+          "b_hat": 0.3444417933089823,
+          "avg_loglik": -18750000.372599117,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 18750000.911970712,
+          "total_loglik": -6000000119.231718
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": 0.6514988983181162,
+            "sigma": 0.10652819339726707,
+            "nu": 3.0,
+            "L": 0.4150369439233807,
+            "U": 0.8879608527128517
+          },
+          "b_hat": 0.6514988983181162,
+          "avg_loglik": 0.5393715946221675,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 0.0,
+          "total_loglik": 172.59891027909362
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": 0.3444417933089823,
+            "scale": 0.3065236108229276
+          },
+          "b_hat": 0.3444417933089823,
+          "avg_loglik": -18749999.83971064,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 18750000.379082236,
+          "total_loglik": -5999999948.707405
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": 0.27059034846820385,
+            "lam": 0.7594559225130462,
+            "tail_nu": 3.0
+          },
+          "b_hat": 0.27059034846820385,
+          "avg_loglik": -0.21851000575654403,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 0.7578816003787116,
+          "total_loglik": -69.92320184209409
+        }
+      ],
+      "fits_with_violation": [
+        {
+          "model": "HalfStudentT",
+          "params": {
+            "b": 0.3444417933089823,
+            "sigma": 0.12951882495397596,
+            "nu": 3.0
+          },
+          "b_hat": 0.3444417933089823,
+          "avg_loglik": -0.43244592836777523,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 0.9718175229899428,
+          "total_loglik": -138.38269707768808
+        },
+        {
+          "model": "StudentT",
+          "params": {
+            "type": "student_t",
+            "mu": 0.6514988983181162,
+            "sigma": 0.10652819339726707,
+            "nu": 3.0,
+            "L": 0.4150369439233807,
+            "U": 0.8879608527128517
+          },
+          "b_hat": 0.6514988983181162,
+          "avg_loglik": 0.5393715946221675,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 0.0,
+          "total_loglik": 172.59891027909362
+        },
+        {
+          "model": "Exponential",
+          "params": {
+            "b": 0.3444417933089823,
+            "scale": 0.3065236108229276
+          },
+          "b_hat": 0.3444417933089823,
+          "avg_loglik": 0.08717507973949794,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 0.4521965148826696,
+          "total_loglik": 27.89602551663934
+        },
+        {
+          "model": "MarginExp(current)",
+          "params": {
+            "type": "margin_exp_lower_search",
+            "b": 0.27059034846820385,
+            "lam": 0.7594559225130462,
+            "tail_nu": 3.0
+          },
+          "b_hat": 0.27059034846820385,
+          "avg_loglik": -0.23871271307406347,
+          "baseline_avg_loglik": 0.5393715946221675,
+          "training_score": 0.778084307696231,
+          "total_loglik": -76.38806818370031
+        }
+      ]
+    }
+  ]
+}

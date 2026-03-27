@@ -59,8 +59,15 @@ class PostHocConstraintLearner:
             raise ValueError("Posthoc constraint learner requires a dataset env.")
         resolved_kwargs = dict(self.kwargs)
         labels = [np.asarray(z, dtype=int) for z in segmentation.labels]
-        num_states = int(max(int(np.max(z)) for z in labels) + 1) if labels else 2
-        stage_ends = _stage_ends_from_labels(labels)
+        if getattr(segmentation.model, "stage_ends_", None) is not None:
+            stage_ends = [
+                [int(x) for x in np.asarray(ends, dtype=int).reshape(-1).tolist()]
+                for ends in segmentation.model.stage_ends_
+            ]
+            num_states = int(getattr(segmentation.model, "num_states", len(stage_ends[0]) if stage_ends else 2))
+        else:
+            num_states = int(max(int(np.max(z)) for z in labels) + 1) if labels else 2
+            stage_ends = _stage_ends_from_labels(labels)
 
         learner = FixedTauConstraintModel(
             demos=dataset.demos,
@@ -78,6 +85,7 @@ class PostHocConstraintLearner:
             feat_weight=resolved_kwargs.get("feat_weight", 1.0),
             prog_weight=resolved_kwargs.get("prog_weight", 1.0),
             trans_weight=0.0,
+            constraint_core_trim=resolved_kwargs.get("constraint_core_trim", 0),
             plot_dir=resolved_kwargs.get("plot_dir", "outputs/plots"),
             plot_every=None,
             eval_fn=None,
@@ -134,20 +142,23 @@ class PostHocConstraintLearner:
                     )
                 )
 
-        if num_states == 2:
-            taus = [int(ends[0]) for ends in stage_ends]
-            dummy_alphas = [np.zeros_like(gamma) for gamma in gammas]
-            dummy_betas = [np.zeros_like(gamma) for gamma in gammas]
-            plot_results_4panel(
-                learner,
-                taus,
-                refine_steps,
-                gammas,
-                dummy_alphas,
-                dummy_betas,
-                dummy_xis,
-                dummy_aux,
-            )
+        boundary_like = [
+            [int(x) for x in ends[:-1]] if num_states > 2 else int(ends[0])
+            for ends in stage_ends
+        ]
+        dummy_alphas = [np.zeros_like(gamma) for gamma in gammas]
+        dummy_betas = [np.zeros_like(gamma) for gamma in gammas]
+        plot_results_4panel(
+            learner,
+            boundary_like,
+            refine_steps,
+            gammas,
+            dummy_alphas,
+            dummy_betas,
+            dummy_xis,
+            dummy_aux,
+            save_name="plot4panel_posthoc_final.png",
+        )
 
         metrics = eval_goalhmm_auto(learner, gammas, dummy_xis)
         plot_evaluation_summary(

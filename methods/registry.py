@@ -6,7 +6,7 @@ from .wrappers.joint_scdp import JointSCDPMethod
 from .wrappers.sequential_baseline import SequentialBaselineSegmenter
 
 JOINT_METHODS = frozenset({"scdp"})
-SEQUENTIAL_METHODS = frozenset({"cghmm", "arhmm", "changepoint"})
+SEQUENTIAL_METHODS = frozenset({"cghmm", "arhmm", "changepoint", "cluster"})
 ALL_METHODS = tuple(sorted(JOINT_METHODS | SEQUENTIAL_METHODS))
 
 

@@ -39,27 +39,22 @@ def compute_cutpoint_metrics(
         return {}
 
     mae_list: List[float] = []
-    exact_match: List[float] = []
     for pred, true, X in zip(cutpoints_hat, true_cutpoints, demos):
         if true is None:
             continue
         pred_arr = np.asarray(pred, dtype=int).reshape(-1)
         true_arr = np.asarray(true, dtype=int).reshape(-1)
         if pred_arr.size != true_arr.size:
-            exact_match.append(0.0)
             continue
         errs = np.abs(pred_arr - true_arr)
         if errs.size > 0:
             mae_list.append(float(np.mean(errs)))
         else:
             mae_list.append(0.0)
-        exact_match.append(float(np.all(errs == 0)))
 
     metrics: Dict[str, float] = {}
     if mae_list:
         metrics["MeanAbsCutpointError"] = float(np.mean(mae_list))
-    if exact_match:
-        metrics["CutpointExactMatchRate"] = float(np.mean(exact_match))
     return metrics
 
 

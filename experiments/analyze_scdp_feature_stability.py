@@ -105,10 +105,17 @@ def _plot_demo_feature_costs(
                 kind,
                 learner._summary_to_vector(kind, local_params.model_summaries[feat_idx]),
             )
-            baseline_model = GaussianModel(
-                mu=float(np.mean(vals)),
-                sigma=float(max(np.std(vals), 1e-6)),
-            )
+            kind_l = str(kind).lower()
+            if kind_l in {"student_t", "studentt", "t", "gauss", "gaussian", "zero_gauss", "zero_gaussian"}:
+                baseline_model = GaussianModel(
+                    mu=float(np.mean(full_vals)),
+                    sigma=float(max(np.std(full_vals), 1e-6)),
+                )
+            else:
+                baseline_model = GaussianModel(
+                    mu=float(np.mean(vals)),
+                    sigma=float(max(np.std(vals), 1e-6)),
+                )
 
             lo = float(
                 min(
@@ -154,7 +161,6 @@ def _plot_demo_feature_costs(
                 f"baseline avg NLL = {baseline_step:.3f}",
                 f"avg NLL gain = {baseline_step - fitted_step:.3f}",
             ]
-            kind_l = str(kind).lower()
             if kind_l in {"student_t", "studentt", "t"}:
                 stage_sigma = float(getattr(fitted_model, "sigma", np.nan))
                 info_lines.append(f"student-t sigma = {stage_sigma:.3f}")

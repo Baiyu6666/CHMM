@@ -7,7 +7,15 @@
 
 import numpy as np
 from evaluation import eval_goalhmm_auto
-from utils.models import GaussianModel, MarginExpLowerEmission, StudentTModel, ZeroMeanGaussianModel
+from utils.models import (
+    GaussianModel,
+    MarginExpLowerEmission,
+    MarginExpLowerLeftHNEmission,
+    MarginExpUpperEmission,
+    MarginExpUpperRightHNEmission,
+    StudentTModel,
+    ZeroMeanGaussianModel,
+)
 from visualization.plot4panel import plot_results_4panel
 from ..common.tau_init import extract_taus_hat, resolve_tau_init_for_demos
 from ..base import format_training_log
@@ -91,6 +99,7 @@ class CGHMM:
                 selected_raw_feature_ids=selected_raw_feature_ids,
             )
         self.stage_ends_ = self._initial_stage_ends(tau_init=tau_init)
+        self.initial_stage_ends_ = [list(map(int, ends)) for ends in self.stage_ends_]
 
         self.sigma_irrel = float(fixed_sigma_irrelevant)
         self.feat_weight = float(feat_weight)
@@ -126,6 +135,12 @@ class CGHMM:
                     row.append(ZeroMeanGaussianModel(sigma=None, fixed_sigma=None))
                 elif kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
                     row.append(MarginExpLowerEmission(b_init=0.0, lam_init=1.0))
+                elif kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+                    row.append(MarginExpLowerLeftHNEmission(b_init=0.0, lam_init=1.0))
+                elif kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
+                    row.append(MarginExpUpperEmission(b_init=0.0, lam_init=1.0))
+                elif kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+                    row.append(MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0))
                 else:
                     raise ValueError(f"Unknown emission type '{kind}' for feature {m}")
             self.feature_models.append(row)
@@ -227,6 +242,11 @@ class CGHMM:
 
     def _initial_stage_ends(self, tau_init=None):
         out = []
+        min_seg_len = 3
+        mode = str(self.tau_init_mode).lower()
+        shared_stage_proportions = None
+        if self.num_states > 2 and mode in {"random_taus", "random_stage_ends", "random"}:
+            shared_stage_proportions = self.rng.dirichlet(np.full(self.num_states, 0.5, dtype=float))
         for demo_idx, X in enumerate(self.demos):
             T = len(X)
             if self.num_states == 2:
@@ -239,13 +259,36 @@ class CGHMM:
                 tau = int(np.clip(tau, 1, T - 2))
                 out.append([tau, T - 1])
                 continue
-            ends = np.linspace(0, T, self.num_states + 1, dtype=int)[1:] - 1
-            ends[-1] = T - 1
-            for k in range(self.num_states - 1):
-                min_end = k
-                max_end = ends[k + 1] - 1
-                ends[k] = int(np.clip(ends[k], min_end, max_end))
-            out.append([int(x) for x in ends.tolist()])
+            if T < self.num_states * min_seg_len:
+                raise ValueError(
+                    f"Sequence length {T} is too short for {self.num_states} states "
+                    f"with minimum segment length {min_seg_len}."
+                )
+            if mode in {"random_taus", "random_stage_ends", "random"}:
+                extra = T - self.num_states * min_seg_len
+                if self.num_states > 1:
+                    if extra > 0:
+                        desired = extra * shared_stage_proportions
+                        extra_parts = np.floor(desired).astype(int)
+                        remainder = int(extra - np.sum(extra_parts))
+                        if remainder > 0:
+                            frac_order = np.argsort(desired - extra_parts)[::-1]
+                            extra_parts[frac_order[:remainder]] += 1
+                    else:
+                        extra_parts = np.zeros(self.num_states, dtype=int)
+                    lengths = extra_parts + min_seg_len
+                    ends = np.cumsum(lengths) - 1
+                else:
+                    ends = np.asarray([T - 1], dtype=int)
+                ends[-1] = T - 1
+            else:
+                ends = np.linspace(0, T, self.num_states + 1, dtype=int)[1:] - 1
+                ends[-1] = T - 1
+                for k in range(self.num_states - 1):
+                    min_end = (k + 1) * min_seg_len - 1
+                    max_end = ends[k + 1] - min_seg_len
+                    ends[k] = int(np.clip(ends[k], min_end, max_end))
+            out.append([int(x) for x in np.asarray(ends, dtype=int).tolist()])
         return out
 
     def _initialize_stage_subgoals(self, g2_init=None):
@@ -767,7 +810,14 @@ class CGHMM:
             self.loss_trans.append(0.0)
 
             labels = [np.argmax(gamma, axis=1).astype(int) for gamma in gammas]
-            self.stage_ends_ = [np.where(np.diff(z) != 0)[0].astype(int).tolist() + [len(z) - 1] for z in labels]
+            prev_stage_ends = [list(map(int, ends)) for ends in self.stage_ends_]
+            new_stage_ends = []
+            for prev_ends, z in zip(prev_stage_ends, labels):
+                ends = np.where(np.diff(z) != 0)[0].astype(int).tolist() + [len(z) - 1]
+                if len(ends) != self.num_states:
+                    ends = prev_ends
+                new_stage_ends.append([int(x) for x in ends])
+            self.stage_ends_ = new_stage_ends
             points_per_stage = [[] for _ in range(self.num_states)]
             for X, stage_ends in zip(self.demos, self.stage_ends_):
                 for stage_idx, end in enumerate(stage_ends):
@@ -800,12 +850,21 @@ class CGHMM:
                 )
 
             # English comment omitted during cleanup.
-            if self.plot_every is not None and self.num_states == 2:
-                taus_map = np.asarray(extract_taus_hat(gammas, xis), dtype=int)
+            if self.plot_every is not None:
+                if self.stage_ends_ is not None:
+                    boundary_like = [
+                        [int(x) for x in np.asarray(ends, dtype=int)[:-1]]
+                        if self.num_states > 2
+                        else int(np.asarray(ends, dtype=int)[0])
+                        for ends in self.stage_ends_
+                    ]
+                else:
+                    taus_map = np.asarray(extract_taus_hat(gammas, xis), dtype=int)
+                    boundary_like = taus_map
                 if (it + 1) % self.plot_every == 0 or it == max_iter - 1:
                     plot_results_4panel(
                         self,
-                        taus_map,
+                        boundary_like,
                         it,
                         gammas,
                         alphas,

@@ -1,0 +1,34 @@
+{
+  "name": "3DSphereInspect4",
+  "n_demos": 10,
+  "seed": 17,
+  "method_overrides": {
+    "scdp": {
+      "n_states": 4,
+      "selected_raw_feature_ids": [
+        "surface_distance",
+        "tool_normal_alignment_error",
+        "speed",
+        "angular_speed",
+        "noise_aux"
+      ],
+      "feature_model_types": {
+        "surface_distance": "margin_exp_upper_right_hn",
+        "tool_normal_alignment_error": "margin_exp_upper",
+        "speed": "margin_exp_upper_right_hn",
+        "angular_speed": "margin_exp_upper_right_hn",
+        "noise_aux": "student_t"
+      },
+      "fixed_feature_mask": [
+        [0, 0, 1, 0, 0],
+        [1, 1, 1, 1, 0],
+        [1, 0, 1, 1, 0],
+        [0, 0, 1, 0, 0]
+      ],
+      "max_iter": 10,
+      "lambda_subgoal_consensus": 0.0,
+      "lambda_activation_consensus": 0.75,
+      "lambda_param_consensus": 0.2
+    }
+  }
+}

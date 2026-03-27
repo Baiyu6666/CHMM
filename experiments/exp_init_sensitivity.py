@@ -23,13 +23,15 @@ try:
 except ImportError:
     from experiments.config_loader import deep_merge, load_experiment_config
     from experiments.unified_experiment import run_experiment
-from methods.common.tau_init import clip_tau_for_sequence, extract_taus_hat, resolve_tau_init_for_demos
+from methods.common.tau_init import clip_tau_for_sequence
 from visualization.io import save_figure
 from visualization.plot4panel import plot_demos_goals_snapshot
 
 
-DATASET_NAME = "2DObsAvoid"
+DATASET_NAME = "2DPressSlideInsert"# "2DObsAvoidArc3"
+# DATASET_NAME = "2DObsAvoidArc3"
 RANDOM_TAU_RUNS = 6
+RANDOM_STAGE_END_RUNS = 12
 MODELS = ["cghmm"]
 SAVE_PATH = Path("outputs/experiments/exp_init_sensitivity_results.json")
 SAVE_PATH = PROJECT_ROOT / SAVE_PATH
@@ -59,53 +61,6 @@ def _effective_dataset_kwargs(dataset_name, method_name):
     return dataset_cfg
 
 
-def _effective_joint_method_kwargs(method_name, method_seed, tau_init, extra_method_kwargs=None):
-    _, method_cfg = _load_joint_config(DATASET_NAME, method_name)
-    method_cfg = dict(method_cfg)
-    method_cfg["tau_init"] = np.asarray(tau_init, dtype=int)
-    method_cfg["seed"] = int(method_seed)
-    method_cfg["verbose"] = False
-    method_cfg["plot_every"] = None
-    if extra_method_kwargs:
-        method_cfg = deep_merge(method_cfg, extra_method_kwargs)
-    return method_cfg
-
-def sample_taus_from_mode(demos, dataset, mode, seed):
-    return resolve_tau_init_for_demos(
-        demos,
-        tau_init=None,
-        tau_init_mode=mode,
-        env=dataset.env,
-        seed=seed,
-        use_velocity=False,
-        vel_weight=1.0,
-        standardize=False,
-        use_env_features=True,
-        selected_raw_feature_ids=None,
-    )
-
-
-def sample_taus_changepoint_warmstart():
-    dataset_kwargs = _effective_dataset_kwargs(DATASET_NAME, "changepoint")
-    result = run_experiment(
-        dataset_name=DATASET_NAME,
-        method_name="changepoint",
-        dataset_kwargs=dataset_kwargs,
-        method_kwargs={
-            "segmenter": {
-                "plot_every": None,
-                "use_env_features": True,
-                "seed": 0,
-            },
-            "constraints": {
-                "refine_steps": 0,
-                "verbose": False,
-            },
-        },
-    )
-    return np.asarray(result["segmentation"].taus, dtype=int)
-
-
 def sample_taus_random_ratio(demos, ratio):
     taus = []
     for X in demos:
@@ -118,22 +73,38 @@ def sample_taus_random_ratio(demos, ratio):
 def runs_for_init_scheme(scheme):
     if scheme == "random_taus":
         ratios = np.linspace(0.1, 0.9, RANDOM_TAU_RUNS)
-        return [{"seed": 0, "ratio": float(r), "label": f"ratio={r:.2f}"} for r in ratios]
+        return [{"seed": int(i), "ratio": float(r), "label": f"ratio={r:.2f}"} for i, r in enumerate(ratios)]
+    if scheme == "random_stage_ends":
+        return [{"seed": int(seed), "ratio": None, "label": f"seed={seed}"} for seed in range(RANDOM_STAGE_END_RUNS)]
     return [{"seed": 0, "ratio": None, "label": scheme}]
 
 
 def build_comparison_specs(dataset):
-    scheme = "random_taus"
+    num_states = 2
+    true_cutpoints = getattr(dataset, "true_cutpoints", None)
+    if true_cutpoints:
+        first_valid = next((cuts for cuts in true_cutpoints if cuts is not None), None)
+        if first_valid is not None:
+            num_states = int(len(np.asarray(first_valid, dtype=int).reshape(-1)) + 1)
+    else:
+        num_states = int(getattr(dataset.env, "n_segments", 2))
+    scheme = "random_taus" if num_states == 2 else "random_stage_ends"
     specs = []
     for run_spec in runs_for_init_scheme(scheme):
-        taus_init = sample_taus_random_ratio(dataset.demos, run_spec["ratio"])
+        method_overrides = {}
+        if scheme == "random_taus":
+            tau_init = sample_taus_random_ratio(dataset.demos, run_spec["ratio"])
+            method_overrides["cghmm"] = {"segmenter": {"tau_init": tau_init}}
+            method_overrides["cluster"] = {"segmenter": {"init_mode": "random_taus"}}
+        else:
+            method_overrides["cghmm"] = {"segmenter": {"tau_init": None, "tau_init_mode": "random_stage_ends"}}
+            method_overrides["cluster"] = {"segmenter": {"init_mode": "random_stage_ends"}}
         specs.append(
             {
                 "group": scheme,
                 "label": run_spec["label"],
-                "tau_init": taus_init,
                 "method_seed": int(run_spec["seed"]),
-                "method_overrides": {},
+                "method_overrides": method_overrides,
             }
         )
     return [scheme], specs
@@ -141,8 +112,17 @@ def build_comparison_specs(dataset):
 
 def _ordered_metric_names(metrics_dict):
     preferred = ["loglik", "MeanAbsCutpointError", "CutpointExactMatchRate", "MeanStageSubgoalError", "MeanConstraintError"]
-    names = [name for name in preferred if name in metrics_dict]
-    names.extend(sorted(name for name in metrics_dict if name not in names))
+    scalar_keys = []
+    for name, value in metrics_dict.items():
+        if np.isscalar(value):
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(value_f) or np.isnan(value_f):
+                scalar_keys.append(name)
+    names = [name for name in preferred if name in scalar_keys]
+    names.extend(sorted(name for name in scalar_keys if name not in names))
     return names
 
 
@@ -153,40 +133,57 @@ def _extract_metrics(method_name, result):
         gammas = result["segmentation"].extras.get("gammas")
         if gammas is None:
             raise ValueError("cghmm segmentation result is missing gammas in extras.")
+    elif method_name == "scdp":
+        learner = result["joint_result"]["model"]
+        metrics = dict(result["joint_result"]["metrics"])
+        gammas = result["joint_result"]["gammas"]
     else:
         learner = result["constraints"]["model"]
         metrics = dict(result["constraints"]["metrics"])
         gammas = result["constraints"]["gammas"]
-    metrics["loglik"] = float(learner.loss_loglik[-1]) if getattr(learner, "loss_loglik", None) else np.nan
+    if getattr(learner, "loss_loglik", None):
+        metrics["loglik"] = float(learner.loss_loglik[-1])
+    elif getattr(learner, "loss_total", None):
+        metrics["loglik"] = float(learner.loss_total[-1])
+    else:
+        metrics["loglik"] = np.nan
     return metrics, learner, gammas
 
 
-def run_single_cghmm(taus_init, seed, extra_method_kwargs=None):
-    dataset_kwargs = _effective_dataset_kwargs(DATASET_NAME, "cghmm")
-    _, base_method_cfg = _load_joint_config(DATASET_NAME, "cghmm")
+def run_single_method(method_name, seed, extra_method_kwargs=None):
+    dataset_kwargs = _effective_dataset_kwargs(DATASET_NAME, method_name)
+    _, base_method_cfg = _load_joint_config(DATASET_NAME, method_name)
     method_kwargs = dict(base_method_cfg)
-    segmenter_cfg = dict(method_kwargs.get("segmenter", {}))
-    constraints_cfg = dict(method_kwargs.get("constraints", {}))
-    segmenter_cfg["tau_init"] = np.asarray(taus_init, dtype=int)
-    segmenter_cfg["seed"] = int(seed)
-    segmenter_cfg["verbose"] = False
-    segmenter_cfg["plot_every"] = None
-    constraints_cfg["verbose"] = False
-    method_kwargs["segmenter"] = segmenter_cfg
-    method_kwargs["constraints"] = constraints_cfg
+    if method_name == "scdp":
+        method_kwargs["seed"] = int(seed)
+        method_kwargs["verbose"] = False
+        if "plot_every" in method_kwargs:
+            method_kwargs["plot_every"] = None
+    else:
+        segmenter_cfg = dict(method_kwargs.get("segmenter", {}))
+        constraints_cfg = dict(method_kwargs.get("constraints", {}))
+        segmenter_cfg["seed"] = int(seed)
+        segmenter_cfg["verbose"] = False
+        if "plot_every" in segmenter_cfg:
+            segmenter_cfg["plot_every"] = None
+        constraints_cfg["verbose"] = False
+        method_kwargs["segmenter"] = segmenter_cfg
+        method_kwargs["constraints"] = constraints_cfg
     if extra_method_kwargs:
         method_kwargs = deep_merge(method_kwargs, extra_method_kwargs)
     result = run_experiment(
         dataset_name=DATASET_NAME,
-        method_name="cghmm",
+        method_name=method_name,
         dataset_kwargs=dataset_kwargs,
         method_kwargs=method_kwargs,
     )
-    return _extract_metrics("cghmm", result)
+    return _extract_metrics(method_name, result)
 
 
 RUNNERS = {
-    "cghmm": run_single_cghmm,
+    "cghmm": lambda seed, extra_method_kwargs=None: run_single_method("cghmm", seed, extra_method_kwargs),
+    "cluster": lambda seed, extra_method_kwargs=None: run_single_method("cluster", seed, extra_method_kwargs),
+    "scdp": lambda seed, extra_method_kwargs=None: run_single_method("scdp", seed, extra_method_kwargs),
 }
 
 
@@ -195,6 +192,8 @@ def _goal_record(learner, gammas, seed):
         "seed": int(seed),
         "learner": learner,
         "gammas": gammas,
+        "initial_stage_ends": getattr(learner, "initial_stage_ends_", None),
+        "final_stage_ends": getattr(learner, "stage_ends_", None),
     }
 
 
@@ -259,7 +258,15 @@ def plot_goal_grids(goal_records, dataset, group_names):
                 record = goal_records[scheme][model][run_idx]
                 learner = record["learner"]
                 gammas = record["gammas"]
-                taus = extract_taus_hat(gammas)
+                if getattr(learner, "stage_ends_", None) is not None:
+                    taus = [
+                        [int(x) for x in np.asarray(ends, dtype=int)[:-1]]
+                        if len(np.asarray(ends, dtype=int)) > 1
+                        else int(np.asarray(ends, dtype=int)[0])
+                        for ends in learner.stage_ends_
+                    ]
+                else:
+                    taus = record.get("taus")
                 base_label = record.get("label", f"seed={record['seed']}")
                 if base_label.startswith(f"{scheme}\n"):
                     base_label = base_label[len(scheme) + 1 :]
@@ -305,15 +312,15 @@ def run_experiment_sensitivity():
     for run, spec in enumerate(comparison_specs):
             group = spec["group"]
             seed = int(spec["method_seed"])
-            taus_init = np.asarray(spec["tau_init"], dtype=int)
             run_outputs = {}
             for model_name in MODELS:
+                if model_name == "scdp" and run > 0:
+                    continue
                 if model_name not in RUNNERS:
                     raise ValueError(f"Unsupported model '{model_name}' in MODELS.")
                 run_outputs[model_name] = RUNNERS[model_name](
-                    taus_init,
                     seed,
-                    spec.get("method_overrides", {}),
+                    spec.get("method_overrides", {}).get(model_name, {}),
                 )
             if metric_names is None:
                 union_metrics = {}
@@ -335,6 +342,7 @@ def run_experiment_sensitivity():
             summary_bits = [
                 f"{model_name}={float(run_outputs[model_name][0].get('MeanAbsCutpointError', np.nan)):.3f}"
                 for model_name in MODELS
+                if model_name in run_outputs
             ]
             print(f"[{group}][run={run}] " + " ".join(summary_bits))
 

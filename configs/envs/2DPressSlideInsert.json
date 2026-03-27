@@ -1,0 +1,116 @@
+{
+  "name": "2DPressSlideInsert",
+  "n_demos": 10 ,
+  "seed": 12342,
+  "method_overrides": {
+    "scdp": {
+      "n_states": 4,
+      "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed"],
+      "feature_activation_mode": "score",
+      "constraint_core_trim": 0,
+      "feature_model_types": {
+        "surface_distance": "student_t",
+        "force": "margin_exp_lower_left_hn",
+        "orientation_error": "student_t",
+        "speed": "student_t",
+        "noise_aux": "student_t"
+      },
+      "max_iter": 5,
+      "lambda_subgoal_consensus": 0,
+        "short_segment_penalty_c": 2,
+      "_comment": "      \"lambda_subgoal_consensus\": 1,\n",
+        "fixed_true_cutpoint_indices": [],
+    "lambda_ineq_constraint": 0.02,
+      "lambda_activation_consensus": 1
+    },
+    "cghmm": {
+      "segmenter": {
+        "n_states": 4,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed"],
+        "feature_model_types": {
+          "surface_distance": "student_t",
+          "force": "margin_exp_lower",
+          "orientation_error": "student_t",
+          "speed": "student_t",
+          "noise_aux": "student_t"
+        },
+        "fixed_feature_mask": [[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "constraint_core_trim": 0,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed"],
+        "feature_model_types": {
+          "surface_distance": "student_t",
+          "force": "margin_exp_lower",
+          "orientation_error": "student_t",
+          "speed": "student_t",
+          "noise_aux": "student_t"
+        },
+        "fixed_feature_mask": [[0, 0, 0, 0], [1, 1, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]]
+      }
+    },
+    "arhmm": {
+      "segmenter": {
+        "n_states": 4,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "constraint_core_trim": 2,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
+        "feature_model_types": {
+          "surface_distance": "student_t",
+          "force": "margin_exp_lower",
+          "orientation_error": "student_t",
+          "speed": "student_t",
+          "noise_aux": "student_t"
+        },
+        "fixed_feature_mask": [[0, 0, 0, 0, 0], [1, 1, 0, 0, 0], [1, 1, 1, 1, 0], [1, 1, 1, 1, 0]]
+      }
+    },
+    "changepoint": {
+      "segmenter": {
+        "n_states": 4,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"]
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "constraint_core_trim": 2,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
+        "feature_model_types": {
+          "surface_distance": "student_t",
+          "force": "margin_exp_lower",
+          "orientation_error": "student_t",
+          "speed": "student_t",
+          "noise_aux": "student_t"
+        },
+        "fixed_feature_mask": [[0, 0, 0, 0, 0], [1, 1, 0, 0, 0], [1, 1, 1, 1, 0], [1, 1, 1, 1, 0]]
+      }
+    },
+    "cluster": {
+      "segmenter": {
+        "n_states": 4,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
+        "use_state": true,
+        "use_velocity": false,
+        "use_env_features": true,
+        "min_len": 3,
+        "init_mode": "random_stage_ends"
+      },
+      "constraints": {
+        "auto_feature_select": false,
+        "constraint_core_trim": 2,
+        "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
+        "feature_model_types": {
+          "surface_distance": "student_t",
+          "force": "margin_exp_lower",
+          "orientation_error": "student_t",
+          "speed": "student_t",
+          "noise_aux": "student_t"
+        },
+        "fixed_feature_mask": [[0, 0, 0, 0, 0], [1, 1, 0, 0, 0], [1, 1, 1, 1, 0], [1, 1, 1, 1, 0]]
+      }
+    }
+  }
+}
