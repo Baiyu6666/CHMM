@@ -55,7 +55,6 @@ class JointSCDPMethod:
                 "short_segment_penalty_c",
                 self.kwargs.get("equality_score_uncertainty_c", 0.1),
             ),
-            equality_gaussian_score_activation_threshold=self.kwargs.get("equality_gaussian_score_activation_threshold", -0.5),
             inequality_score_activation_threshold=self.kwargs.get("inequality_score_activation_threshold", -0.5),
             activation_proto_temperature=self.kwargs.get("activation_proto_temperature", 0.1),
             joint_mask_search_max_masks=self.kwargs.get("joint_mask_search_max_masks", 4096),

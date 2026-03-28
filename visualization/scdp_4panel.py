@@ -6,6 +6,10 @@ try:
     import matplotlib.pyplot as plt
 except ModuleNotFoundError:
     plt = None
+try:
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+except ModuleNotFoundError:
+    Axes3D = None
 
 from .io import learner_plot_dir, save_figure
 from utils.models import GaussianModel
@@ -135,18 +139,7 @@ def _feature_has_constraint_reference(learner, feat_idx: int) -> bool:
 def _plot_constraint_parameter_panels(ax_specs, learner):
     if plt is None or not getattr(learner, "current_stage_params_per_demo", None):
         return
-    feature_indices = []
-    for feat_idx in range(int(getattr(learner, "num_features", 0))):
-        active_somewhere = False
-        for demo_idx, local_stage_params in enumerate(learner.current_stage_params_per_demo):
-            for stage_idx in range(int(getattr(learner, "num_states", 0))):
-                if _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
-                    active_somewhere = True
-                    break
-            if active_somewhere:
-                break
-        if active_somewhere or _feature_has_constraint_reference(learner, feat_idx):
-            feature_indices.append(feat_idx)
+    feature_indices = list(range(int(getattr(learner, "num_features", 0))))
     if not feature_indices:
         return
 
@@ -181,14 +174,14 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
                 if stage_idx >= len(starts):
                     learned_vals.append(np.nan)
                     continue
-                if not _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
-                    learned_vals.append(np.nan)
-                    continue
-                active_any = True
                 s = int(starts[stage_idx])
                 e = int(ends[stage_idx])
                 core_s, core_e = _core_bounds_for_display(learner, s, e)
                 vals_raw = np.asarray(F_raw[core_s : core_e + 1, feat_idx], dtype=float)
+                if not _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
+                    learned_vals.append(np.nan)
+                    continue
+                active_any = True
                 learned_vals.append(_learned_constraint_value_raw(vals_raw, kind))
 
             if active_any:
@@ -219,7 +212,13 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
                 any_series = True
 
         if not any_series:
-            ax.axis("off")
+            ax.set_title(f"{feature_name} ({value_label})", fontsize=PAPER_TITLE_SIZE, pad=4)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["left"].set_visible(False)
+            ax.spines["bottom"].set_visible(False)
             continue
 
         ax.set_title(f"{feature_name} ({value_label})", fontsize=PAPER_TITLE_SIZE, pad=4)
@@ -272,6 +271,10 @@ def _xy_point(point):
 
 def _is_press_slide_insert(env) -> bool:
     return getattr(env, "eval_tag", "") == "2DPressSlideInsert"
+
+
+def _is_sphere_inspect(env) -> bool:
+    return str(getattr(env, "eval_tag", "")).startswith("3DSphereInspect")
 
 
 def _trajectory_figsize(learner, *, three_row=False):
@@ -335,6 +338,328 @@ def _draw_true_cutpoint_markers(ax, X, cutpoints, colors, *, label, size, zorder
             label=label if j == 0 else "",
             zorder=zorder,
         )
+
+
+def _set_axes_equal_3d_from_xyz(ax, xyz):
+    pts = np.asarray(xyz, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 3 or pts.size == 0:
+        return
+    mins = np.min(pts, axis=0)
+    maxs = np.max(pts, axis=0)
+    spans = np.maximum(maxs - mins, 1e-6)
+    max_span = float(np.max(spans))
+    centers = 0.5 * (mins + maxs)
+    half = 0.55 * max_span
+    ax.set_xlim(centers[0] - half, centers[0] + half)
+    ax.set_ylim(centers[1] - half, centers[1] + half)
+    ax.set_zlim(centers[2] - half, centers[2] + half)
+    try:
+        ax.set_box_aspect([1.0, 1.0, 1.0])
+    except Exception:
+        pass
+
+
+def _projection_axis_labels(dims):
+    labels = ["x", "y", "z"]
+    return labels[int(dims[0])], labels[int(dims[1])]
+
+
+def _draw_stage_background(ax, starts, ends, colors, *, alpha=0.07):
+    for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+        ax.axvspan(
+            float(s),
+            float(e),
+            color=colors[stage_idx % len(colors)],
+            alpha=alpha,
+            lw=0.0,
+            zorder=0,
+        )
+
+
+def _draw_sphere_reference_wireframe(ax, env):
+    if not _is_sphere_inspect(env):
+        return
+    center = np.asarray(getattr(env, "sphere_center", np.zeros(3)), dtype=float).reshape(-1)
+    radius = float(getattr(env, "sphere_radius", 1.0))
+    theta = np.linspace(0.0, 2.0 * np.pi, 26)
+    phi = np.linspace(0.0, np.pi, 16)
+    th, ph = np.meshgrid(theta, phi)
+    xx = center[0] + radius * np.cos(th) * np.sin(ph)
+    yy = center[1] + radius * np.sin(th) * np.sin(ph)
+    zz = center[2] + radius * np.cos(ph)
+    ax.plot_wireframe(xx, yy, zz, color="#8c8c8c", alpha=0.18, linewidth=0.45, rstride=1, cstride=1)
+
+
+def _draw_sphere_projection_circle(ax, env, dims):
+    if not _is_sphere_inspect(env):
+        return
+    center = np.asarray(getattr(env, "sphere_center", np.zeros(3)), dtype=float).reshape(-1)
+    radius = float(getattr(env, "sphere_radius", 1.0))
+    circle = plt.Circle(
+        (float(center[int(dims[0])]), float(center[int(dims[1])])),
+        radius,
+        fill=False,
+        color="#8c8c8c",
+        linestyle=(0, (3, 2)),
+        linewidth=0.9,
+        alpha=0.8,
+    )
+    ax.add_patch(circle)
+
+
+def _draw_sphere_trajectory_3d(ax, learner, it, demo_idx=0):
+    X = np.asarray(learner.demos[demo_idx], dtype=float)
+    stage_ends = learner.stage_ends_[demo_idx]
+    starts, ends = _segment_bounds(stage_ends)
+    colors = _stage_colors(learner.num_states)
+
+    _draw_sphere_reference_wireframe(ax, learner.env)
+    for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+        color = colors[stage_idx % len(colors)]
+        pts = X[s : e + 1]
+        ax.plot(
+            pts[:, 0],
+            pts[:, 1],
+            pts[:, 2],
+            color=color,
+            lw=1.5,
+            alpha=0.95,
+            label=f"stage {stage_idx + 1}" if stage_idx == 0 else "",
+        )
+        ax.scatter(
+            pts[:, 0],
+            pts[:, 1],
+            pts[:, 2],
+            color=color,
+            s=8,
+            alpha=0.32,
+            depthshade=False,
+        )
+
+    true_cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
+    for cp_idx, cp in enumerate(true_cutpoints):
+        cp_pt = X[int(cp)]
+        ax.scatter(
+            cp_pt[0],
+            cp_pt[1],
+            cp_pt[2],
+            color=colors[cp_idx % len(colors)],
+            marker="x",
+            s=34,
+            linewidths=1.4,
+            depthshade=False,
+            label="true boundary" if cp_idx == 0 else "",
+            zorder=10,
+        )
+
+    for stage_idx, sg in enumerate(getattr(learner, "stage_subgoals", []) or []):
+        pt = np.asarray(sg, dtype=float).reshape(-1)
+        if pt.size < 3:
+            continue
+        ax.scatter(
+            pt[0],
+            pt[1],
+            pt[2],
+            color=colors[stage_idx % len(colors)],
+            marker="D",
+            s=30,
+            edgecolors="black",
+            linewidths=0.8,
+            depthshade=False,
+            label=f"shared stage {stage_idx + 1} end",
+            zorder=11,
+        )
+
+    for label_name, marker in [("subgoal", "X"), ("goal", "X")]:
+        pt = getattr(learner.env, label_name, None)
+        if pt is None:
+            continue
+        pt = np.asarray(pt, dtype=float).reshape(-1)
+        if pt.size < 3:
+            continue
+        ax.scatter(
+            pt[0],
+            pt[1],
+            pt[2],
+            color="black",
+            marker=marker,
+            s=40,
+            depthshade=False,
+            label="true stage end",
+            zorder=12,
+        )
+
+    center = np.asarray(getattr(learner.env, "sphere_center", np.zeros(3)), dtype=float).reshape(-1)
+    radius = float(getattr(learner.env, "sphere_radius", 1.0))
+    corners = np.array(
+        [
+            center + np.array([sx, sy, sz], dtype=float) * radius
+            for sx in (-1.0, 1.0)
+            for sy in (-1.0, 1.0)
+            for sz in (-1.0, 1.0)
+        ],
+        dtype=float,
+    )
+    _set_axes_equal_3d_from_xyz(ax, np.vstack([X, corners]))
+    ax.view_init(elev=24, azim=38)
+    ax.set_title(f"Iter {int(it)}: demo {demo_idx} 3D trajectory", fontsize=PAPER_TITLE_SIZE, pad=6)
+    ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE)
+    ax.set_zlabel("z", fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _legend(ax, outside=False)
+
+
+def _draw_sphere_projection(ax, learner, it, demo_idx=0, dims=(0, 1)):
+    X = np.asarray(learner.demos[demo_idx], dtype=float)
+    stage_ends = learner.stage_ends_[demo_idx]
+    starts, ends = _segment_bounds(stage_ends)
+    colors = _stage_colors(learner.num_states)
+    lx, ly = _projection_axis_labels(dims)
+
+    _draw_sphere_projection_circle(ax, learner.env, dims)
+    for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+        color = colors[stage_idx % len(colors)]
+        pts = X[s : e + 1]
+        ax.plot(
+            pts[:, int(dims[0])],
+            pts[:, int(dims[1])],
+            color=color,
+            lw=1.5,
+            alpha=0.95,
+        )
+        ax.scatter(
+            pts[:, int(dims[0])],
+            pts[:, int(dims[1])],
+            color=color,
+            s=10,
+            alpha=0.35,
+        )
+
+    true_cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
+    for cp_idx, cp in enumerate(true_cutpoints):
+        cp_pt = X[int(cp)]
+        ax.scatter(
+            cp_pt[int(dims[0])],
+            cp_pt[int(dims[1])],
+            color=colors[cp_idx % len(colors)],
+            marker="x",
+            s=30,
+            linewidths=1.2,
+            label="true boundary" if cp_idx == 0 else "",
+            zorder=10,
+        )
+
+    for stage_idx, sg in enumerate(getattr(learner, "stage_subgoals", []) or []):
+        pt = np.asarray(sg, dtype=float).reshape(-1)
+        if pt.size <= max(int(dims[0]), int(dims[1])):
+            continue
+        ax.scatter(
+            pt[int(dims[0])],
+            pt[int(dims[1])],
+            color=colors[stage_idx % len(colors)],
+            marker="D",
+            s=26,
+            edgecolors="black",
+            linewidths=0.8,
+            label=f"shared stage {stage_idx + 1} end" if stage_idx == 0 else "",
+            zorder=11,
+        )
+
+    for label_name in ("subgoal", "goal"):
+        pt = getattr(learner.env, label_name, None)
+        if pt is None:
+            continue
+        pt = np.asarray(pt, dtype=float).reshape(-1)
+        if pt.size <= max(int(dims[0]), int(dims[1])):
+            continue
+        ax.scatter(
+            pt[int(dims[0])],
+            pt[int(dims[1])],
+            color="black",
+            marker="X",
+            s=32,
+            label="true stage end" if label_name == "subgoal" else "",
+            zorder=12,
+        )
+
+    pts_2d = X[:, [int(dims[0]), int(dims[1])]]
+    center = np.asarray(getattr(learner.env, "sphere_center", np.zeros(3)), dtype=float).reshape(-1)
+    radius = float(getattr(learner.env, "sphere_radius", 1.0))
+    ref_pts = np.array(
+        [
+            [center[int(dims[0])] - radius, center[int(dims[1])] - radius],
+            [center[int(dims[0])] + radius, center[int(dims[1])] + radius],
+        ],
+        dtype=float,
+    )
+    _configure_2d_trajectory_axes(ax, learner.env, np.vstack([pts_2d, ref_pts]))
+    ax.set_title(f"{lx}{ly} projection", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlabel(lx, fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel(ly, fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _legend(ax)
+
+
+def _draw_sphere_feature_overview(ax, learner, demo_idx=0):
+    F_raw = _raw_feature_matrix_for_demo(learner, demo_idx)
+    if F_raw.ndim != 2 or F_raw.size == 0:
+        ax.axis("off")
+        return
+
+    priority = [
+        "surface_distance",
+        "tool_normal_alignment_error",
+        "speed",
+        "angular_speed",
+        "noise_aux",
+    ]
+    feature_order = []
+    for name in priority:
+        for feat_idx in range(min(int(getattr(learner, "num_features", 0)), F_raw.shape[1])):
+            if _feature_name(learner, feat_idx) == name and feat_idx not in feature_order:
+                feature_order.append(feat_idx)
+    for feat_idx in range(min(int(getattr(learner, "num_features", 0)), F_raw.shape[1])):
+        if feat_idx not in feature_order:
+            feature_order.append(feat_idx)
+    feature_order = feature_order[:5]
+
+    t_axis = np.arange(F_raw.shape[0], dtype=int)
+    stage_ends = learner.stage_ends_[demo_idx]
+    starts, ends = _segment_bounds(stage_ends)
+    stage_colors = _stage_colors(learner.num_states)
+    feature_colors = _feature_plot_colors(len(feature_order))
+
+    _draw_stage_background(ax, starts, ends, stage_colors, alpha=0.06)
+    for local_idx, feat_idx in enumerate(feature_order):
+        feature_name = _feature_name(learner, feat_idx)
+        color = feature_colors[local_idx % len(feature_colors)]
+        values = np.asarray(F_raw[:, feat_idx], dtype=float)
+        ax.plot(t_axis, values, color=color, lw=1.25, label=feature_name)
+        for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+            ref_value = _reference_constraint_value(learner.env, feature_name, stage=stage_idx)
+            if ref_value is None:
+                continue
+            ax.hlines(
+                float(ref_value),
+                float(s),
+                float(e),
+                color=color,
+                linewidth=0.95,
+                linestyle=(0, (3, 2)),
+                alpha=0.85,
+            )
+
+    for cp_idx, cp in enumerate(stage_ends[:-1]):
+        ax.axvline(int(cp), color="black", linestyle="--", lw=1.0, label="pred boundary" if cp_idx == 0 else "")
+    for cp_idx, cp in enumerate(_true_cutpoints_for_demo(learner, demo_idx)):
+        ax.axvline(int(cp), color="green", linestyle=":", lw=1.0, label="true boundary" if cp_idx == 0 else "")
+
+    ax.set_title(f"Demo {demo_idx} key feature traces", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlabel("time", fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel("raw value", fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _legend(ax, outside=False)
 
 
 def _shortest_coverage_width(values, coverage: float = 0.7) -> float:
@@ -1112,134 +1437,6 @@ def _scan_cutpoint_range(learner, T, fixed_cutpoints, vary_index):
     return np.arange(low, high + 1, dtype=int)
 
 
-def _gt_shared_true_cut_cost_breakdown(learner, demo_idx):
-    all_true_cutpoints = [_true_cutpoints_for_demo(learner, i) for i in range(len(learner.demos))]
-    if any(len(cuts) != learner.num_states - 1 for cuts in all_true_cutpoints):
-        return None
-    lam_subgoal_consensus, lam_param_consensus, lam_activation_consensus = _current_consensus_lambdas(learner)
-
-    zero_shared_subgoals = [np.zeros_like(np.asarray(learner.stage_subgoals[k], dtype=float)) for k in range(learner.num_states)]
-    zero_shared_params = [[None for _ in range(learner.num_features)] for _ in range(learner.num_states)]
-    true_infos = []
-    for cur_demo_idx, true_cutpoints in enumerate(all_true_cutpoints):
-        T_cur = len(learner.demos[cur_demo_idx])
-        info = learner._candidate_cost(
-            demo_idx=cur_demo_idx,
-            stage_ends=[int(x) for x in true_cutpoints] + [int(T_cur - 1)],
-            lam_subgoal_consensus=0.0,
-            lam_param_consensus=0.0,
-            lam_activation_consensus=0.0,
-            shared_stage_subgoals=zero_shared_subgoals,
-            shared_param_vectors=zero_shared_params,
-            shared_r_mean=None,
-            shared_feature_score_mean=None,
-        )
-        if info is None:
-            return None
-        true_infos.append(info)
-
-    gt_shared_stage_subgoals, gt_shared_param_vectors = learner._shared_from_selected(true_infos)
-    gt_shared_feature_score_mean = None
-    gt_shared_r_mean = None
-    if getattr(learner, "use_score_mode", False):
-        gt_shared_feature_score_mean = np.mean(
-            np.stack([
-                np.stack([stage_params.feature_scores for stage_params in info["stage_params"]], axis=0)
-                for info in true_infos
-            ], axis=0),
-            axis=0,
-        )
-    else:
-        gt_shared_r_mean = np.mean(
-            np.stack([
-                np.stack([stage_params.active_mask for stage_params in info["stage_params"]], axis=0)
-                for info in true_infos
-            ], axis=0),
-            axis=0,
-        )
-
-    true_cutpoints = all_true_cutpoints[demo_idx]
-    T = len(learner.demos[demo_idx])
-    info = learner._candidate_cost(
-        demo_idx=demo_idx,
-        stage_ends=[int(x) for x in true_cutpoints] + [int(T - 1)],
-        lam_subgoal_consensus=lam_subgoal_consensus,
-        lam_param_consensus=lam_param_consensus,
-        lam_activation_consensus=lam_activation_consensus,
-        shared_stage_subgoals=gt_shared_stage_subgoals,
-        shared_param_vectors=gt_shared_param_vectors,
-        shared_r_mean=gt_shared_r_mean,
-        shared_feature_score_mean=gt_shared_feature_score_mean,
-    )
-    if info is None:
-        return None
-    return {
-        "cutpoints": [int(x) for x in true_cutpoints],
-        "total": float(info["total"]),
-        "constraint": float(info["constraint"]),
-        "short_segment_penalty": float(info.get("short_segment_penalty", 0.0)),
-        "progress": learner.lambda_progress * float(info["progress"]),
-        "subgoal_consensus": lam_subgoal_consensus * float(info["subgoal_consensus"]),
-        "param_consensus": lam_param_consensus * float(info["param_consensus"]),
-        "activation_consensus": lam_activation_consensus * float(info.get("activation_consensus", info.get("feature_score_consensus", 0.0))),
-        "feature_score_consensus": lam_activation_consensus * float(info.get("activation_consensus", info.get("feature_score_consensus", 0.0))),
-    }
-    
-
-def _annotate_true_cut_costs(ax, learner, demo_idx, vary_index, show_components):
-    breakdown = _gt_shared_true_cut_cost_breakdown(learner, demo_idx)
-    if breakdown is None:
-        return
-    true_cutpoints = breakdown["cutpoints"]
-    if vary_index >= len(true_cutpoints):
-        return
-    x_true = int(true_cutpoints[vary_index])
-    series = [
-        ("total", "black"),
-        ("constraint", "tab:red"),
-        ("short_segment_penalty", "tab:olive"),
-        ("progress", "tab:orange"),
-        ("subgoal_consensus", "tab:purple"),
-        ("param_consensus", "tab:cyan"),
-        ("activation_consensus", "tab:brown"),
-    ]
-    plotted_lines = [("total", "black")] if not show_components else series
-    for key, color in plotted_lines:
-        y_val = float(breakdown[key])
-        if np.isfinite(y_val):
-            ax.scatter(
-                [x_true], [y_val],
-                color=color,
-                marker="X",
-                s=30,
-                edgecolors="black",
-                linewidths=0.5,
-                zorder=4,
-                label="_nolegend_",
-            )
-
-    info_lines = [f"GT-shared true cuts total={breakdown['total']:.2f}"]
-    if show_components:
-        info_lines.extend([
-            f"c={breakdown['constraint']:.2f}",
-            f"sp={breakdown['short_segment_penalty']:.2f}",
-            f"p={breakdown['progress']:.2f}",
-            f"sg={breakdown['subgoal_consensus']:.2f}",
-            f"pm={breakdown['param_consensus']:.2f}",
-            f"act={breakdown.get('activation_consensus', breakdown['feature_score_consensus']):.2f}",
-        ])
-    ax.text(
-        0.98,
-        0.98,
-        "\n".join(info_lines),
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=6.5,
-        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.85, edgecolor="0.6"),
-    )
-
-
 def _local_stage_cost_breakdown(learner, demo_idx, stage_ends):
     starts, ends = _segment_bounds(stage_ends)
     feature_constraint = np.zeros((learner.num_features, learner.num_states), dtype=float)
@@ -1640,7 +1837,6 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
     true_cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
     if vary_index < len(true_cutpoints):
         ax.axvline(int(true_cutpoints[vary_index]), color="green", linestyle=":", lw=1.0, label="true boundary")
-    _annotate_true_cut_costs(ax, learner, demo_idx, vary_index, show_components)
 
     fixed_label = ", ".join(
         f"cp{k + 1}={learned_cutpoints[k]}"
@@ -1691,6 +1887,32 @@ def plot_scdp_results_4panel(learner, it, demo_idx=0):
 
         ax8 = fig.add_subplot(4, 2, 8)
         ax8.axis("off")
+    elif _is_sphere_inspect(learner.env) and learner.num_states == 4:
+        fig = plt.figure(figsize=(12.6, 12.8))
+
+        ax1 = fig.add_subplot(4, 2, 1, projection="3d")
+        _draw_sphere_trajectory_3d(ax1, learner, it, demo_idx=demo_idx)
+
+        ax2 = fig.add_subplot(4, 2, 2)
+        _draw_constraint_cost_matrix(ax2, learner, demo_idx=demo_idx)
+
+        ax3 = fig.add_subplot(4, 2, 3)
+        _draw_sphere_feature_overview(ax3, learner, demo_idx=demo_idx)
+
+        ax4 = fig.add_subplot(4, 2, 4)
+        _draw_feature_bands(ax4, learner, demo_idx=demo_idx, standardized=False)
+
+        ax5 = fig.add_subplot(4, 2, 5)
+        _draw_feature_bands(ax5, learner, demo_idx=demo_idx, standardized=True)
+
+        ax6 = fig.add_subplot(4, 2, 6)
+        _draw_single_cut_scan(ax6, learner, demo_idx=demo_idx, vary_index=0, show_components=True)
+
+        ax7 = fig.add_subplot(4, 2, 7)
+        _draw_single_cut_scan(ax7, learner, demo_idx=demo_idx, vary_index=1, show_components=True)
+
+        ax8 = fig.add_subplot(4, 2, 8)
+        _draw_single_cut_scan(ax8, learner, demo_idx=demo_idx, vary_index=2, show_components=True)
     elif learner.num_states == 3:
         fig = plt.figure(figsize=_trajectory_figsize(learner, three_row=True))
 
@@ -1736,17 +1958,7 @@ def plot_scdp_results_4panel_overview(learner, it, *, metrics=None, plot_dir=Non
         return
     feature_indices = []
     if getattr(learner, "current_stage_params_per_demo", None):
-        for feat_idx in range(int(getattr(learner, "num_features", 0))):
-            active_somewhere = False
-            for local_stage_params in learner.current_stage_params_per_demo:
-                for stage_idx in range(int(getattr(learner, "num_states", 0))):
-                    if _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
-                        active_somewhere = True
-                        break
-                if active_somewhere:
-                    break
-            if active_somewhere or _feature_has_constraint_reference(learner, feat_idx):
-                feature_indices.append(feat_idx)
+        feature_indices = list(range(int(getattr(learner, "num_features", 0))))
     param_rows = 0 if not feature_indices else int(np.ceil(len(feature_indices) / min(4, len(feature_indices))))
     has_error_row = bool(
         isinstance(metrics, dict)

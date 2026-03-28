@@ -108,7 +108,6 @@ def _build_scdp_reference_learner(bundle):
         equality_dispersion_ratio_threshold=float(kwargs.get("equality_dispersion_ratio_threshold", 0.1)),
         constraint_core_trim=int(kwargs.get("constraint_core_trim", 0)),
         short_segment_penalty_c=float(kwargs.get("short_segment_penalty_c", kwargs.get("equality_score_uncertainty_c", 0.1))),
-        equality_gaussian_score_activation_threshold=float(kwargs.get("equality_gaussian_score_activation_threshold", -0.5)),
         inequality_score_activation_threshold=float(kwargs.get("inequality_score_activation_threshold", -0.5)),
         fixed_true_cutpoint_prefix=int(kwargs.get("fixed_true_cutpoint_prefix", 0)),
         fixed_true_cutpoint_indices=kwargs.get("fixed_true_cutpoint_indices"),

@@ -171,7 +171,6 @@ class SegmentConsensusDPModel:
         equality_dispersion_ratio_threshold=0.1,
         constraint_core_trim=0,
         short_segment_penalty_c=0.1,
-        equality_gaussian_score_activation_threshold=-0.5,
         inequality_score_activation_threshold=-0.5,
         activation_proto_temperature=0.1,
         joint_mask_search_max_masks=4096,
@@ -219,7 +218,6 @@ class SegmentConsensusDPModel:
         self.equality_dispersion_ratio_threshold = float(equality_dispersion_ratio_threshold)
         self.constraint_core_trim = max(int(constraint_core_trim), 0)
         self.short_segment_penalty_c = float(short_segment_penalty_c)
-        self.equality_gaussian_score_activation_threshold = float(equality_gaussian_score_activation_threshold)
         self.inequality_score_activation_threshold = float(inequality_score_activation_threshold)
         self.activation_proto_temperature = max(float(activation_proto_temperature), 1e-6)
         self.joint_mask_search_max_masks = max(int(joint_mask_search_max_masks), 1)
@@ -660,8 +658,6 @@ class SegmentConsensusDPModel:
         return kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
 
     def _equality_score_threshold(self) -> float:
-        if self.equality_score_mode == "gaussian_ll_gain":
-            return float(self.equality_gaussian_score_activation_threshold)
         return float(self.equality_dispersion_ratio_threshold)
 
     def _equality_score_type(self) -> str:
