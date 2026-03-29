@@ -166,6 +166,11 @@ def _raw_feature_matrix_for_demo(learner, demo_idx: int) -> np.ndarray:
     return Fz * feat_std[None, :] + feat_mean[None, :]
 
 
+def _standardized_feature_matrix_for_demo(learner, demo_idx: int) -> np.ndarray:
+    X = learner.demos[demo_idx]
+    return np.asarray(learner._features_for_demo_matrix(X), dtype=float)
+
+
 def _learned_constraint_value_raw(values_raw, kind: str):
     vals = np.asarray(values_raw, dtype=float).reshape(-1)
     if vals.size == 0:
@@ -313,6 +318,74 @@ def _plot_constraint_parameter_panels(fig, gs_cell, learner, taus, gammas, stage
         ax.axis("off")
 
 
+def _plot_cutpoint_evolution(ax, learner):
+    history = getattr(learner, "segmentation_history_", None)
+    if not history:
+        ax.axis("off")
+        return
+    history = [
+        [list(map(int, ends)) for ends in snapshot]
+        for snapshot in history
+        if snapshot is not None
+    ]
+    if not history:
+        ax.axis("off")
+        return
+
+    num_iters = len(history)
+    num_demos = len(history[0])
+    if num_demos == 0:
+        ax.axis("off")
+        return
+    num_cutpoints = max(len(history[0][0]) - 1, 0)
+    if num_cutpoints <= 0:
+        ax.axis("off")
+        return
+
+    xs = np.arange(num_iters, dtype=int)
+    colors = _stage_colors(num_cutpoints + 1)
+    true_cutpoints = getattr(learner, "true_cutpoints", None)
+    for cp_idx in range(num_cutpoints):
+        curves = []
+        for demo_idx in range(num_demos):
+            ys = np.asarray([snapshot[demo_idx][cp_idx] for snapshot in history], dtype=float)
+            curves.append(ys)
+            ax.plot(xs, ys, color=colors[cp_idx], alpha=0.22, linewidth=0.9)
+        mean_curve = np.mean(np.stack(curves, axis=0), axis=0)
+        ax.plot(xs, mean_curve, color=colors[cp_idx], linewidth=2.0, label=f"cp{cp_idx + 1} mean")
+        if true_cutpoints is not None:
+            true_vals = []
+            for demo_idx in range(min(num_demos, len(true_cutpoints))):
+                cuts = true_cutpoints[demo_idx]
+                if cuts is None:
+                    continue
+                arr = np.asarray(cuts, dtype=int).reshape(-1)
+                if cp_idx < arr.size:
+                    true_vals.append(float(arr[cp_idx]))
+            if true_vals:
+                ax.axhline(
+                    float(np.mean(true_vals)),
+                    color=colors[cp_idx],
+                    linestyle=":",
+                    linewidth=1.0,
+                    alpha=0.85,
+                    label=f"cp{cp_idx + 1} true mean" if cp_idx == 0 else "",
+                )
+
+    ax.set_title("Cutpoint evolution", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlabel("iteration", fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel("index", fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    ax.grid(alpha=0.22)
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = {}
+    for h, l in zip(handles, labels):
+        if l and l not in by_label:
+            by_label[l] = h
+    if by_label:
+        ax.legend(by_label.values(), by_label.keys(), loc="best", fontsize=PAPER_LEGEND_SIZE, frameon=False)
+
+
 def _reference_constraint_value(env, feature_name: str, stage: int):
     specs = getattr(env, "constraint_specs", None)
     true_constraints = getattr(env, "true_constraints", {}) or {}
@@ -378,6 +451,10 @@ def _is_pickplace(env) -> bool:
 
 def _is_press_slide_insert(env) -> bool:
     return getattr(env, "eval_tag", "") == "2DPressSlideInsert"
+
+
+def _is_sphere_inspect(env) -> bool:
+    return str(getattr(env, "eval_tag", "")).startswith("3DSphereInspect")
 
 
 def _xy_point(point):
@@ -515,6 +592,47 @@ def _draw_cghmm_gmms(ax, learner, x_dim: int):
 
 def plot_demos_goals_snapshot(ax, learner, taus, gammas, title=None, show_legend=True):
     if plt is None:
+        return ax
+
+    if _is_sphere_inspect(learner.env) and int(getattr(learner, "num_states", 0)) >= 5:
+        demo_idx = 0
+        X = np.asarray(learner.demos[demo_idx], dtype=float)
+        T = len(X)
+        boundary_like = taus[demo_idx] if demo_idx < len(taus) else None
+        gamma = gammas[demo_idx]
+        stage_ends = _coerce_stage_ends(boundary_like, gamma, T)
+        pred_cutpoints = [int(x) for x in np.asarray(stage_ends[:-1], dtype=int).reshape(-1).tolist()]
+        true_cutpoints = _true_cutpoints(learner, demo_idx)
+        Fz = _standardized_feature_matrix_for_demo(learner, demo_idx)
+        feature_colors = plt.cm.tab10(np.linspace(0.0, 1.0, max(Fz.shape[1], 1)))
+        t = np.arange(T, dtype=float)
+        if title is not None:
+            ax.set_title(title, fontsize=PAPER_TITLE_SIZE, pad=4)
+        for feat_idx in range(Fz.shape[1]):
+            ax.plot(
+                t,
+                np.asarray(Fz[:, feat_idx], dtype=float),
+                lw=1.15,
+                alpha=0.95,
+                color=feature_colors[feat_idx],
+                label=_feature_name(learner, feat_idx),
+            )
+        for j, cp in enumerate(pred_cutpoints):
+            ax.axvline(cp, color="black", linestyle="--", linewidth=0.95, alpha=0.85, label="pred cutpoint" if j == 0 else "")
+        for j, cp in enumerate(true_cutpoints):
+            ax.axvline(cp, color="#666666", linestyle=":", linewidth=0.95, alpha=0.9, label="true cutpoint" if j == 0 else "")
+        ax.set_xlabel("t")
+        ax.set_ylabel("z feature")
+        ax.grid(alpha=0.24)
+        ax.tick_params(labelsize=PAPER_TICK_SIZE)
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = {}
+        for h, l in zip(handles, labels):
+            l = str(l).strip()
+            if l and not l.startswith("_") and l not in by_label:
+                by_label[l] = h
+        if show_legend and by_label:
+            ax.legend(by_label.values(), by_label.keys(), fontsize=PAPER_LEGEND_SIZE, frameon=False, loc="upper right")
         return ax
 
     shared_subgoals = _shared_stage_subgoals(learner)
@@ -694,11 +812,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     ]
     extra_rows = 0 if not extra_panel_indices else int(np.ceil(len(extra_panel_indices) / min(4, len(extra_panel_indices))))
     base_w, base_h = _trajectory_figsize(learner)
-    fig = plt.figure(figsize=(base_w, base_h + 1.7 * extra_rows))
+    fig = plt.figure(figsize=(base_w, base_h + 1.8 + 1.7 * extra_rows))
     gs = fig.add_gridspec(
-        2 + max(extra_rows, 0),
+        3 + max(extra_rows, 0),
         2,
-        height_ratios=[1.0, 1.0] + ([0.7] * extra_rows if extra_rows > 0 else []),
+        height_ratios=[1.0, 1.0, 0.9] + ([0.7] * extra_rows if extra_rows > 0 else []),
     )
     X_dim = learner.demos[0].shape[1]
     is_press = _is_press_slide_insert(learner.env)
@@ -1257,8 +1375,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     ax.set_xlabel("t", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
 
+    ax = fig.add_subplot(gs[2, :])
+    _plot_cutpoint_evolution(ax, learner)
+
     if extra_rows > 0:
-        _plot_constraint_parameter_panels(fig, gs[2:, :], learner, taus, gammas, stage_colors)
+        _plot_constraint_parameter_panels(fig, gs[3:, :], learner, taus, gammas, stage_colors)
 
     fig.tight_layout(pad=0.5, w_pad=0.6, h_pad=0.8)
     if save_name is None:

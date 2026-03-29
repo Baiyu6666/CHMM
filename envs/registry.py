@@ -12,7 +12,7 @@ from .obs_avoid_2d_arc3 import load_2d_obs_avoid_arc3
 from .obs_avoid_3d import load_3d_obs_avoid
 from .press_slide_insert_2d import load_2d_press_slide_insert
 from .sine_corridor_3d import load_3d_sine_corridor
-from .sphere_inspect_3d import load_3d_sphere_inspect_4, load_3d_sphere_inspect_5
+from .sphere_inspect_3d import load_3d_sphere_inspect
 
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
@@ -22,8 +22,7 @@ ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
     "2DDockCorridor": load_2d_dock_corridor,
     "3DObsAvoid": load_3d_obs_avoid,
     "3DSineCorridor": load_3d_sine_corridor,
-    "3DSphereInspect4": load_3d_sphere_inspect_4,
-    "3DSphereInspect5": load_3d_sphere_inspect_5,
+    "3DSphereInspect": load_3d_sphere_inspect,
     "2DPressSlideInsert": load_2d_press_slide_insert,
 }
 

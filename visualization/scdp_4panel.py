@@ -94,6 +94,32 @@ def _feature_kind(learner, local_idx):
     return str(feature_model_types[local_idx]).lower()
 
 
+def _kind_is_auto_display(kind: str) -> bool:
+    return str(kind).lower() in {"auto", "auto_constraint", "auto_eq_ineq", "auto_constraint_type"}
+
+
+def _kind_is_equality_display(kind: str) -> bool:
+    return str(kind).lower() in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
+
+
+def _stage_feature_kind_for_display(learner, local_stage_params, stage_idx, feat_idx):
+    try:
+        stage_params = local_stage_params[int(stage_idx)]
+        selected_kinds = getattr(stage_params, "selected_feature_kinds", None)
+        if selected_kinds is not None and int(feat_idx) < len(selected_kinds):
+            kind = str(selected_kinds[int(feat_idx)]).lower()
+            if kind:
+                if kind == "unconstrained":
+                    return "student_t"
+                return kind
+    except Exception:
+        pass
+    base_kind = _feature_kind(learner, feat_idx)
+    if _kind_is_auto_display(base_kind):
+        return "student_t"
+    return base_kind
+
+
 def _reference_constraint_value(env, feature_name: str, stage: int):
     specs = getattr(env, "constraint_specs", None)
     true_constraints = getattr(env, "true_constraints", {}) or {}
@@ -154,19 +180,12 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
     for panel_idx, feat_idx in enumerate(feature_indices):
         ax = plt.figure(plt.gcf().number).add_subplot(sub_gs[panel_idx // n_cols, panel_idx % n_cols])
         feature_name = _feature_name(learner, feat_idx)
-        kind = _feature_kind(learner, feat_idx)
-        is_ineq = kind in {
-            "margin_exp_lower", "marginexp", "margin_exp",
-            "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
-            "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
-            "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
-        }
-        value_label = "b" if is_ineq else "median"
         any_series = False
 
         for stage_idx in range(int(getattr(learner, "num_states", 0))):
             learned_vals = []
             active_any = False
+            stage_kind = None
             for demo_idx, (stage_ends, local_stage_params, F_raw) in enumerate(
                 zip(learner.stage_ends_, learner.current_stage_params_per_demo, raw_feature_mats)
             ):
@@ -182,9 +201,17 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
                     learned_vals.append(np.nan)
                     continue
                 active_any = True
-                learned_vals.append(_learned_constraint_value_raw(vals_raw, kind))
+                stage_kind = _stage_feature_kind_for_display(learner, local_stage_params, stage_idx, feat_idx)
+                learned_vals.append(_learned_constraint_value_raw(vals_raw, stage_kind))
 
             if active_any:
+                is_ineq = stage_kind in {
+                    "margin_exp_lower", "marginexp", "margin_exp",
+                    "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+                    "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
+                    "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+                }
+                value_label = "b" if is_ineq else "median"
                 ax.plot(
                     demo_x,
                     np.asarray(learned_vals, dtype=float),
@@ -212,7 +239,7 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
                 any_series = True
 
         if not any_series:
-            ax.set_title(f"{feature_name} ({value_label})", fontsize=PAPER_TITLE_SIZE, pad=4)
+            ax.set_title(f"{feature_name}", fontsize=PAPER_TITLE_SIZE, pad=4)
             ax.set_xticks([])
             ax.set_yticks([])
             ax.spines["top"].set_visible(False)
@@ -221,9 +248,9 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
             ax.spines["bottom"].set_visible(False)
             continue
 
-        ax.set_title(f"{feature_name} ({value_label})", fontsize=PAPER_TITLE_SIZE, pad=4)
+        ax.set_title(f"{feature_name}", fontsize=PAPER_TITLE_SIZE, pad=4)
         ax.set_xlabel("demo", fontsize=PAPER_LABEL_SIZE)
-        ax.set_ylabel(value_label, fontsize=PAPER_LABEL_SIZE)
+        ax.set_ylabel("learned value", fontsize=PAPER_LABEL_SIZE)
         ax.set_xticks(demo_x)
         ax.set_xticklabels([str(i) for i in demo_x], fontsize=PAPER_TICK_SIZE)
         _style_paper_axis(ax, grid_axis="y", grid_alpha=0.18)
@@ -234,7 +261,105 @@ def _plot_constraint_parameter_panels(ax_specs, learner):
         ax.axis("off")
 
 
-def _score_threshold(learner, feat_idx):
+def _constraint_type_bucket_for_display(learner, local_stage_params, stage_idx, feat_idx):
+    if not _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
+        return "unconstrained"
+    kind = _stage_feature_kind_for_display(learner, local_stage_params, stage_idx, feat_idx)
+    if _kind_is_equality_display(kind):
+        return "equality"
+    if str(kind).lower() in {
+        "margin_exp_lower", "marginexp", "margin_exp",
+        "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+    }:
+        return "lower"
+    if str(kind).lower() in {
+        "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
+        "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+    }:
+        return "upper"
+    return "unconstrained"
+
+
+def plot_constraint_type_summary(learner, it, *, plot_dir=None):
+    if plt is None or not getattr(learner, "current_stage_params_per_demo", None):
+        return
+    num_features = int(getattr(learner, "num_features", 0))
+    num_states = int(getattr(learner, "num_states", 0))
+    num_demos = len(getattr(learner, "current_stage_params_per_demo", []) or [])
+    if num_features <= 0 or num_states <= 0 or num_demos <= 0:
+        return
+
+    feature_indices = list(range(num_features))
+    n_cols = min(4, max(1, num_features))
+    n_rows = int(np.ceil(num_features / n_cols))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(4.1 * n_cols, 3.2 * n_rows),
+        squeeze=False,
+    )
+
+    bucket_order = ["unconstrained", "equality", "lower", "upper"]
+    bucket_colors = {
+        "unconstrained": "#b8b8b8",
+        "equality": "#0072B2",
+        "lower": "#D55E00",
+        "upper": "#009E73",
+    }
+    x = np.arange(num_states, dtype=float)
+
+    for panel_idx, feat_idx in enumerate(feature_indices):
+        ax = axes[panel_idx // n_cols][panel_idx % n_cols]
+        counts = {bucket: np.zeros(num_states, dtype=float) for bucket in bucket_order}
+        for local_stage_params in learner.current_stage_params_per_demo:
+            for stage_idx in range(num_states):
+                bucket = _constraint_type_bucket_for_display(learner, local_stage_params, stage_idx, feat_idx)
+                counts[bucket][stage_idx] += 1.0
+        denom = max(float(num_demos), 1.0)
+        bottom = np.zeros(num_states, dtype=float)
+        for bucket in bucket_order:
+            frac = counts[bucket] / denom
+            ax.bar(
+                x,
+                frac,
+                bottom=bottom,
+                width=0.72,
+                color=bucket_colors[bucket],
+                edgecolor="white",
+                linewidth=0.5,
+                label=bucket,
+            )
+            bottom += frac
+        ax.set_title(_feature_name(learner, feat_idx), fontsize=PAPER_TITLE_SIZE, pad=4)
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"s{k + 1}" for k in range(num_states)], fontsize=PAPER_TICK_SIZE)
+        ax.set_ylim(0.0, 1.0)
+        ax.set_ylabel("fraction", fontsize=PAPER_LABEL_SIZE)
+        _style_paper_axis(ax, grid_axis="y", grid_alpha=0.16)
+        if panel_idx == 0:
+            _legend(ax, outside=True)
+
+    for panel_idx in range(num_features, n_rows * n_cols):
+        axes[panel_idx // n_cols][panel_idx % n_cols].axis("off")
+
+    fig.suptitle(f"Constraint Type Summary | iter {int(it):04d}", fontsize=12)
+    save_figure(
+        fig,
+        learner_plot_dir(learner, plot_dir=plot_dir) / f"constraint_type_summary_iter_{int(it):04d}.png",
+        dpi=220,
+    )
+
+
+def _score_threshold(learner, feat_idx, stage_idx=None):
+    try:
+        score_threshold_matrix = np.asarray(getattr(learner, "score_threshold_matrix", None), dtype=float)
+        if score_threshold_matrix.ndim == 2 and score_threshold_matrix.size > 0:
+            row_idx = 0 if stage_idx is None else int(stage_idx)
+            row_idx = max(0, min(row_idx, score_threshold_matrix.shape[0] - 1))
+            col_idx = max(0, min(int(feat_idx), score_threshold_matrix.shape[1] - 1))
+            return float(score_threshold_matrix[row_idx, col_idx])
+    except Exception:
+        pass
     if hasattr(learner, "_is_equality_feature") and learner._is_equality_feature(int(feat_idx)):
         if hasattr(learner, "_equality_score_threshold"):
             return float(learner._equality_score_threshold())
@@ -257,7 +382,7 @@ def _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx,
             return False
         if not np.isfinite(score):
             return False
-        return (_score_threshold(learner, feat_idx) - score) > 0.0
+        return (_score_threshold(learner, feat_idx, stage_idx=stage_idx) - score) > 0.0
     try:
         return int(learner.r[stage_idx, feat_idx]) == 1
     except Exception:
@@ -452,24 +577,6 @@ def _draw_sphere_trajectory_3d(ax, learner, it, demo_idx=0):
             zorder=10,
         )
 
-    for stage_idx, sg in enumerate(getattr(learner, "stage_subgoals", []) or []):
-        pt = np.asarray(sg, dtype=float).reshape(-1)
-        if pt.size < 3:
-            continue
-        ax.scatter(
-            pt[0],
-            pt[1],
-            pt[2],
-            color=colors[stage_idx % len(colors)],
-            marker="D",
-            s=30,
-            edgecolors="black",
-            linewidths=0.8,
-            depthshade=False,
-            label=f"shared stage {stage_idx + 1} end",
-            zorder=11,
-        )
-
     for label_name, marker in [("subgoal", "X"), ("goal", "X")]:
         pt = getattr(learner.env, label_name, None)
         if pt is None:
@@ -548,22 +655,6 @@ def _draw_sphere_projection(ax, learner, it, demo_idx=0, dims=(0, 1)):
             linewidths=1.2,
             label="true boundary" if cp_idx == 0 else "",
             zorder=10,
-        )
-
-    for stage_idx, sg in enumerate(getattr(learner, "stage_subgoals", []) or []):
-        pt = np.asarray(sg, dtype=float).reshape(-1)
-        if pt.size <= max(int(dims[0]), int(dims[1])):
-            continue
-        ax.scatter(
-            pt[int(dims[0])],
-            pt[int(dims[1])],
-            color=colors[stage_idx % len(colors)],
-            marker="D",
-            s=26,
-            edgecolors="black",
-            linewidths=0.8,
-            label=f"shared stage {stage_idx + 1} end" if stage_idx == 0 else "",
-            zorder=11,
         )
 
     for label_name in ("subgoal", "goal"):
@@ -730,7 +821,6 @@ def _draw_trajectories(ax, learner, it, demo_idx=0):
     is_press = _is_press_slide_insert(learner.env)
     traj_marker_size = 3.4 if is_press else 5.0
     goal_marker_size = 24 if is_press else 28
-    subgoal_marker_size = 22 if is_press else 30
     cutpoint_marker_size = 22 if is_press else 30
     for k, (s, e) in enumerate(zip(starts, ends)):
         ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], color=colors[k], s=traj_marker_size, alpha=0.32 if is_press else 0.45)
@@ -748,12 +838,6 @@ def _draw_trajectories(ax, learner, it, demo_idx=0):
     if hasattr(learner.env, "goal"):
         gg = _xy_point(learner.env.goal)
         ax.scatter(gg[0], gg[1], color="black", marker="X", s=goal_marker_size, label="true stage end")
-    for k, sg in enumerate(getattr(learner, "stage_subgoals", []) or []):
-        pt = _xy_point(sg)
-        ax.scatter(
-            pt[0], pt[1], color=colors[k], marker="D", s=subgoal_marker_size,
-            edgecolors="black", linewidths=0.9, label=f"shared stage {k + 1} end"
-        )
     _draw_true_cutpoint_markers(
         ax,
         X,
@@ -764,7 +848,7 @@ def _draw_trajectories(ax, learner, it, demo_idx=0):
         zorder=12,
     )
 
-    ax.set_title(f"Iter {int(it)}: demo {demo_idx} trajectory & goals", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_title(f"Iter {int(it)}: demo {demo_idx} trajectory", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE)
     pts = [X[:, :2]]
     if hasattr(learner.env, "subgoal"):
@@ -781,7 +865,6 @@ def _draw_trajectories_overview(ax, learner, it):
     is_press = _is_press_slide_insert(learner.env)
     traj_marker_size = 2.4 if is_press else 4.0
     goal_marker_size = 24 if is_press else 28
-    subgoal_marker_size = 22 if is_press else 30
     cutpoint_marker_size = 20 if is_press else 26
     for i, X in enumerate(learner.demos):
         X = np.asarray(X, dtype=float)
@@ -803,12 +886,6 @@ def _draw_trajectories_overview(ax, learner, it):
     if hasattr(learner.env, "goal"):
         gg = _xy_point(learner.env.goal)
         ax.scatter(gg[0], gg[1], color="black", marker="X", s=goal_marker_size, label="true stage end")
-    for k, sg in enumerate(getattr(learner, "stage_subgoals", []) or []):
-        pt = _xy_point(sg)
-        ax.scatter(
-            pt[0], pt[1], color=colors[k], marker="D", s=subgoal_marker_size,
-            edgecolors="black", linewidths=0.9, label=f"shared stage {k + 1} end"
-        )
     for i, X in enumerate(learner.demos):
         _draw_true_cutpoint_markers(
             ax,
@@ -875,8 +952,11 @@ def _draw_constraint_cost_matrix(ax, learner, demo_idx=0):
     if raw_score_matrix.size == 0:
         ax.axis("off")
         return
-    threshold_vec = np.asarray([_score_threshold(learner, i) for i in range(raw_score_matrix.shape[0])], dtype=float)
-    score_margin_matrix = threshold_vec[:, None] - raw_score_matrix
+    threshold_mat = np.zeros_like(raw_score_matrix, dtype=float)
+    for feat_idx in range(raw_score_matrix.shape[0]):
+        for stage_idx in range(raw_score_matrix.shape[1]):
+            threshold_mat[feat_idx, stage_idx] = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
+    score_margin_matrix = threshold_mat - raw_score_matrix
     vmax = float(np.nanmax(np.abs(score_margin_matrix))) if score_margin_matrix.size > 0 else 1.0
     if not np.isfinite(vmax) or vmax <= 0.0:
         vmax = 1.0
@@ -915,7 +995,7 @@ def _draw_avg_constraint_cost_matrix(ax, learner, demo_idx=0):
         scores = np.asarray(stage_params.feature_scores, dtype=float)
         stage_len = max(int(learner.stage_ends_[demo_idx][stage_idx] - (-1 if stage_idx == 0 else learner.stage_ends_[demo_idx][stage_idx - 1])), 1)
         for feat_idx in range(learner.num_features):
-            thr = float(_score_threshold(learner, feat_idx))
+            thr = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
             margin = thr - float(scores[feat_idx])
             matrix[feat_idx, stage_idx] = float(margin) / float(stage_len)
     vmax = float(np.nanmax(np.abs(matrix))) if matrix.size > 0 else 1.0
@@ -1580,14 +1660,15 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
             core_s, core_e = _core_bounds_for_display(learner, s, e)
             vals_by_feat = np.asarray(F[core_s : core_e + 1], dtype=float)
             stage_params = stage_params_list[stage_idx]
-            for feat_idx, kind in enumerate(learner.feature_model_types):
+            for feat_idx, _ in enumerate(learner.feature_model_types):
                 ax = axes[row_idx][feat_idx]
                 vals = np.asarray(vals_by_feat[:, feat_idx], dtype=float)
                 full_vals = np.asarray(F[:, feat_idx], dtype=float)
                 if vals.size == 0:
                     ax.axis("off")
                     continue
-                is_equality_feature = learner._is_equality_feature(feat_idx)
+                kind = _stage_feature_kind_for_display(learner, stage_params_list, stage_idx, feat_idx)
+                is_equality_feature = _kind_is_equality_display(kind)
                 show_full_demo = is_equality_feature
                 is_dispersion_equality = (
                     is_equality_feature
@@ -1662,7 +1743,7 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     ax.axvline(float(np.mean(full_vals)), color="tab:gray", lw=1.0, linestyle="-.", alpha=0.9)
 
                 raw_score = float(stage_params.feature_scores[feat_idx])
-                threshold = float(_score_threshold(learner, feat_idx))
+                threshold = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
                 score_margin = threshold - raw_score
                 weighted_cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
                 info_lines = [
@@ -1887,32 +1968,65 @@ def plot_scdp_results_4panel(learner, it, demo_idx=0):
 
         ax8 = fig.add_subplot(4, 2, 8)
         ax8.axis("off")
-    elif _is_sphere_inspect(learner.env) and learner.num_states == 4:
-        fig = plt.figure(figsize=(12.6, 12.8))
+    elif _is_sphere_inspect(learner.env) and learner.num_states in {4, 5}:
+        if learner.num_states == 4:
+            fig = plt.figure(figsize=(12.6, 12.8))
 
-        ax1 = fig.add_subplot(4, 2, 1, projection="3d")
-        _draw_sphere_trajectory_3d(ax1, learner, it, demo_idx=demo_idx)
+            ax1 = fig.add_subplot(4, 2, 1, projection="3d")
+            _draw_sphere_trajectory_3d(ax1, learner, it, demo_idx=demo_idx)
 
-        ax2 = fig.add_subplot(4, 2, 2)
-        _draw_constraint_cost_matrix(ax2, learner, demo_idx=demo_idx)
+            ax2 = fig.add_subplot(4, 2, 2)
+            _draw_constraint_cost_matrix(ax2, learner, demo_idx=demo_idx)
 
-        ax3 = fig.add_subplot(4, 2, 3)
-        _draw_sphere_feature_overview(ax3, learner, demo_idx=demo_idx)
+            ax3 = fig.add_subplot(4, 2, 3)
+            _draw_sphere_feature_overview(ax3, learner, demo_idx=demo_idx)
 
-        ax4 = fig.add_subplot(4, 2, 4)
-        _draw_feature_bands(ax4, learner, demo_idx=demo_idx, standardized=False)
+            ax4 = fig.add_subplot(4, 2, 4)
+            _draw_feature_bands(ax4, learner, demo_idx=demo_idx, standardized=False)
 
-        ax5 = fig.add_subplot(4, 2, 5)
-        _draw_feature_bands(ax5, learner, demo_idx=demo_idx, standardized=True)
+            ax5 = fig.add_subplot(4, 2, 5)
+            _draw_feature_bands(ax5, learner, demo_idx=demo_idx, standardized=True)
 
-        ax6 = fig.add_subplot(4, 2, 6)
-        _draw_single_cut_scan(ax6, learner, demo_idx=demo_idx, vary_index=0, show_components=True)
+            ax6 = fig.add_subplot(4, 2, 6)
+            _draw_single_cut_scan(ax6, learner, demo_idx=demo_idx, vary_index=0, show_components=True)
 
-        ax7 = fig.add_subplot(4, 2, 7)
-        _draw_single_cut_scan(ax7, learner, demo_idx=demo_idx, vary_index=1, show_components=True)
+            ax7 = fig.add_subplot(4, 2, 7)
+            _draw_single_cut_scan(ax7, learner, demo_idx=demo_idx, vary_index=1, show_components=True)
 
-        ax8 = fig.add_subplot(4, 2, 8)
-        _draw_single_cut_scan(ax8, learner, demo_idx=demo_idx, vary_index=2, show_components=True)
+            ax8 = fig.add_subplot(4, 2, 8)
+            _draw_single_cut_scan(ax8, learner, demo_idx=demo_idx, vary_index=2, show_components=True)
+        else:
+            fig = plt.figure(figsize=(12.8, 15.6))
+
+            ax1 = fig.add_subplot(5, 2, 1, projection="3d")
+            _draw_sphere_trajectory_3d(ax1, learner, it, demo_idx=demo_idx)
+
+            ax2 = fig.add_subplot(5, 2, 2)
+            _draw_constraint_cost_matrix(ax2, learner, demo_idx=demo_idx)
+
+            ax3 = fig.add_subplot(5, 2, 3)
+            _draw_sphere_feature_overview(ax3, learner, demo_idx=demo_idx)
+
+            ax4 = fig.add_subplot(5, 2, 4)
+            _draw_feature_bands(ax4, learner, demo_idx=demo_idx, standardized=False)
+
+            ax5 = fig.add_subplot(5, 2, 5)
+            _draw_feature_bands(ax5, learner, demo_idx=demo_idx, standardized=True)
+
+            ax6 = fig.add_subplot(5, 2, 6)
+            _draw_single_cut_scan(ax6, learner, demo_idx=demo_idx, vary_index=0, show_components=True)
+
+            ax7 = fig.add_subplot(5, 2, 7)
+            _draw_single_cut_scan(ax7, learner, demo_idx=demo_idx, vary_index=1, show_components=True)
+
+            ax8 = fig.add_subplot(5, 2, 8)
+            _draw_single_cut_scan(ax8, learner, demo_idx=demo_idx, vary_index=2, show_components=True)
+
+            ax9 = fig.add_subplot(5, 2, 9)
+            _draw_single_cut_scan(ax9, learner, demo_idx=demo_idx, vary_index=3, show_components=True)
+
+            ax10 = fig.add_subplot(5, 2, 10)
+            ax10.axis("off")
     elif learner.num_states == 3:
         fig = plt.figure(figsize=_trajectory_figsize(learner, three_row=True))
 
@@ -2008,3 +2122,4 @@ def plot_scdp_results_4panel_overview(learner, it, *, metrics=None, plot_dir=Non
     _draw_constraint_error_matrix(ax8, learner, metrics) if has_error_row else ax8.axis("off")
 
     save_figure(fig, learner_plot_dir(learner, plot_dir=plot_dir) / f"training_summary_iter_{int(it):04d}.png", dpi=220)
+    plot_constraint_type_summary(learner, it, plot_dir=plot_dir)

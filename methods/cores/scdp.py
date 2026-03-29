@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Dict, List, Sequence
 
 import numpy as np
@@ -141,6 +142,7 @@ class _StageParams:
     active_mask: np.ndarray | None = None
     feature_scores: np.ndarray | None = None
     feature_constraint_costs: np.ndarray | None = None
+    selected_feature_kinds: List[str] | None = None
 
 
 class SegmentConsensusDPModel:
@@ -179,6 +181,7 @@ class SegmentConsensusDPModel:
         plot_every=None,
         plot_dir="outputs/plots",
         eval_fn=eval_goalhmm_auto,
+        verbose=True,
     ):
         self.demos = [np.asarray(X, dtype=float) for X in demos]
         self.env = env
@@ -235,13 +238,16 @@ class SegmentConsensusDPModel:
         self.plot_every = plot_every
         self.plot_dir = plot_dir
         self.eval_fn = eval_fn
+        self.verbose = bool(verbose)
         if self.plot_every is not None and scdp_plot_plt is None:
             print("[SCDP] matplotlib is not installed; SCDP 4-panel plots will not be generated.")
 
         self._init_feature_preprocessing()
         self.feature_model_types = self._normalize_feature_model_types(self.num_features)
+        if any(self._is_auto_constraint_feature(feat_idx) for feat_idx in range(self.num_features)) and not self.use_score_mode:
+            raise ValueError("auto constraint type selection currently requires feature_activation_mode in {'score', 'joint_mask_search'}.")
         self.r = np.ones((self.num_states, self.num_features), dtype=int)
-        self.has_equality_feature = any(self._is_equality_feature(feat_idx) for feat_idx in range(self.num_features))
+        self.has_equality_feature = any(self._feature_supports_equality(feat_idx) for feat_idx in range(self.num_features))
         self.score_threshold_matrix = self._build_score_threshold_matrix()
         if fixed_feature_mask is not None:
             mask = np.asarray(fixed_feature_mask, dtype=int)
@@ -299,6 +305,58 @@ class SegmentConsensusDPModel:
         self.demo_activation_history: List[np.ndarray] = []
         self.activation_proto_history: List[np.ndarray] = []
         self._segment_stage_cache: Dict[tuple[int, int, int, int], tuple[_StageParams, float, float]] = {}
+
+    @staticmethod
+    def _kind_is_auto(kind) -> bool:
+        return str(kind).lower() in {"auto", "auto_constraint", "auto_eq_ineq", "auto_constraint_type"}
+
+    @staticmethod
+    def _kind_is_equality(kind) -> bool:
+        kind_l = str(kind).lower()
+        return kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
+
+    @staticmethod
+    def _kind_is_lower(kind) -> bool:
+        kind_l = str(kind).lower()
+        return kind_l in {
+            "margin_exp_lower", "marginexp", "margin_exp",
+            "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+        }
+
+    @staticmethod
+    def _kind_is_upper(kind) -> bool:
+        kind_l = str(kind).lower()
+        return kind_l in {
+            "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
+            "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+        }
+
+    def _feature_supports_equality(self, feat_idx: int) -> bool:
+        return self._kind_is_auto(self.feature_model_types[feat_idx]) or self._is_equality_feature(feat_idx)
+
+    def _is_auto_constraint_feature(self, feat_idx: int) -> bool:
+        return self._kind_is_auto(self.feature_model_types[feat_idx])
+
+    def _auto_constraint_threshold(self) -> float:
+        return 0.0
+
+    def _score_threshold_for_kind(self, kind) -> float:
+        if self._kind_is_auto(kind):
+            return self._auto_constraint_threshold()
+        if self._kind_is_equality(kind):
+            return float(self._equality_score_threshold())
+        return float(self.inequality_score_activation_threshold)
+
+    def _stage_feature_kind(self, stage_params, feat_idx: int) -> str:
+        kinds = getattr(stage_params, "selected_feature_kinds", None)
+        if kinds is not None and feat_idx < len(kinds):
+            kind = str(kinds[feat_idx]).lower()
+            if kind and kind != "unconstrained":
+                return kind
+        base_kind = str(self.feature_model_types[feat_idx]).lower()
+        if self._kind_is_auto(base_kind):
+            return "student_t"
+        return base_kind
 
     def _normalize_feature_model_types(self, num_features):
         types = self.feature_model_types_raw
@@ -378,6 +436,61 @@ class SegmentConsensusDPModel:
             self.raw_id_to_local_idx[raw_id] = int(local_idx)
             self.feature_name_to_local_idx[name] = int(local_idx)
 
+    def _segment_stage_cache_work_items_for_demo(self, demo_idx: int):
+        X = self.demos[int(demo_idx)]
+        T = len(X)
+        fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(int(demo_idx)) or {}
+        items = []
+        for stage_idx in range(self.num_states):
+            min_len = int(self.duration_min[stage_idx])
+            max_len = int(self.duration_max[stage_idx])
+            fixed_e = fixed_cutpoints_by_stage.get(int(stage_idx))
+            e_values = [int(fixed_e)] if fixed_e is not None else range(T)
+            for e in e_values:
+                if e < 0 or e >= T:
+                    continue
+                s_min = max(0, int(e) - max_len + 1)
+                s_max = int(e) - min_len + 1
+                if s_max < s_min:
+                    continue
+                for s in range(s_min, s_max + 1):
+                    key = (int(demo_idx), int(stage_idx), int(s), int(e))
+                    if key not in self._segment_stage_cache:
+                        items.append(key)
+        return items
+
+    def _prepare_segment_stage_cache(self):
+        demo_items = [self._segment_stage_cache_work_items_for_demo(demo_idx) for demo_idx in range(len(self.demos))]
+        total_items = int(sum(len(items) for items in demo_items))
+        if total_items <= 0:
+            return
+        if self.verbose:
+            print(f"[SCDP] preparing DP local segment costs: {total_items} segments...")
+        start_time = time.time()
+        overall_done = 0
+        for demo_idx, items in enumerate(demo_items):
+            demo_total = len(items)
+            if demo_total <= 0:
+                continue
+            report_every = max(1, demo_total // 10)
+            for local_idx, (_, stage_idx, s, e) in enumerate(items):
+                self._fit_segment_stage(demo_idx, stage_idx, s, e)
+                overall_done += 1
+                if self.verbose and (
+                    local_idx == 0
+                    or local_idx + 1 == demo_total
+                    or (local_idx + 1) % report_every == 0
+                ):
+                    elapsed = time.time() - start_time
+                    print(
+                        f"[SCDP] DP prep demo {demo_idx + 1}/{len(self.demos)}: "
+                        f"{local_idx + 1}/{demo_total} local segments | "
+                        f"overall {overall_done}/{total_items} ({elapsed:.1f}s elapsed)"
+                    )
+        if self.verbose:
+            elapsed = time.time() - start_time
+            print(f"[SCDP] DP local segment costs ready ({elapsed:.1f}s)")
+
     def _broadcast_stage_value(self, value, default, dtype=float):
         if value is None:
             return [default for _ in range(self.num_states)]
@@ -399,6 +512,8 @@ class SegmentConsensusDPModel:
 
     def _make_model_from_kind(self, kind):
         kind = str(kind).lower()
+        if self._kind_is_auto(kind) or kind == "unconstrained":
+            return StudentTModel(mu=0.0, sigma=1.0)
         if kind in {"gauss", "gaussian"}:
             return GaussianModel(mu=0.0, sigma=1.0)
         if kind in {"student_t", "studentt", "t"}:
@@ -418,6 +533,8 @@ class SegmentConsensusDPModel:
     def _fit_local_model(self, kind, xs):
         xs = np.asarray(xs, dtype=float).reshape(-1)
         kind = str(kind).lower()
+        if self._kind_is_auto(kind) or kind == "unconstrained":
+            kind = "student_t"
         if kind in {"gauss", "gaussian"}:
             mu = float(np.mean(xs))
             sigma = float(max(np.std(xs), 1e-6))
@@ -458,6 +575,69 @@ class SegmentConsensusDPModel:
         model.m_step_update([xs])
         model._update_interval()
         return model
+
+    def _fit_auto_constraint_feature(self, feat_idx: int, values, F_demo, segment_median: float):
+        values = np.asarray(values, dtype=float).reshape(-1)
+        F_demo = np.asarray(F_demo, dtype=float).reshape(-1)
+        candidate_kinds = ["student_t", "margin_exp_lower", "margin_exp_upper"]
+        candidate_records = []
+        for kind in candidate_kinds:
+            model = self._fit_local_model(kind, values)
+            summary = dict(model.get_summary())
+            summary["segment_median"] = float(segment_median)
+            kind_l = str(kind).lower()
+            if self._kind_is_equality(kind_l) and self.equality_score_mode == "dispersion":
+                score = float(_mean_abs_centered_dispersion(values))
+                threshold = float(self._equality_score_threshold())
+                weight = float(self.lambda_eq_constraint)
+            elif self._kind_is_equality(kind_l) and self.equality_score_mode == "gaussian_ll_gain":
+                local_gaussian = GaussianModel(
+                    mu=float(np.mean(values)),
+                    sigma=float(max(np.std(values), 1e-6)),
+                )
+                global_gaussian = GaussianModel(
+                    mu=float(np.mean(F_demo)),
+                    sigma=float(max(np.std(F_demo), 1e-6)),
+                )
+                local_loss = -np.asarray(local_gaussian.logpdf(values), dtype=float)
+                global_loss = -np.asarray(global_gaussian.logpdf(values), dtype=float)
+                score = float(np.mean(local_loss) - np.mean(global_loss))
+                threshold = float(self._equality_score_threshold())
+                weight = float(self.lambda_eq_constraint)
+            else:
+                baseline_model = self._fit_student_t_baseline(values)
+                fitted_loss = -np.asarray(model.logpdf(values), dtype=float)
+                baseline_loss = -np.asarray(baseline_model.logpdf(values), dtype=float)
+                score = float(np.mean(fitted_loss) - np.mean(baseline_loss))
+                threshold = float(self.inequality_score_activation_threshold)
+                weight = float(self.lambda_ineq_constraint)
+            margin = float(threshold - score)
+            candidate_records.append(
+                {
+                    "kind": kind_l,
+                    "summary": summary,
+                    "score": float(score),
+                    "threshold": float(threshold),
+                    "margin": float(margin),
+                    "weighted_margin": float(weight * margin),
+                }
+            )
+
+        best_record = max(candidate_records, key=lambda item: float(item["weighted_margin"]))
+        positive_records = [item for item in candidate_records if float(item["margin"]) > 0.0]
+        chosen_record = max(positive_records, key=lambda item: float(item["weighted_margin"])) if positive_records else best_record
+        active = int(bool(positive_records) and float(chosen_record["weighted_margin"]) > 0.0)
+        chosen_kind = str(chosen_record["kind"]) if active else "unconstrained"
+        best_weighted_margin = float(chosen_record["weighted_margin"])
+        score = -best_weighted_margin
+        constraint_cost = float(len(values) * min(-best_weighted_margin, 0.0))
+        return {
+            "summary": dict(chosen_record["summary"]),
+            "selected_kind": chosen_kind,
+            "score": float(score),
+            "active": int(active),
+            "constraint_cost": float(constraint_cost),
+        }
 
     def _segment_bounds_from_stage_ends(self, stage_ends):
         bounds = []
@@ -525,6 +705,7 @@ class SegmentConsensusDPModel:
         F = self.standardized_features[demo_idx][core_s : core_e + 1]
         F_demo = self.standardized_features[demo_idx]
         summaries = []
+        selected_feature_kinds = []
         active_mask = np.zeros(self.num_features, dtype=int)
         feature_scores = np.zeros(self.num_features, dtype=float)
         feature_constraint_costs = np.zeros(self.num_features, dtype=float)
@@ -532,6 +713,14 @@ class SegmentConsensusDPModel:
         for feat_idx, kind in enumerate(self.feature_model_types):
             values = F[:, feat_idx]
             segment_median = float(np.median(values))
+            if self._is_auto_constraint_feature(feat_idx):
+                auto_info = self._fit_auto_constraint_feature(feat_idx, values, F_demo[:, feat_idx], segment_median)
+                summaries.append(dict(auto_info["summary"]))
+                selected_feature_kinds.append(str(auto_info["selected_kind"]))
+                feature_scores[feat_idx] = float(auto_info["score"])
+                active_mask[feat_idx] = int(auto_info["active"])
+                feature_constraint_costs[feat_idx] = float(auto_info["constraint_cost"])
+                continue
             is_equality_feature = self._is_equality_feature(feat_idx)
             if self.use_score_mode and is_equality_feature and self.equality_score_mode == "dispersion":
                 kind_l = str(kind).lower()
@@ -554,6 +743,7 @@ class SegmentConsensusDPModel:
                 summary = dict(model.get_summary())
                 summary["segment_median"] = segment_median
                 summaries.append(summary)
+                selected_feature_kinds.append(str(kind_l))
                 score = float(_mean_abs_centered_dispersion(values))
                 feature_scores[feat_idx] = score
                 active_mask[feat_idx] = self._feature_active_from_score(feat_idx, score)
@@ -562,12 +752,13 @@ class SegmentConsensusDPModel:
                 continue
 
             model = self._fit_local_model(kind, values)
+            kind_l = str(kind).lower()
             summary = dict(model.get_summary())
             summary["segment_median"] = segment_median
             summaries.append(summary)
+            selected_feature_kinds.append(str(kind_l))
             fitted_loss = -np.asarray(model.logpdf(values), dtype=float)
             fitted_step = float(np.mean(fitted_loss))
-            kind_l = str(kind).lower()
             if self.use_score_mode:
                 if is_equality_feature and self.equality_score_mode == "gaussian_ll_gain":
                     local_gaussian = GaussianModel(
@@ -646,6 +837,7 @@ class SegmentConsensusDPModel:
                 active_mask=active_mask,
                 feature_scores=feature_scores,
                 feature_constraint_costs=feature_constraint_costs,
+                selected_feature_kinds=selected_feature_kinds,
             ),
             constraint_cost,
             progress_cost,
@@ -654,8 +846,7 @@ class SegmentConsensusDPModel:
         return result
 
     def _is_equality_feature(self, feat_idx: int) -> bool:
-        kind_l = str(self.feature_model_types[feat_idx]).lower()
-        return kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
+        return self._kind_is_equality(self.feature_model_types[feat_idx])
 
     def _equality_score_threshold(self) -> float:
         return float(self.equality_dispersion_ratio_threshold)
@@ -668,7 +859,7 @@ class SegmentConsensusDPModel:
     def _build_score_threshold_matrix(self) -> np.ndarray:
         thresholds = np.zeros((self.num_states, self.num_features), dtype=float)
         for feat_idx in range(self.num_features):
-            thr = self._equality_score_threshold() if self._is_equality_feature(feat_idx) else self.inequality_score_activation_threshold
+            thr = self._score_threshold_for_kind(self.feature_model_types[feat_idx])
             thresholds[:, feat_idx] = float(thr)
         return thresholds
 
@@ -682,7 +873,7 @@ class SegmentConsensusDPModel:
         return (scores_arr < self.score_threshold_matrix).astype(float)
 
     def _feature_active_from_score(self, feat_idx: int, score: float) -> int:
-        threshold = self._equality_score_threshold() if self._is_equality_feature(feat_idx) else self.inequality_score_activation_threshold
+        threshold = self._score_threshold_for_kind(self.feature_model_types[feat_idx])
         return int(float(score) < float(threshold))
 
     def _compute_posthoc_activation_summary(self):
@@ -711,7 +902,7 @@ class SegmentConsensusDPModel:
                     {
                         "feature_idx": int(feat_idx),
                         "feature_name": feature_names[feat_idx],
-                        "score_type": self._equality_score_type() if self._is_equality_feature(feat_idx) else "-ll_gain",
+                        "score_type": "auto_margin" if self._is_auto_constraint_feature(feat_idx) else (self._equality_score_type() if self._is_equality_feature(feat_idx) else "-ll_gain"),
                         "threshold": float(thresholds[stage_idx, feat_idx]),
                         "activation_rate": float(activation_rate[stage_idx, feat_idx]),
                         "mean_score": float(np.mean(scores[:, stage_idx, feat_idx])),
@@ -853,7 +1044,9 @@ class SegmentConsensusDPModel:
     ):
         total = 0.0
         for stage_idx in range(self.num_states):
-            for feat_idx, kind in enumerate(self.feature_model_types):
+            for feat_idx, _ in enumerate(self.feature_model_types):
+                if self._is_auto_constraint_feature(feat_idx):
+                    continue
                 shared_active = None
                 if shared_feature_score_mean is not None:
                     shared_active = int(np.rint(float(shared_feature_score_mean[stage_idx, feat_idx])))
@@ -864,6 +1057,7 @@ class SegmentConsensusDPModel:
                 active_mask = candidate_stage_params[stage_idx].active_mask
                 if active_mask is None or not int(active_mask[feat_idx]):
                     continue
+                kind = self._stage_feature_kind(candidate_stage_params[stage_idx], feat_idx)
                 local_vec = self._summary_to_vector(kind, candidate_stage_params[stage_idx].model_summaries[feat_idx])
                 shared_vec = shared_param_vectors[stage_idx][feat_idx]
                 if shared_vec is None:
@@ -938,7 +1132,9 @@ class SegmentConsensusDPModel:
             subgoal_consensus_cost = float(np.dot(diff, diff))
         param_consensus_cost = 0.0
         if lam_param_consensus > 0.0:
-            for feat_idx, kind in enumerate(self.feature_model_types):
+            for feat_idx, _ in enumerate(self.feature_model_types):
+                if self._is_auto_constraint_feature(feat_idx):
+                    continue
                 active_mask = stage_params.active_mask
                 if active_mask is None or not int(active_mask[feat_idx]):
                     continue
@@ -952,6 +1148,7 @@ class SegmentConsensusDPModel:
                 shared_vec = shared_param_vectors[stage_idx][feat_idx]
                 if shared_vec is None:
                     continue
+                kind = self._stage_feature_kind(stage_params, feat_idx)
                 local_vec = self._summary_to_vector(kind, stage_params.model_summaries[feat_idx])
                 dims = self._param_consensus_dims(kind)
                 if dims is not None:
@@ -1322,24 +1519,44 @@ class SegmentConsensusDPModel:
             shared_activation_mask = self._majority_activation_mask_from_infos(selected_infos)
         shared_activation_mask = np.asarray(shared_activation_mask, dtype=float)
         shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
+        shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
         for stage_idx in range(self.num_states):
-            for feat_idx, kind in enumerate(self.feature_model_types):
+            for feat_idx, _ in enumerate(self.feature_model_types):
                 if int(np.rint(float(shared_activation_mask[stage_idx, feat_idx]))) != 1:
                     continue
-                vectors = [
-                    self._summary_to_vector(kind, info["stage_params"][stage_idx].model_summaries[feat_idx])
+                active_stage_params = [
+                    info["stage_params"][stage_idx]
                     for info in selected_infos
                     if info["stage_params"][stage_idx].active_mask is not None
                     and int(info["stage_params"][stage_idx].active_mask[feat_idx]) == 1
                 ]
+                if not active_stage_params:
+                    continue
+                if self._is_auto_constraint_feature(feat_idx):
+                    kind_counts = {}
+                    for stage_params in active_stage_params:
+                        kind = self._stage_feature_kind(stage_params, feat_idx)
+                        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+                    chosen_kind = sorted(kind_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+                else:
+                    chosen_kind = str(self.feature_model_types[feat_idx]).lower()
+                vectors = [
+                    self._summary_to_vector(chosen_kind, stage_params.model_summaries[feat_idx])
+                    for stage_params in active_stage_params
+                    if self._stage_feature_kind(stage_params, feat_idx) == chosen_kind
+                ]
                 if not vectors:
                     continue
+                shared_param_kinds[stage_idx][feat_idx] = str(chosen_kind)
                 shared_param_vectors[stage_idx][feat_idx] = np.median(np.stack(vectors, axis=0), axis=0)
-        return shared_stage_subgoals, shared_param_vectors
+        return shared_stage_subgoals, shared_param_vectors, shared_param_kinds
 
-    def _apply_shared_state(self, shared_stage_subgoals, shared_param_vectors):
+    def _apply_shared_state(self, shared_stage_subgoals, shared_param_vectors, shared_param_kinds=None):
         self.shared_stage_subgoals = [np.asarray(x, dtype=float).copy() for x in shared_stage_subgoals]
         self.shared_param_vectors = [[None if v is None else np.asarray(v, dtype=float).copy() for v in row] for row in shared_param_vectors]
+        if shared_param_kinds is None:
+            shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
+        self.shared_param_kinds = [[None if k is None else str(k) for k in row] for row in shared_param_kinds]
         self.stage_subgoals = [np.asarray(x, dtype=float).copy() for x in shared_stage_subgoals]
         self.stage_subgoals_hist.append([x.copy() for x in self.stage_subgoals])
         if self.num_states >= 1:
@@ -1349,9 +1566,12 @@ class SegmentConsensusDPModel:
             self.g2 = self.stage_subgoals[1].copy()
             self.g2_hist.append(self.g2.copy())
         for stage_idx in range(self.num_states):
-            for feat_idx, kind in enumerate(self.feature_model_types):
+            for feat_idx, base_kind in enumerate(self.feature_model_types):
                 vec = shared_param_vectors[stage_idx][feat_idx]
                 if vec is None:
+                    continue
+                kind = shared_param_kinds[stage_idx][feat_idx] or str(base_kind).lower()
+                if self._kind_is_auto(kind) or kind == "unconstrained":
                     continue
                 self.feature_models[stage_idx][feat_idx] = self._vector_to_model(kind, vec)
 
@@ -1376,7 +1596,9 @@ class SegmentConsensusDPModel:
         self.g2_hist = []
         shared_stage_subgoals = [np.zeros(self.state_dim, dtype=float) for _ in range(self.num_states)]
         shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
+        shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_states)]
         shared_activation_mask = None
+        self._prepare_segment_stage_cache()
 
         for iteration in range(int(max_iter)):
             lam_subgoal_consensus = self._current_scheduled_lambda(self.lambda_subgoal_consensus, iteration, int(max_iter))
@@ -1464,11 +1686,11 @@ class SegmentConsensusDPModel:
             self.activation_rate_history.append(np.asarray(self._compute_current_activation_rate_matrix(), dtype=float))
             self.segmentation_history.append([list(item) for item in self.stage_ends_])
             shared_activation_mask_for_update = self.shared_feature_score_mean if self.use_score_mode else self.shared_r_mean
-            shared_stage_subgoals, shared_param_vectors = self._shared_from_selected(
+            shared_stage_subgoals, shared_param_vectors, shared_param_kinds = self._shared_from_selected(
                 selected_infos,
                 shared_activation_mask=shared_activation_mask_for_update,
             )
-            self._apply_shared_state(shared_stage_subgoals, shared_param_vectors)
+            self._apply_shared_state(shared_stage_subgoals, shared_param_vectors, shared_param_kinds)
 
             total_constraint = float(np.sum([info["constraint"] for info in selected_infos]))
             total_short_segment_penalty = float(np.sum([info.get("short_segment_penalty", 0.0) for info in selected_infos]))
@@ -1611,11 +1833,11 @@ class SegmentConsensusDPModel:
             else:
                 self.activation_rate_history.append(np.asarray(self._compute_current_activation_rate_matrix(), dtype=float))
             shared_activation_mask_for_update = self.shared_feature_score_mean if self.use_score_mode else self.shared_r_mean
-            final_shared_stage_subgoals, final_shared_param_vectors = self._shared_from_selected(
+            final_shared_stage_subgoals, final_shared_param_vectors, final_shared_param_kinds = self._shared_from_selected(
                 final_selected_infos,
                 shared_activation_mask=shared_activation_mask_for_update,
             )
-            self._apply_shared_state(final_shared_stage_subgoals, final_shared_param_vectors)
+            self._apply_shared_state(final_shared_stage_subgoals, final_shared_param_vectors, final_shared_param_kinds)
 
             final_total_constraint = float(np.sum([info["constraint"] for info in final_selected_infos]))
             final_total_short_segment_penalty = float(np.sum([info.get("short_segment_penalty", 0.0) for info in final_selected_infos]))

@@ -62,6 +62,7 @@ class JointSCDPMethod:
             fixed_true_cutpoint_indices=self.kwargs.get("fixed_true_cutpoint_indices"),
             plot_every=self.kwargs.get("plot_every"),
             plot_dir=self.kwargs.get("plot_dir", "outputs/plots"),
+            verbose=self.kwargs.get("verbose", True),
         )
         gammas = learner.fit(
             max_iter=self.kwargs.get("max_iter", 30),

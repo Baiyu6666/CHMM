@@ -7,7 +7,10 @@ from .obs_avoid_3d import ObsAvoidEnv3D, load_3d_obs_avoid
 from .press_slide_insert_2d import PressSlideInsertEnv2D, load_2d_press_slide_insert
 from .registry import ENV_REGISTRY, load_env
 from .sine_corridor_3d import SineCorridorEnv3D, load_3d_sine_corridor
-from .sphere_inspect_3d import SphereInspectEnv3D, load_3d_sphere_inspect_4, load_3d_sphere_inspect_5
+from .sphere_inspect_3d import (
+    SphereInspectEnv3D,
+    load_3d_sphere_inspect,
+)
 
 __all__ = [
     "ENV_REGISTRY",
@@ -25,8 +28,7 @@ __all__ = [
     "load_2d_obs_avoid",
     "load_2d_obs_avoid_arc3",
     "load_3d_obs_avoid",
-    "load_3d_sphere_inspect_4",
-    "load_3d_sphere_inspect_5",
+    "load_3d_sphere_inspect",
     "load_3d_sine_corridor",
     "load_env",
     "load_2d_press_slide_insert",

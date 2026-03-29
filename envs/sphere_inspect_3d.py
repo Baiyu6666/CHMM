@@ -8,12 +8,7 @@ from planner import optimize_trajectory, resample_polyline
 
 class SphereInspectEnv3D:
     """
-    Four-stage 3D spherical surface inspection task.
-
-    Stage 1: approach the sphere with bounded speed.
-    Stage 2: trace on the sphere surface with aligned tool normal.
-    Stage 3: reposition near the sphere surface within a shell.
-    Stage 4: depart from the sphere with bounded speed.
+    3D spherical surface inspection task.
     """
 
     def __init__(
@@ -41,7 +36,12 @@ class SphereInspectEnv3D:
         surface_near_target_ratio=0.5,
         split_stage3_transition=False,
         transition_stage_fraction=1.0 / 3.0,
-        eval_tag="3DSphereInspect4",
+        stage2_trace_angle_range=(0.55, 1.05),
+        stage2_surface_detour_angle=0.0,
+        stage2_length_scale_range=(1.0, 1.0),
+        stage4_length_scale_range=(1.0, 1.0),
+        feature_boundary_ramp_half_windows=None,
+        eval_tag="3DSphereInspect",
     ):
         self.sphere_center = np.asarray(sphere_center, dtype=float)
         self.sphere_radius = float(sphere_radius)
@@ -66,6 +66,14 @@ class SphereInspectEnv3D:
         self.surface_near_target_ratio = float(surface_near_target_ratio)
         self.split_stage3_transition = bool(split_stage3_transition)
         self.transition_stage_fraction = float(transition_stage_fraction)
+        angle_lo, angle_hi = stage2_trace_angle_range
+        self.stage2_trace_angle_range = (float(angle_lo), float(angle_hi))
+        self.stage2_surface_detour_angle = float(stage2_surface_detour_angle)
+        stage2_scale_lo, stage2_scale_hi = stage2_length_scale_range
+        stage4_scale_lo, stage4_scale_hi = stage4_length_scale_range
+        self.stage2_length_scale_range = (float(stage2_scale_lo), float(stage2_scale_hi))
+        self.stage4_length_scale_range = (float(stage4_scale_lo), float(stage4_scale_hi))
+        self.feature_boundary_ramp_half_windows = feature_boundary_ramp_half_windows
         self.eval_tag = str(eval_tag)
 
         self.feature_schema = self.get_feature_schema()
@@ -255,6 +263,48 @@ class SphereInspectEnv3D:
             return None
         return np.asarray(features, dtype=float)
 
+    def _resolve_feature_boundary_ramp_half_windows(self, num_boundaries: int) -> np.ndarray:
+        num_boundaries = max(int(num_boundaries), 0)
+        feature_names = [
+            "surface_distance",
+            "tool_normal_alignment_error",
+            "speed",
+            "angular_speed",
+        ]
+        defaults = {
+            "surface_distance": [2] * num_boundaries,
+            "tool_normal_alignment_error": [0] * num_boundaries,
+            "speed": ([1] + [2] * max(num_boundaries - 1, 0))[:num_boundaries],
+            "angular_speed": [0] * num_boundaries,
+        }
+        cfg = self.feature_boundary_ramp_half_windows
+        resolved = np.asarray(
+            [np.asarray(defaults[name], dtype=int) for name in feature_names],
+            dtype=int,
+        )
+        if cfg is None:
+            return resolved
+        if not isinstance(cfg, dict):
+            raise ValueError("feature_boundary_ramp_half_windows must be a dict keyed by feature name.")
+        for feat_idx, feature_name in enumerate(feature_names):
+            value = cfg.get(feature_name, defaults[feature_name])
+            if np.isscalar(value):
+                resolved[feat_idx, :] = int(max(int(value), 0))
+                continue
+            arr = np.asarray(value, dtype=int).reshape(-1)
+            if arr.size == 0:
+                resolved[feat_idx, :] = 0
+                continue
+            if arr.size == 1:
+                resolved[feat_idx, :] = int(max(int(arr[0]), 0))
+                continue
+            if arr.size != num_boundaries:
+                raise ValueError(
+                    f"feature_boundary_ramp_half_windows['{feature_name}'] must have length 1 or {num_boundaries}, got {arr.size}."
+                )
+            resolved[feat_idx, :] = np.maximum(arr.astype(int), 0)
+        return resolved
+
     def get_feature_schema(self):
         return [
             {"id": 0, "name": "surface_distance", "description": "Absolute radial distance to the sphere surface"},
@@ -333,6 +383,22 @@ class SphereInspectEnv3D:
 
     def _make_surface_path(self, n_start, n_end, num_points):
         normals = self._slerp_unit(n_start, n_end, num_points, endpoint=True)
+        detour_angle = float(max(self.stage2_surface_detour_angle, 0.0))
+        if detour_angle > 1e-8 and len(normals) > 2:
+            axis = np.cross(self._unit(n_start), self._unit(n_end))
+            if float(np.linalg.norm(axis)) <= 1e-8:
+                _, _, detour_dir = self._orthonormal_frame(n_start, np.random.RandomState(0))
+            else:
+                axis = self._unit(axis)
+                detour_dir = np.cross(axis, normals)
+                detour_dir = detour_dir / np.maximum(np.linalg.norm(detour_dir, axis=1, keepdims=True), 1e-12)
+            u = np.linspace(0.0, 1.0, len(normals), endpoint=True)
+            bend = detour_angle * np.sin(np.pi * u)
+            normals = (
+                np.cos(bend)[:, None] * normals
+                + np.sin(bend)[:, None] * detour_dir
+            )
+            normals = normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
         return self.sphere_center[None, :] + self.sphere_radius * normals
 
     def _resample_with_speed(self, path, v_max, a_max):
@@ -344,6 +410,17 @@ class SphereInspectEnv3D:
             a_max=float(a_max),
             projector=None,
         )
+
+    @staticmethod
+    def _sample_range_value(rng, value_range):
+        arr = np.asarray(value_range, dtype=float).reshape(-1)
+        if arr.size == 0:
+            return 1.0
+        if arr.size == 1:
+            return float(arr[0])
+        lo = float(np.min(arr[:2]))
+        hi = float(np.max(arr[:2]))
+        return float(rng.uniform(lo, hi))
 
     @staticmethod
     def _split_polyline_by_fraction(path, fraction: float):
@@ -584,7 +661,7 @@ class SphereInspectEnv3D:
         )
         normal0, t1, t2 = self._orthonormal_frame(n_contact, rng)
 
-        trace_angle = float(rng.uniform(0.55, 1.05))
+        trace_angle = float(rng.uniform(self.stage2_trace_angle_range[0], self.stage2_trace_angle_range[1]))
         n_trace_end = self._unit(np.cos(trace_angle) * normal0 + np.sin(trace_angle) * t1)
 
         repos_angle = float(rng.uniform(0.65, 1.10))
@@ -601,8 +678,14 @@ class SphereInspectEnv3D:
         )
 
         stage1 = self._build_stage1(p_start, p_contact, l1, v_max=self.stage1_speed_max, a_max=self.stage1_accel_max)
+        stage2_length_scale = max(self._sample_range_value(rng, self.stage2_length_scale_range), 1e-3)
+        stage4_length_scale = max(self._sample_range_value(rng, self.stage4_length_scale_range), 1e-3)
         stage2_raw = self._make_surface_path(n_contact, n_trace_end, l2)
-        stage2 = self._resample_with_speed(stage2_raw, v_max=self.stage2_speed_max, a_max=self.stage2_accel_max)
+        stage2 = self._resample_with_speed(
+            stage2_raw,
+            v_max=self.stage2_speed_max / stage2_length_scale,
+            a_max=self.stage2_accel_max / stage2_length_scale,
+        )
         stage3_raw_full = self._build_stage3(n_trace_end, n_repos_end, l3, rng=rng)
         if self.split_stage3_transition:
             stage3_raw, stage4_raw = self._split_polyline_by_fraction(
@@ -610,7 +693,11 @@ class SphereInspectEnv3D:
                 fraction=self.transition_stage_fraction,
             )
             stage3 = self._resample_with_speed(stage3_raw, v_max=self.stage2_speed_max, a_max=self.stage3_accel_max)
-            stage4 = self._resample_with_speed(stage4_raw, v_max=self.stage2_speed_max, a_max=self.stage3_accel_max)
+            stage4 = self._resample_with_speed(
+                stage4_raw,
+                v_max=self.stage2_speed_max / stage4_length_scale,
+                a_max=self.stage3_accel_max / stage4_length_scale,
+            )
             stage5_ctrl = self._build_stage4(stage4[-1], n_repos_end, rng=rng)
             stage5 = self._resample_with_speed(stage5_ctrl, v_max=self.stage4_speed_max, a_max=self.stage4_accel_max)
             traj = np.vstack([stage1, stage2[1:], stage3[1:], stage4[1:], stage5[1:]])
@@ -864,7 +951,7 @@ class SphereInspectEnv3D:
         )
 
         boundaries = np.cumsum(lengths[:-1]) - 1
-        feature_matrix = np.stack(
+        feature_matrix_raw = np.stack(
             [
                 surface_distance,
                 tool_alignment_error,
@@ -873,22 +960,20 @@ class SphereInspectEnv3D:
             ],
             axis=1,
         )
-        feature_matrix_raw = np.asarray(feature_matrix, dtype=float).copy()
-        for boundary in boundaries.tolist():
-            feature_matrix = self._blend_segment_boundary(feature_matrix, boundary=int(boundary), half_window=2)
-
-        feature_matrix[:, 1] = feature_matrix_raw[:, 1]
-        feature_matrix[:, 3] = feature_matrix_raw[:, 3]
-
-        # Keep the stage1->stage2 speed drop sharper than the other feature transitions.
-        speed_trace = np.asarray(feature_matrix_raw[:, 2], dtype=float).copy()
-        for boundary_idx, boundary in enumerate(boundaries.tolist()):
-            speed_trace = self._blend_segment_boundary(
-                speed_trace,
-                boundary=int(boundary),
-                half_window=1 if boundary_idx == 0 else 2,
-            )
-        feature_matrix[:, 2] = speed_trace
+        feature_matrix = np.asarray(feature_matrix_raw, dtype=float).copy()
+        ramp_windows = self._resolve_feature_boundary_ramp_half_windows(len(boundaries))
+        for feat_idx in range(feature_matrix.shape[1]):
+            trace = np.asarray(feature_matrix_raw[:, feat_idx], dtype=float).copy()
+            for boundary_idx, boundary in enumerate(boundaries.tolist()):
+                half_window = int(ramp_windows[feat_idx, boundary_idx])
+                if half_window <= 0:
+                    continue
+                trace = self._blend_segment_boundary(
+                    trace,
+                    boundary=int(boundary),
+                    half_window=half_window,
+                )
+            feature_matrix[:, feat_idx] = trace
 
         for stage_idx, (s, e, vmax) in enumerate(zip(starts, ends, speed_maxima)):
             if len(lengths) == 5:
@@ -934,20 +1019,24 @@ class SphereInspectEnv3D:
         return F[:, 0], F[:, 2]
 
 
-def load_3d_sphere_inspect_4(
-    n_demos: int = 10,
-    seed: int = 0,
+def _build_sphere_inspect_bundle(
+    *,
+    task_name: str,
+    n_demos: int,
+    seed: int,
     env_kwargs=None,
     demo_kwargs=None,
+    **extra_env_kwargs,
 ) -> TaskBundle:
     env_cfg = dict(env_kwargs or {})
+    env_cfg.update(extra_env_kwargs)
     run_kwargs = dict(demo_kwargs or {})
     rng = np.random.RandomState(seed)
     env = SphereInspectEnv3D(**env_cfg)
     demos, true_cutpoints = env.generate_demos(n_demos=n_demos, rng=rng, **run_kwargs)
     true_taus = [None for _ in demos]
     return TaskBundle(
-        name="3DSphereInspect4",
+        name=task_name,
         demos=demos,
         env=env,
         true_taus=true_taus,
@@ -955,36 +1044,44 @@ def load_3d_sphere_inspect_4(
         feature_schema=env.get_feature_schema(),
         true_constraints=dict(env.true_constraints),
         constraint_specs=env.get_constraint_specs(),
-        meta={"seed": seed, "task_name": "3DSphereInspect4"},
+        meta={"seed": seed, "task_name": task_name},
     )
 
 
-def load_3d_sphere_inspect_5(
+def load_3d_sphere_inspect(
     n_demos: int = 10,
     seed: int = 0,
     env_kwargs=None,
     demo_kwargs=None,
+    **extra_env_kwargs,
 ) -> TaskBundle:
     env_cfg = dict(env_kwargs or {})
+    env_cfg.update(extra_env_kwargs)
     env_cfg.setdefault("seg_lengths", (18, 34, 33, 18))
     env_cfg.setdefault("seg_length_jitter", (3, 5, 5, 3))
     env_cfg.setdefault("surface_near_target_ratio", 0.62)
     env_cfg.setdefault("split_stage3_transition", True)
     env_cfg.setdefault("transition_stage_fraction", 0.40)
-    env_cfg.setdefault("eval_tag", "3DSphereInspect5")
-    run_kwargs = dict(demo_kwargs or {})
-    rng = np.random.RandomState(seed)
-    env = SphereInspectEnv3D(**env_cfg)
-    demos, true_cutpoints = env.generate_demos(n_demos=n_demos, rng=rng, **run_kwargs)
-    true_taus = [None for _ in demos]
-    return TaskBundle(
-        name="3DSphereInspect5",
-        demos=demos,
-        env=env,
-        true_taus=true_taus,
-        true_cutpoints=true_cutpoints,
-        feature_schema=env.get_feature_schema(),
-        true_constraints=dict(env.true_constraints),
-        constraint_specs=env.get_constraint_specs(),
-        meta={"seed": seed, "task_name": "3DSphereInspect5"},
+    env_cfg.setdefault("stage2_speed_max", 0.047)
+    env_cfg.setdefault("stage3_speed_max", 0.047)
+    env_cfg.setdefault("stage2_trace_angle_range", (2.85, 3.12))
+    env_cfg.setdefault("stage2_surface_detour_angle", 0.42)
+    env_cfg.setdefault("stage2_length_scale_range", (0.4, 0.8))
+    env_cfg.setdefault("stage4_length_scale_range", (0.5, 1.0))
+    env_cfg.setdefault(
+        "feature_boundary_ramp_half_windows",
+        {
+            "surface_distance": [3, 2, 1, 5],
+            "tool_normal_alignment_error": [1, 3, 2, 1],
+            "speed": [1, 2, 2, 1],
+            "angular_speed": [1, 2, 2, 1],
+        },
+    )
+    env_cfg.setdefault("eval_tag", "3DSphereInspect")
+    return _build_sphere_inspect_bundle(
+        task_name="3DSphereInspect",
+        n_demos=n_demos,
+        seed=seed,
+        env_kwargs=env_cfg,
+        demo_kwargs=demo_kwargs,
     )

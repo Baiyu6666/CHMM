@@ -28,8 +28,9 @@ from visualization.io import save_figure
 from visualization.plot4panel import plot_demos_goals_snapshot
 
 
-DATASET_NAME = "2DPressSlideInsert"# "2DObsAvoidArc3"
+# DATASET_NAME = "2DPressSlideInsert"# "2DObsAvoidArc3"
 # DATASET_NAME = "2DObsAvoidArc3"
+DATASET_NAME = "3DSphereInspect"
 RANDOM_TAU_RUNS = 6
 RANDOM_STAGE_END_RUNS = 12
 MODELS = ["cghmm"]

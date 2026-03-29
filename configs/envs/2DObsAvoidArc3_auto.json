@@ -1,25 +1,23 @@
 {
   "name": "2DObsAvoidArc3",
-  "n_demos": 5,
-  "seed": 19,
+  "n_demos": 10,
+  "seed": 12549,
   "method_overrides": {
     "scdp": {
       "n_states": 3,
       "selected_raw_feature_ids": ["dist_main_obstacle", "speed", "terminal_arc_distance"],
       "feature_model_types": {
-        "dist_main_obstacle": "margin_exp_lower",
-        "speed": "student_t",
-        "terminal_arc_distance": "student_t"
-                            },
-      "feature_activation_mode": "joint_mask_search",
-      "max_iter": 1,
+        "dist_main_obstacle": "auto_constraint",
+        "speed": "auto_constraint",
+        "terminal_arc_distance": "auto_constraint"
+      },
+      "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]],
+      "max_iter": 10,
       "backup_lambda_subgoal_consensus": 0.6,
       "lambda_subgoal_consensus": 0,
-      "lambda_activation_consensus": 0.3,
-        "lambda_param_consensus": 0,
-      "inequality_score_activation_threshold": -0.5,
-      "equality_dispersion_ratio_threshold": 0.075,
-      "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 1, 1]]
+      "lambda_activation_consensus": 0.75,
+      "lambda_param_consensus": 0.2,
+      "inequality_score_activation_threshold": -0.4
     },
     "cghmm": {
       "segmenter": {

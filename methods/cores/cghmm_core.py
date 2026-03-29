@@ -100,6 +100,7 @@ class CGHMM:
             )
         self.stage_ends_ = self._initial_stage_ends(tau_init=tau_init)
         self.initial_stage_ends_ = [list(map(int, ends)) for ends in self.stage_ends_]
+        self.segmentation_history_ = [[list(map(int, ends)) for ends in self.stage_ends_]]
 
         self.sigma_irrel = float(fixed_sigma_irrelevant)
         self.feat_weight = float(feat_weight)
@@ -818,6 +819,7 @@ class CGHMM:
                     ends = prev_ends
                 new_stage_ends.append([int(x) for x in ends])
             self.stage_ends_ = new_stage_ends
+            self.segmentation_history_.append([list(map(int, ends)) for ends in self.stage_ends_])
             points_per_stage = [[] for _ in range(self.num_states)]
             for X, stage_ends in zip(self.demos, self.stage_ends_):
                 for stage_idx, end in enumerate(stage_ends):
