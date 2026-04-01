@@ -1,0 +1,49 @@
+{
+  "dataset_name": "S4SlideInsert",
+  "method_name": "swcl",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 12342
+  },
+  "method_kwargs": {
+    "max_iter": 5,
+    "verbose": true,
+    "n_stages": 4,
+    "seed": 0,
+    "selected_raw_feature_ids": [
+      "surface_distance",
+      "force",
+      "orientation_error",
+      "speed"
+    ],
+    "feature_model_types": {
+      "surface_distance": "student_t",
+      "force": "margin_exp_lower",
+      "orientation_error": "margin_exp_upper",
+      "speed": "student_t",
+      "noise_aux": "student_t"
+    },
+    "fixed_feature_mask": null,
+    "lambda_eq_constraint": 1,
+    "lambda_ineq_constraint": 0.02,
+    "lambda_progress": 0.5,
+    "lambda_subgoal_consensus": 0,
+    "lambda_param_consensus": 0.0,
+    "lambda_activation_consensus": 1,
+    "consensus_schedule": "linear",
+    "progress_delta_scale": 20.0,
+    "duration_min": 3,
+    "duration_max": null,
+    "feature_activation_mode": "score",
+    "equality_score_mode": "dispersion",
+    "equality_dispersion_ratio_threshold": 0.075,
+    "constraint_core_trim": 0,
+    "short_segment_penalty_c": 2,
+    "inequality_score_activation_threshold": -0.5,
+    "fixed_true_cutpoint_prefix": 0,
+    "fixed_true_cutpoint_indices": [],
+    "plot_every": 1,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S4SlideInsert/method_seed_000",
+    "_comment": "      \"lambda_subgoal_consensus\": 1,\n"
+  }
+}

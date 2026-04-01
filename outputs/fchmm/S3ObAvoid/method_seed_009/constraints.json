@@ -1,0 +1,147 @@
+{
+  "true_constraints": {
+    "d_safe": 0.4,
+    "v2_target": 0.055,
+    "v3_target": 0.045,
+    "arc_distance_target": 0.2
+  },
+  "constraint_specs": [
+    {
+      "feature_name": "dist_main_obstacle",
+      "stage": 0,
+      "semantics": "lower_bound",
+      "oracle_key": "d_safe"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "v2_target"
+    },
+    {
+      "feature_name": "terminal_arc_distance",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "arc_distance_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "v3_target"
+    }
+  ],
+  "ConstraintFeatureNames": [
+    "dist_main_obstacle",
+    "speed",
+    "terminal_arc_distance",
+    "heading_angle",
+    "decoy_line_distance",
+    "noise_aux"
+  ],
+  "ConstraintTrueActiveMask": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintTargetMatrix": [
+    [
+      0.4,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.055,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.045,
+      0.2,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedValueMatrix": [
+    [
+      0.38227216842369705,
+      0.2701622124670591,
+      1.3059949644309177,
+      -0.03487349227250025,
+      1.0570775228905718,
+      0.04433143994808396
+    ],
+    [
+      0.38227216842369705,
+      0.0556128852175507,
+      0.26514244957509114,
+      0.15962629788117777,
+      0.736117424727653,
+      0.038380449073075015
+    ],
+    [
+      0.38227216842369705,
+      0.044747731301222345,
+      0.19939850395567593,
+      -3.09385425729669,
+      0.8536755190451314,
+      -0.01794760673109319
+    ]
+  ],
+  "ConstraintLearnedValuePerDemo": [],
+  "ConstraintErrorMatrix": [
+    [
+      0.017542839978736617,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.002383200497503011,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.0009809453242060084,
+      0.0004060472554722585,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ]
+}

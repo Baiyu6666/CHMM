@@ -1,0 +1,13 @@
+{
+  "created_at_utc": "2026-04-01T12:50:58.605710+00:00",
+  "dataset_name": "S5SphereInspect",
+  "method_name": "arhsmm",
+  "pipeline": "sequential",
+  "dataset_seed": 127,
+  "method_seed": 8,
+  "num_demos": 10,
+  "num_stages": 0,
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S5SphereInspect/method_seed_008",
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S5SphereInspect.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/arhsmm.json"
+}

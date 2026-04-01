@@ -10,7 +10,7 @@ from .changepoint import _resolve_selected_feature_columns
 
 @dataclass
 class OrderedClusterModel:
-    num_states: int
+    num_stages: int
     centers_: np.ndarray
     stage_ends_: List[List[int]]
     feature_mean_: np.ndarray
@@ -90,21 +90,21 @@ def _standardize_features(F_list: Sequence[np.ndarray]):
     return out, mean, std
 
 
-def _uniform_stage_ends(T: int, num_states: int, min_len: int) -> List[int]:
-    ends = np.linspace(0, T, num_states + 1, dtype=int)[1:] - 1
+def _uniform_stage_ends(T: int, num_stages: int, min_len: int) -> List[int]:
+    ends = np.linspace(0, T, num_stages + 1, dtype=int)[1:] - 1
     ends[-1] = T - 1
-    for k in range(num_states - 1):
+    for k in range(num_stages - 1):
         min_end = (k + 1) * min_len - 1
         max_end = ends[k + 1] - min_len
         ends[k] = int(np.clip(ends[k], min_end, max_end))
     return [int(x) for x in ends.tolist()]
 
 
-def _random_stage_ends(T: int, num_states: int, min_len: int, proportions: np.ndarray) -> List[int]:
-    extra = T - num_states * min_len
+def _random_stage_ends(T: int, num_stages: int, min_len: int, proportions: np.ndarray) -> List[int]:
+    extra = T - num_stages * min_len
     if extra < 0:
         raise ValueError(
-            f"Sequence length {T} is too short for {num_states} states with minimum segment length {min_len}."
+            f"Sequence length {T} is too short for {num_stages} stages with minimum segment length {min_len}."
         )
     desired = float(extra) * np.asarray(proportions, dtype=float)
     extra_parts = np.floor(desired).astype(int)
@@ -118,28 +118,28 @@ def _random_stage_ends(T: int, num_states: int, min_len: int, proportions: np.nd
     return [int(x) for x in ends.tolist()]
 
 
-def _init_stage_ends(X_list: Sequence[np.ndarray], num_states: int, min_len: int, rng: np.random.RandomState, mode: str):
+def _init_stage_ends(X_list: Sequence[np.ndarray], num_stages: int, min_len: int, rng: np.random.RandomState, mode: str):
     mode_l = str(mode).lower()
     out = []
     shared_proportions = None
-    if num_states > 2 and mode_l in {"random_taus", "random_stage_ends", "random"}:
-        shared_proportions = rng.dirichlet(np.full(num_states, 0.5, dtype=float))
+    if num_stages > 2 and mode_l in {"random_taus", "random_stage_ends", "random"}:
+        shared_proportions = rng.dirichlet(np.full(num_stages, 0.5, dtype=float))
     for X in X_list:
         T = len(X)
-        if T < num_states * min_len:
+        if T < num_stages * min_len:
             raise ValueError(
-                f"Sequence length {T} is too short for {num_states} states with minimum segment length {min_len}."
+                f"Sequence length {T} is too short for {num_stages} stages with minimum segment length {min_len}."
             )
         if mode_l in {"random_taus", "random_stage_ends", "random"}:
-            if num_states == 2:
+            if num_stages == 2:
                 lam = float(np.clip(rng.rand(), 0.1, 0.9))
                 tau = int(round(lam * (T - 1)))
                 tau = int(np.clip(tau, min_len - 1, T - min_len - 1))
                 out.append([tau, T - 1])
             else:
-                out.append(_random_stage_ends(T, num_states, min_len, shared_proportions))
+                out.append(_random_stage_ends(T, num_stages, min_len, shared_proportions))
         else:
-            out.append(_uniform_stage_ends(T, num_states, min_len))
+            out.append(_uniform_stage_ends(T, num_stages, min_len))
     return out
 
 
@@ -153,22 +153,22 @@ def _labels_from_stage_ends(T: int, stage_ends: Sequence[int]) -> np.ndarray:
     return labels
 
 
-def _update_centers(F_list: Sequence[np.ndarray], stage_ends_list: Sequence[Sequence[int]], num_states: int, prev_centers=None):
+def _update_centers(F_list: Sequence[np.ndarray], stage_ends_list: Sequence[Sequence[int]], num_stages: int, prev_centers=None):
     D = int(np.asarray(F_list[0], dtype=float).shape[1])
-    sums = np.zeros((num_states, D), dtype=float)
-    counts = np.zeros(num_states, dtype=int)
+    sums = np.zeros((num_stages, D), dtype=float)
+    counts = np.zeros(num_stages, dtype=int)
     for F, stage_ends in zip(F_list, stage_ends_list):
         labels = _labels_from_stage_ends(len(F), stage_ends)
-        for stage_idx in range(num_states):
+        for stage_idx in range(num_stages):
             mask = labels == stage_idx
             if np.any(mask):
                 sums[stage_idx] += np.sum(F[mask], axis=0)
                 counts[stage_idx] += int(np.sum(mask))
     if prev_centers is None:
-        prev_centers = np.zeros((num_states, D), dtype=float)
+        prev_centers = np.zeros((num_stages, D), dtype=float)
     centers = np.asarray(prev_centers, dtype=float).copy()
     global_mean = np.mean(np.concatenate(F_list, axis=0), axis=0)
-    for stage_idx in range(num_states):
+    for stage_idx in range(num_stages):
         if counts[stage_idx] > 0:
             centers[stage_idx] = sums[stage_idx] / float(counts[stage_idx])
         elif stage_idx > 0:
@@ -200,7 +200,7 @@ def _segment_with_fixed_centers(F: np.ndarray, centers: np.ndarray, block_slices
     T = int(F.shape[0])
     K = int(centers.shape[0])
     if T < K * int(min_len):
-        raise ValueError(f"Sequence length {T} is too short for {K} states with minimum segment length {min_len}.")
+        raise ValueError(f"Sequence length {T} is too short for {K} stages with minimum segment length {min_len}.")
 
     point_cost = _block_weighted_point_cost(F, centers, block_slices, block_weights)
     prefix = np.zeros((K, T + 1), dtype=float)
@@ -248,7 +248,7 @@ def segment_ordered_cluster(
     X_list,
     *,
     env=None,
-    n_states: int = 2,
+    n_stages: int = 2,
     selected_raw_feature_ids=None,
     use_state: bool = True,
     use_velocity: bool = False,
@@ -287,20 +287,20 @@ def segment_ordered_cluster(
 
     rng_master = np.random.RandomState(int(seed))
     best = None
-    num_states = int(n_states)
+    num_stages = int(n_stages)
     min_len = int(min_len)
     max_iter = int(max_iter)
     n_init = max(int(n_init), 1)
 
     for init_idx in range(n_init):
         rng = np.random.RandomState(int(rng_master.randint(0, 2**31 - 1)))
-        stage_ends = _init_stage_ends(X_list, num_states, min_len, rng, init_mode)
+        stage_ends = _init_stage_ends(X_list, num_stages, min_len, rng, init_mode)
         centers = None
         objective_history = []
         segmentation_history = [[list(ends) for ends in stage_ends]]
 
         for iteration in range(max_iter):
-            centers = _update_centers(F_list, stage_ends, num_states, prev_centers=centers)
+            centers = _update_centers(F_list, stage_ends, num_stages, prev_centers=centers)
             new_stage_ends = []
             total_objective = 0.0
             for F in F_list:
@@ -322,11 +322,11 @@ def segment_ordered_cluster(
                 break
             stage_ends = new_stage_ends
 
-        centers = _update_centers(F_list, stage_ends, num_states, prev_centers=centers)
+        centers = _update_centers(F_list, stage_ends, num_stages, prev_centers=centers)
         labels = [_labels_from_stage_ends(len(F), ends) for F, ends in zip(F_list, stage_ends)]
         final_objective = float(objective_history[-1]) if objective_history else float("inf")
         model = OrderedClusterModel(
-            num_states=num_states,
+            num_stages=num_stages,
             centers_=np.asarray(centers, dtype=float),
             stage_ends_=[[int(x) for x in ends] for ends in stage_ends],
             feature_mean_=np.asarray(mean, dtype=float),

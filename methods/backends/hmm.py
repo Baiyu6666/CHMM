@@ -136,202 +136,318 @@ def _num_params_ar(K: int, D: int, left_right: bool) -> int:
       English documentation omitted during cleanup.
     """
     p_pi = K - 1
-    p_A  = _count_free_trans_params(K, left_right)
-    p_W  = K * (D * (1 + D))
-    p_var= K * D
-    return p_pi + p_A + p_W + p_var
+    p_A = 0 if left_right else _count_free_trans_params(K, left_right)
+    p_init = K * (2 * D)
+    p_W = K * (D * (1 + D))
+    p_var = K * D
+    p_dur = 2 * K
+    return p_pi + p_A + p_init + p_W + p_var + p_dur
 
 def _total_loglik_ar(model, X_list):
     """English documentation omitted during cleanup."""
     total = 0.0
     for x in X_list:
-        _, _, logZ = model._fb(x)
-        total += float(logZ)
+        if hasattr(model, "score_sequence"):
+            total += float(model.score_sequence(x))
+        else:
+            _, _, logZ = model._fb(x)
+            total += float(logZ)
     return total
 
-# English comment omitted during cleanup.
-class ARHMM:
-    def __init__(self, n_states, n_dims, sticky=0.0, rng=None, min_covar=1e-4, ridge=1e-6, left_right: bool = LEFT_RIGHT_DEFAULT):
-        self.K=n_states; self.D=n_dims; self.rng=rng or np.random.RandomState(0)
-        self.sticky=sticky; self.min_covar=min_covar; self.ridge=ridge
+def _uniform_stage_ends(T: int, num_stages: int, min_duration: int) -> list[int]:
+    ends = np.linspace(0, T, num_stages + 1, dtype=int)[1:] - 1
+    ends[-1] = T - 1
+    for k in range(num_stages - 1):
+        min_end = (k + 1) * min_duration - 1
+        max_end = ends[k + 1] - min_duration
+        ends[k] = int(np.clip(ends[k], min_end, max_end))
+    return [int(v) for v in ends.tolist()]
+
+
+def _stage_ends_to_labels(T: int, stage_ends: list[int]) -> np.ndarray:
+    labels = np.zeros(int(T), dtype=int)
+    start = 0
+    for stage_idx, end in enumerate(stage_ends):
+        end_i = int(end)
+        labels[start : end_i + 1] = int(stage_idx)
+        start = end_i + 1
+    return labels
+
+
+def _diag_logpdf(x: np.ndarray, mean: np.ndarray, var: np.ndarray) -> float:
+    diff = np.asarray(x, dtype=float) - np.asarray(mean, dtype=float)
+    var_arr = np.clip(np.asarray(var, dtype=float), 1e-12, None)
+    return float(-0.5 * np.sum(np.log(2.0 * np.pi * var_arr) + (diff * diff) / var_arr))
+
+
+class ARHSMM:
+    def __init__(
+        self,
+        n_stages,
+        n_dims,
+        sticky=0.0,
+        rng=None,
+        min_covar=1e-4,
+        ridge=1e-6,
+        left_right: bool = LEFT_RIGHT_DEFAULT,
+        min_duration: int = 1,
+        max_duration: int | None = None,
+        duration_weight: float = 1.0,
+        duration_var_floor: float = 4.0,
+    ):
+        self.K = int(n_stages)
+        self.D = int(n_dims)
+        self.rng = rng or np.random.RandomState(0)
+        self.sticky = float(sticky)
+        self.min_covar = float(min_covar)
+        self.ridge = float(ridge)
         self.left_right = bool(left_right)
+        if not self.left_right:
+            raise ValueError("ARHSMM currently requires left_right=True.")
+        self.min_duration = max(int(min_duration), 1)
+        self.max_duration = None if max_duration is None else max(int(max_duration), self.min_duration)
+        self.duration_weight = float(duration_weight)
+        self.duration_var_floor = max(float(duration_var_floor), 1e-6)
 
-        self.pi = np.ones(self.K)/self.K
-        # English comment omitted during cleanup.
-        if self.left_right:
-            A = np.zeros((self.K, self.K))
-            for i in range(self.K):
-                A[i, i] = 0.9
-                if i + 1 < self.K:
-                    A[i, i + 1] = 0.1
-            self.A = A / np.maximum(A.sum(axis=1, keepdims=True), 1e-12)
-        else:
-            A = 0.1*self.rng.rand(self.K,self.K)+0.9*np.eye(self.K)
-            self.A = A / A.sum(axis=1, keepdims=True)
+        self.pi = np.zeros(self.K, dtype=float)
+        self.pi[0] = 1.0
+        self.A = np.zeros((self.K, self.K), dtype=float)
+        for i in range(self.K - 1):
+            self.A[i, i + 1] = 1.0
+        if self.K > 0:
+            self.A[-1, -1] = 1.0
 
-        self.W = np.zeros((self.K, 1+self.D, self.D))
-        self.var = np.ones((self.K,self.D))
-        self.mu = self.rng.randn(self.K,self.D)
+        self.init_mu = self.rng.randn(self.K, self.D)
+        self.init_var = np.ones((self.K, self.D), dtype=float)
+        self.mu = self.init_mu.copy()
+        self.W = np.zeros((self.K, 1 + self.D, self.D), dtype=float)
+        self.var = np.ones((self.K, self.D), dtype=float)
+        self.duration_mean = np.full(self.K, float(self.min_duration), dtype=float)
+        self.duration_var = np.full(self.K, self.duration_var_floor, dtype=float)
+        self.stage_ends_ = None
 
-    def _warm_start_from_taus(self, X, tau_init):
-        if self.K != 2:
-            raise ValueError("tau-based warm start for ARHMM currently requires n_states=2.")
-        tau_init = np.asarray(tau_init, dtype=int)
-        labels = []
-        for x, tau in zip(X, tau_init):
-            t = clip_tau_for_sequence(x, tau)
-            z = np.zeros(len(x), dtype=int)
-            z[t + 1 :] = 1
-            labels.append(z)
+    def _warm_start_stage_ends(self, X, tau_init):
+        stage_ends = []
+        if tau_init is not None and self.K == 2:
+            tau_init = np.asarray(tau_init, dtype=int)
+            for x, tau in zip(X, tau_init):
+                t = clip_tau_for_sequence(x, tau)
+                stage_ends.append([int(t), int(len(x) - 1)])
+            return stage_ends
+        for x in X:
+            if len(x) < self.K * self.min_duration:
+                raise ValueError(
+                    f"Sequence length {len(x)} is too short for {self.K} stages with minimum duration {self.min_duration}."
+                )
+            stage_ends.append(_uniform_stage_ends(len(x), self.K, self.min_duration))
+        return stage_ends
 
-        pi_counts = np.zeros(self.K)
-        A_counts = np.zeros((self.K, self.K))
-        sum_x = np.zeros((self.K, self.D))
-        Nk = np.zeros(self.K)
-        XtX = [np.zeros((1 + self.D, 1 + self.D)) for _ in range(self.K)]
-        XtY = [np.zeros((1 + self.D, self.D)) for _ in range(self.K)]
+    def _fit_from_stage_ends(self, X, stage_ends_list):
+        global_stack = np.concatenate([np.asarray(x, dtype=float) for x in X], axis=0)
+        global_mean = np.mean(global_stack, axis=0)
+        global_var = np.var(global_stack, axis=0) + self.min_covar
 
-        for x, z in zip(X, labels):
-            pi_counts[z[0]] += 1
-            for t in range(len(z) - 1):
-                A_counts[z[t], z[t + 1]] += 1
-            for k in range(self.K):
-                pts = x[z == k]
-                if len(pts) > 0:
-                    sum_x[k] += pts.sum(axis=0)
-                    Nk[k] += len(pts)
-            for t in range(1, len(x)):
-                k = int(z[t])
-                y = np.hstack([1.0, x[t - 1]])
-                XtX[k] += np.outer(y, y)
-                XtY[k] += np.outer(y, x[t])
+        start_sum = np.zeros((self.K, self.D), dtype=float)
+        start_sq = np.zeros((self.K, self.D), dtype=float)
+        start_count = np.zeros(self.K, dtype=float)
+        point_sum = np.zeros((self.K, self.D), dtype=float)
+        point_count = np.zeros(self.K, dtype=float)
+        XtX = [np.zeros((1 + self.D, 1 + self.D), dtype=float) for _ in range(self.K)]
+        XtY = [np.zeros((1 + self.D, self.D), dtype=float) for _ in range(self.K)]
+        durations = [[] for _ in range(self.K)]
 
-        self.pi = np.maximum(pi_counts, 1e-12)
-        self.pi /= np.maximum(self.pi.sum(), 1e-12)
+        for x, stage_ends in zip(X, stage_ends_list):
+            start = 0
+            for stage_idx, end in enumerate(stage_ends):
+                end_i = int(end)
+                seg = np.asarray(x[start : end_i + 1], dtype=float)
+                if len(seg) == 0:
+                    start = end_i + 1
+                    continue
+                start_sum[stage_idx] += seg[0]
+                start_sq[stage_idx] += seg[0] ** 2
+                start_count[stage_idx] += 1.0
+                point_sum[stage_idx] += np.sum(seg, axis=0)
+                point_count[stage_idx] += float(len(seg))
+                durations[stage_idx].append(int(len(seg)))
+                for t in range(1, len(seg)):
+                    y = np.hstack([1.0, seg[t - 1]])
+                    XtX[stage_idx] += np.outer(y, y)
+                    XtY[stage_idx] += np.outer(y, seg[t])
+                start = end_i + 1
 
-        Acounts = A_counts + self.sticky * np.eye(self.K) + 1e-9
-        if self.left_right:
-            mask = _left_right_mask(self.K)
-            Acounts *= mask
-            Acounts += 1e-12 * mask
-        self.A = Acounts / np.maximum(Acounts.sum(axis=1, keepdims=True), 1e-12)
-
-        for k in range(self.K):
-            if Nk[k] > 0:
-                self.mu[k] = sum_x[k] / Nk[k]
-            XtXk = XtX[k] + self.ridge * np.eye(1 + self.D)
-            if np.count_nonzero(XtX[k]) == 0:
-                self.W[k] = 0.0
-                continue
-            try:
-                self.W[k] = np.linalg.solve(XtXk, XtY[k])
-            except np.linalg.LinAlgError:
-                self.W[k] = np.linalg.lstsq(XtXk, XtY[k], rcond=None)[0]
-
-        res_ss = np.zeros((self.K, self.D))
-        res_Nk = np.zeros(self.K)
-        for x, z in zip(X, labels):
-            for t in range(1, len(x)):
-                k = int(z[t])
-                y = np.hstack([1.0, x[t - 1]])
-                pred = y @ self.W[k]
-                diff = x[t] - pred
-                res_ss[k] += diff ** 2
-                res_Nk[k] += 1.0
-        for k in range(self.K):
-            if res_Nk[k] > 0:
-                self.var[k] = np.clip(res_ss[k] / res_Nk[k], self.min_covar, None)
+        for stage_idx in range(self.K):
+            if start_count[stage_idx] > 0:
+                self.init_mu[stage_idx] = start_sum[stage_idx] / start_count[stage_idx]
+                start_var = start_sq[stage_idx] / start_count[stage_idx] - self.init_mu[stage_idx] ** 2
+                self.init_var[stage_idx] = np.clip(start_var, self.min_covar, None)
             else:
-                self.var[k] = np.ones(self.D)
+                self.init_mu[stage_idx] = global_mean
+                self.init_var[stage_idx] = global_var
 
-    def _log_emiss(self, x):
-        T=x.shape[0]; K=self.K; D=self.D
-        logB=np.zeros((T,K))
-        var0=np.clip(self.var*4.0, self.min_covar, None)
-        for k in range(K):
-            diff0 = x[0]-self.mu[k]
-            term0 = -0.5*np.sum((diff0**2)/var0[k])
-            norm0 = -0.5*np.sum(np.log(2*np.pi*var0[k]))
-            logB[0,k]=norm0+term0
-        for t in range(1,T):
-            xtm1=x[t-1]; y=np.hstack([1.0, xtm1])
-            for k in range(K):
-                mean = y @ self.W[k]
-                diff = x[t]-mean
-                vark=np.clip(self.var[k], self.min_covar, None)
-                term=-0.5*np.sum((diff**2)/vark); norm=-0.5*np.sum(np.log(2*np.pi*vark))
-                logB[t,k]=norm+term
-        return logB
+            if point_count[stage_idx] > 0:
+                self.mu[stage_idx] = point_sum[stage_idx] / point_count[stage_idx]
+            else:
+                self.mu[stage_idx] = self.init_mu[stage_idx]
 
-    def _fb(self, x):
-        T=x.shape[0]; logB=self._log_emiss(x)
-        logA=np.log(self.A+1e-12); logpi=np.log(self.pi+1e-12)
-        alpha=np.zeros((T,self.K)); beta=np.zeros((T,self.K))
-        alpha[0]=logpi+logB[0]
-        for t in range(1,T): alpha[t]=logB[t]+logsumexp(alpha[t-1][:,None]+logA,axis=0)
-        for t in range(T-2,-1,-1): beta[t]=logsumexp(logA+(logB[t+1]+beta[t+1])[None,:],axis=1)
-        logZ=logsumexp(alpha[-1],axis=0)
-        gamma=np.exp(alpha+beta-logZ)
-        xi=np.zeros((T-1,self.K,self.K))
-        for t in range(T-1):
-            m=alpha[t][:,None]+logA+logB[t+1][None,:]+beta[t+1][None,:]
-            xi[t]=np.exp(m-logsumexp(m,axis=(0,1)))
-        return gamma, xi, logZ
+            XtXk = XtX[stage_idx] + self.ridge * np.eye(1 + self.D)
+            if np.count_nonzero(XtX[stage_idx]) == 0:
+                self.W[stage_idx] = 0.0
+            else:
+                try:
+                    self.W[stage_idx] = np.linalg.solve(XtXk, XtY[stage_idx])
+                except np.linalg.LinAlgError:
+                    self.W[stage_idx] = np.linalg.lstsq(XtXk, XtY[stage_idx], rcond=None)[0]
+
+            dur_arr = np.asarray(durations[stage_idx], dtype=float)
+            if dur_arr.size > 0:
+                self.duration_mean[stage_idx] = float(np.mean(dur_arr))
+                self.duration_var[stage_idx] = float(
+                    max(np.var(dur_arr) + 1.0, self.duration_var_floor)
+                )
+            else:
+                self.duration_mean[stage_idx] = float(self.min_duration)
+                self.duration_var[stage_idx] = float(self.duration_var_floor)
+
+        res_ss = np.zeros((self.K, self.D), dtype=float)
+        res_count = np.zeros(self.K, dtype=float)
+        for x, stage_ends in zip(X, stage_ends_list):
+            start = 0
+            for stage_idx, end in enumerate(stage_ends):
+                end_i = int(end)
+                seg = np.asarray(x[start : end_i + 1], dtype=float)
+                for t in range(1, len(seg)):
+                    y = np.hstack([1.0, seg[t - 1]])
+                    pred = y @ self.W[stage_idx]
+                    diff = seg[t] - pred
+                    res_ss[stage_idx] += diff ** 2
+                    res_count[stage_idx] += 1.0
+                start = end_i + 1
+        for stage_idx in range(self.K):
+            if res_count[stage_idx] > 0:
+                self.var[stage_idx] = np.clip(res_ss[stage_idx] / res_count[stage_idx], self.min_covar, None)
+            else:
+                self.var[stage_idx] = self.init_var[stage_idx].copy()
+
+    def _emission_tables(self, x):
+        x = np.asarray(x, dtype=float)
+        T = len(x)
+        init_log = np.zeros((self.K, T), dtype=float)
+        ar_log = np.zeros((self.K, T), dtype=float)
+        for stage_idx in range(self.K):
+            for t in range(T):
+                init_log[stage_idx, t] = _diag_logpdf(x[t], self.init_mu[stage_idx], self.init_var[stage_idx])
+            for t in range(1, T):
+                y = np.hstack([1.0, x[t - 1]])
+                mean = y @ self.W[stage_idx]
+                ar_log[stage_idx, t] = _diag_logpdf(x[t], mean, self.var[stage_idx])
+        ar_prefix = np.cumsum(ar_log, axis=1)
+        return init_log, ar_prefix
+
+    def _segment_loglik(self, init_log, ar_prefix, stage_idx: int, start: int, end: int) -> float:
+        score = float(init_log[stage_idx, start])
+        if end > start:
+            score += float(ar_prefix[stage_idx, end] - ar_prefix[stage_idx, start])
+        return score
+
+    def _duration_logprob(self, stage_idx: int, duration: int) -> float:
+        mean = max(float(self.duration_mean[stage_idx]), float(self.min_duration))
+        var = max(float(self.duration_var[stage_idx]), self.duration_var_floor)
+        diff = float(duration) - mean
+        return float(self.duration_weight * (-0.5 * (np.log(2.0 * np.pi * var) + (diff * diff) / var)))
+
+    def _decode(self, x):
+        x = np.asarray(x, dtype=float)
+        T = len(x)
+        if T < self.K * self.min_duration:
+            raise ValueError(
+                f"Sequence length {T} is too short for {self.K} stages with minimum duration {self.min_duration}."
+            )
+        init_log, ar_prefix = self._emission_tables(x)
+        max_duration = T if self.max_duration is None else min(int(self.max_duration), T)
+        dp = np.full((self.K, T), -np.inf, dtype=float)
+        prev = np.full((self.K, T), -1, dtype=int)
+
+        for end in range(self.min_duration - 1, T - self.min_duration * (self.K - 1)):
+            duration = end + 1
+            if duration > max_duration:
+                continue
+            dp[0, end] = self._segment_loglik(init_log, ar_prefix, 0, 0, end) + self._duration_logprob(0, duration)
+
+        for stage_idx in range(1, self.K):
+            end_low = (stage_idx + 1) * self.min_duration - 1
+            end_high = T - self.min_duration * (self.K - stage_idx - 1) - 1
+            for end in range(end_low, end_high + 1):
+                start_low = max(stage_idx * self.min_duration, end - max_duration + 1)
+                start_high = end - self.min_duration + 1
+                best = -np.inf
+                best_prev = -1
+                for start in range(start_low, start_high + 1):
+                    duration = end - start + 1
+                    prev_end = start - 1
+                    if prev_end < 0 or not np.isfinite(dp[stage_idx - 1, prev_end]):
+                        continue
+                    cand = (
+                        dp[stage_idx - 1, prev_end]
+                        + self._segment_loglik(init_log, ar_prefix, stage_idx, start, end)
+                        + self._duration_logprob(stage_idx, duration)
+                    )
+                    if cand > best:
+                        best = float(cand)
+                        best_prev = int(prev_end)
+                dp[stage_idx, end] = best
+                prev[stage_idx, end] = best_prev
+
+        final_score = float(dp[self.K - 1, T - 1])
+        if not np.isfinite(final_score):
+            raise RuntimeError("ARHSMM decoding failed to find a feasible segmentation.")
+
+        stage_ends = [T - 1]
+        cur_end = T - 1
+        for stage_idx in range(self.K - 1, 0, -1):
+            prev_end = int(prev[stage_idx, cur_end])
+            if prev_end < 0:
+                raise RuntimeError("ARHSMM failed to backtrack stage boundaries.")
+            stage_ends.append(prev_end)
+            cur_end = prev_end
+        stage_ends.reverse()
+        labels = _stage_ends_to_labels(T, stage_ends)
+        return labels, stage_ends, final_score
+
+    def score_sequence(self, x):
+        _, _, score = self._decode(x)
+        return float(score)
 
     def fit(self, X, n_iter=30, verbose=True, true_taus=None, tau_init=None):
-        K,D=self.K,self.D
+        stage_ends_list = self._warm_start_stage_ends(X, tau_init)
         hist_loglik = []
         hist_metrics = {"MeanAbsCutpointError": [], "CutpointExactMatchRate": []}
-        if tau_init is not None:
-            self._warm_start_from_taus(X, tau_init)
-        for it in range(n_iter):
-            sum_pi=np.zeros(K); sum_A=np.zeros((K,K))
-            Nk=np.zeros(K); sum_x=np.zeros((K,D)); sum_x2=np.zeros((K,D))
-            XtX=[np.zeros((1+D,1+D)) for _ in range(K)]
-            XtY=[np.zeros((1+D,D))   for _ in range(K)]
-            res_ss=np.zeros((K,D)); res_Nk=np.zeros(K)
-            total=0.0
-            for x in X:
-                gamma,xi,logZ=self._fb(x); total+=logZ
-                sum_pi+=gamma[0]; sum_A+=np.sum(xi,axis=0)
-                Nk+=np.sum(gamma,axis=0); sum_x+=gamma.T@x; sum_x2+=gamma.T@(x**2)
-                Tseq=x.shape[0]
-                for t in range(1,Tseq):
-                    y=np.hstack([1.0, x[t-1]]); Y=x[t]; g=gamma[t]
-                    yyT=np.outer(y,y); yY=np.outer(y,Y)
-                    for k in range(K):
-                        w=g[k];
-                        if w<=1e-12: continue
-                        XtX[k]+=w*yyT; XtY[k]+=w*yY
-            self.pi=np.maximum(sum_pi,1e-12); self.pi/=np.maximum(self.pi.sum(),1e-12)
-            Acounts=sum_A + self.sticky*np.eye(K) + 1e-9
-            if self.left_right:
-                mask = _left_right_mask(K)
-                Acounts *= mask
-                Acounts += 1e-12 * mask
-            self.A=Acounts/ np.maximum(Acounts.sum(axis=1,keepdims=True),1e-12)
+        stage_ends_history = []
+        self.converged_ = False
+        self.converged_iter_ = None
+        Z = [_stage_ends_to_labels(len(x), ends) for x, ends in zip(X, stage_ends_list)]
 
-            for k in range(K):
-                XtXk=XtX[k]+self.ridge*np.eye(1+D)
-                try: self.W[k]=np.linalg.solve(XtXk, XtY[k])
-                except np.linalg.LinAlgError: self.W[k]=np.linalg.lstsq(XtXk, XtY[k], rcond=None)[0]
+        for it in range(n_iter):
+            self._fit_from_stage_ends(X, stage_ends_list)
+            decoded_ends = []
+            decoded_labels = []
+            total_score = 0.0
             for x in X:
-                gamma,_,_=self._fb(x); Tseq=x.shape[0]
-                for t in range(1,Tseq):
-                    y=np.hstack([1.0,x[t-1]])
-                    pred=np.stack([y@self.W[k] for k in range(K)],axis=0)
-                    diff=x[t][None,:]-pred; g=gamma[t][:,None]
-                    res_ss+=g*(diff**2); res_Nk+=gamma[t]
-            for k in range(K):
-                denom=max(res_Nk[k],1e-9)
-                self.var[k]=np.clip(res_ss[k]/denom, 1e-6, None)
-            self.mu = sum_x/(Nk[:,None]+1e-12)
-            avg_ll = total / len(X)
+                labels, stage_ends, score = self._decode(x)
+                decoded_labels.append(labels)
+                decoded_ends.append(stage_ends)
+                total_score += float(score)
+            converged = decoded_ends == stage_ends_list
+            stage_ends_list = decoded_ends
+            stage_ends_history.append([[int(v) for v in ends] for ends in stage_ends_list])
+            self.stage_ends_ = [[int(v) for v in ends] for ends in stage_ends_list]
+            Z = [np.asarray(z, dtype=int) for z in decoded_labels]
+
+            avg_ll = total_score / max(len(X), 1)
             hist_loglik.append(float(avg_ll))
             iter_metrics = {}
             if true_taus is not None:
-                Z_cur = [self.viterbi(x) for x in X]
-                cutpoints_cur = [np.where(np.diff(z.astype(int)) != 0)[0].astype(int) for z in Z_cur]
+                cutpoints_cur = [np.where(np.diff(z.astype(int)) != 0)[0].astype(int) for z in Z]
                 if self.K == 2:
                     true_cutpoints = [None if t is None else np.asarray([int(t)], dtype=int) for t in true_taus]
                 else:
@@ -340,35 +456,34 @@ class ARHMM:
                 for name in hist_metrics:
                     if name in iter_metrics:
                         hist_metrics[name].append(iter_metrics.get(name, np.nan))
-            should_log = ((it + 1) % 10 == 0) or (it == n_iter - 1)
+            should_log = converged or ((it + 1) % 10 == 0) or (it == n_iter - 1)
             if verbose and should_log:
-                print(format_training_log("ARHMM", it, losses={"loss": avg_ll}, metrics=iter_metrics))
-        Z=[self.viterbi(x) for x in X]
-        hist = {"loglik": hist_loglik}
+                print(format_training_log("ARHSMM", it, losses={"loss": avg_ll}, metrics=iter_metrics))
+            if converged:
+                self.converged_ = True
+                self.converged_iter_ = int(it)
+                if verbose:
+                    print(f"[ARHSMM] converged on stable stage_ends at iter {it + 1:03d}")
+                break
+
+        hist = {"loglik": hist_loglik, "stage_ends": stage_ends_history}
+        if self.converged_:
+            hist["converged_iter"] = int(self.converged_iter_)
         nonempty_metrics = {k: v for k, v in hist_metrics.items() if v}
         if nonempty_metrics:
             hist.update(nonempty_metrics)
         return Z, hist
 
     def viterbi(self, x):
-        T=x.shape[0]; logB=self._log_emiss(x)
-        logA=np.log(self.A+1e-12); logpi=np.log(self.pi+1e-12)
-        dp=np.zeros((T,self.K)); ptr=np.zeros((T,self.K),int)
-        dp[0]=logpi+logB[0]
-        for t in range(1,T):
-            scores=dp[t-1][:,None]+logA
-            ptr[t]=np.argmax(scores,axis=0)
-            dp[t]=logB[t]+np.max(scores,axis=0)
-        z=np.zeros(T,int); z[-1]=np.argmax(dp[-1])
-        for t in range(T-2,-1,-1): z[t]=ptr[t+1,z[t+1]]
-        return z
+        labels, _, _ = self._decode(x)
+        return labels
 
 def segment_with_hmm(
     X_full,
     env=None,
     true_taus=None,
     method="ar",
-    n_states=2,
+    n_stages=2,
     sticky=10.0,
     n_iter=30,
     verbose=True,
@@ -382,6 +497,10 @@ def segment_with_hmm(
     tau_init=None,
     tau_init_mode: str = "uniform_taus",
     left_right: bool | None = None,
+    min_duration: int = 1,
+    max_duration: int | None = None,
+    duration_weight: float = 1.0,
+    duration_var_floor: float = 4.0,
 ):
     if left_right is None:
         left_right = LEFT_RIGHT_DEFAULT
@@ -420,7 +539,17 @@ def segment_with_hmm(
     )
 
     def _fit_for_K(K_try: int):
-        mdl = ARHMM(n_states=K_try, n_dims=D, sticky=sticky, rng=_rng, left_right=left_right)
+        mdl = ARHSMM(
+            n_stages=K_try,
+            n_dims=D,
+            sticky=sticky,
+            rng=_rng,
+            left_right=left_right,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            duration_weight=duration_weight,
+            duration_var_floor=duration_var_floor,
+        )
         Z_list_, hist = mdl.fit(
             X_seg,
             n_iter=n_iter,
@@ -433,8 +562,8 @@ def segment_with_hmm(
     chosen_model = None
     Z_states_list = None
     seg_hist = {}
-    if isinstance(n_states, (list, tuple, range)):
-        K_cands = list(n_states)
+    if isinstance(n_stages, (list, tuple, range)):
+        K_cands = list(n_stages)
         if len(K_cands) == 0:
             raise ValueError("Empty K candidate list for BIC.")
         best = {"bic": np.inf, "K": None, "mdl": None, "Z": None, "hist": None}
@@ -458,7 +587,7 @@ def segment_with_hmm(
         seg_hist["bic_table"] = bic_table
         seg_hist["bic_selected_K"] = int(best["K"])
     else:
-        mdl, Z_states_list, seg_hist = _fit_for_K(int(n_states))
+        mdl, Z_states_list, seg_hist = _fit_for_K(int(n_stages))
         chosen_model = mdl
 
     Z_list = [np.asarray(z, dtype=int) for z in Z_states_list]

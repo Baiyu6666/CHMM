@@ -693,36 +693,19 @@ def main():
       English documentation omitted during cleanup.
       English documentation omitted during cleanup.
     """
-    from envs.obs_avoid_3d import ObsAvoidEnv3D
-    from envs.sine_corridor_3d import SineCorridorEnv3D
+    from envs.S5SphereInspect import S5SphereInspectEnv
 
     # English comment omitted during cleanup.
-    mode = "sine_corridor"   #      "obs3d" / "sine_corridor"        
+    mode = "sphere_inspect"
 
-    if mode == "obs3d":
-        # English comment omitted during cleanup.
-        env = ObsAvoidEnv3D()
-        # English comment omitted during cleanup.
-        traj3d, tau = env.generate_demo_3d()
-        g1 = env.subgoal
-        g2 = env.goal
-
-    elif mode == "sine_corridor":
-        if SineCorridorEnv3D is None:
-            raise RuntimeError(
-                "env.sine_corridor_3d.SineCorridorEnv3D    ,"
-                "            "
-            )
-        # English comment omitted during cleanup.
-        env = SineCorridorEnv3D()
-        # English comment omitted during cleanup.
-        demos, taus = env.generate_demos(n_demos=2)
-        traj3d, tau = demos[0], int(taus[0])
-
-        # English comment omitted during cleanup.
-        g1 = env.subgoal
-        g2 = env.goal
-
+    if mode == "sphere_inspect":
+        env = S5SphereInspectEnv()
+        demos, cutpoints = env.generate_demos(n_demos=2)
+        traj3d = demos[0]
+        tau = int(cutpoints[0][0]) if cutpoints and len(cutpoints[0]) > 0 else 0
+        g1 = getattr(env, "stage_end_markers", [None])[0]
+        g2 = getattr(env, "stage_end_markers", [None, None])[-1]
+    
         # ==========================================================
         # English comment omitted during cleanup.
         # ==========================================================

@@ -113,12 +113,12 @@ def _compute_subgoal_metrics(learner):
         return {"MeanStageSubgoalError": np.nan}
 
     errs = []
-    num_states = len(pred_subgoals)
+    num_stages = len(pred_subgoals)
     for X, cuts in zip(learner.demos, true_cutpoints):
         if cuts is None:
             continue
         stage_ends = list(np.asarray(cuts, dtype=int).reshape(-1)) + [len(X) - 1]
-        if len(stage_ends) != num_states:
+        if len(stage_ends) != num_stages:
             continue
         for stage_idx, end in enumerate(stage_ends):
             errs.append(float(np.linalg.norm(np.asarray(pred_subgoals[stage_idx], dtype=float) - np.asarray(X[int(end)], dtype=float))))
@@ -132,9 +132,9 @@ def _is_auto_feature_mode(learner):
 
 
 def _predicted_constraint_active_mask(learner):
-    num_states = int(getattr(learner, "num_states", 0))
+    num_stages = int(getattr(learner, "num_stages", 0))
     num_features = int(getattr(learner, "num_features", 0))
-    mask = np.ones((num_states, num_features), dtype=bool)
+    mask = np.ones((num_stages, num_features), dtype=bool)
 
     shared_activation = getattr(learner, "shared_feature_score_mean", None)
     if shared_activation is not None:
@@ -153,12 +153,12 @@ def _predicted_constraint_active_mask(learner):
 def _constraint_truth_matrices(learner):
     specs = _get_constraint_specs(learner.env)
     oracle = getattr(learner.env, "true_constraints", None)
-    num_states = int(getattr(learner, "num_states", 0))
+    num_stages = int(getattr(learner, "num_stages", 0))
     num_features = int(getattr(learner, "num_features", 0))
 
-    true_active = np.zeros((num_states, num_features), dtype=bool)
-    target_matrix = np.full((num_states, num_features), np.nan, dtype=float)
-    semantics = np.full((num_states, num_features), "", dtype=object)
+    true_active = np.zeros((num_stages, num_features), dtype=bool)
+    target_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
+    semantics = np.full((num_stages, num_features), "", dtype=object)
 
     if not specs or not isinstance(oracle, dict):
         return true_active, target_matrix, semantics
@@ -167,7 +167,7 @@ def _constraint_truth_matrices(learner):
         raw_feature_id = _raw_feature_id_from_name(learner.env, spec["feature_name"])
         local_idx = _selected_feature_index(learner, raw_feature_id)
         stage_idx = int(spec["stage"])
-        if local_idx is None or stage_idx < 0 or stage_idx >= num_states:
+        if local_idx is None or stage_idx < 0 or stage_idx >= num_stages:
             continue
         oracle_key = str(spec["oracle_key"])
         true_active[stage_idx, local_idx] = True
@@ -190,6 +190,87 @@ def _selected_feature_names(learner):
                 break
         names.append(name or f"f{local_idx}")
     return names
+
+
+def _segment_bounds_from_stage_ends(stage_ends):
+    bounds = []
+    start = 0
+    for end in stage_ends:
+        end_i = int(end)
+        bounds.append((int(start), end_i))
+        start = end_i + 1
+    return bounds
+
+
+def _raw_column_for_local_feature(learner, local_feature_idx):
+    raw_feature_id = None
+    if hasattr(learner, "feature_specs") and local_feature_idx < len(learner.feature_specs):
+        raw_feature_id = int(learner.feature_specs[local_feature_idx]["raw_id"])
+    if raw_feature_id is not None:
+        raw_column_idx = _raw_feature_column_index(learner, raw_feature_id)
+        if raw_column_idx is not None:
+            return int(raw_column_idx)
+    if hasattr(learner, "selected_feature_columns"):
+        selected_columns = list(getattr(learner, "selected_feature_columns", []))
+        if local_feature_idx < len(selected_columns):
+            return int(selected_columns[local_feature_idx])
+    return int(local_feature_idx)
+
+
+def _constraint_feature_scales_raw(learner) -> np.ndarray:
+    num_features = int(getattr(learner, "num_features", 0))
+    scales = np.full(num_features, 1.0, dtype=float)
+    demos = list(getattr(learner, "demos", []) or [])
+    if num_features <= 0 or not demos:
+        return scales
+
+    raw_mats = []
+    env = getattr(learner, "env", None)
+    if env is not None and hasattr(env, "compute_all_features_matrix"):
+        for X in demos:
+            raw_mats.append(np.asarray(env.compute_all_features_matrix(X), dtype=float))
+    else:
+        standardized_features = list(getattr(learner, "standardized_features", []) or [])
+        feat_mean = np.asarray(getattr(learner, "feat_mean", np.zeros(num_features)), dtype=float)
+        feat_std = np.asarray(getattr(learner, "feat_std", np.ones(num_features)), dtype=float)
+        for Fz in standardized_features:
+            Fz = np.asarray(Fz, dtype=float)
+            raw_mats.append(Fz * feat_std[None, : Fz.shape[1]] + feat_mean[None, : Fz.shape[1]])
+
+    if not raw_mats:
+        return scales
+
+    for feat_idx in range(num_features):
+        raw_col = _raw_column_for_local_feature(learner, feat_idx)
+        vals = []
+        for mat in raw_mats:
+            if mat.ndim != 2 or raw_col >= mat.shape[1]:
+                continue
+            col = np.asarray(mat[:, raw_col], dtype=float).reshape(-1)
+            finite = col[np.isfinite(col)]
+            if finite.size > 0:
+                vals.append(finite)
+        if not vals:
+            scales[feat_idx] = 1.0
+            continue
+        all_vals = np.concatenate(vals, axis=0)
+        q05 = float(np.quantile(all_vals, 0.05))
+        q95 = float(np.quantile(all_vals, 0.95))
+        central_range = float(q95 - q05)
+        std = float(np.std(all_vals))
+        scale = central_range if central_range > 1e-8 else std
+        scales[feat_idx] = float(max(scale, 1e-6))
+    return scales
+
+
+def _compute_shared_constraint_value_matrix(learner):
+    num_stages = int(getattr(learner, "num_stages", 0))
+    num_features = int(getattr(learner, "num_features", 0))
+    learned_value_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
+    for stage_idx in range(num_stages):
+        for feat_idx in range(num_features):
+            learned_value_matrix[stage_idx, feat_idx] = _estimate_constraint_value_raw(learner, stage_idx, feat_idx)
+    return learned_value_matrix
 
 
 def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
@@ -234,18 +315,7 @@ def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
         else:
             return np.nan
 
-    raw_feature_id = None
-    if hasattr(learner, "feature_specs") and local_feature_idx < len(learner.feature_specs):
-        raw_feature_id = int(learner.feature_specs[local_feature_idx]["raw_id"])
-    raw_column_idx = None
-    if raw_feature_id is not None:
-        raw_column_idx = _raw_feature_column_index(learner, raw_feature_id)
-    elif hasattr(learner, "selected_feature_columns"):
-        selected_columns = list(getattr(learner, "selected_feature_columns", []))
-        if local_feature_idx < len(selected_columns):
-            raw_column_idx = int(selected_columns[local_feature_idx])
-    if raw_column_idx is None:
-        raw_column_idx = int(local_feature_idx)
+    raw_column_idx = _raw_column_for_local_feature(learner, local_feature_idx)
     if raw_column_idx is None:
         return np.nan
 
@@ -259,47 +329,63 @@ def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
 
 
 def _compute_constraint_metrics(learner):
-    num_states = int(getattr(learner, "num_states", 0))
+    num_stages = int(getattr(learner, "num_stages", 0))
     num_features = int(getattr(learner, "num_features", 0))
-    if num_states <= 0 or num_features <= 0:
+    if num_stages <= 0 or num_features <= 0:
         return {}
 
     true_active, target_matrix, semantics = _constraint_truth_matrices(learner)
     predicted_active = _predicted_constraint_active_mask(learner)
     auto_mode = _is_auto_feature_mode(learner)
 
-    error_matrix = np.full((num_states, num_features), np.nan, dtype=float)
-    for stage_idx in range(num_states):
+    per_demo_values = None
+    learned_value_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
+    if learner.__class__.__name__ == "FCHMM":
+        learned_value_matrix = _compute_shared_constraint_value_matrix(learner)
+
+    feature_scales = _constraint_feature_scales_raw(learner)
+    raw_error_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
+    error_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
+    for stage_idx in range(num_stages):
         for feat_idx in range(num_features):
             if not true_active[stage_idx, feat_idx]:
-                if auto_mode and predicted_active[stage_idx, feat_idx]:
-                    error_matrix[stage_idx, feat_idx] = np.nan
-                else:
-                    error_matrix[stage_idx, feat_idx] = 0.0
                 continue
 
             if not predicted_active[stage_idx, feat_idx]:
-                error_matrix[stage_idx, feat_idx] = np.nan
                 continue
 
-            estimate = _estimate_constraint_value_raw(learner, stage_idx, feat_idx)
+            if learner.__class__.__name__ == "FCHMM":
+                estimate = learned_value_matrix[stage_idx, feat_idx]
+            else:
+                estimate = _estimate_constraint_value_raw(learner, stage_idx, feat_idx)
             target = target_matrix[stage_idx, feat_idx]
             if np.isfinite(estimate) and np.isfinite(target):
-                error_matrix[stage_idx, feat_idx] = float(abs(estimate - target))
+                raw_error = float(abs(estimate - target))
+                raw_error_matrix[stage_idx, feat_idx] = raw_error
+                scale = float(feature_scales[feat_idx]) if feat_idx < len(feature_scales) else 1.0
+                error_matrix[stage_idx, feat_idx] = raw_error / max(scale, 1e-6)
 
     finite_vals = error_matrix[np.isfinite(error_matrix)]
-    return {
+    raw_finite_vals = raw_error_matrix[np.isfinite(raw_error_matrix)]
+    metrics = {
         "MeanConstraintError": float(np.mean(finite_vals)) if finite_vals.size > 0 else np.nan,
+        "MeanConstraintErrorRaw": float(np.mean(raw_finite_vals)) if raw_finite_vals.size > 0 else np.nan,
         "ConstraintErrorMatrix": error_matrix.tolist(),
+        "ConstraintErrorMatrixRaw": raw_error_matrix.tolist(),
         "ConstraintTrueActiveMask": true_active.astype(int).tolist(),
         "ConstraintPredictedActiveMask": predicted_active.astype(int).tolist(),
         "ConstraintTargetMatrix": target_matrix.tolist(),
         "ConstraintSemanticsMatrix": semantics.tolist(),
         "ConstraintFeatureNames": _selected_feature_names(learner),
+        "ConstraintFeatureScales": feature_scales.tolist(),
     }
+    if learner.__class__.__name__ == "FCHMM":
+        metrics["ConstraintLearnedValueMatrix"] = learned_value_matrix.tolist()
+        metrics["ConstraintLearnedValuePerDemo"] = per_demo_values.tolist() if per_demo_values is not None else []
+    return metrics
 
 
-def eval_goalhmm_auto(learner, gammas, xis_list):
+def evaluate_model_metrics(learner, gammas, xis_list):
     metrics = {}
     metrics.update(_compute_segmentation_metrics(learner, gammas, xis_list))
     metrics.update(_compute_subgoal_metrics(learner))
@@ -310,20 +396,4 @@ def eval_goalhmm_auto(learner, gammas, xis_list):
     return metrics
 
 
-def obs_avoid_metrics(learner, taus_hat):
-    return eval_goalhmm_auto(
-        learner,
-        [np.eye(2)[np.r_[np.zeros(t + 1, dtype=int), np.ones(len(X) - t - 1, dtype=int)]] for X, t in zip(learner.demos, taus_hat)],
-        None,
-    )
-
-
-def sine_corridor_metrics(learner, taus_hat):
-    return eval_goalhmm_auto(
-        learner,
-        [np.eye(2)[np.r_[np.zeros(t + 1, dtype=int), np.ones(len(X) - t - 1, dtype=int)]] for X, t in zip(learner.demos, taus_hat)],
-        None,
-    )
-
-
-__all__ = ["eval_goalhmm_auto", "obs_avoid_metrics", "sine_corridor_metrics"]
+__all__ = ["evaluate_model_metrics"]

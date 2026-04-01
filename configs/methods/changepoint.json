@@ -1,7 +1,7 @@
 {
   "name": "changepoint",
   "segmenter": {
-    "n_states": 2,
+    "n_stages": 2,
     "cost_type": "gaussian",
     "use_velocity": true,
     "vel_weight": 1.0,
@@ -11,13 +11,10 @@
     "min_len": 1
   },
   "constraints": {
-    "refine_steps": 5,
     "verbose": true,
-    "auto_feature_select": false,
     "fixed_feature_mask": null,
     "selected_raw_feature_ids": null,
     "feature_model_types": null,
-    "r_sparse_lambda": 0.3,
     "feat_weight": 1.0,
     "prog_weight": 1.0,
     "plot_dir": "outputs/plots"

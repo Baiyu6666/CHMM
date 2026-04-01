@@ -1,5 +1,5 @@
-from .cghmm_core import CGHMM
+from .fchmm_core import FCHMM
 from .posthoc_constraint_model import FixedTauConstraintModel
-from .scdp import SegmentConsensusDPModel
+from .swcl import StageWiseConstraintLearningModel
 
-__all__ = ["CGHMM", "FixedTauConstraintModel", "SegmentConsensusDPModel"]
+__all__ = ["FCHMM", "FixedTauConstraintModel", "StageWiseConstraintLearningModel"]

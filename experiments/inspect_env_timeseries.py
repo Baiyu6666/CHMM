@@ -48,7 +48,7 @@ def _plot_timeseries(ax, series, name: str, cutpoints, color=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Inspect raw states and features of one demo without training.")
-    parser.add_argument("--env-config", default="2DPressSlideInsert.json", type=str)
+    parser.add_argument("--env-config", default="S4SlideInsert.json", type=str)
     parser.add_argument("--demo-idx", type=int, default=0)
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()

@@ -16,6 +16,30 @@ from utils.models import (
 )
 
 
+def _geometric_median(points, *, max_iter: int = 100, tol: float = 1e-6):
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2:
+        raise ValueError("points must be a 2D array.")
+    if len(pts) == 0:
+        raise ValueError("points must contain at least one point.")
+    if len(pts) == 1:
+        return pts[0].copy()
+
+    guess = np.mean(pts, axis=0)
+    for _ in range(max(int(max_iter), 1)):
+        diff = pts - guess[None, :]
+        dist = np.linalg.norm(diff, axis=1)
+        close_mask = dist < tol
+        if np.any(close_mask):
+            return pts[np.argmax(close_mask)].copy()
+        inv_dist = 1.0 / np.maximum(dist, tol)
+        next_guess = np.sum(pts * inv_dist[:, None], axis=0) / np.sum(inv_dist)
+        if np.linalg.norm(next_guess - guess) < tol:
+            return next_guess
+        guess = next_guess
+    return guess
+
+
 def _feature_schema(env):
     if hasattr(env, "get_feature_schema"):
         return list(env.get_feature_schema())
@@ -63,13 +87,11 @@ class FixedTauConstraintModel:
         env,
         true_taus=None,
         true_cutpoints=None,
-        num_states=2,
+        num_stages=2,
         tau_init=None,
         stage_ends_init=None,
         g2_init=None,
-        auto_feature_select=False,
         fixed_feature_mask=None,
-        r_sparse_lambda=0.3,
         selected_raw_feature_ids=None,
         feature_model_types=None,
         feat_weight=1.0,
@@ -82,15 +104,13 @@ class FixedTauConstraintModel:
     ):
         self.demos = [np.asarray(X, dtype=float) for X in demos]
         self.env = env
-        self.num_states = int(num_states)
+        self.num_stages = int(num_stages)
         self.true_cutpoints = self._normalize_true_cutpoints(true_taus=true_taus, true_cutpoints=true_cutpoints)
         self.true_taus = [
             None if cuts is None or len(cuts) != 1 else int(cuts[0])
             for cuts in self.true_cutpoints
         ]
         self.stage_ends_ = self._normalize_stage_ends(stage_ends_init=stage_ends_init, tau_init=tau_init)
-        self.auto_feature_select = bool(auto_feature_select)
-        self.r_sparse_lambda = float(r_sparse_lambda)
         self.sigma_irrel = 1.0
         self.feat_weight = float(feat_weight)
         self.prog_weight = float(prog_weight)
@@ -100,6 +120,7 @@ class FixedTauConstraintModel:
         self.plot_every = plot_every
         self.eval_fn = eval_fn
         self.g2_init = None if g2_init is None else np.asarray(g2_init, dtype=float)
+        self.selected_raw_feature_ids = None if selected_raw_feature_ids is None else list(selected_raw_feature_ids)
         self.prog_kappa1 = 0.0
         self.prog_kappa2 = 0.0
         self.loss_loglik = []
@@ -142,8 +163,13 @@ class FixedTauConstraintModel:
                 )
 
         self.feature_model_types = self._normalize_feature_model_types(feature_model_types)
-        self.feature_models = [[self._make_model_from_kind(kind) for kind in self.feature_model_types] for _ in range(self.num_states)]
-        self.r = np.ones((self.num_states, self.num_features), dtype=int)
+        self.feature_models = [[self._make_model_from_kind(kind) for kind in self.feature_model_types] for _ in range(self.num_stages)]
+        self.shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
+        self.shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
+        self.demo_param_vectors_ = []
+        self.demo_stage_subgoals_ = []
+        self.shared_stage_subgoals = []
+        self.r = np.ones((self.num_stages, self.num_features), dtype=int)
         if fixed_feature_mask is not None:
             mask = np.asarray(fixed_feature_mask, dtype=int)
             if mask.shape != self.r.shape:
@@ -174,33 +200,34 @@ class FixedTauConstraintModel:
             out = []
             for X, ends in zip(self.demos, stage_ends_init):
                 arr = np.asarray(ends, dtype=int).reshape(-1)
-                if arr.size != self.num_states:
-                    raise ValueError(f"Each stage_ends entry must have length {self.num_states}.")
+                if arr.size != self.num_stages:
+                    raise ValueError(f"Each stage_ends entry must have length {self.num_stages}.")
                 arr = arr.copy()
                 arr[-1] = len(X) - 1
                 out.append(arr.astype(int).tolist())
             return out
         if tau_init is not None:
-            if self.num_states != 2:
+            if self.num_stages != 2:
                 raise ValueError("tau_init is only supported for 2-stage fixed constraints.")
             return [[int(t), len(X) - 1] for X, t in zip(self.demos, tau_init)]
         return [[int(len(X) - 1)] for X in self.demos]
 
     def _initialize_stage_subgoals(self):
-        points_per_stage = [[] for _ in range(self.num_states)]
+        points_per_stage = [[] for _ in range(self.num_stages)]
         for X, stage_ends in zip(self.demos, self.stage_ends_):
             for stage_idx, end in enumerate(stage_ends):
                 points_per_stage[stage_idx].append(np.asarray(X[int(end)], dtype=float))
         self.stage_subgoals = []
         for stage_idx, pts in enumerate(points_per_stage):
-            if stage_idx == self.num_states - 1 and self.g2_init is not None:
+            if stage_idx == self.num_stages - 1 and self.g2_init is not None:
                 sg = np.asarray(self.g2_init, dtype=float).copy()
             else:
-                sg = np.mean(np.stack(pts, axis=0), axis=0)
+                sg = _geometric_median(np.stack(pts, axis=0))
             self.stage_subgoals.append(sg)
+        self.shared_stage_subgoals = [np.asarray(x, dtype=float).copy() for x in self.stage_subgoals]
         self.stage_subgoals_hist.append([np.asarray(x, dtype=float).copy() for x in self.stage_subgoals])
         self.g1 = self.stage_subgoals[0].copy()
-        self.g2 = self.stage_subgoals[1].copy() if self.num_states >= 2 else self.stage_subgoals[0].copy()
+        self.g2 = self.stage_subgoals[1].copy() if self.num_stages >= 2 else self.stage_subgoals[0].copy()
         self.g1_hist.append(np.asarray(self.g1, dtype=float).copy())
         self.g2_hist.append(np.asarray(self.g2, dtype=float).copy())
 
@@ -275,6 +302,92 @@ class FixedTauConstraintModel:
             return model
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
+    def _summary_to_vector(self, kind, summary):
+        kind = str(kind).lower()
+        if kind in {"gauss", "gaussian"}:
+            return np.asarray(
+                [float(summary["mu"]), float(np.log(max(float(summary["sigma"]), 1e-12)))],
+                dtype=float,
+            )
+        if kind in {"student_t", "studentt", "t"}:
+            return np.asarray(
+                [float(summary["mu"]), float(np.log(max(float(summary["sigma"]), 1e-12)))],
+                dtype=float,
+            )
+        if kind in {"zero_gauss", "zero_gaussian"}:
+            return np.asarray(
+                [0.0, float(np.log(max(float(summary["sigma"]), 1e-12)))],
+                dtype=float,
+            )
+        if kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
+            return np.asarray(
+                [float(summary["b"]), float(np.log(max(float(summary["lam"]), 1e-12)))],
+                dtype=float,
+            )
+        if kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+            pi_left = float(np.clip(float(summary["pi_left"]), 1e-6, 1.0 - 1e-6))
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(np.log(max(float(summary["lam"]), 1e-12))),
+                    float(np.log(max(float(summary["sigma_left"]), 1e-12))),
+                    float(np.log(pi_left / max(1.0 - pi_left, 1e-12))),
+                ],
+                dtype=float,
+            )
+        if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
+            return np.asarray(
+                [float(summary["b"]), float(np.log(max(float(summary["lam"]), 1e-12)))],
+                dtype=float,
+            )
+        if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+            pi_right = float(np.clip(float(summary["pi_right"]), 1e-6, 1.0 - 1e-6))
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(np.log(max(float(summary["lam"]), 1e-12))),
+                    float(np.log(max(float(summary["sigma_right"]), 1e-12))),
+                    float(np.log(pi_right / max(1.0 - pi_right, 1e-12))),
+                ],
+                dtype=float,
+            )
+        raise ValueError(f"Unsupported feature model type '{kind}'.")
+
+    def _model_to_vector(self, kind, model):
+        return self._summary_to_vector(kind, model.get_summary())
+
+    def _vector_to_model(self, kind, vec):
+        kind = str(kind).lower()
+        vec = np.asarray(vec, dtype=float).reshape(-1)
+        if kind in {"gauss", "gaussian"}:
+            return GaussianModel(mu=float(vec[0]), sigma=float(np.exp(vec[1])))
+        if kind in {"student_t", "studentt", "t"}:
+            return StudentTModel(mu=float(vec[0]), sigma=float(np.exp(vec[1])))
+        if kind in {"zero_gauss", "zero_gaussian"}:
+            sigma_idx = 1 if vec.shape[0] >= 2 else 0
+            return ZeroMeanGaussianModel(sigma=float(np.exp(vec[sigma_idx])))
+        if kind in {"margin_exp_lower", "marginexp", "margin_exp"}:
+            return MarginExpLowerEmission(b_init=float(vec[0]), lam_init=float(np.exp(vec[1])))
+        if kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+            pi_left = 1.0 / (1.0 + np.exp(-float(vec[3])))
+            return MarginExpLowerLeftHNEmission(
+                b_init=float(vec[0]),
+                lam_init=float(np.exp(vec[1])),
+                sigma_left_init=float(np.exp(vec[2])),
+                pi_left_init=float(pi_left),
+            )
+        if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
+            return MarginExpUpperEmission(b_init=float(vec[0]), lam_init=float(np.exp(vec[1])))
+        if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+            pi_right = 1.0 / (1.0 + np.exp(-float(vec[3])))
+            return MarginExpUpperRightHNEmission(
+                b_init=float(vec[0]),
+                lam_init=float(np.exp(vec[1])),
+                sigma_right_init=float(np.exp(vec[2])),
+                pi_right_init=float(pi_right),
+            )
+        raise ValueError(f"Unsupported feature model type '{kind}'.")
+
     def _features_for_demo_matrix(self, X):
         demo_idx = self._demo_index(X)
         if demo_idx is not None:
@@ -304,11 +417,11 @@ class FixedTauConstraintModel:
             arr = np.asarray([int(T) - 1], dtype=int)
         arr = np.sort(arr)
         arr = np.clip(arr, 0, max(int(T) - 1, 0))
-        if arr.size < self.num_states:
-            pad = np.full(self.num_states - arr.size, int(T) - 1, dtype=int)
+        if arr.size < self.num_stages:
+            pad = np.full(self.num_stages - arr.size, int(T) - 1, dtype=int)
             arr = np.concatenate([arr, pad], axis=0)
-        elif arr.size > self.num_states:
-            arr = arr[: self.num_states]
+        elif arr.size > self.num_stages:
+            arr = arr[: self.num_stages]
         arr[-1] = int(T) - 1
         return arr.astype(int).tolist()
 
@@ -343,25 +456,37 @@ class FixedTauConstraintModel:
         return c - 0.5 * (phi * phi) / sig2
 
     def _mstep_update_features(self, gammas):
-        for stage_idx in range(self.num_states):
+        demo_param_vectors = []
+        self.shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
+        self.shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
+        for stage_idx in range(self.num_stages):
             for feat_idx, kind in enumerate(self.feature_model_types):
                 if self.r[stage_idx, feat_idx] != 1:
                     continue
-                xs = []
+                local_vectors = []
                 for demo_idx, (F, gamma) in enumerate(zip(self.standardized_features, gammas)):
                     mask = np.asarray(gamma[:, stage_idx] > 0.5, dtype=bool)
                     mask &= self._core_mask_for_demo_stage(demo_idx, stage_idx)
                     if np.any(mask):
-                        xs.append(np.asarray(F[mask, feat_idx], dtype=float))
-                if xs:
-                    self.feature_models[stage_idx][feat_idx] = self._fit_local_model(kind, np.concatenate(xs, axis=0))
-
-    def _mstep_update_feature_mask(self, gammas):
-        if self.auto_feature_select and np.all(self.r == 1):
-            self.r = np.ones_like(self.r, dtype=int)
+                        model = self._fit_local_model(kind, np.asarray(F[mask, feat_idx], dtype=float))
+                        vec = self._model_to_vector(kind, model)
+                        local_vectors.append((demo_idx, vec))
+                for demo_idx, vec in local_vectors:
+                    while demo_idx >= len(demo_param_vectors):
+                        demo_param_vectors.append([[None for _ in range(self.num_features)] for _ in range(self.num_stages)])
+                    demo_param_vectors[demo_idx][stage_idx][feat_idx] = np.asarray(vec, dtype=float)
+                if local_vectors:
+                    stacked = np.stack([vec for _, vec in local_vectors], axis=0)
+                    shared_vec = np.median(stacked, axis=0)
+                    self.shared_param_vectors[stage_idx][feat_idx] = np.asarray(shared_vec, dtype=float)
+                    self.shared_param_kinds[stage_idx][feat_idx] = str(kind).lower()
+                    self.feature_models[stage_idx][feat_idx] = self._vector_to_model(kind, shared_vec)
+        while len(demo_param_vectors) < len(self.demos):
+            demo_param_vectors.append([[None for _ in range(self.num_features)] for _ in range(self.num_stages)])
+        self.demo_param_vectors_ = demo_param_vectors
 
     def _mstep_update_goals(self, gammas, xis_list, aux_list):
-        points_per_stage = [[] for _ in range(self.num_states)]
+        points_per_stage = [[] for _ in range(self.num_stages)]
         stage_ends = []
         for X, gamma in zip(self.demos, gammas):
             z = np.argmax(gamma, axis=1)
@@ -371,10 +496,12 @@ class FixedTauConstraintModel:
             for stage_idx, end in enumerate(ends):
                 points_per_stage[stage_idx].append(np.asarray(X[int(end)], dtype=float))
         self.stage_ends_ = stage_ends
-        self.stage_subgoals = [np.mean(np.stack(pts, axis=0), axis=0) for pts in points_per_stage]
+        self.demo_stage_subgoals_ = [[np.asarray(X[int(end)], dtype=float).copy() for end in ends] for X, ends in zip(self.demos, stage_ends)]
+        self.stage_subgoals = [_geometric_median(np.stack(pts, axis=0)) for pts in points_per_stage]
+        self.shared_stage_subgoals = [np.asarray(x, dtype=float).copy() for x in self.stage_subgoals]
         self.stage_subgoals_hist.append([np.asarray(x, dtype=float).copy() for x in self.stage_subgoals])
         self.g1 = self.stage_subgoals[0].copy()
-        self.g2 = self.stage_subgoals[1].copy() if self.num_states >= 2 else self.stage_subgoals[0].copy()
+        self.g2 = self.stage_subgoals[1].copy() if self.num_stages >= 2 else self.stage_subgoals[0].copy()
         self.g1_hist.append(np.asarray(self.g1, dtype=float).copy())
         self.g2_hist.append(np.asarray(self.g2, dtype=float).copy())
 
@@ -382,8 +509,8 @@ class FixedTauConstraintModel:
         F = self._features_for_demo_matrix(X)
         demo_idx = self._demo_index(X)
         T = len(X)
-        ll_feat = np.zeros((T, self.num_states), dtype=float)
-        for stage_idx in range(self.num_states):
+        ll_feat = np.zeros((T, self.num_stages), dtype=float)
+        for stage_idx in range(self.num_stages):
             active = [m for m in range(self.num_features) if self.r[stage_idx, m] == 1]
             if not active:
                 continue
@@ -396,7 +523,7 @@ class FixedTauConstraintModel:
             else:
                 core_mask = self._core_mask_for_demo_stage(demo_idx, stage_idx)
                 ll_feat[core_mask, stage_idx] = stage_ll[core_mask]
-        ll_prog = np.zeros((T, self.num_states), dtype=float)
+        ll_prog = np.zeros((T, self.num_stages), dtype=float)
         ll_emit = ll_feat + ll_prog
         if return_parts:
             return ll_emit, ll_feat, ll_prog
@@ -404,7 +531,7 @@ class FixedTauConstraintModel:
 
     def _transition_logprob(self, X, return_aux=False):
         T = len(X)
-        logA = np.zeros((max(T - 1, 0), self.num_states, self.num_states), dtype=float)
+        logA = np.zeros((max(T - 1, 0), self.num_stages, self.num_stages), dtype=float)
         if return_aux:
             return logA, None
         return logA

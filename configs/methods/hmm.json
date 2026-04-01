@@ -1,0 +1,38 @@
+{
+  "name": "hmm",
+  "segmenter": {
+    "max_iter": 20,
+    "verbose": true,
+    "n_stages": 2,
+    "g2_init": null,
+    "tau_init": null,
+    "tau_init_mode": "random_taus",
+    "seed": 0,
+    "gmm_K": 3,
+    "gmm_reg": 1e-3,
+    "fixed_sigma_irrelevant": 1.0,
+    "feat_weight": 1,
+    "x_weight": 0.01,
+    "selected_raw_feature_ids": null,
+    "A_init": null,
+    "pi_init": null,
+    "use_xy_vel": false,
+    "standardize_x": true,
+    "standardize_feat": true,
+    "plot_every": null,
+    "plot_dir": "outputs/plots",
+    "q_low": 0.1,
+    "q_high": 0.9,
+    "g1_vis_alpha": 1.0
+  },
+  "posthoc": {
+    "verbose": true,
+    "fixed_feature_mask": null,
+    "selected_raw_feature_ids": null,
+    "feature_model_types": null,
+    "constraint_core_trim": 0,
+    "feat_weight": 1.0,
+    "prog_weight": 1.0,
+    "plot_dir": "outputs/plots"
+  }
+}

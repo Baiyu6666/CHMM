@@ -1,0 +1,177 @@
+{
+  "true_constraints": {
+    "surface_trace_target": 0.0,
+    "surface_near_target": 0.0868,
+    "surface_trace_max": 0.018,
+    "surface_near_max": 0.14,
+    "tool_align_max_stage2": 0.12,
+    "v23_max": 0.047
+  },
+  "constraint_specs": [
+    {
+      "feature_name": "surface_distance",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "surface_trace_target"
+    },
+    {
+      "feature_name": "tool_normal_alignment_error",
+      "stage": 1,
+      "semantics": "upper_bound",
+      "oracle_key": "tool_align_max_stage2"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 1,
+      "semantics": "upper_bound",
+      "oracle_key": "v23_max"
+    },
+    {
+      "feature_name": "surface_distance",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "surface_near_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 3,
+      "semantics": "upper_bound",
+      "oracle_key": "v23_max"
+    }
+  ],
+  "ConstraintFeatureNames": [
+    "surface_distance",
+    "tool_normal_alignment_error",
+    "speed",
+    "angular_speed"
+  ],
+  "ConstraintTrueActiveMask": [
+    [
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintTargetMatrix": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.0,
+      0.12,
+      0.047,
+      NaN
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.0868,
+      NaN,
+      0.047,
+      NaN
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedValueMatrix": [
+    [
+      0.22607444154966896,
+      0.23848816137495035,
+      0.08145441987230065,
+      0.08803471612228674
+    ],
+    [
+      0.0007680116906463308,
+      0.11337455531826911,
+      0.04694860505150192,
+      0.1278076620937897
+    ],
+    [
+      0.07386500763421945,
+      0.4418645887802808,
+      0.04702284219933248,
+      0.08141771519543924
+    ],
+    [
+      0.2204598645743569,
+      0.722913127290758,
+      0.06382199259865792,
+      0.06214116059141033
+    ],
+    [
+      0.4358470027597934,
+      0.7589059117902202,
+      0.06357262136005945,
+      0.057880839743986584
+    ]
+  ],
+  "ConstraintLearnedValuePerDemo": [],
+  "ConstraintErrorMatrix": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.0022902482339307037,
+      0.011801404958009572,
+      0.001322812616591018,
+      NaN
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.39858022021933454,
+      NaN,
+      0.4329675327242696,
+      NaN
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ]
+}

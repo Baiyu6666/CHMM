@@ -1,0 +1,13 @@
+{
+  "created_at_utc": "2026-04-01T12:49:33.164816+00:00",
+  "dataset_name": "S3ObAvoid",
+  "method_name": "arhsmm",
+  "pipeline": "sequential",
+  "dataset_seed": 125949,
+  "method_seed": 1,
+  "num_demos": 10,
+  "num_stages": 0,
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObAvoid/method_seed_001",
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S3ObAvoid.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/arhsmm.json"
+}

@@ -5,25 +5,14 @@ from typing import Any, Callable, Dict
 import numpy as np
 
 from .base import TaskBundle
-from .dock_corridor_2d import load_2d_dock_corridor
-from .narrow_passage_2d import load_2d_narrow_passage
-from .obs_avoid_2d import load_2d_obs_avoid
-from .obs_avoid_2d_arc3 import load_2d_obs_avoid_arc3
-from .obs_avoid_3d import load_3d_obs_avoid
-from .press_slide_insert_2d import load_2d_press_slide_insert
-from .sine_corridor_3d import load_3d_sine_corridor
-from .sphere_inspect_3d import load_3d_sphere_inspect
-
+from .S3ObAvoid import load_S3ObAvoid
+from .S4SlideInsert import load_S4SlideInsert
+from .S5SphereInspect import load_S5SphereInspect
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
-    "2DObsAvoid": load_2d_obs_avoid,
-    "2DObsAvoidArc3": load_2d_obs_avoid_arc3,
-    "2DNarrowPassage": load_2d_narrow_passage,
-    "2DDockCorridor": load_2d_dock_corridor,
-    "3DObsAvoid": load_3d_obs_avoid,
-    "3DSineCorridor": load_3d_sine_corridor,
-    "3DSphereInspect": load_3d_sphere_inspect,
-    "2DPressSlideInsert": load_2d_press_slide_insert,
+    "S3ObAvoid": load_S3ObAvoid,
+    "S5SphereInspect": load_S5SphereInspect,
+    "S4SlideInsert": load_S4SlideInsert,
 }
 
 

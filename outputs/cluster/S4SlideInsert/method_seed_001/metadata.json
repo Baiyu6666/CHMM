@@ -1,0 +1,13 @@
+{
+  "created_at_utc": "2026-04-01T12:51:49.267085+00:00",
+  "dataset_name": "S4SlideInsert",
+  "method_name": "cluster",
+  "pipeline": "sequential",
+  "dataset_seed": 12342,
+  "method_seed": 1,
+  "num_demos": 10,
+  "num_stages": 4,
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S4SlideInsert/method_seed_001",
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S4SlideInsert.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/cluster.json"
+}

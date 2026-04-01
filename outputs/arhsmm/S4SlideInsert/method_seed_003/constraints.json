@@ -1,0 +1,178 @@
+{
+  "true_constraints": {
+    "surface_target": 0.0,
+    "v2_target": 0.007,
+    "v3_target": 0.045,
+    "v4_target": 0.018,
+    "f_contact_min": 0.4,
+    "f_slide_min": 0.72,
+    "f_insert_min": 1.0,
+    "orientation_error_max_stage3": 0.06,
+    "orientation_error_max_stage4": 0.04
+  },
+  "constraint_specs": [
+    {
+      "feature_name": "surface_distance",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "surface_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "v2_target"
+    },
+    {
+      "feature_name": "force",
+      "stage": 1,
+      "semantics": "lower_bound",
+      "oracle_key": "f_contact_min"
+    },
+    {
+      "feature_name": "surface_distance",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "surface_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "v3_target"
+    },
+    {
+      "feature_name": "force",
+      "stage": 2,
+      "semantics": "lower_bound",
+      "oracle_key": "f_slide_min"
+    },
+    {
+      "feature_name": "orientation_error",
+      "stage": 2,
+      "semantics": "upper_bound",
+      "oracle_key": "orientation_error_max_stage3"
+    },
+    {
+      "feature_name": "surface_distance",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "surface_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "v4_target"
+    },
+    {
+      "feature_name": "force",
+      "stage": 3,
+      "semantics": "lower_bound",
+      "oracle_key": "f_insert_min"
+    },
+    {
+      "feature_name": "orientation_error",
+      "stage": 3,
+      "semantics": "upper_bound",
+      "oracle_key": "orientation_error_max_stage4"
+    }
+  ],
+  "ConstraintFeatureNames": [
+    "surface_distance",
+    "force",
+    "orientation_error",
+    "speed",
+    "noise_aux"
+  ],
+  "ConstraintTrueActiveMask": [
+    [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      0
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      0
+    ]
+  ],
+  "ConstraintTargetMatrix": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.0,
+      0.4,
+      NaN,
+      0.007,
+      NaN
+    ],
+    [
+      0.0,
+      0.72,
+      0.06,
+      0.045,
+      NaN
+    ],
+    [
+      0.0,
+      1.0,
+      0.04,
+      0.018,
+      NaN
+    ]
+  ],
+  "ConstraintErrorMatrix": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.031362789012404316,
+      0.0,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.05985596973991149,
+      0.0,
+      0.012253704226909141,
+      0.016261945580422082,
+      NaN
+    ],
+    [
+      0.04519251594692541,
+      0.0,
+      0.008169136151273376,
+      0.00420473263198323,
+      NaN
+    ]
+  ]
+}

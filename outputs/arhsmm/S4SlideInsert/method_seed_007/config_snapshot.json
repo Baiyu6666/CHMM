@@ -1,0 +1,87 @@
+{
+  "dataset_name": "S4SlideInsert",
+  "method_name": "arhsmm",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 12342
+  },
+  "method_kwargs": {
+    "segmenter": {
+      "max_iter": 30,
+      "verbose": true,
+      "n_stages": 4,
+      "sticky": 10.0,
+      "tau_init": null,
+      "tau_init_mode": "uniform_taus",
+      "seed": 7,
+      "use_velocity": false,
+      "vel_weight": 1.0,
+      "standardize": true,
+      "use_env_features": true,
+      "selected_raw_feature_ids": [
+        "surface_distance",
+        "force",
+        "orientation_error",
+        "speed",
+        "noise_aux"
+      ],
+      "left_right": true,
+      "min_duration": 1,
+      "max_duration": null,
+      "duration_weight": 1.0,
+      "duration_var_floor": 4.0,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S4SlideInsert/method_seed_007"
+    },
+    "constraints": {
+      "verbose": true,
+      "fixed_feature_mask": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          0
+        ]
+      ],
+      "selected_raw_feature_ids": [
+        "surface_distance",
+        "force",
+        "orientation_error",
+        "speed",
+        "noise_aux"
+      ],
+      "feature_model_types": {
+        "surface_distance": "student_t",
+        "force": "margin_exp_lower",
+        "orientation_error": "margin_exp_upper",
+        "speed": "student_t",
+        "noise_aux": "student_t"
+      },
+      "feat_weight": 1.0,
+      "prog_weight": 1.0,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S4SlideInsert/method_seed_007",
+      "constraint_core_trim": 2
+    }
+  }
+}

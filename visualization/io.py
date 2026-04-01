@@ -24,7 +24,12 @@ def learner_plot_dir(learner, plot_dir: object = None) -> Path:
 
 def save_figure(fig, path: Path, close: bool = True, dpi: int = 160) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi)
+    savefig_kwargs = {"dpi": dpi}
+    if str(path).lower().endswith(".png"):
+        # Favor faster write-out over maximum PNG compression. This keeps the
+        # rendered figure identical while reducing time spent in file encoding.
+        savefig_kwargs["pil_kwargs"] = {"compress_level": 1, "optimize": False}
+    fig.savefig(path, **savefig_kwargs)
     if close:
         try:
             import matplotlib.pyplot as plt

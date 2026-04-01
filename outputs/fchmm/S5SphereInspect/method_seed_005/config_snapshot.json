@@ -1,0 +1,124 @@
+{
+  "dataset_name": "S5SphereInspect",
+  "method_name": "fchmm",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 127,
+    "stage2_speed_max": 0.047,
+    "stage3_speed_max": 0.047,
+    "stage2_trace_angle_range": [
+      2.85,
+      3.12
+    ],
+    "stage2_surface_detour_angle": 0.42,
+    "stage2_length_scale_range": [
+      0.4,
+      0.8
+    ],
+    "stage4_length_scale_range": [
+      0.5,
+      1.0
+    ],
+    "feature_boundary_ramp_half_windows": {
+      "surface_distance": [
+        3,
+        2,
+        1,
+        5
+      ],
+      "tool_normal_alignment_error": [
+        1,
+        3,
+        2,
+        1
+      ],
+      "speed": [
+        1,
+        2,
+        2,
+        1
+      ],
+      "angular_speed": [
+        1,
+        2,
+        2,
+        1
+      ]
+    },
+    "seg_lengths": [
+      18,
+      61,
+      33,
+      18
+    ]
+  },
+  "method_kwargs": {
+    "max_iter": 30,
+    "verbose": true,
+    "n_stages": 5,
+    "g2_init": null,
+    "tau_init": null,
+    "tau_init_mode": "random_taus",
+    "seed": 5,
+    "gmm_K": 2,
+    "gmm_reg": 0.001,
+    "fixed_sigma_irrelevant": 1.0,
+    "feat_weight": 1,
+    "x_weight": 0.01,
+    "selected_raw_feature_ids": [
+      "surface_distance",
+      "tool_normal_alignment_error",
+      "speed",
+      "angular_speed"
+    ],
+    "feature_model_types": {
+      "surface_distance": "student_t",
+      "tool_normal_alignment_error": "margin_exp_upper_right_hn",
+      "speed": "margin_exp_upper_right_hn",
+      "angular_speed": "margin_exp_upper_right_hn",
+      "noise_aux": "student_t"
+    },
+    "fixed_feature_mask": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1
+      ]
+    ],
+    "A_init": null,
+    "pi_init": null,
+    "use_xy_vel": false,
+    "standardize_x": true,
+    "standardize_feat": true,
+    "plot_every": null,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/fchmm/S5SphereInspect/method_seed_005",
+    "q_low": 0.1,
+    "q_high": 0.9,
+    "g1_vis_alpha": 1.0
+  }
+}

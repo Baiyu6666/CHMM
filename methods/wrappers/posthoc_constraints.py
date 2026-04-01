@@ -6,18 +6,17 @@ from typing import Any, Dict, List
 import numpy as np
 
 from envs.base import TaskBundle
-from evaluation import eval_goalhmm_auto
+from evaluation import evaluate_model_metrics
 from ..base import SegmentationResult, format_training_log
 from ..cores.posthoc_constraint_model import FixedTauConstraintModel
-from visualization import plot_evaluation_summary
 from visualization.plot4panel import plot_results_4panel
 
 
-def _hard_gammas_from_labels(labels: List[np.ndarray], num_states: int) -> List[np.ndarray]:
+def _hard_gammas_from_labels(labels: List[np.ndarray], num_stages: int) -> List[np.ndarray]:
     gammas = []
     for z in labels:
         z = np.asarray(z, dtype=int).reshape(-1)
-        gamma = np.zeros((len(z), int(num_states)), dtype=float)
+        gamma = np.zeros((len(z), int(num_stages)), dtype=float)
         gamma[np.arange(len(z)), z] = 1.0
         gammas.append(gamma)
     return gammas
@@ -64,9 +63,9 @@ class PostHocConstraintLearner:
                 [int(x) for x in np.asarray(ends, dtype=int).reshape(-1).tolist()]
                 for ends in segmentation.model.stage_ends_
             ]
-            num_states = int(getattr(segmentation.model, "num_states", len(stage_ends[0]) if stage_ends else 2))
+            num_stages = int(getattr(segmentation.model, "num_stages", len(stage_ends[0]) if stage_ends else 2))
         else:
-            num_states = int(max(int(np.max(z)) for z in labels) + 1) if labels else 2
+            num_stages = int(max(int(np.max(z)) for z in labels) + 1) if labels else 2
             stage_ends = _stage_ends_from_labels(labels)
 
         learner = FixedTauConstraintModel(
@@ -74,12 +73,10 @@ class PostHocConstraintLearner:
             env=dataset.env,
             true_taus=dataset.true_taus,
             true_cutpoints=getattr(dataset, "true_cutpoints", None),
-            num_states=num_states,
+            num_stages=num_stages,
             stage_ends_init=stage_ends,
             g2_init=None,
-            auto_feature_select=resolved_kwargs.get("auto_feature_select", False),
             fixed_feature_mask=resolved_kwargs.get("fixed_feature_mask"),
-            r_sparse_lambda=resolved_kwargs.get("r_sparse_lambda", 0.3),
             selected_raw_feature_ids=resolved_kwargs.get("selected_raw_feature_ids"),
             feature_model_types=resolved_kwargs.get("feature_model_types"),
             feat_weight=resolved_kwargs.get("feat_weight", 1.0),
@@ -92,8 +89,8 @@ class PostHocConstraintLearner:
         )
         learner.plot_context = "posthoc"
 
-        gammas = _hard_gammas_from_labels(labels, num_states=num_states)
-        dummy_xis = [np.zeros((len(X) - 1, num_states, num_states), dtype=float) for X in dataset.demos]
+        gammas = _hard_gammas_from_labels(labels, num_stages=num_stages)
+        dummy_xis = [np.zeros((len(X) - 1, num_stages, num_stages), dtype=float) for X in dataset.demos]
         dummy_aux = [None for _ in dataset.demos]
         for gamma, xi, z in zip(gammas, dummy_xis, labels):
             for t in range(max(len(z) - 1, 0)):
@@ -106,66 +103,72 @@ class PostHocConstraintLearner:
         learner.metrics_hist = {}
         learner.loss_label = "Objective"
 
-        refine_steps = int(resolved_kwargs.get("refine_steps", 5))
+        upstream_history = []
+        if segmentation.method_name == "cluster":
+            history = getattr(segmentation.model, "objective_history_", None)
+            if history is not None:
+                upstream_history = [float(x) for x in history if np.isscalar(x) and np.isfinite(float(x))]
+                if upstream_history:
+                    learner.loss_loglik = list(upstream_history)
+                    learner.loss_label = "Segmentation objective"
+        elif segmentation.method_name == "arhsmm":
+            history = (segmentation.extras.get("segmentation_history") or {}).get("loglik")
+            if history is not None:
+                upstream_history = [float(x) for x in history if np.isscalar(x) and np.isfinite(float(x))]
+                if upstream_history:
+                    learner.loss_loglik = list(upstream_history)
+                    learner.loss_label = "Segmentation log-likelihood"
+
         verbose = bool(resolved_kwargs.get("verbose", True))
-        for it in range(refine_steps):
-            learner._mstep_update_features(gammas)
-            learner._mstep_update_feature_mask(gammas)
-            learner._mstep_update_goals(gammas, dummy_xis, dummy_aux)
-            total_ll, total_feat_ll, total_prog_ll, total_trans_ll = _compute_fixed_tau_objective(
-                learner, gammas, dummy_xis, dummy_aux
-            )
+        learner._mstep_update_features(gammas)
+        learner._mstep_update_goals(gammas, dummy_xis, dummy_aux)
+        total_ll, total_feat_ll, total_prog_ll, total_trans_ll = _compute_fixed_tau_objective(
+            learner, gammas, dummy_xis, dummy_aux
+        )
+        if not upstream_history:
             learner.loss_loglik.append(total_ll)
-            learner.loss_feat.append(total_feat_ll)
-            learner.loss_prog.append(total_prog_ll)
-            learner.loss_trans.append(total_trans_ll)
-            metrics = eval_goalhmm_auto(learner, gammas, dummy_xis)
-            for name, value in metrics.items():
-                if np.isscalar(value):
-                    value_f = float(value)
-                    if np.isfinite(value_f):
-                        learner.metrics_hist.setdefault(name, []).append(value_f)
-            should_log = ((it + 1) % 10 == 0) or (it == refine_steps - 1)
-            if verbose and should_log:
-                print(
-                    format_training_log(
-                        "POSTHOC",
-                        it,
-                        losses={
-                            "loss": total_ll,
-                            "feat": total_feat_ll,
-                            "prog": total_prog_ll,
-                            "trans": total_trans_ll,
-                        },
-                        metrics=metrics,
-                        extras={"stage_ends": stage_ends, "r": learner.r.tolist()},
-                    )
+        learner.loss_feat.append(total_feat_ll)
+        learner.loss_prog.append(total_prog_ll)
+        learner.loss_trans.append(total_trans_ll)
+        metrics = evaluate_model_metrics(learner, gammas, dummy_xis)
+        for name, value in metrics.items():
+            if np.isscalar(value):
+                value_f = float(value)
+                if np.isfinite(value_f):
+                    learner.metrics_hist.setdefault(name, []).append(value_f)
+        if verbose:
+            print(
+                format_training_log(
+                    "POSTHOC",
+                    0,
+                    losses={
+                        "loss": total_ll,
+                        "feat": total_feat_ll,
+                        "prog": total_prog_ll,
+                        "trans": total_trans_ll,
+                    },
+                    metrics=metrics,
+                    extras={"stage_ends": learner.stage_ends_, "r": learner.r.tolist()},
                 )
+            )
 
         boundary_like = [
-            [int(x) for x in ends[:-1]] if num_states > 2 else int(ends[0])
-            for ends in stage_ends
+            [int(x) for x in ends[:-1]] if num_stages > 2 else int(ends[0])
+            for ends in learner.stage_ends_
         ]
         dummy_alphas = [np.zeros_like(gamma) for gamma in gammas]
         dummy_betas = [np.zeros_like(gamma) for gamma in gammas]
         plot_results_4panel(
             learner,
             boundary_like,
-            refine_steps,
+            1,
             gammas,
             dummy_alphas,
             dummy_betas,
             dummy_xis,
             dummy_aux,
-            save_name="plot4panel_posthoc_final.png",
-        )
-
-        metrics = eval_goalhmm_auto(learner, gammas, dummy_xis)
-        plot_evaluation_summary(
-            learner,
-            metrics,
-            method_name=str(segmentation.method_name),
-            plot_dir=resolved_kwargs.get("plot_dir", "outputs/plots"),
+            save_name="training_summary_posthoc_final.png",
+            metrics=metrics,
         )
         return {
             "model": learner,

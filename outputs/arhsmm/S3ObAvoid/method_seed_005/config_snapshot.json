@@ -1,0 +1,85 @@
+{
+  "dataset_name": "S3ObAvoid",
+  "method_name": "arhsmm",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 125949
+  },
+  "method_kwargs": {
+    "segmenter": {
+      "max_iter": 30,
+      "verbose": true,
+      "n_stages": 3,
+      "sticky": 10.0,
+      "tau_init": null,
+      "tau_init_mode": "uniform_taus",
+      "seed": 5,
+      "use_velocity": false,
+      "vel_weight": 1.0,
+      "standardize": true,
+      "use_env_features": true,
+      "selected_raw_feature_ids": [
+        "dist_main_obstacle",
+        "speed",
+        "terminal_arc_distance",
+        "heading_angle",
+        "decoy_line_distance",
+        "noise_aux"
+      ],
+      "left_right": true,
+      "min_duration": 1,
+      "max_duration": null,
+      "duration_weight": 1.0,
+      "duration_var_floor": 4.0,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObAvoid/method_seed_005"
+    },
+    "constraints": {
+      "verbose": true,
+      "fixed_feature_mask": [
+        [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "selected_raw_feature_ids": [
+        "dist_main_obstacle",
+        "speed",
+        "terminal_arc_distance",
+        "heading_angle",
+        "decoy_line_distance",
+        "noise_aux"
+      ],
+      "feature_model_types": {
+        "dist_main_obstacle": "margin_exp_lower",
+        "speed": "student_t",
+        "terminal_arc_distance": "student_t",
+        "heading_angle": "student_t",
+        "decoy_line_distance": "student_t",
+        "noise_aux": "student_t"
+      },
+      "feat_weight": 1.0,
+      "prog_weight": 1.0,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObAvoid/method_seed_005"
+    }
+  }
+}

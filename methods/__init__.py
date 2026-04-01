@@ -1,15 +1,15 @@
 from .base import SegmentationResult
-from .cores import CGHMM, FixedTauConstraintModel, SegmentConsensusDPModel
-from .wrappers import JointSCDPMethod, PostHocConstraintLearner, SequentialBaselineSegmenter
+from .cores import FCHMM, FixedTauConstraintModel, StageWiseConstraintLearningModel
+from .wrappers import JointSWCLMethod, PostHocConstraintLearner, SequentialBaselineSegmenter
 from .registry import ALL_METHODS, JOINT_METHODS, SEQUENTIAL_METHODS, build_joint_method, build_sequential_method, method_pipeline_kind
 
 __all__ = [
     "SegmentationResult",
-    "CGHMM",
+    "FCHMM",
     "FixedTauConstraintModel",
-    "SegmentConsensusDPModel",
+    "StageWiseConstraintLearningModel",
     "SequentialBaselineSegmenter",
-    "JointSCDPMethod",
+    "JointSWCLMethod",
     "PostHocConstraintLearner",
     "JOINT_METHODS",
     "SEQUENTIAL_METHODS",

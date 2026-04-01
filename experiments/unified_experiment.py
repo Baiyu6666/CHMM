@@ -59,8 +59,15 @@ def run_experiment(
         return pipeline.run(dataset)
 
     if method_name in SEQUENTIAL_METHODS:
-        segmenter_kwargs = dict(method_kwargs.get("segmenter", {}))
-        constraint_kwargs = dict(method_kwargs.get("constraints", {}))
+        if method_name == "fchmm":
+            segmenter_kwargs = dict(method_kwargs)
+            constraint_kwargs = {}
+        elif method_name == "hmm":
+            segmenter_kwargs = dict(method_kwargs.get("segmenter", {}))
+            constraint_kwargs = dict(method_kwargs.get("posthoc", {}))
+        else:
+            segmenter_kwargs = dict(method_kwargs.get("segmenter", {}))
+            constraint_kwargs = dict(method_kwargs.get("constraints", {}))
         if _should_replace_plot_dir(segmenter_kwargs.get("plot_dir")):
             segmenter_kwargs["plot_dir"] = default_plot_dir
         if _should_replace_plot_dir(constraint_kwargs.get("plot_dir")):
@@ -79,9 +86,9 @@ def run_experiment(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Unified CHMM experiment entrypoint.")
-    parser.add_argument("--dataset", type=str, default="2DObsAvoid")
-    parser.add_argument("--method", type=str, default="scdp")
+    parser = argparse.ArgumentParser(description="Unified method experiment entrypoint.")
+    parser.add_argument("--dataset", type=str, default="S3ObAvoid")
+    parser.add_argument("--method", type=str, default="swcl")
     parser.add_argument("--n-demos", type=int, default=10)
     parser.add_argument("--dataset-seed", type=int, default=42)
     parser.add_argument("--method-seed", type=int, default=0)
@@ -100,16 +107,31 @@ def main():
             override_kwargs["max_iter"] = args.max_iter
         method_kwargs = deep_merge(method_kwargs, override_kwargs)
     else:
-        segmenter_override = {"verbose": True, "seed": args.method_seed}
-        if args.max_iter is not None:
-            segmenter_override["max_iter"] = args.max_iter
-        method_kwargs = deep_merge(
-            method_kwargs,
-            {
-                "segmenter": segmenter_override,
-                "constraints": {"refine_steps": 5},
-            },
-        )
+        if args.method == "fchmm":
+            override_kwargs = {"verbose": True, "seed": args.method_seed}
+            if args.max_iter is not None:
+                override_kwargs["max_iter"] = args.max_iter
+            method_kwargs = deep_merge(method_kwargs, override_kwargs)
+        else:
+            segmenter_override = {"verbose": True, "seed": args.method_seed}
+            if args.max_iter is not None:
+                segmenter_override["max_iter"] = args.max_iter
+            if args.method == "hmm":
+                method_kwargs = deep_merge(
+                    method_kwargs,
+                    {
+                        "segmenter": segmenter_override,
+                        "posthoc": {},
+                    },
+                )
+            else:
+                method_kwargs = deep_merge(
+                    method_kwargs,
+                    {
+                        "segmenter": segmenter_override,
+                        "constraints": {},
+                    },
+                )
 
     results = run_experiment(
         dataset_name=args.dataset,
