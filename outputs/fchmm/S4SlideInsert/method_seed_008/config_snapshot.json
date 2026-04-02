@@ -16,7 +16,7 @@
     "gmm_K": 2,
     "gmm_reg": 0.001,
     "fixed_sigma_irrelevant": 1.0,
-    "feat_weight": 1,
+    "feat_weight": 0.1,
     "x_weight": 0.01,
     "selected_raw_feature_ids": [
       "surface_distance",

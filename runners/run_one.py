@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--dataset-seed", type=int, default=None)
     parser.add_argument("--method-seed", type=int, default=None)
     parser.add_argument("--max-iter", type=int, default=None)
+    parser.add_argument("--plot-every", "--plot_every", dest="plot_every", type=int, default=None)
     parser.add_argument("--output-root", type=str, default="outputs")
     args = parser.parse_args()
 
@@ -59,23 +60,28 @@ def main():
             method_cfg["seed"] = int(args.method_seed)
         if args.max_iter is not None:
             method_cfg["max_iter"] = int(args.max_iter)
+        if args.plot_every is not None:
+            method_cfg["plot_every"] = int(args.plot_every)
     elif method_name == "fchmm":
         method_cfg.setdefault("seed", 0 if args.method_seed is None else int(args.method_seed))
         if args.method_seed is not None:
             method_cfg["seed"] = int(args.method_seed)
         if args.max_iter is not None:
             method_cfg["max_iter"] = int(args.max_iter)
+        if args.plot_every is not None:
+            method_cfg["plot_every"] = int(args.plot_every)
     else:
         segmenter_cfg = dict(method_cfg.get("segmenter", {}))
-        posthoc_key = "posthoc" if method_name == "hmm" else "constraints"
-        constraint_cfg = dict(method_cfg.get(posthoc_key, {}))
+        constraint_cfg = dict(method_cfg.get("posthoc_constraint", {}))
         segmenter_cfg.setdefault("seed", 0 if args.method_seed is None else int(args.method_seed))
         if args.method_seed is not None:
             segmenter_cfg["seed"] = int(args.method_seed)
         if args.max_iter is not None:
             segmenter_cfg["max_iter"] = int(args.max_iter)
+        if args.plot_every is not None:
+            segmenter_cfg["plot_every"] = int(args.plot_every)
         method_cfg["segmenter"] = segmenter_cfg
-        method_cfg[posthoc_key] = constraint_cfg
+        method_cfg["posthoc_constraint"] = constraint_cfg
 
     method_seed = default_method_seed(method_name, method_cfg)
     run_dir = resolve_run_dir(

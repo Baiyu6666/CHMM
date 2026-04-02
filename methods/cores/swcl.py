@@ -225,7 +225,6 @@ class StageWiseConstraintLearningModel:
         if lambda_feature_score_consensus is None:
             lambda_feature_score_consensus = lambda_activation_consensus
         self.lambda_activation_consensus = float(lambda_feature_score_consensus)
-        self.lambda_feature_score_consensus = self.lambda_activation_consensus
         self.consensus_schedule = str(consensus_schedule)
         self.progress_delta_scale = max(float(progress_delta_scale), 1e-6)
         feature_activation_mode = str(feature_activation_mode).lower()
@@ -293,18 +292,15 @@ class StageWiseConstraintLearningModel:
         self.loss_subgoal_consensus: List[float] = []
         self.loss_param_consensus: List[float] = []
         self.loss_activation_consensus: List[float] = []
-        self.loss_feature_score_consensus = self.loss_activation_consensus
         self.metrics_hist: Dict[str, List[float]] = {}
         self.segmentation_history: List[List[List[int]]] = []
         self.activation_rate_history: List[np.ndarray] = []
         self.subgoal_consensus_lambda_hist: List[float] = []
         self.param_consensus_lambda_hist: List[float] = []
         self.activation_consensus_lambda_hist: List[float] = []
-        self.feature_score_consensus_lambda_hist = self.activation_consensus_lambda_hist
         self.current_subgoal_consensus_lambda = 0.0
         self.current_param_consensus_lambda = 0.0
         self.current_activation_consensus_lambda = 0.0
-        self.current_feature_score_consensus_lambda = self.current_activation_consensus_lambda
         self.current_stage_params_per_demo: List[List[_StageParams]] = []
         self.demo_r_matrices_: List[np.ndarray] = []
         self.current_demo_cost_breakdown: List[Dict[str, float]] = []
@@ -1346,7 +1342,6 @@ class StageWiseConstraintLearningModel:
             "subgoal_consensus": float(subgoal_consensus_cost),
             "param_consensus": float(param_consensus_cost),
             "activation_consensus": float(activation_consensus_cost),
-            "feature_score_consensus": float(activation_consensus_cost),
             "weighted_total": float(weighted_total),
         }
 
@@ -1457,7 +1452,6 @@ class StageWiseConstraintLearningModel:
             "subgoal_consensus": float(sum(info["subgoal_consensus"] for info in stage_infos)),
             "param_consensus": float(sum(info["param_consensus"] for info in stage_infos)),
             "activation_consensus": float(sum(info["activation_consensus"] for info in stage_infos)),
-            "feature_score_consensus": float(sum(info["activation_consensus"] for info in stage_infos)),
             "total": float(best[self.num_stages - 1, final_end]),
         }
 
@@ -1531,7 +1525,6 @@ class StageWiseConstraintLearningModel:
             "subgoal_consensus": float(subgoal_consensus_cost),
             "param_consensus": float(param_consensus_cost),
             "activation_consensus": float(activation_consensus_cost),
-            "feature_score_consensus": float(activation_consensus_cost),
             "total": float(total),
         }
 
@@ -1765,7 +1758,6 @@ class StageWiseConstraintLearningModel:
             self.current_subgoal_consensus_lambda = float(lam_subgoal_consensus)
             self.current_param_consensus_lambda = float(lam_param_consensus)
             self.current_activation_consensus_lambda = float(lam_activation_consensus)
-            self.current_feature_score_consensus_lambda = self.current_activation_consensus_lambda
             if self.use_joint_mask_search:
                 selected_infos, shared_activation_mask = self._best_joint_activation_mask_selection(
                     lam_subgoal_consensus=lam_subgoal_consensus,

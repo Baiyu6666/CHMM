@@ -1,0 +1,193 @@
+{
+  "dataset": "S4SlideInsert",
+  "method": "fchmm",
+  "dataset_seed": 12342,
+  "method_seeds": [
+    0,
+    1,
+    2
+  ],
+  "grid": {
+    "gmm_K": [
+      1,
+      2
+    ],
+    "feat_weight": [
+      0.01,
+      0.02,
+      0.05,
+      0.1
+    ]
+  },
+  "metric_keys": [
+    "MeanAbsCutpointError",
+    "MeanConstraintError",
+    "MeanConstraintErrorRaw",
+    "MeanStageSubgoalError",
+    "TrainingLogLikelihoodFinal"
+  ],
+  "best": {
+    "num_runs": 3,
+    "params": {
+      "gmm_K": 2,
+      "feat_weight": 0.05
+    },
+    "combo_id": 6,
+    "MeanAbsCutpointError_mean": 0.0,
+    "MeanAbsCutpointError_std": 0.0,
+    "MeanConstraintError_mean": 0.012926886392096172,
+    "MeanConstraintError_std": 3.0065975991479395e-05,
+    "MeanConstraintErrorRaw_mean": 0.0036392056248921883,
+    "MeanConstraintErrorRaw_std": 7.530272856107147e-06,
+    "MeanStageSubgoalError_mean": 0.07738985814113822,
+    "MeanStageSubgoalError_std": 0.0,
+    "TrainingLogLikelihoodFinal_mean": 100.81985167568983,
+    "TrainingLogLikelihoodFinal_std": 4.880157934318286
+  },
+  "results": [
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.05
+      },
+      "combo_id": 6,
+      "MeanAbsCutpointError_mean": 0.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.012926886392096172,
+      "MeanConstraintError_std": 3.0065975991479395e-05,
+      "MeanConstraintErrorRaw_mean": 0.0036392056248921883,
+      "MeanConstraintErrorRaw_std": 7.530272856107147e-06,
+      "MeanStageSubgoalError_mean": 0.07738985814113822,
+      "MeanStageSubgoalError_std": 0.0,
+      "TrainingLogLikelihoodFinal_mean": 100.81985167568983,
+      "TrainingLogLikelihoodFinal_std": 4.880157934318286
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.05
+      },
+      "combo_id": 2,
+      "MeanAbsCutpointError_mean": 0.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.012927853943238072,
+      "MeanConstraintError_std": 2.9538800779107287e-05,
+      "MeanConstraintErrorRaw_mean": 0.003639803021075636,
+      "MeanConstraintErrorRaw_std": 8.209544734557796e-06,
+      "MeanStageSubgoalError_mean": 0.07738985814113822,
+      "MeanStageSubgoalError_std": 0.0,
+      "TrainingLogLikelihoodFinal_mean": 98.793428013255,
+      "TrainingLogLikelihoodFinal_std": 4.539122003217939
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.1
+      },
+      "combo_id": 7,
+      "MeanAbsCutpointError_mean": 0.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.012935533568671656,
+      "MeanConstraintError_std": 8.407654403460887e-06,
+      "MeanConstraintErrorRaw_mean": 0.003631652496512082,
+      "MeanConstraintErrorRaw_std": 2.430080267319312e-06,
+      "MeanStageSubgoalError_mean": 0.07738985814113822,
+      "MeanStageSubgoalError_std": 0.0,
+      "TrainingLogLikelihoodFinal_mean": 291.7540852068574,
+      "TrainingLogLikelihoodFinal_std": 3.89795971298432
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.1
+      },
+      "combo_id": 3,
+      "MeanAbsCutpointError_mean": 0.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.012950305882433332,
+      "MeanConstraintError_std": 1.8785908384827323e-05,
+      "MeanConstraintErrorRaw_mean": 0.00364604140180854,
+      "MeanConstraintErrorRaw_std": 1.8462013276128075e-05,
+      "MeanStageSubgoalError_mean": 0.07738985814113822,
+      "MeanStageSubgoalError_std": 0.0,
+      "TrainingLogLikelihoodFinal_mean": 289.8479568523776,
+      "TrainingLogLikelihoodFinal_std": 3.5968579566452923
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.02
+      },
+      "combo_id": 5,
+      "MeanAbsCutpointError_mean": 2.266666666666666,
+      "MeanAbsCutpointError_std": 1.4562763270549788,
+      "MeanConstraintError_mean": 0.07331096490550205,
+      "MeanConstraintError_std": 0.01041080573155889,
+      "MeanConstraintErrorRaw_mean": 0.04703334626773553,
+      "MeanConstraintErrorRaw_std": 0.010762360046149342,
+      "MeanStageSubgoalError_mean": 0.10587184217767676,
+      "MeanStageSubgoalError_std": 0.03048905953678654,
+      "TrainingLogLikelihoodFinal_mean": -12.20314762001579,
+      "TrainingLogLikelihoodFinal_std": 4.232862809996825
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.02
+      },
+      "combo_id": 1,
+      "MeanAbsCutpointError_mean": 3.600000000000001,
+      "MeanAbsCutpointError_std": 1.6819301082057152,
+      "MeanConstraintError_mean": 0.07892305263442158,
+      "MeanConstraintError_std": 0.02491205521402288,
+      "MeanConstraintErrorRaw_mean": 0.04672456126051777,
+      "MeanConstraintErrorRaw_std": 0.01574453418146829,
+      "MeanStageSubgoalError_mean": 0.13506989651807544,
+      "MeanStageSubgoalError_std": 0.03422254791278419,
+      "TrainingLogLikelihoodFinal_mean": -10.439525431886965,
+      "TrainingLogLikelihoodFinal_std": 8.605615834096417
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.01
+      },
+      "combo_id": 4,
+      "MeanAbsCutpointError_mean": 13.377777777777778,
+      "MeanAbsCutpointError_std": 4.487871171760725,
+      "MeanConstraintError_mean": 0.17034943111807874,
+      "MeanConstraintError_std": 0.06818443325796111,
+      "MeanConstraintErrorRaw_mean": 0.08439071249910153,
+      "MeanConstraintErrorRaw_std": 0.03614049882129977,
+      "MeanStageSubgoalError_mean": 0.32226864239642766,
+      "MeanStageSubgoalError_std": 0.09614142121584382,
+      "TrainingLogLikelihoodFinal_mean": -22.12836077953102,
+      "TrainingLogLikelihoodFinal_std": 5.147645411315939
+    },
+    {
+      "num_runs": 3,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.01
+      },
+      "combo_id": 0,
+      "MeanAbsCutpointError_mean": 14.033333333333333,
+      "MeanAbsCutpointError_std": 4.502920862761891,
+      "MeanConstraintError_mean": 0.17553086572856724,
+      "MeanConstraintError_std": 0.07105478800000216,
+      "MeanConstraintErrorRaw_mean": 0.08528703427611795,
+      "MeanConstraintErrorRaw_std": 0.03669142043380416,
+      "MeanStageSubgoalError_mean": 0.33416525013115544,
+      "MeanStageSubgoalError_std": 0.09544516271183295,
+      "TrainingLogLikelihoodFinal_mean": -26.8959163422025,
+      "TrainingLogLikelihoodFinal_std": 4.397350912688651
+    }
+  ]
+}

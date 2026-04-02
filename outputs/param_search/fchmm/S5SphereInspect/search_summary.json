@@ -1,0 +1,107 @@
+{
+  "dataset": "S5SphereInspect",
+  "method": "fchmm",
+  "dataset_seed": 127,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "grid": {
+    "feat_weight": [
+      0.05,
+      0.1,
+      0.2,
+      0.5,
+      1.0,
+      2.0
+    ]
+  },
+  "metric_keys": [
+    "MeanConstraintError",
+    "MeanAbsCutpointError"
+  ],
+  "best": {
+    "num_runs": 7,
+    "params": {
+      "feat_weight": 2.0
+    },
+    "combo_id": 5,
+    "MeanConstraintError_mean": 0.0740443964573169,
+    "MeanConstraintError_std": 0.07133419880173318,
+    "MeanAbsCutpointError_mean": 11.857142857142858,
+    "MeanAbsCutpointError_std": 5.586810268802033
+  },
+  "results": [
+    {
+      "num_runs": 7,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "combo_id": 5,
+      "MeanConstraintError_mean": 0.0740443964573169,
+      "MeanConstraintError_std": 0.07133419880173318,
+      "MeanAbsCutpointError_mean": 11.857142857142858,
+      "MeanAbsCutpointError_std": 5.586810268802033
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "combo_id": 4,
+      "MeanConstraintError_mean": 0.0818658900212266,
+      "MeanConstraintError_std": 0.06663363260868473,
+      "MeanAbsCutpointError_mean": 11.525000000000002,
+      "MeanAbsCutpointError_std": 6.777457382487077
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "combo_id": 3,
+      "MeanConstraintError_mean": 0.08200543840504289,
+      "MeanConstraintError_std": 0.08658396346379256,
+      "MeanAbsCutpointError_mean": 10.842857142857143,
+      "MeanAbsCutpointError_std": 7.036762068463255
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "combo_id": 1,
+      "MeanConstraintError_mean": 0.10379472859963121,
+      "MeanConstraintError_std": 0.0888375644715098,
+      "MeanAbsCutpointError_mean": 9.289285714285715,
+      "MeanAbsCutpointError_std": 8.786778390843592
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "combo_id": 0,
+      "MeanConstraintError_mean": 0.10462278716056615,
+      "MeanConstraintError_std": 0.08993401331008508,
+      "MeanAbsCutpointError_mean": 9.971428571428572,
+      "MeanAbsCutpointError_std": 8.523993746346552
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "combo_id": 2,
+      "MeanConstraintError_mean": 0.11708391005560857,
+      "MeanConstraintError_std": 0.10209281567947277,
+      "MeanAbsCutpointError_mean": 9.235714285714286,
+      "MeanAbsCutpointError_std": 8.987758114144336
+    }
+  ]
+}

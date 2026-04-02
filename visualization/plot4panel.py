@@ -1160,11 +1160,9 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     English documentation omitted during cleanup.
       - demos, true_taus, env
       - g1, g2, g1_hist, g2_hist
-      - loss_loglik, loss_feat, loss_prog, loss_trans
+      - loss_loglik, loss_feat
       - get_bounds_for_plot(k_sigma=2)
       - _features_for_demo(X)
-      - _transition_logprob(X, return_aux=False/True)
-      - prog_kappa1, prog_kappa2
       English documentation omitted during cleanup.
     """
 
@@ -1548,8 +1546,9 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     T0, M = F.shape
     K = learner.num_stages
 
+    feat_scale = float(getattr(learner, "feat_weight", 1.0))
     if hasattr(learner, "_feature_loglik_matrix"):
-        ll_feat_state = learner.feat_weight * learner._feature_loglik_matrix(X0, demo_idx=0)
+        ll_feat_state = feat_scale * learner._feature_loglik_matrix(X0, demo_idx=0)
     else:
         rel_logpdf = np.zeros((T0, K, M))
         irrel_logpdf = np.zeros((T0, M))
@@ -1565,7 +1564,7 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
                     ll_feat_state[:, k] += rel_logpdf[:, k, m]
                 else:
                     ll_feat_state[:, k] += irrel_logpdf[:, m]
-        ll_feat_state *= learner.feat_weight
+        ll_feat_state *= feat_scale
 
     ll_emit_full = learner._emission_loglik(X0)
     ll_x_state = ll_emit_full - ll_feat_state
@@ -1579,9 +1578,11 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
         ll_x2 = ll_x_state[:, 1]
         d_x = ll_x2 - ll_x1
 
-        ll_prog1 = np.zeros(T0)
-        ll_prog2 = np.zeros(T0)
-        if getattr(learner, "prog_weight", 0.0) > 0 and T0 > 1:
+        d_prog = None
+        prog_weight = float(getattr(learner, "prog_weight", 0.0))
+        if prog_weight > 0 and T0 > 1:
+            ll_prog1 = np.zeros(T0)
+            ll_prog2 = np.zeros(T0)
             progress_delta_scale = float(getattr(learner, "progress_delta_scale", 10.0))
             X_next = X0[1:]
             d1_curr = np.linalg.norm(X0[:-1] - np.asarray(current_g1)[None, :], axis=1)
@@ -1590,25 +1591,27 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
             d2_next = np.linalg.norm(X_next - np.asarray(current_g2)[None, :], axis=1)
             delta1 = d1_next - d1_curr
             delta2 = d2_next - d2_curr
-            ll_prog1[:-1] = learner.prog_weight * (
+            ll_prog1[:-1] = prog_weight * (
                 np.log1p(np.exp(np.clip(progress_delta_scale * delta1, -60.0, 60.0))) / progress_delta_scale
             )
-            ll_prog2[:-1] = learner.prog_weight * (
+            ll_prog2[:-1] = prog_weight * (
                 np.log1p(np.exp(np.clip(progress_delta_scale * delta2, -60.0, 60.0))) / progress_delta_scale
             )
-        d_prog = ll_prog2 - ll_prog1
-        logA0 = learner._transition_logprob(X0, return_aux=False)
-        p12 = np.zeros(T0)
-        if logA0.shape[0] > 0:
-            p12[:-1] = np.exp(logA0[:, 0, 1])
-            p12[-1] = p12[-2]
-        d_trans = np.log((p12 + eps) / (1.0 - p12 + eps))
+            d_prog = ll_prog2 - ll_prog1
+        d_trans = None
+        if hasattr(learner, "_transition_logprob"):
+            logA0 = learner._transition_logprob(X0, return_aux=False)
+            p12 = np.zeros(T0)
+            if logA0.shape[0] > 0:
+                p12[:-1] = np.exp(logA0[:, 0, 1])
+                p12[-1] = p12[-2]
+            d_trans = np.log((p12 + eps) / (1.0 - p12 + eps))
         post_odds = np.log((gamma0[:, 1] + eps) / (gamma0[:, 0] + eps))
         ax.plot(t_axis, d_x, '-', lw=1.2, color='tab:cyan', label='x diff')
         ax.plot(t_axis, d_feat, '-', lw=1.1, color='tab:red', label='feat diff')
-        if getattr(learner, "prog_weight", 0.0) > 0:
+        if d_prog is not None:
             ax.plot(t_axis, d_prog, '-', lw=1.1, color='tab:blue', label='prog diff')
-        if getattr(learner, "plot_context", "") not in {"fchmm", "hmm"}:
+        if d_trans is not None and getattr(learner, "plot_context", "") not in {"fchmm", "hmm"}:
             ax.plot(t_axis, d_trans, '--', lw=1.2, color='tab:orange', label='trans diff')
         ax.plot(t_axis, post_odds, '-', lw=1.6, color='black', label='posterior log-odds')
         for j, cp in enumerate(stage_ends0[:-1]):

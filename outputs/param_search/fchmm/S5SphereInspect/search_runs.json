@@ -1,0 +1,676 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 0,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 1.6,
+        "MeanStageSubgoalError": 0.6476265016443373,
+        "MeanConstraintError": 0.004958216315756927,
+        "MeanConstraintErrorRaw": 0.0020394016167965823
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 1,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 1.6,
+        "MeanStageSubgoalError": 0.6477036540456942,
+        "MeanConstraintError": 0.004953411602006553,
+        "MeanConstraintErrorRaw": 0.0020377904044066642
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 2,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 1.975,
+        "MeanStageSubgoalError": 0.6483750452512415,
+        "MeanConstraintError": 0.004998758273859417,
+        "MeanConstraintErrorRaw": 0.002052996954333844
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 3,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 6.125,
+        "MeanStageSubgoalError": 0.6502155396673531,
+        "MeanConstraintError": 0.13010442015114754,
+        "MeanConstraintErrorRaw": 0.02159611156996772
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 4,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 20.35,
+        "MeanStageSubgoalError": 0.959849811272067,
+        "MeanConstraintError": 0.1797499673431918,
+        "MeanConstraintErrorRaw": 0.05469127465706475
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 5,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.225,
+        "MeanStageSubgoalError": 0.9460471506326243,
+        "MeanConstraintError": 0.1830569832830107,
+        "MeanConstraintErrorRaw": 0.018786976778899594
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 6,
+      "params": {
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 21.925,
+        "MeanStageSubgoalError": 0.9696408258516963,
+        "MeanConstraintError": 0.22453775315499014,
+        "MeanConstraintErrorRaw": 0.06835981817140038
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 0,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.725,
+        "MeanStageSubgoalError": 0.6464628583635244,
+        "MeanConstraintError": 0.005136517936035003,
+        "MeanConstraintErrorRaw": 0.0020991932702977057
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 1,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.675,
+        "MeanStageSubgoalError": 0.6466201284972043,
+        "MeanConstraintError": 0.005159530096471446,
+        "MeanConstraintErrorRaw": 0.0021069101666499777
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 2,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.725,
+        "MeanStageSubgoalError": 0.6464122688234037,
+        "MeanConstraintError": 0.005178408445426739,
+        "MeanConstraintErrorRaw": 0.0021132408309347318
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 3,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 5.525,
+        "MeanStageSubgoalError": 0.6509410723303648,
+        "MeanConstraintError": 0.12303326572134055,
+        "MeanConstraintErrorRaw": 0.019971900794544122
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 4,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 20.575,
+        "MeanStageSubgoalError": 0.959383224406521,
+        "MeanConstraintError": 0.18725374409786336,
+        "MeanConstraintErrorRaw": 0.056584474498041604
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 5,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 15.95,
+        "MeanStageSubgoalError": 0.9484381653026571,
+        "MeanConstraintError": 0.19509679387984777,
+        "MeanConstraintErrorRaw": 0.022761968748182156
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 6,
+      "params": {
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 20.85,
+        "MeanStageSubgoalError": 0.9620396738178756,
+        "MeanConstraintError": 0.2057048400204335,
+        "MeanConstraintErrorRaw": 0.06255344126492171
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 0,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.4,
+        "MeanStageSubgoalError": 0.6468371470209565,
+        "MeanConstraintError": 0.0052534565923849875,
+        "MeanConstraintErrorRaw": 0.0021384074715509573
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 1,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.4,
+        "MeanStageSubgoalError": 0.6468371470209565,
+        "MeanConstraintError": 0.005252464108211801,
+        "MeanConstraintErrorRaw": 0.002138074651974242
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 2,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.425,
+        "MeanStageSubgoalError": 0.6467499487292939,
+        "MeanConstraintError": 0.0052555307621041745,
+        "MeanConstraintErrorRaw": 0.0021391030234868213
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 3,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 5.5,
+        "MeanStageSubgoalError": 0.6509780828820668,
+        "MeanConstraintError": 0.12972936259864412,
+        "MeanConstraintErrorRaw": 0.02146260362709466
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 4,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 20.875,
+        "MeanStageSubgoalError": 0.9581372991076074,
+        "MeanConstraintError": 0.24076085953183596,
+        "MeanConstraintErrorRaw": 0.060756577928708436
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 5,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.325,
+        "MeanStageSubgoalError": 0.9623907569769742,
+        "MeanConstraintError": 0.22541070835089147,
+        "MeanConstraintErrorRaw": 0.03207402636587993
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 6,
+      "params": {
+        "feat_weight": 0.2
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 20.725,
+        "MeanStageSubgoalError": 0.9595614981146923,
+        "MeanConstraintError": 0.20792498844518742,
+        "MeanConstraintErrorRaw": 0.06200838526307798
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 0,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.425,
+        "MeanStageSubgoalError": 0.7368053480793586,
+        "MeanConstraintError": 0.010328473672994916,
+        "MeanConstraintErrorRaw": 0.0038402633622762806
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 1,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 6.625,
+        "MeanStageSubgoalError": 0.6892281616569856,
+        "MeanConstraintError": 0.011096807407964525,
+        "MeanConstraintErrorRaw": 0.004097916345927691
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 2,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.35,
+        "MeanStageSubgoalError": 0.6469534641514566,
+        "MeanConstraintError": 0.005316928229512872,
+        "MeanConstraintErrorRaw": 0.0021596920461295884
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 3,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 5.925,
+        "MeanStageSubgoalError": 0.6525972443151852,
+        "MeanConstraintError": 0.16276269658590045,
+        "MeanConstraintErrorRaw": 0.0293621227249784
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 4,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.575,
+        "MeanStageSubgoalError": 0.9583401537876521,
+        "MeanConstraintError": 0.14155811329208293,
+        "MeanConstraintErrorRaw": 0.04601213163509245
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 5,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 14.05,
+        "MeanStageSubgoalError": 0.9290636723584302,
+        "MeanConstraintError": 0.013680279805552078,
+        "MeanConstraintErrorRaw": 0.005007835246637134
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 6,
+      "params": {
+        "feat_weight": 0.5
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 20.95,
+        "MeanStageSubgoalError": 0.9582883305667764,
+        "MeanConstraintError": 0.22929476984129238,
+        "MeanConstraintErrorRaw": 0.06034609565059438
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 0,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.375,
+        "MeanStageSubgoalError": 0.7364476287259649,
+        "MeanConstraintError": 0.07710095813894127,
+        "MeanConstraintErrorRaw": 0.011567989422698318
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 1,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 6.85,
+        "MeanStageSubgoalError": 0.6943772415619514,
+        "MeanConstraintError": 0.011088966388121846,
+        "MeanConstraintErrorRaw": 0.0040952869388544534
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 2,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.35,
+        "MeanStageSubgoalError": 0.6467914081723475,
+        "MeanConstraintError": 0.005335354988375304,
+        "MeanConstraintErrorRaw": 0.002165871274222597
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 3,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 6.125,
+        "MeanStageSubgoalError": 0.6534117301211233,
+        "MeanConstraintError": 0.16939244375042709,
+        "MeanConstraintErrorRaw": 0.031585341698778024
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 4,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.575,
+        "MeanStageSubgoalError": 0.9594380254730369,
+        "MeanConstraintError": 0.14527901658079984,
+        "MeanConstraintErrorRaw": 0.047344955941133124
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 5,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 14.65,
+        "MeanStageSubgoalError": 0.9385537051210321,
+        "MeanConstraintError": 0.017207545338912465,
+        "MeanConstraintErrorRaw": 0.006190668236310605
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 6,
+      "params": {
+        "feat_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.75,
+        "MeanStageSubgoalError": 0.9592612740917842,
+        "MeanConstraintError": 0.14765694496300846,
+        "MeanConstraintErrorRaw": 0.04844949388731772
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 0,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.625,
+        "MeanStageSubgoalError": 0.7391074766055291,
+        "MeanConstraintError": 0.010393629104566551,
+        "MeanConstraintErrorRaw": 0.0038621125803718404
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 1,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.0,
+        "MeanStageSubgoalError": 0.6978918632300929,
+        "MeanConstraintError": 0.01109563273541586,
+        "MeanConstraintErrorRaw": 0.004097522431313244
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 2,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.1,
+        "MeanStageSubgoalError": 0.6919109128803511,
+        "MeanConstraintError": 0.011393661210781992,
+        "MeanConstraintErrorRaw": 0.00419746328044725
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 3,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 6.225,
+        "MeanStageSubgoalError": 0.654025501194142,
+        "MeanConstraintError": 0.1735226545236538,
+        "MeanConstraintErrorRaw": 0.032970366305140206
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 4,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.55,
+        "MeanStageSubgoalError": 0.9595601295243651,
+        "MeanConstraintError": 0.14550314676744608,
+        "MeanConstraintErrorRaw": 0.04754594209955565
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 5,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 14.725,
+        "MeanStageSubgoalError": 0.9400335708007088,
+        "MeanConstraintError": 0.01796710314578317,
+        "MeanConstraintErrorRaw": 0.006372619689224296
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S5SphereInspect",
+      "method": "fchmm",
+      "dataset_seed": 127,
+      "method_seed": 6,
+      "params": {
+        "feat_weight": 2.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.775,
+        "MeanStageSubgoalError": 0.9592551934637561,
+        "MeanConstraintError": 0.14843494771357096,
+        "MeanConstraintErrorRaw": 0.04852909203409676
+      }
+    }
+  ]
+}

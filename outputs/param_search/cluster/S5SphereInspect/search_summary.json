@@ -1,0 +1,83 @@
+{
+  "dataset": "S5SphereInspect",
+  "method": "cluster",
+  "dataset_seed": 127,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "grid": {
+    "segmenter.feature_distance_weight": [
+      0.1,
+      0.3,
+      1.0,
+      3.0
+    ]
+  },
+  "metric_keys": [
+    "MeanConstraintError",
+    "MeanAbsCutpointError"
+  ],
+  "best": {
+    "num_runs": 7,
+    "params": {
+      "segmenter.feature_distance_weight": 0.1
+    },
+    "combo_id": 0,
+    "MeanConstraintError_mean": 0.027819662794392384,
+    "MeanConstraintError_std": 0.007165360312123112,
+    "MeanAbsCutpointError_mean": 15.628571428571428,
+    "MeanAbsCutpointError_std": 1.7192932814837327
+  },
+  "results": [
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "combo_id": 0,
+      "MeanConstraintError_mean": 0.027819662794392384,
+      "MeanConstraintError_std": 0.007165360312123112,
+      "MeanAbsCutpointError_mean": 15.628571428571428,
+      "MeanAbsCutpointError_std": 1.7192932814837327
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "combo_id": 1,
+      "MeanConstraintError_mean": 0.04454062815027953,
+      "MeanConstraintError_std": 0.0001342043765412558,
+      "MeanAbsCutpointError_mean": 5.771428571428571,
+      "MeanAbsCutpointError_std": 0.7918590886808904
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "combo_id": 2,
+      "MeanConstraintError_mean": 0.04495274836237782,
+      "MeanConstraintError_std": 7.898125236116903e-05,
+      "MeanAbsCutpointError_mean": 1.985714285714286,
+      "MeanAbsCutpointError_std": 0.988040732862729
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "combo_id": 3,
+      "MeanConstraintError_mean": 0.04496434475060638,
+      "MeanConstraintError_std": 3.3377981643686086e-05,
+      "MeanAbsCutpointError_mean": 2.142857142857143,
+      "MeanAbsCutpointError_std": 1.2889443552847455
+    }
+  ]
+}

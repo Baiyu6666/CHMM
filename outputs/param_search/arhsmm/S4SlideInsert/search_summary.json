@@ -1,0 +1,255 @@
+{
+  "dataset": "S4SlideInsert",
+  "method": "arhsmm",
+  "dataset_seed": 12342,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "grid": {
+    "segmenter.sticky": [
+      10.0,
+      100.0,
+      400.0
+    ],
+    "segmenter.duration_weight": [
+      10.0,
+      100.0,
+      400.0
+    ]
+  },
+  "metric_keys": [
+    "MeanAbsCutpointError",
+    "MeanConstraintError",
+    "MeanConstraintErrorRaw",
+    "MeanStageSubgoalError",
+    "PosthocFeatureObjectiveFinal",
+    "PosthocObjectiveFinal",
+    "SegmentationLogLikelihoodFinal"
+  ],
+  "best": {
+    "num_runs": 5,
+    "params": {
+      "segmenter.sticky": 10.0,
+      "segmenter.duration_weight": 100.0
+    },
+    "combo_id": 1,
+    "MeanAbsCutpointError_mean": 15.780000000000001,
+    "MeanAbsCutpointError_std": 5.7927387496953635,
+    "MeanConstraintError_mean": 0.07150582629340475,
+    "MeanConstraintError_std": 0.039430809726597814,
+    "MeanConstraintErrorRaw_mean": 0.047107553292880744,
+    "MeanConstraintErrorRaw_std": 0.027537522497405084,
+    "MeanStageSubgoalError_mean": 0.31003053044103435,
+    "MeanStageSubgoalError_std": 0.11178617036597767,
+    "PosthocFeatureObjectiveFinal_mean": -5749999577.23455,
+    "PosthocFeatureObjectiveFinal_std": 2898275678.296804,
+    "PosthocObjectiveFinal_mean": -5749999577.23455,
+    "PosthocObjectiveFinal_std": 2898275678.296804,
+    "SegmentationLogLikelihoodFinal_mean": 171.65363424751155,
+    "SegmentationLogLikelihoodFinal_std": 53.23295981291776
+  },
+  "results": [
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "combo_id": 1,
+      "MeanAbsCutpointError_mean": 15.780000000000001,
+      "MeanAbsCutpointError_std": 5.7927387496953635,
+      "MeanConstraintError_mean": 0.07150582629340475,
+      "MeanConstraintError_std": 0.039430809726597814,
+      "MeanConstraintErrorRaw_mean": 0.047107553292880744,
+      "MeanConstraintErrorRaw_std": 0.027537522497405084,
+      "MeanStageSubgoalError_mean": 0.31003053044103435,
+      "MeanStageSubgoalError_std": 0.11178617036597767,
+      "PosthocFeatureObjectiveFinal_mean": -5749999577.23455,
+      "PosthocFeatureObjectiveFinal_std": 2898275678.296804,
+      "PosthocObjectiveFinal_mean": -5749999577.23455,
+      "PosthocObjectiveFinal_std": 2898275678.296804,
+      "SegmentationLogLikelihoodFinal_mean": 171.65363424751155,
+      "SegmentationLogLikelihoodFinal_std": 53.23295981291776
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "combo_id": 4,
+      "MeanAbsCutpointError_mean": 15.746666666666664,
+      "MeanAbsCutpointError_std": 5.8272387209647665,
+      "MeanConstraintError_mean": 0.07150817124689489,
+      "MeanConstraintError_std": 0.039427715146594454,
+      "MeanConstraintErrorRaw_mean": 0.04710031169258703,
+      "MeanConstraintErrorRaw_std": 0.02754850683689876,
+      "MeanStageSubgoalError_mean": 0.3089231591788617,
+      "MeanStageSubgoalError_std": 0.11259360718897037,
+      "PosthocFeatureObjectiveFinal_mean": -5949999572.071601,
+      "PosthocFeatureObjectiveFinal_std": 2976575508.1883316,
+      "PosthocObjectiveFinal_mean": -5949999572.071601,
+      "PosthocObjectiveFinal_std": 2976575508.1883316,
+      "SegmentationLogLikelihoodFinal_mean": 172.0866199916777,
+      "SegmentationLogLikelihoodFinal_std": 53.70510976659467
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "combo_id": 7,
+      "MeanAbsCutpointError_mean": 15.746666666666664,
+      "MeanAbsCutpointError_std": 5.8272387209647665,
+      "MeanConstraintError_mean": 0.07150817124689489,
+      "MeanConstraintError_std": 0.039427715146594454,
+      "MeanConstraintErrorRaw_mean": 0.04710031169258703,
+      "MeanConstraintErrorRaw_std": 0.02754850683689876,
+      "MeanStageSubgoalError_mean": 0.3089231591788617,
+      "MeanStageSubgoalError_std": 0.11259360718897037,
+      "PosthocFeatureObjectiveFinal_mean": -5949999572.071601,
+      "PosthocFeatureObjectiveFinal_std": 2976575508.1883316,
+      "PosthocObjectiveFinal_mean": -5949999572.071601,
+      "PosthocObjectiveFinal_std": 2976575508.1883316,
+      "SegmentationLogLikelihoodFinal_mean": 170.87129863973087,
+      "SegmentationLogLikelihoodFinal_std": 53.97350638998745
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "combo_id": 2,
+      "MeanAbsCutpointError_mean": 16.48,
+      "MeanAbsCutpointError_std": 6.116992725187761,
+      "MeanConstraintError_mean": 0.07287882335111366,
+      "MeanConstraintError_std": 0.036626137913364984,
+      "MeanConstraintErrorRaw_mean": 0.04872833015717017,
+      "MeanConstraintErrorRaw_std": 0.024625488565622716,
+      "MeanStageSubgoalError_mean": 0.31680897877058084,
+      "MeanStageSubgoalError_std": 0.11379419449298661,
+      "PosthocFeatureObjectiveFinal_mean": -5299999639.103195,
+      "PosthocFeatureObjectiveFinal_std": 2628688155.205862,
+      "PosthocObjectiveFinal_mean": -5299999639.103195,
+      "PosthocObjectiveFinal_std": 2628688155.205862,
+      "SegmentationLogLikelihoodFinal_mean": -2372.5485323361763,
+      "SegmentationLogLikelihoodFinal_std": 32.517279665846075
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "combo_id": 5,
+      "MeanAbsCutpointError_mean": 16.48,
+      "MeanAbsCutpointError_std": 6.116992725187761,
+      "MeanConstraintError_mean": 0.07287882335111366,
+      "MeanConstraintError_std": 0.036626137913364984,
+      "MeanConstraintErrorRaw_mean": 0.04872833015717017,
+      "MeanConstraintErrorRaw_std": 0.024625488565622716,
+      "MeanStageSubgoalError_mean": 0.31680897877058084,
+      "MeanStageSubgoalError_std": 0.11379419449298661,
+      "PosthocFeatureObjectiveFinal_mean": -5299999639.103195,
+      "PosthocFeatureObjectiveFinal_std": 2628688155.205862,
+      "PosthocObjectiveFinal_mean": -5299999639.103195,
+      "PosthocObjectiveFinal_std": 2628688155.205862,
+      "SegmentationLogLikelihoodFinal_mean": -2372.910245389418,
+      "SegmentationLogLikelihoodFinal_std": 32.61954771784205
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "combo_id": 8,
+      "MeanAbsCutpointError_mean": 16.48,
+      "MeanAbsCutpointError_std": 6.116992725187761,
+      "MeanConstraintError_mean": 0.07287882335111366,
+      "MeanConstraintError_std": 0.036626137913364984,
+      "MeanConstraintErrorRaw_mean": 0.04872833015717017,
+      "MeanConstraintErrorRaw_std": 0.024625488565622716,
+      "MeanStageSubgoalError_mean": 0.31680897877058084,
+      "MeanStageSubgoalError_std": 0.11379419449298661,
+      "PosthocFeatureObjectiveFinal_mean": -5299999639.103195,
+      "PosthocFeatureObjectiveFinal_std": 2628688155.205862,
+      "PosthocObjectiveFinal_mean": -5299999639.103195,
+      "PosthocObjectiveFinal_std": 2628688155.205862,
+      "SegmentationLogLikelihoodFinal_mean": -2374.1387309782194,
+      "SegmentationLogLikelihoodFinal_std": 32.73721273500464
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "combo_id": 0,
+      "MeanAbsCutpointError_mean": 14.873333333333331,
+      "MeanAbsCutpointError_std": 6.061734258627824,
+      "MeanConstraintError_mean": 0.0738313847226132,
+      "MeanConstraintError_std": 0.03718755707398864,
+      "MeanConstraintErrorRaw_mean": 0.048828892340294576,
+      "MeanConstraintErrorRaw_std": 0.026948875390755876,
+      "MeanStageSubgoalError_mean": 0.30218910293678936,
+      "MeanStageSubgoalError_std": 0.11106864319131511,
+      "PosthocFeatureObjectiveFinal_mean": -2099999488.1305923,
+      "PosthocFeatureObjectiveFinal_std": 3292415940.93324,
+      "PosthocObjectiveFinal_mean": -2099999488.1305923,
+      "PosthocObjectiveFinal_std": 3292415940.93324,
+      "SegmentationLogLikelihoodFinal_mean": 1019.8558074765384,
+      "SegmentationLogLikelihoodFinal_std": 74.9338261240483
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "combo_id": 3,
+      "MeanAbsCutpointError_mean": 14.866666666666665,
+      "MeanAbsCutpointError_std": 6.060069673233504,
+      "MeanConstraintError_mean": 0.0738466802768175,
+      "MeanConstraintError_std": 0.037184815044272776,
+      "MeanConstraintErrorRaw_mean": 0.048828263552661524,
+      "MeanConstraintErrorRaw_std": 0.02694888229870822,
+      "MeanStageSubgoalError_mean": 0.30215932945544355,
+      "MeanStageSubgoalError_std": 0.11106054220072048,
+      "PosthocFeatureObjectiveFinal_mean": -2099999490.4248307,
+      "PosthocFeatureObjectiveFinal_std": 3292415940.8635573,
+      "PosthocObjectiveFinal_mean": -2099999490.4248307,
+      "PosthocObjectiveFinal_std": 3292415940.8635573,
+      "SegmentationLogLikelihoodFinal_mean": 1019.4985692116836,
+      "SegmentationLogLikelihoodFinal_std": 75.00159146426724
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "combo_id": 6,
+      "MeanAbsCutpointError_mean": 14.853333333333333,
+      "MeanAbsCutpointError_std": 6.056827185544882,
+      "MeanConstraintError_mean": 0.07392068768721421,
+      "MeanConstraintError_std": 0.03717190049677162,
+      "MeanConstraintErrorRaw_mean": 0.048849277440862274,
+      "MeanConstraintErrorRaw_std": 0.02694868322768851,
+      "MeanStageSubgoalError_mean": 0.30211098173768647,
+      "MeanStageSubgoalError_std": 0.11104745415918865,
+      "PosthocFeatureObjectiveFinal_mean": -2099999489.3558388,
+      "PosthocFeatureObjectiveFinal_std": 3292415940.8960257,
+      "PosthocObjectiveFinal_mean": -2099999489.3558388,
+      "PosthocObjectiveFinal_std": 3292415940.8960257,
+      "SegmentationLogLikelihoodFinal_mean": 1018.2736411138612,
+      "SegmentationLogLikelihoodFinal_std": 75.15708431567721
+    }
+  ]
+}

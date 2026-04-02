@@ -61,7 +61,7 @@
       "use_env_features": true,
       "state_distance_weight": 0.2,
       "velocity_distance_weight": 1.0,
-      "feature_distance_weight": 1.0,
+      "feature_distance_weight": 0.1,
       "selected_raw_feature_ids": [
         "surface_distance",
         "tool_normal_alignment_error",
@@ -77,7 +77,7 @@
       "verbose": true,
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_006"
     },
-    "constraints": {
+    "posthoc_constraint": {
       "verbose": true,
       "fixed_feature_mask": [
         [
@@ -124,10 +124,7 @@
         "angular_speed": "margin_exp_upper",
         "noise_aux": "student_t"
       },
-      "feat_weight": 1.0,
-      "prog_weight": 1.0,
-      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_006",
-      "constraint_core_trim": 0
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_006"
     }
   }
 }

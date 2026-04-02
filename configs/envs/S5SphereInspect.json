@@ -17,7 +17,7 @@
   "seg_lengths": [18, 61, 33, 18],
   "method_overrides": {
     "swcl": {
-      "n_stages": 5,
+      "n_stages": 3,
       "selected_raw_feature_ids": [
         "surface_distance",
         "tool_normal_alignment_error",
@@ -31,13 +31,6 @@
         "angular_speed": "margin_exp_upper",
         "noise_aux": "student_t"
       },
-      "fixed_feature_mask": [
-        [0, 0, 0, 0],
-        [1, 1, 1, 0],
-        [0, 0, 0, 0],
-        [1, 0, 1, 0],
-        [0, 0, 0, 0]
-      ],
       "max_iter": 10,
       "lambda_subgoal_consensus": 0.0,
       "lambda_activation_consensus": 0.75,
@@ -48,6 +41,7 @@
     },
     "fchmm": {
       "n_stages": 5,
+      "feat_weight": 0.1,
       "selected_raw_feature_ids": [
         "surface_distance",
         "tool_normal_alignment_error",
@@ -79,7 +73,7 @@
           "angular_speed"
         ]
       },
-      "posthoc": {
+      "posthoc_constraint": {
         "constraint_core_trim": 0,
         "selected_raw_feature_ids": [
           "surface_distance",
@@ -113,8 +107,7 @@
           "angular_speed"
         ]
       },
-      "constraints": {
-        "constraint_core_trim": 0,
+      "posthoc_constraint": {
         "selected_raw_feature_ids": [
           "surface_distance",
           "tool_normal_alignment_error",
@@ -147,8 +140,7 @@
           "angular_speed"
         ]
       },
-      "constraints": {
-        "constraint_core_trim": 0,
+      "posthoc_constraint": {
         "selected_raw_feature_ids": [
           "surface_distance",
           "tool_normal_alignment_error",
@@ -180,14 +172,14 @@
           "speed",
           "angular_speed"
         ],
+        "feature_distance_weight": 0.1,
         "use_state": true,
         "use_velocity": false,
         "use_env_features": true,
         "min_len": 3,
         "init_mode": "random_stage_ends"
       },
-      "constraints": {
-        "constraint_core_trim": 0,
+      "posthoc_constraint": {
         "selected_raw_feature_ids": [
           "surface_distance",
           "tool_normal_alignment_error",
@@ -212,5 +204,4 @@
     }
   }
 }
-
 

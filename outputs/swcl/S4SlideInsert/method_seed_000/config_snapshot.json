@@ -8,7 +8,15 @@
   "method_kwargs": {
     "max_iter": 5,
     "verbose": true,
-    "n_stages": 4,
+    "n_stages": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
     "seed": 0,
     "selected_raw_feature_ids": [
       "surface_distance",
@@ -39,11 +47,11 @@
     "equality_dispersion_ratio_threshold": 0.075,
     "constraint_core_trim": 0,
     "short_segment_penalty_c": 2,
+    "stage_count_penalty": 10.0,
     "inequality_score_activation_threshold": -0.5,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": 1,
-    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S4SlideInsert/method_seed_000",
-    "_comment": "      \"lambda_subgoal_consensus\": 1,\n"
+    "plot_every": null,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S4SlideInsert/method_seed_000"
   }
 }

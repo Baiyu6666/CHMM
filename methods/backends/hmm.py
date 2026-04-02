@@ -5,18 +5,6 @@ import numpy as np
 from ..base import compute_cutpoint_metrics, format_training_log
 from ..common.tau_init import clip_tau_for_sequence, resolve_tau_init_for_demos
 
-# ---------- module-level switch for left-to-right constraint ----------
-LEFT_RIGHT_DEFAULT = True  #      -> (Bakis)  
-
-def _left_right_mask(K: int):
-    """English documentation omitted during cleanup."""
-    M = np.zeros((K, K), dtype=float)
-    for i in range(K):
-        M[i, i] = 1.0
-        if i + 1 < K:
-            M[i, i + 1] = 1.0
-    return M
-
 # ---------- utils ----------
 def logsumexp(a, axis=None, keepdims=False):
     m = np.max(a, axis=axis, keepdims=True)
@@ -101,59 +89,6 @@ def _make_point_features_list(
         Ys = [ (y - mu)/std for y in Ys ]
     return Ys
 
-# ---------- BIC helpers ----------
-def _count_free_trans_params(K: int, left_right: bool) -> int:
-    """English documentation omitted during cleanup."""
-    if not left_right:
-        # English comment omitted during cleanup.
-        return K * (K - 1)
-    # English comment omitted during cleanup.
-    # English comment omitted during cleanup.
-    free = 0
-    for i in range(K):
-        allowed = 1 + (1 if i + 1 < K else 0)
-        free += max(allowed - 1, 0)
-    return free
-
-def _num_params_standard(K: int, D: int, left_right: bool) -> int:
-    """
-    English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-    """
-    p_pi = K - 1
-    p_A  = _count_free_trans_params(K, left_right)
-    p_em = K * (2 * D)
-    return p_pi + p_A + p_em
-
-def _num_params_ar(K: int, D: int, left_right: bool) -> int:
-    """
-    English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-      English documentation omitted during cleanup.
-    """
-    p_pi = K - 1
-    p_A = 0 if left_right else _count_free_trans_params(K, left_right)
-    p_init = K * (2 * D)
-    p_W = K * (D * (1 + D))
-    p_var = K * D
-    p_dur = 2 * K
-    return p_pi + p_A + p_init + p_W + p_var + p_dur
-
-def _total_loglik_ar(model, X_list):
-    """English documentation omitted during cleanup."""
-    total = 0.0
-    for x in X_list:
-        if hasattr(model, "score_sequence"):
-            total += float(model.score_sequence(x))
-        else:
-            _, _, logZ = model._fb(x)
-            total += float(logZ)
-    return total
-
 def _uniform_stage_ends(T: int, num_stages: int, min_duration: int) -> list[int]:
     ends = np.linspace(0, T, num_stages + 1, dtype=int)[1:] - 1
     ends[-1] = T - 1
@@ -162,6 +97,131 @@ def _uniform_stage_ends(T: int, num_stages: int, min_duration: int) -> list[int]
         max_end = ends[k + 1] - min_duration
         ends[k] = int(np.clip(ends[k], min_end, max_end))
     return [int(v) for v in ends.tolist()]
+
+
+def _random_stage_ends(
+    T: int,
+    num_stages: int,
+    min_duration: int,
+    shared_proportions: np.ndarray | None,
+) -> list[int]:
+    extra = int(T - num_stages * min_duration)
+    if extra < 0:
+        raise ValueError(
+            f"Sequence length {T} is too short for {num_stages} stages with minimum duration {min_duration}."
+        )
+    if num_stages <= 1:
+        return [int(T - 1)]
+    if extra > 0 and shared_proportions is not None:
+        desired = extra * np.asarray(shared_proportions, dtype=float)
+        extra_parts = np.floor(desired).astype(int)
+        remainder = int(extra - np.sum(extra_parts))
+        if remainder > 0:
+            frac_order = np.argsort(desired - extra_parts)[::-1]
+            extra_parts[frac_order[:remainder]] += 1
+    else:
+        extra_parts = np.zeros(num_stages, dtype=int)
+    lengths = extra_parts + int(min_duration)
+    ends = np.cumsum(lengths) - 1
+    ends[-1] = T - 1
+    return [int(v) for v in ends.tolist()]
+
+
+def _resolve_stage_ends_init(
+    X_list,
+    *,
+    num_stages: int,
+    min_duration: int,
+    tau_init=None,
+    tau_init_mode: str = "uniform_taus",
+    env=None,
+    seed: int = 0,
+    use_velocity: bool = False,
+    vel_weight: float = 1.0,
+    standardize: bool = False,
+    use_env_features: bool = True,
+    selected_raw_feature_ids=None,
+):
+    mode = str(tau_init_mode).lower()
+    rng = np.random.RandomState(int(seed))
+
+    if tau_init is not None:
+        tau_arr = np.asarray(tau_init, dtype=int)
+        if num_stages == 2:
+            if tau_arr.ndim != 1 or len(tau_arr) != len(X_list):
+                raise ValueError("tau_init must match the number of demos for K=2.")
+            return [
+                [clip_tau_for_sequence(x, tau), int(len(x) - 1)]
+                for x, tau in zip(X_list, tau_arr)
+            ]
+        if len(tau_arr) != len(X_list):
+            raise ValueError("tau_init must match the number of demos.")
+        out = []
+        for x, ends in zip(X_list, tau_arr):
+            end_list = np.asarray(ends, dtype=int).reshape(-1).tolist()
+            if len(end_list) == num_stages - 1:
+                end_list = end_list + [int(len(x) - 1)]
+            if len(end_list) != num_stages:
+                raise ValueError("For K>2, tau_init must provide stage ends of length K or cutpoints of length K-1.")
+            clipped = []
+            prev_end = -1
+            for stage_idx, end in enumerate(end_list):
+                min_end = prev_end + min_duration
+                max_end = len(x) - (num_stages - stage_idx - 1) * min_duration - 1
+                end_i = int(np.clip(int(end), min_end, max_end))
+                clipped.append(end_i)
+                prev_end = end_i
+            clipped[-1] = int(len(x) - 1)
+            out.append(clipped)
+        return out
+
+    if num_stages == 2:
+        tau_init_resolved = resolve_tau_init_for_demos(
+            X_list,
+            tau_init=None,
+            tau_init_mode=tau_init_mode,
+            env=env,
+            seed=seed,
+            use_velocity=use_velocity,
+            vel_weight=vel_weight,
+            standardize=standardize,
+            use_env_features=use_env_features,
+            selected_raw_feature_ids=selected_raw_feature_ids,
+        )
+        return [
+            [clip_tau_for_sequence(x, tau), int(len(x) - 1)]
+            for x, tau in zip(X_list, tau_init_resolved)
+        ]
+
+    if mode in {"random_taus", "random_stage_ends", "random"}:
+        shared_proportions = rng.dirichlet(np.full(num_stages, 0.5, dtype=float))
+        return [
+            _random_stage_ends(len(x), num_stages, min_duration, shared_proportions)
+            for x in X_list
+        ]
+
+    if mode == "changepoint_warmstart":
+        from ..backends.changepoint import segment_fixed_K_CP
+
+        out = []
+        for x in X_list:
+            cutpoints, _ = segment_fixed_K_CP(
+                x,
+                K=num_stages,
+                use_velocity=use_velocity,
+                vel_weight=vel_weight,
+                standardize=standardize,
+                env=env,
+                use_env_features=use_env_features,
+                selected_raw_feature_ids=selected_raw_feature_ids,
+            )
+            stage_ends = [int(cp) for cp in cutpoints] + [int(len(x) - 1)]
+            if len(stage_ends) != num_stages:
+                stage_ends = _uniform_stage_ends(len(x), num_stages, min_duration)
+            out.append(stage_ends)
+        return out
+
+    return [_uniform_stage_ends(len(x), num_stages, min_duration) for x in X_list]
 
 
 def _stage_ends_to_labels(T: int, stage_ends: list[int]) -> np.ndarray:
@@ -189,7 +249,6 @@ class ARHSMM:
         rng=None,
         min_covar=1e-4,
         ridge=1e-6,
-        left_right: bool = LEFT_RIGHT_DEFAULT,
         min_duration: int = 1,
         max_duration: int | None = None,
         duration_weight: float = 1.0,
@@ -201,9 +260,6 @@ class ARHSMM:
         self.sticky = float(sticky)
         self.min_covar = float(min_covar)
         self.ridge = float(ridge)
-        self.left_right = bool(left_right)
-        if not self.left_right:
-            raise ValueError("ARHSMM currently requires left_right=True.")
         self.min_duration = max(int(min_duration), 1)
         self.max_duration = None if max_duration is None else max(int(max_duration), self.min_duration)
         self.duration_weight = float(duration_weight)
@@ -226,21 +282,31 @@ class ARHSMM:
         self.duration_var = np.full(self.K, self.duration_var_floor, dtype=float)
         self.stage_ends_ = None
 
-    def _warm_start_stage_ends(self, X, tau_init):
-        stage_ends = []
-        if tau_init is not None and self.K == 2:
-            tau_init = np.asarray(tau_init, dtype=int)
-            for x, tau in zip(X, tau_init):
-                t = clip_tau_for_sequence(x, tau)
-                stage_ends.append([int(t), int(len(x) - 1)])
-            return stage_ends
-        for x in X:
+    def _warm_start_stage_ends(self, X, stage_ends_init):
+        if stage_ends_init is None:
+            return [_uniform_stage_ends(len(x), self.K, self.min_duration) for x in X]
+        if len(stage_ends_init) != len(X):
+            raise ValueError("stage_ends_init must match the number of demos.")
+        out = []
+        for x, ends in zip(X, stage_ends_init):
             if len(x) < self.K * self.min_duration:
                 raise ValueError(
                     f"Sequence length {len(x)} is too short for {self.K} stages with minimum duration {self.min_duration}."
                 )
-            stage_ends.append(_uniform_stage_ends(len(x), self.K, self.min_duration))
-        return stage_ends
+            end_list = np.asarray(ends, dtype=int).reshape(-1).tolist()
+            if len(end_list) != self.K:
+                raise ValueError("Each stage_ends_init entry must have length K.")
+            clipped = []
+            prev_end = -1
+            for stage_idx, end in enumerate(end_list):
+                min_end = prev_end + self.min_duration
+                max_end = len(x) - (self.K - stage_idx - 1) * self.min_duration - 1
+                end_i = int(np.clip(int(end), min_end, max_end))
+                clipped.append(end_i)
+                prev_end = end_i
+            clipped[-1] = int(len(x) - 1)
+            out.append(clipped)
+        return out
 
     def _fit_from_stage_ends(self, X, stage_ends_list):
         global_stack = np.concatenate([np.asarray(x, dtype=float) for x in X], axis=0)
@@ -329,6 +395,20 @@ class ARHSMM:
             else:
                 self.var[stage_idx] = self.init_var[stage_idx].copy()
 
+        if self.K > 1:
+            num_sequences = float(len(X))
+            for stage_idx in range(self.K - 1):
+                self_count = float(np.sum([max(int(d) - 1, 0) for d in durations[stage_idx]]))
+                next_count = num_sequences
+                denom = self_count + next_count + float(max(self.sticky, 0.0)) + 1.0
+                p_self = (self_count + float(max(self.sticky, 0.0))) / max(denom, 1e-8)
+                p_self = float(np.clip(p_self, 1e-6, 1.0 - 1e-6))
+                self.A[stage_idx, :] = 0.0
+                self.A[stage_idx, stage_idx] = p_self
+                self.A[stage_idx, stage_idx + 1] = 1.0 - p_self
+            self.A[-1, :] = 0.0
+            self.A[-1, -1] = 1.0
+
     def _emission_tables(self, x):
         x = np.asarray(x, dtype=float)
         T = len(x)
@@ -354,7 +434,14 @@ class ARHSMM:
         mean = max(float(self.duration_mean[stage_idx]), float(self.min_duration))
         var = max(float(self.duration_var[stage_idx]), self.duration_var_floor)
         diff = float(duration) - mean
-        return float(self.duration_weight * (-0.5 * (np.log(2.0 * np.pi * var) + (diff * diff) / var)))
+        duration_score = float(self.duration_weight * (-0.5 * (np.log(2.0 * np.pi * var) + (diff * diff) / var)))
+        p_self = float(np.clip(self.A[stage_idx, stage_idx], 1e-6, 1.0 - 1e-6))
+        duration_score += float(max(int(duration) - 1, 0) * np.log(p_self))
+        if stage_idx < self.K - 1:
+            p_self = float(np.clip(self.A[stage_idx, stage_idx], 1e-6, 1.0 - 1e-6))
+            p_next = float(np.clip(self.A[stage_idx, stage_idx + 1], 1e-6, 1.0 - 1e-6))
+            duration_score += float(np.log(p_next))
+        return duration_score
 
     def _decode(self, x):
         x = np.asarray(x, dtype=float)
@@ -418,8 +505,8 @@ class ARHSMM:
         _, _, score = self._decode(x)
         return float(score)
 
-    def fit(self, X, n_iter=30, verbose=True, true_taus=None, tau_init=None):
-        stage_ends_list = self._warm_start_stage_ends(X, tau_init)
+    def fit(self, X, n_iter=30, verbose=True, true_taus=None, stage_ends_init=None):
+        stage_ends_list = self._warm_start_stage_ends(X, stage_ends_init)
         hist_loglik = []
         hist_metrics = {"MeanAbsCutpointError": [], "CutpointExactMatchRate": []}
         stage_ends_history = []
@@ -496,19 +583,15 @@ def segment_with_hmm(
     selected_raw_feature_ids=None,
     tau_init=None,
     tau_init_mode: str = "uniform_taus",
-    left_right: bool | None = None,
     min_duration: int = 1,
     max_duration: int | None = None,
     duration_weight: float = 1.0,
     duration_var_floor: float = 4.0,
 ):
-    if left_right is None:
-        left_right = LEFT_RIGHT_DEFAULT
-    else:
-        left_right = bool(left_right)
-
     if method.lower() != "ar":
         raise ValueError(f"Only method='ar' is supported. Got method={method!r}.")
+    if isinstance(n_stages, (list, tuple, range)):
+        raise ValueError("ARHSMM only supports a fixed integer n_stages.")
 
     # English comment omitted during cleanup.
     X_seg_raw = [ (x if seg_dims is None else x[:, seg_dims]) for x in X_full ]
@@ -525,26 +608,26 @@ def segment_with_hmm(
 
     import numpy as _np
     _rng = _np.random.RandomState(int(seed))
-    tau_init_resolved = resolve_tau_init_for_demos(
-        X_full,
-        tau_init=tau_init,
-        tau_init_mode=tau_init_mode,
-        env=env,
-        seed=seed,
-        use_velocity=use_velocity,
-        vel_weight=vel_weight,
-        standardize=standardize,
-        use_env_features=use_env_features,
-        selected_raw_feature_ids=selected_raw_feature_ids,
-    )
-
     def _fit_for_K(K_try: int):
+        stage_ends_init = _resolve_stage_ends_init(
+            X_full,
+            num_stages=int(K_try),
+            min_duration=min_duration,
+            tau_init=tau_init,
+            tau_init_mode=tau_init_mode,
+            env=env,
+            seed=seed,
+            use_velocity=use_velocity,
+            vel_weight=vel_weight,
+            standardize=standardize,
+            use_env_features=use_env_features,
+            selected_raw_feature_ids=selected_raw_feature_ids,
+        )
         mdl = ARHSMM(
             n_stages=K_try,
             n_dims=D,
             sticky=sticky,
             rng=_rng,
-            left_right=left_right,
             min_duration=min_duration,
             max_duration=max_duration,
             duration_weight=duration_weight,
@@ -555,40 +638,15 @@ def segment_with_hmm(
             n_iter=n_iter,
             verbose=verbose,
             true_taus=true_taus,
-            tau_init=tau_init_resolved if int(K_try) == 2 else None,
+            stage_ends_init=stage_ends_init,
         )
         return mdl, Z_list_, hist
 
     chosen_model = None
     Z_states_list = None
     seg_hist = {}
-    if isinstance(n_stages, (list, tuple, range)):
-        K_cands = list(n_stages)
-        if len(K_cands) == 0:
-            raise ValueError("Empty K candidate list for BIC.")
-        best = {"bic": np.inf, "K": None, "mdl": None, "Z": None, "hist": None}
-        N_data = sum(len(x) for x in X_seg)
-        bic_table = []
-        for K_try in K_cands:
-            mdl, Z_tmp, hist = _fit_for_K(int(K_try))
-            logL = _total_loglik_ar(mdl, X_seg)
-            p = _num_params_ar(K_try, D, left_right)
-            bic = -2.0 * logL + p * np.log(max(N_data, 1))
-            if verbose:
-                print(f"[BIC] method=ar K={K_try} | logL={logL:.3f} p={p} N={N_data} BIC={bic:.3f}")
-            bic_table.append(
-                {"K": int(K_try), "logL": float(logL), "p": int(p), "N": int(N_data), "BIC": float(bic)})
-            if bic < best["bic"]:
-                best.update({"bic": bic, "K": K_try, "mdl": mdl, "Z": Z_tmp, "hist": hist})
-        chosen_model = best["mdl"]
-        Z_states_list = best["Z"]
-        seg_hist = best["hist"] if isinstance(best["hist"], dict) else {}
-        bic_table.sort(key=lambda d: d["K"])
-        seg_hist["bic_table"] = bic_table
-        seg_hist["bic_selected_K"] = int(best["K"])
-    else:
-        mdl, Z_states_list, seg_hist = _fit_for_K(int(n_stages))
-        chosen_model = mdl
+    mdl, Z_states_list, seg_hist = _fit_for_K(int(n_stages))
+    chosen_model = mdl
 
     Z_list = [np.asarray(z, dtype=int) for z in Z_states_list]
     return Z_list, chosen_model, seg_hist

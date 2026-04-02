@@ -23,6 +23,7 @@ from experiments.config_loader import load_json
 from experiments.artifacts import (
     apply_run_plot_dirs,
     default_method_seed,
+    _extract_objectives,
     resolve_run_dir,
     save_run_artifacts,
     write_json,
@@ -168,10 +169,11 @@ def _clear_png_files(path: Path) -> None:
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     metric_keys = sorted({k for row in rows for k in row["metrics"].keys()})
+    objective_keys = sorted({k for row in rows for k in row.get("objectives", {}).keys()})
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["method", "dataset", "dataset_seed", "method_seed", *metric_keys])
+        writer.writerow(["method", "dataset", "dataset_seed", "method_seed", *metric_keys, *objective_keys])
         for row in rows:
             writer.writerow(
                 [
@@ -180,6 +182,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
                     row["dataset_seed"],
                     row["method_seed"],
                     *[row["metrics"].get(key, "") for key in metric_keys],
+                    *[row.get("objectives", {}).get(key, "") for key in objective_keys],
                 ]
             )
 
@@ -325,6 +328,7 @@ def run_benchmark(
                         "dataset_seed": int(dataset_seed),
                         "method_seed": int(method_seed),
                         "metrics": _extract_metrics(method_name, result),
+                        "objectives": _extract_objectives(method_name, result),
                     }
                 )
                 goal_records.setdefault((dataset_name, method_name), []).append(
@@ -343,7 +347,7 @@ def run_benchmark(
 def main():
     parser = argparse.ArgumentParser(description="Run benchmark over methods, datasets, and seeds.")
     parser.add_argument("--methods", default="swcl")
-    parser.add_argument("--datasets", default="S3ObAvoid")
+    parser.add_argument("--datasets", default="S3ObsAvoid")
     parser.add_argument("--method-seeds", default="0")
     parser.add_argument("--dataset-seed", type=int, default=0)
     parser.add_argument("--seeds", default=None)

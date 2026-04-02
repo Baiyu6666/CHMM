@@ -4,10 +4,9 @@
   "seed": 12342,
   "method_overrides": {
     "swcl": {
-      "n_stages": 4,
+      "n_stages": [2,3,4,5,6,7,8],
       "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed"],
       "feature_activation_mode": "score",
-      "constraint_core_trim": 0,
       "feature_model_types": {
         "surface_distance": "student_t",
         "force": "margin_exp_lower",
@@ -18,7 +17,6 @@
       "max_iter": 5,
       "lambda_subgoal_consensus": 0,
         "short_segment_penalty_c": 2,
-      "_comment": "      \"lambda_subgoal_consensus\": 1,\n",
         "fixed_true_cutpoint_indices": [],
     "lambda_ineq_constraint": 0.02,
       "lambda_activation_consensus": 1
@@ -33,14 +31,15 @@
         "speed": "student_t",
         "noise_aux": "student_t"
       },
-      "fixed_feature_mask": [[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]]
+      "fixed_feature_mask": [[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]],
+      "feat_weight": 0.1
     },
     "hmm": {
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed"]
       },
-      "posthoc": {
+      "posthoc_constraint": {
         "constraint_core_trim": 0,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed"],
         "feature_model_types": {
@@ -58,7 +57,7 @@
         "n_stages": 4,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"]
       },
-      "constraints": {
+      "posthoc_constraint": {
         "constraint_core_trim": 2,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
         "feature_model_types": {
@@ -76,7 +75,7 @@
         "n_stages": 4,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"]
       },
-      "constraints": {
+      "posthoc_constraint": {
         "constraint_core_trim": 0,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
         "feature_model_types": {
@@ -99,7 +98,8 @@
         "min_len": 3,
         "init_mode": "random_stage_ends"
       },
-      "constraints": {
+      "feature_distance_weight": 0.3,
+      "posthoc_constraint": {
         "constraint_core_trim": 0,
         "selected_raw_feature_ids": ["surface_distance", "force", "orientation_error", "speed", "noise_aux"],
         "feature_model_types": {

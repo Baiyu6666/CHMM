@@ -1,0 +1,1534 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.65,
+        "MeanStageSubgoalError": 0.1950725857220073,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 7,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 8,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObAvoid",
+      "method": "arhsmm",
+      "dataset_seed": 125949,
+      "method_seed": 9,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 13.6,
+        "MeanStageSubgoalError": 0.19507285199862812,
+        "MeanConstraintError": 0.010146009577528776,
+        "MeanConstraintErrorRaw": 0.004357221667201892
+      }
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+{
+  "dataset": "S3ObAvoid",
+  "method": "arhsmm",
+  "dataset_seed": 125949,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "grid": {
+    "segmenter.sticky": [
+      2.0,
+      5.0,
+      10.0
+    ],
+    "segmenter.duration_weight": [
+      0.3,
+      1.0,
+      3.0
+    ]
+  },
+  "metric_keys": [
+    "MeanConstraintError",
+    "MeanAbsCutpointError"
+  ],
+  "best": {
+    "num_runs": 10,
+    "params": {
+      "segmenter.sticky": 2.0,
+      "segmenter.duration_weight": 0.3
+    },
+    "combo_id": 0,
+    "MeanConstraintError_mean": 0.010146009577528776,
+    "MeanConstraintError_std": 0.0,
+    "MeanAbsCutpointError_mean": 13.65,
+    "MeanAbsCutpointError_std": 0.0
+  },
+  "results": [
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "combo_id": 0,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.65,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "combo_id": 1,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.65,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 2.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "combo_id": 2,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.6,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "combo_id": 3,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.65,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "combo_id": 4,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.65,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 5.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "combo_id": 5,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.6,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 0.3
+      },
+      "combo_id": 6,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.65,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 1.0
+      },
+      "combo_id": 7,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.65,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 10,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 3.0
+      },
+      "combo_id": 8,
+      "MeanConstraintError_mean": 0.010146009577528776,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 13.6,
+      "MeanAbsCutpointError_std": 0.0
+    }
+  ]
+}

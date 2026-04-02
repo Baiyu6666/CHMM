@@ -94,9 +94,6 @@ class FixedTauConstraintModel:
         fixed_feature_mask=None,
         selected_raw_feature_ids=None,
         feature_model_types=None,
-        feat_weight=1.0,
-        prog_weight=1.0,
-        trans_weight=0.0,
         constraint_core_trim=0,
         plot_dir="outputs/plots",
         plot_every=None,
@@ -112,21 +109,14 @@ class FixedTauConstraintModel:
         ]
         self.stage_ends_ = self._normalize_stage_ends(stage_ends_init=stage_ends_init, tau_init=tau_init)
         self.sigma_irrel = 1.0
-        self.feat_weight = float(feat_weight)
-        self.prog_weight = float(prog_weight)
-        self.trans_weight = float(trans_weight)
         self.constraint_core_trim = max(int(constraint_core_trim), 0)
         self.plot_dir = plot_dir
         self.plot_every = plot_every
         self.eval_fn = eval_fn
         self.g2_init = None if g2_init is None else np.asarray(g2_init, dtype=float)
         self.selected_raw_feature_ids = None if selected_raw_feature_ids is None else list(selected_raw_feature_ids)
-        self.prog_kappa1 = 0.0
-        self.prog_kappa2 = 0.0
         self.loss_loglik = []
         self.loss_feat = []
-        self.loss_prog = []
-        self.loss_trans = []
         self.metrics_hist = {}
         self.g1_hist = []
         self.g2_hist = []
@@ -517,21 +507,12 @@ class FixedTauConstraintModel:
             parts = []
             for feat_idx in active:
                 parts.append(np.asarray(self.feature_models[stage_idx][feat_idx].logpdf(F[:, feat_idx]), dtype=float))
-            stage_ll = self.feat_weight * np.mean(np.stack(parts, axis=1), axis=1)
+            stage_ll = np.mean(np.stack(parts, axis=1), axis=1)
             if demo_idx is None:
                 ll_feat[:, stage_idx] = stage_ll
             else:
                 core_mask = self._core_mask_for_demo_stage(demo_idx, stage_idx)
                 ll_feat[core_mask, stage_idx] = stage_ll[core_mask]
-        ll_prog = np.zeros((T, self.num_stages), dtype=float)
-        ll_emit = ll_feat + ll_prog
         if return_parts:
-            return ll_emit, ll_feat, ll_prog
-        return ll_emit
-
-    def _transition_logprob(self, X, return_aux=False):
-        T = len(X)
-        logA = np.zeros((max(T - 1, 0), self.num_stages, self.num_stages), dtype=float)
-        if return_aux:
-            return logA, None
-        return logA
+            return ll_feat, ll_feat
+        return ll_feat

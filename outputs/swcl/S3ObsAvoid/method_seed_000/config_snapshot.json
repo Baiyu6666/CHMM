@@ -1,0 +1,57 @@
+{
+  "dataset_name": "S3ObsAvoid",
+  "method_name": "swcl",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 125949
+  },
+  "method_kwargs": {
+    "max_iter": 10,
+    "verbose": true,
+    "n_stages": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "seed": 0,
+    "selected_raw_feature_ids": [
+      "dist_main_obstacle",
+      "speed",
+      "terminal_arc_distance",
+      "heading_angle",
+      "decoy_line_distance",
+      "noise_aux"
+    ],
+    "feature_model_types": {
+      "dist_main_obstacle": "margin_exp_lower",
+      "speed": "student_t",
+      "terminal_arc_distance": "student_t",
+      "heading_angle": "student_t",
+      "decoy_line_distance": "student_t",
+      "noise_aux": "student_t"
+    },
+    "fixed_feature_mask": null,
+    "lambda_eq_constraint": 1,
+    "lambda_ineq_constraint": 0.05,
+    "lambda_progress": 0.5,
+    "lambda_subgoal_consensus": 0,
+    "lambda_param_consensus": 50,
+    "lambda_activation_consensus": 0.25,
+    "consensus_schedule": "linear",
+    "progress_delta_scale": 20.0,
+    "duration_min": 3,
+    "duration_max": null,
+    "feature_activation_mode": "score",
+    "equality_score_mode": "dispersion",
+    "equality_dispersion_ratio_threshold": 0.05,
+    "constraint_core_trim": 0,
+    "short_segment_penalty_c": 3,
+    "stage_count_penalty": 1.0,
+    "inequality_score_activation_threshold": -0.4,
+    "fixed_true_cutpoint_prefix": 0,
+    "fixed_true_cutpoint_indices": null,
+    "plot_every": null,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S3ObsAvoid/method_seed_000"
+  }
+}

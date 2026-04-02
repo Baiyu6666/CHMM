@@ -1,0 +1,4 @@
+{
+  "segmenter.sticky": [10.0, 100.0, 400.0],
+  "segmenter.duration_weight": [10.0, 100.0, 400.0]
+}

@@ -1023,8 +1023,8 @@ def _draw_learning_curves(ax, learner):
         * np.asarray(learner.loss_param_consensus, dtype=float)
     )
     weighted_activation_consensus = (
-        np.asarray(getattr(learner, "activation_consensus_lambda_hist", learner.feature_score_consensus_lambda_hist)[: len(getattr(learner, "loss_activation_consensus", learner.loss_feature_score_consensus))], dtype=float)
-        * np.asarray(getattr(learner, "loss_activation_consensus", learner.loss_feature_score_consensus), dtype=float)
+        np.asarray(getattr(learner, "activation_consensus_lambda_hist", [])[: len(getattr(learner, "loss_activation_consensus", []))], dtype=float)
+        * np.asarray(getattr(learner, "loss_activation_consensus", []), dtype=float)
     )
     ax.plot(iters, learner.loss_total, color="black", lw=1.3, label="total")
     ax.plot(iters, weighted_constraint, color="tab:red", lw=1.0, label="constraint")
@@ -1463,7 +1463,7 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
         lam_subgoal_consensus = float(getattr(learner, "current_subgoal_consensus_lambda", 0.0))
         lam_param_consensus = float(getattr(learner, "current_param_consensus_lambda", 0.0))
         lam_activation_consensus = float(
-            getattr(learner, "current_activation_consensus_lambda", getattr(learner, "current_feature_score_consensus_lambda", 0.0))
+            getattr(learner, "current_activation_consensus_lambda", 0.0)
         )
         info = learner._candidate_cost(
             demo_idx=demo_idx,
@@ -1490,7 +1490,7 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
         progress.append(learner.lambda_progress * float(info["progress"]))
         subgoal_consensus.append(lam_subgoal_consensus * float(info["subgoal_consensus"]))
         param_consensus.append(lam_param_consensus * float(info["param_consensus"]))
-        activation_consensus.append(lam_activation_consensus * float(info.get("activation_consensus", info.get("feature_score_consensus", 0.0))))
+        activation_consensus.append(lam_activation_consensus * float(info.get("activation_consensus", 0.0)))
         total.append(float(info["total"]))
 
     ax.plot(candidate_taus, total, color="black", lw=1.4, label="total")
@@ -1589,7 +1589,7 @@ def _current_consensus_lambdas(learner):
     return (
         float(getattr(learner, "current_subgoal_consensus_lambda", 0.0)),
         float(getattr(learner, "current_param_consensus_lambda", 0.0)),
-        float(getattr(learner, "current_activation_consensus_lambda", getattr(learner, "current_feature_score_consensus_lambda", 0.0))),
+        float(getattr(learner, "current_activation_consensus_lambda", 0.0)),
     )
 
 
@@ -1977,7 +1977,7 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
         progress.append(learner.lambda_progress * float(info["progress"]))
         subgoal_consensus.append(lam_subgoal_consensus * float(info["subgoal_consensus"]))
         param_consensus.append(lam_param_consensus * float(info["param_consensus"]))
-        activation_consensus.append(lam_activation_consensus * float(info.get("activation_consensus", info.get("feature_score_consensus", 0.0))))
+        activation_consensus.append(lam_activation_consensus * float(info.get("activation_consensus", 0.0)))
         feat_costs = np.zeros(learner.num_features, dtype=float)
         for stage_params in info["stage_params"]:
             feat_contrib = np.asarray(
@@ -2167,7 +2167,15 @@ def plot_swcl_results_4panel(learner, it, demo_idx=0):
         _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=demo_idx, vary_index=vary_index)
 
 
-def plot_swcl_results_4panel_overview(learner, it, *, metrics=None, plot_dir=None):
+def plot_swcl_results_4panel_overview(
+    learner,
+    it,
+    *,
+    metrics=None,
+    plot_dir=None,
+    save_name=None,
+    include_constraint_type_summary=True,
+):
     if plt is None:
         return
     feature_indices = []
@@ -2221,5 +2229,8 @@ def plot_swcl_results_4panel_overview(learner, it, *, metrics=None, plot_dir=Non
     ax8 = fig.add_subplot(gs[next_row, 1])
     _draw_constraint_error_matrix(ax8, learner, metrics) if has_error_row else ax8.axis("off")
 
-    save_figure(fig, learner_plot_dir(learner, plot_dir=plot_dir) / f"training_summary_iter_{int(it):04d}.png", dpi=220)
-    plot_constraint_type_summary(learner, it, plot_dir=plot_dir)
+    if save_name is None:
+        save_name = f"training_summary_iter_{int(it):04d}.png"
+    save_figure(fig, learner_plot_dir(learner, plot_dir=plot_dir) / str(save_name), dpi=220)
+    if include_constraint_type_summary:
+        plot_constraint_type_summary(learner, it, plot_dir=plot_dir)

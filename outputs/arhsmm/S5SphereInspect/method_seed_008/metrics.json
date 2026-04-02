@@ -1,15 +1,15 @@
 {
   "scalar_metrics": {
-    "MeanAbsCutpointError": 12.25,
-    "MeanStageSubgoalError": 0.7335594230170994,
-    "MeanConstraintError": 0.022486951230616854,
-    "MeanConstraintErrorRaw": 0.008023993850982233
+    "MeanAbsCutpointError": 9.9,
+    "MeanStageSubgoalError": 0.6935229103554305,
+    "MeanConstraintError": 0.039464810992639675,
+    "MeanConstraintErrorRaw": 0.020881744235319376
   },
   "all_metrics": {
-    "MeanAbsCutpointError": 12.25,
-    "MeanStageSubgoalError": 0.7335594230170994,
-    "MeanConstraintError": 0.022486951230616854,
-    "MeanConstraintErrorRaw": 0.008023993850982233,
+    "MeanAbsCutpointError": 9.9,
+    "MeanStageSubgoalError": 0.6935229103554305,
+    "MeanConstraintError": 0.039464810992639675,
+    "MeanConstraintErrorRaw": 0.020881744235319376,
     "ConstraintErrorMatrix": [
       [
         NaN,
@@ -18,8 +18,8 @@
         NaN
       ],
       [
-        0.0008570116113045279,
-        0.010687347513941207,
+        0.0157627954997101,
+        0.16914149405501702,
         0.0,
         NaN
       ],
@@ -30,7 +30,7 @@
         NaN
       ],
       [
-        0.10089039702783853,
+        0.01241976540847127,
         NaN,
         0.0,
         NaN
@@ -50,8 +50,8 @@
         NaN
       ],
       [
-        0.00028739021681151167,
-        0.005999999999999506,
+        0.005285894795896182,
+        0.09495798307355399,
         0.0,
         NaN
       ],
@@ -62,7 +62,7 @@
         NaN
       ],
       [
-        0.03383257903810015,
+        0.004164843307146698,
         NaN,
         0.0,
         NaN

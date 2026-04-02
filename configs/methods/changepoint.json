@@ -10,13 +10,11 @@
     "selected_raw_feature_ids": null,
     "min_len": 1
   },
-  "constraints": {
+  "posthoc_constraint": {
     "verbose": true,
     "fixed_feature_mask": null,
     "selected_raw_feature_ids": null,
     "feature_model_types": null,
-    "feat_weight": 1.0,
-    "prog_weight": 1.0,
     "plot_dir": "outputs/plots"
   }
 }

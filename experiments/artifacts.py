@@ -94,12 +94,11 @@ def apply_run_plot_dirs(
         cfg["plot_dir"] = plot_dir_str
         return cfg
     segmenter_cfg = dict(cfg.get("segmenter", {}))
-    posthoc_key = "posthoc" if method_name == "hmm" else "constraints"
-    constraint_cfg = dict(cfg.get(posthoc_key, {}))
+    constraint_cfg = dict(cfg.get("posthoc_constraint", {}))
     segmenter_cfg["plot_dir"] = plot_dir_str
     constraint_cfg["plot_dir"] = plot_dir_str
     cfg["segmenter"] = segmenter_cfg
-    cfg[posthoc_key] = constraint_cfg
+    cfg["posthoc_constraint"] = constraint_cfg
     return cfg
 
 
@@ -162,6 +161,64 @@ def _extract_scalar_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _append_scalar_if_finite(out: dict[str, Any], key: str, value: Any) -> None:
+    if value is None:
+        return
+    if not np.isscalar(value):
+        return
+    try:
+        value_f = float(value)
+    except (TypeError, ValueError):
+        return
+    if np.isfinite(value_f):
+        out[str(key)] = value_f
+
+
+def _extract_objectives(method_name: str, result: Mapping[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+
+    if method_name == "swcl":
+        model = result.get("joint_result", {}).get("model", None)
+        if model is not None:
+            history = getattr(model, "loss_total", None)
+            if history:
+                _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
+                _append_scalar_if_finite(out, "TrainingTotalCostFinal", history[-1])
+        return out
+
+    segmentation = result.get("segmentation", None)
+    seg_model = getattr(segmentation, "model", None) if segmentation is not None else None
+    seg_extras = getattr(segmentation, "extras", {}) if segmentation is not None else {}
+    if not isinstance(seg_extras, Mapping):
+        seg_extras = {}
+    constraint_model = result.get("constraints", {}).get("model", None)
+
+    if method_name == "cluster" and seg_model is not None:
+        history = getattr(seg_model, "objective_history_", None)
+        if history:
+            _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
+            _append_scalar_if_finite(out, "SegmentationObjectiveFinal", history[-1])
+    elif method_name == "arhsmm":
+        history = (seg_extras.get("segmentation_history") or {}).get("loglik")
+        if history:
+            _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
+            _append_scalar_if_finite(out, "SegmentationLogLikelihoodFinal", history[-1])
+    elif method_name in {"fchmm", "hmm"} and constraint_model is not None:
+        history = getattr(constraint_model, "loss_loglik", None)
+        if history:
+            _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
+            _append_scalar_if_finite(out, "TrainingLogLikelihoodFinal", history[-1])
+
+    if constraint_model is not None:
+        _append_scalar_if_finite(out, "PosthocObjectiveFinal", getattr(constraint_model, "posthoc_total_objective_", None))
+        _append_scalar_if_finite(
+            out,
+            "PosthocFeatureObjectiveFinal",
+            getattr(constraint_model, "posthoc_feature_objective_", None),
+        )
+    return out
+
+
 def save_run_artifacts(
     *,
     run_dir: str | Path,
@@ -177,6 +234,7 @@ def save_run_artifacts(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     metrics = _extract_metrics(result)
+    objectives = _extract_objectives(method_name, result)
     plot_dir = resolve_plot_dir(run_dir)
     method_seed = default_method_seed(method_name, method_kwargs)
 
@@ -218,7 +276,12 @@ def save_run_artifacts(
             {
                 "scalar_metrics": _extract_scalar_metrics(metrics),
                 "all_metrics": metrics,
+                "objectives": objectives,
             },
+        ),
+        "objectives": write_json(
+            run_dir / "objectives.json",
+            objectives,
         ),
         "segmentation": write_json(
             run_dir / "segmentation.json",

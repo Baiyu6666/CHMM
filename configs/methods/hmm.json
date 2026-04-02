@@ -25,14 +25,12 @@
     "q_high": 0.9,
     "g1_vis_alpha": 1.0
   },
-  "posthoc": {
+  "posthoc_constraint": {
     "verbose": true,
     "fixed_feature_mask": null,
     "selected_raw_feature_ids": null,
     "feature_model_types": null,
     "constraint_core_trim": 0,
-    "feat_weight": 1.0,
-    "prog_weight": 1.0,
     "plot_dir": "outputs/plots"
   }
 }

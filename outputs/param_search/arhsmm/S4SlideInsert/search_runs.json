@@ -1,0 +1,904 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7666666666666675,
+        "MeanStageSubgoalError": 0.20749058649324414,
+        "MeanConstraintError": 0.01946036579160303,
+        "MeanConstraintErrorRaw": 0.005301520166361996,
+        "SegmentationLogLikelihoodFinal": 1127.5240754936117,
+        "PosthocObjectiveFinal": 1023.670061780502,
+        "PosthocFeatureObjectiveFinal": 1023.670061780502
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 22.73333333333333,
+        "MeanStageSubgoalError": 0.45509628335820373,
+        "MeanConstraintError": 0.05201519657839462,
+        "MeanConstraintErrorRaw": 0.037647652154806324,
+        "SegmentationLogLikelihoodFinal": 929.5495649903812,
+        "PosthocObjectiveFinal": 465.52692307160123,
+        "PosthocFeatureObjectiveFinal": 465.52692307160123
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.4,
+        "MeanStageSubgoalError": 0.3324679316278825,
+        "MeanConstraintError": 0.067134436460244,
+        "MeanConstraintErrorRaw": 0.04853408561495207,
+        "SegmentationLogLikelihoodFinal": 1068.5184335359404,
+        "PosthocObjectiveFinal": -1999999294.8641968,
+        "PosthocFeatureObjectiveFinal": -1999999294.8641968
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.966666666666667,
+        "MeanStageSubgoalError": 0.14726343166774955,
+        "MeanConstraintError": 0.11643051076404436,
+        "MeanConstraintErrorRaw": 0.08335848197437029,
+        "SegmentationLogLikelihoodFinal": 943.3691235241165,
+        "PosthocObjectiveFinal": -8500000335.990656,
+        "PosthocFeatureObjectiveFinal": -8500000335.990656
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.499999999999996,
+        "MeanStageSubgoalError": 0.368627281536867,
+        "MeanConstraintError": 0.11411641401877996,
+        "MeanConstraintErrorRaw": 0.06930272179098221,
+        "SegmentationLogLikelihoodFinal": 1030.3178398386422,
+        "PosthocObjectiveFinal": 701.0049056040318,
+        "PosthocFeatureObjectiveFinal": 701.0049056040318
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.833333333333332,
+        "MeanStageSubgoalError": 0.2304423126929059,
+        "MeanConstraintError": 0.019467265524511758,
+        "MeanConstraintErrorRaw": 0.005343726242633894,
+        "SegmentationLogLikelihoodFinal": 188.2572276774866,
+        "PosthocObjectiveFinal": -6499999238.596955,
+        "PosthocFeatureObjectiveFinal": -6499999238.596955
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 23.433333333333334,
+        "MeanStageSubgoalError": 0.4607917627629714,
+        "MeanConstraintError": 0.053122641391531514,
+        "MeanConstraintErrorRaw": 0.03941084494433713,
+        "SegmentationLogLikelihoodFinal": 92.57410998796635,
+        "PosthocObjectiveFinal": -5249999645.1720705,
+        "PosthocFeatureObjectiveFinal": -5249999645.1720705
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 18.166666666666664,
+        "MeanStageSubgoalError": 0.3530393814582845,
+        "MeanConstraintError": 0.04986099970987604,
+        "MeanConstraintErrorRaw": 0.0370218012648082,
+        "SegmentationLogLikelihoodFinal": 196.63739716985245,
+        "PosthocObjectiveFinal": -1499999330.1559079,
+        "PosthocFeatureObjectiveFinal": -1499999330.1559079
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.26666666666667,
+        "MeanStageSubgoalError": 0.1410266954198165,
+        "MeanConstraintError": 0.1208075297197116,
+        "MeanConstraintErrorRaw": 0.08441450713323087,
+        "SegmentationLogLikelihoodFinal": 134.21933976094914,
+        "PosthocObjectiveFinal": -10500000376.273335,
+        "PosthocFeatureObjectiveFinal": -10500000376.273335
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.199999999999996,
+        "MeanStageSubgoalError": 0.3648524998711934,
+        "MeanConstraintError": 0.11427069512139283,
+        "MeanConstraintErrorRaw": 0.06934688687939362,
+        "SegmentationLogLikelihoodFinal": 246.58009664130313,
+        "PosthocObjectiveFinal": -4999999295.9744835,
+        "PosthocFeatureObjectiveFinal": -4999999295.9744835
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.1,
+        "MeanStageSubgoalError": 0.23344666631922323,
+        "MeanConstraintError": 0.02871964009225487,
+        "MeanConstraintErrorRaw": 0.014414312974655416,
+        "SegmentationLogLikelihoodFinal": -2382.576798012663,
+        "PosthocObjectiveFinal": -6749999376.965701,
+        "PosthocFeatureObjectiveFinal": -6749999376.965701
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 23.53333333333333,
+        "MeanStageSubgoalError": 0.45952004994344514,
+        "MeanConstraintError": 0.05284749403486154,
+        "MeanConstraintErrorRaw": 0.03932750716575137,
+        "SegmentationLogLikelihoodFinal": -2410.1851127935706,
+        "PosthocObjectiveFinal": -5249999685.467593,
+        "PosthocFeatureObjectiveFinal": -5249999685.467593
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 18.633333333333333,
+        "MeanStageSubgoalError": 0.3593037511318773,
+        "MeanConstraintError": 0.049702880050837846,
+        "MeanConstraintErrorRaw": 0.0369991923002396,
+        "SegmentationLogLikelihoodFinal": -2312.2907833341787,
+        "PosthocObjectiveFinal": -1499999392.3800504,
+        "PosthocFeatureObjectiveFinal": -1499999392.3800504
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.433333333333334,
+        "MeanStageSubgoalError": 0.14252188090431406,
+        "MeanConstraintError": 0.11768212227048454,
+        "MeanConstraintErrorRaw": 0.08321996327513136,
+        "SegmentationLogLikelihoodFinal": -2373.3905283794797,
+        "PosthocObjectiveFinal": -9250000312.746374,
+        "PosthocFeatureObjectiveFinal": -9250000312.746374
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 10.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 21.7,
+        "MeanStageSubgoalError": 0.38925254555404437,
+        "MeanConstraintError": 0.11544198030712956,
+        "MeanConstraintErrorRaw": 0.06968067507007315,
+        "SegmentationLogLikelihoodFinal": -2384.2994391609896,
+        "PosthocObjectiveFinal": -3749999427.956256,
+        "PosthocFeatureObjectiveFinal": -3749999427.956256
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7666666666666675,
+        "MeanStageSubgoalError": 0.20749058649324414,
+        "MeanConstraintError": 0.01946036579160303,
+        "MeanConstraintErrorRaw": 0.005301520166361996,
+        "SegmentationLogLikelihoodFinal": 1127.4152301582844,
+        "PosthocObjectiveFinal": 1023.670061780502,
+        "PosthocFeatureObjectiveFinal": 1023.670061780502
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 22.73333333333333,
+        "MeanStageSubgoalError": 0.45509628335820373,
+        "MeanConstraintError": 0.05201519657839462,
+        "MeanConstraintErrorRaw": 0.037647652154806324,
+        "SegmentationLogLikelihoodFinal": 929.0853759562721,
+        "PosthocObjectiveFinal": 465.52692307160123,
+        "PosthocFeatureObjectiveFinal": 465.52692307160123
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.366666666666667,
+        "MeanStageSubgoalError": 0.3323190642211532,
+        "MeanConstraintError": 0.06721091423126552,
+        "MeanConstraintErrorRaw": 0.04853094167678679,
+        "SegmentationLogLikelihoodFinal": 1067.8988799982021,
+        "PosthocObjectiveFinal": -1999999306.3353875,
+        "PosthocFeatureObjectiveFinal": -1999999306.3353875
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.966666666666667,
+        "MeanStageSubgoalError": 0.14726343166774955,
+        "MeanConstraintError": 0.11643051076404436,
+        "MeanConstraintErrorRaw": 0.08335848197437029,
+        "SegmentationLogLikelihoodFinal": 943.0070526586849,
+        "PosthocObjectiveFinal": -8500000335.990656,
+        "PosthocFeatureObjectiveFinal": -8500000335.990656
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.499999999999996,
+        "MeanStageSubgoalError": 0.368627281536867,
+        "MeanConstraintError": 0.11411641401877996,
+        "MeanConstraintErrorRaw": 0.06930272179098221,
+        "SegmentationLogLikelihoodFinal": 1030.0863072869747,
+        "PosthocObjectiveFinal": 701.0049056040318,
+        "PosthocFeatureObjectiveFinal": 701.0049056040318
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.666666666666668,
+        "MeanStageSubgoalError": 0.2249054563820426,
+        "MeanConstraintError": 0.01947899029196249,
+        "MeanConstraintErrorRaw": 0.005307518241165318,
+        "SegmentationLogLikelihoodFinal": 192.0560441085143,
+        "PosthocObjectiveFinal": -7499999212.782211,
+        "PosthocFeatureObjectiveFinal": -7499999212.782211
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 23.433333333333334,
+        "MeanStageSubgoalError": 0.4607917627629714,
+        "MeanConstraintError": 0.053122641391531514,
+        "MeanConstraintErrorRaw": 0.03941084494433713,
+        "SegmentationLogLikelihoodFinal": 91.81709625678806,
+        "PosthocObjectiveFinal": -5249999645.1720705,
+        "PosthocFeatureObjectiveFinal": -5249999645.1720705
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 18.166666666666664,
+        "MeanStageSubgoalError": 0.3530393814582845,
+        "MeanConstraintError": 0.04986099970987604,
+        "MeanConstraintErrorRaw": 0.0370218012648082,
+        "SegmentationLogLikelihoodFinal": 196.3744824949366,
+        "PosthocObjectiveFinal": -1499999330.1559079,
+        "PosthocFeatureObjectiveFinal": -1499999330.1559079
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.26666666666667,
+        "MeanStageSubgoalError": 0.1410266954198165,
+        "MeanConstraintError": 0.1208075297197116,
+        "MeanConstraintErrorRaw": 0.08441450713323087,
+        "SegmentationLogLikelihoodFinal": 133.78608326285436,
+        "PosthocObjectiveFinal": -10500000376.273335,
+        "PosthocFeatureObjectiveFinal": -10500000376.273335
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.199999999999996,
+        "MeanStageSubgoalError": 0.3648524998711934,
+        "MeanConstraintError": 0.11427069512139283,
+        "MeanConstraintErrorRaw": 0.06934688687939362,
+        "SegmentationLogLikelihoodFinal": 246.39939383529526,
+        "PosthocObjectiveFinal": -4999999295.9744835,
+        "PosthocFeatureObjectiveFinal": -4999999295.9744835
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.1,
+        "MeanStageSubgoalError": 0.23344666631922323,
+        "MeanConstraintError": 0.02871964009225487,
+        "MeanConstraintErrorRaw": 0.014414312974655416,
+        "SegmentationLogLikelihoodFinal": -2382.7034774816007,
+        "PosthocObjectiveFinal": -6749999376.965701,
+        "PosthocFeatureObjectiveFinal": -6749999376.965701
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 23.53333333333333,
+        "MeanStageSubgoalError": 0.45952004994344514,
+        "MeanConstraintError": 0.05284749403486154,
+        "MeanConstraintErrorRaw": 0.03932750716575137,
+        "SegmentationLogLikelihoodFinal": -2410.9280764376404,
+        "PosthocObjectiveFinal": -5249999685.467593,
+        "PosthocFeatureObjectiveFinal": -5249999685.467593
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 18.633333333333333,
+        "MeanStageSubgoalError": 0.3593037511318773,
+        "MeanConstraintError": 0.049702880050837846,
+        "MeanConstraintErrorRaw": 0.0369991923002396,
+        "SegmentationLogLikelihoodFinal": -2312.5548390051695,
+        "PosthocObjectiveFinal": -1499999392.3800504,
+        "PosthocFeatureObjectiveFinal": -1499999392.3800504
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.433333333333334,
+        "MeanStageSubgoalError": 0.14252188090431406,
+        "MeanConstraintError": 0.11768212227048454,
+        "MeanConstraintErrorRaw": 0.08321996327513136,
+        "SegmentationLogLikelihoodFinal": -2373.8225550428347,
+        "PosthocObjectiveFinal": -9250000312.746374,
+        "PosthocFeatureObjectiveFinal": -9250000312.746374
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 100.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 21.7,
+        "MeanStageSubgoalError": 0.38925254555404437,
+        "MeanConstraintError": 0.11544198030712956,
+        "MeanConstraintErrorRaw": 0.06968067507007315,
+        "SegmentationLogLikelihoodFinal": -2384.5422789798454,
+        "PosthocObjectiveFinal": -3749999427.956256,
+        "PosthocFeatureObjectiveFinal": -3749999427.956256
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7666666666666675,
+        "MeanStageSubgoalError": 0.20749058649324414,
+        "MeanConstraintError": 0.01946036579160303,
+        "MeanConstraintErrorRaw": 0.005301520166361996,
+        "SegmentationLogLikelihoodFinal": 1126.5319307143286,
+        "PosthocObjectiveFinal": 1023.670061780502,
+        "PosthocFeatureObjectiveFinal": 1023.670061780502
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 22.73333333333333,
+        "MeanStageSubgoalError": 0.45509628335820373,
+        "MeanConstraintError": 0.05201519657839462,
+        "MeanConstraintErrorRaw": 0.037647652154806324,
+        "SegmentationLogLikelihoodFinal": 927.6060225212602,
+        "PosthocObjectiveFinal": 465.52692307160123,
+        "PosthocFeatureObjectiveFinal": 465.52692307160123
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.3,
+        "MeanStageSubgoalError": 0.33207732563236786,
+        "MeanConstraintError": 0.06758095128324906,
+        "MeanConstraintErrorRaw": 0.04863601111779055,
+        "SegmentationLogLikelihoodFinal": 1066.471467027435,
+        "PosthocObjectiveFinal": -1999999300.990429,
+        "PosthocFeatureObjectiveFinal": -1999999300.990429
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.966666666666667,
+        "MeanStageSubgoalError": 0.14726343166774955,
+        "MeanConstraintError": 0.11643051076404436,
+        "MeanConstraintErrorRaw": 0.08335848197437029,
+        "SegmentationLogLikelihoodFinal": 941.7023466260189,
+        "PosthocObjectiveFinal": -8500000335.990656,
+        "PosthocFeatureObjectiveFinal": -8500000335.990656
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.499999999999996,
+        "MeanStageSubgoalError": 0.368627281536867,
+        "MeanConstraintError": 0.11411641401877996,
+        "MeanConstraintErrorRaw": 0.06930272179098221,
+        "SegmentationLogLikelihoodFinal": 1029.056438680263,
+        "PosthocObjectiveFinal": 701.0049056040318,
+        "PosthocFeatureObjectiveFinal": 701.0049056040318
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.666666666666668,
+        "MeanStageSubgoalError": 0.2249054563820426,
+        "MeanConstraintError": 0.01947899029196249,
+        "MeanConstraintErrorRaw": 0.005307518241165318,
+        "SegmentationLogLikelihoodFinal": 191.1275464067477,
+        "PosthocObjectiveFinal": -7499999212.782211,
+        "PosthocFeatureObjectiveFinal": -7499999212.782211
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 23.433333333333334,
+        "MeanStageSubgoalError": 0.4607917627629714,
+        "MeanConstraintError": 0.053122641391531514,
+        "MeanConstraintErrorRaw": 0.03941084494433713,
+        "SegmentationLogLikelihoodFinal": 90.11646969972145,
+        "PosthocObjectiveFinal": -5249999645.1720705,
+        "PosthocFeatureObjectiveFinal": -5249999645.1720705
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 18.166666666666664,
+        "MeanStageSubgoalError": 0.3530393814582845,
+        "MeanConstraintError": 0.04986099970987604,
+        "MeanConstraintErrorRaw": 0.0370218012648082,
+        "SegmentationLogLikelihoodFinal": 195.25525462508693,
+        "PosthocObjectiveFinal": -1499999330.1559079,
+        "PosthocFeatureObjectiveFinal": -1499999330.1559079
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.26666666666667,
+        "MeanStageSubgoalError": 0.1410266954198165,
+        "MeanConstraintError": 0.1208075297197116,
+        "MeanConstraintErrorRaw": 0.08441450713323087,
+        "SegmentationLogLikelihoodFinal": 132.41609667392427,
+        "PosthocObjectiveFinal": -10500000376.273335,
+        "PosthocFeatureObjectiveFinal": -10500000376.273335
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 100.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 19.199999999999996,
+        "MeanStageSubgoalError": 0.3648524998711934,
+        "MeanConstraintError": 0.11427069512139283,
+        "MeanConstraintErrorRaw": 0.06934688687939362,
+        "SegmentationLogLikelihoodFinal": 245.44112579317385,
+        "PosthocObjectiveFinal": -4999999295.9744835,
+        "PosthocFeatureObjectiveFinal": -4999999295.9744835
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.1,
+        "MeanStageSubgoalError": 0.23344666631922323,
+        "MeanConstraintError": 0.02871964009225487,
+        "MeanConstraintErrorRaw": 0.014414312974655416,
+        "SegmentationLogLikelihoodFinal": -2383.6308817014215,
+        "PosthocObjectiveFinal": -6749999376.965701,
+        "PosthocFeatureObjectiveFinal": -6749999376.965701
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 23.53333333333333,
+        "MeanStageSubgoalError": 0.45952004994344514,
+        "MeanConstraintError": 0.05284749403486154,
+        "MeanConstraintErrorRaw": 0.03932750716575137,
+        "SegmentationLogLikelihoodFinal": -2412.623709432805,
+        "PosthocObjectiveFinal": -5249999685.467593,
+        "PosthocFeatureObjectiveFinal": -5249999685.467593
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 18.633333333333333,
+        "MeanStageSubgoalError": 0.3593037511318773,
+        "MeanConstraintError": 0.049702880050837846,
+        "MeanConstraintErrorRaw": 0.0369991923002396,
+        "SegmentationLogLikelihoodFinal": -2313.677331584863,
+        "PosthocObjectiveFinal": -1499999392.3800504,
+        "PosthocFeatureObjectiveFinal": -1499999392.3800504
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 3,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.433333333333334,
+        "MeanStageSubgoalError": 0.14252188090431406,
+        "MeanConstraintError": 0.11768212227048454,
+        "MeanConstraintErrorRaw": 0.08321996327513136,
+        "SegmentationLogLikelihoodFinal": -2375.1884832865426,
+        "PosthocObjectiveFinal": -9250000312.746374,
+        "PosthocFeatureObjectiveFinal": -9250000312.746374
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S4SlideInsert",
+      "method": "arhsmm",
+      "dataset_seed": 12342,
+      "method_seed": 4,
+      "params": {
+        "segmenter.sticky": 400.0,
+        "segmenter.duration_weight": 400.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 21.7,
+        "MeanStageSubgoalError": 0.38925254555404437,
+        "MeanConstraintError": 0.11544198030712956,
+        "MeanConstraintErrorRaw": 0.06968067507007315,
+        "SegmentationLogLikelihoodFinal": -2385.5732488854637,
+        "PosthocObjectiveFinal": -3749999427.956256,
+        "PosthocFeatureObjectiveFinal": -3749999427.956256
+      }
+    }
+  ]
+}

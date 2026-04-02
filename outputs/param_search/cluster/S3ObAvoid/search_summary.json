@@ -1,0 +1,95 @@
+{
+  "dataset": "S3ObAvoid",
+  "method": "cluster",
+  "dataset_seed": 125949,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "grid": {
+    "segmenter.feature_distance_weight": [
+      0.1,
+      0.3,
+      1.0,
+      3.0,
+      10.0
+    ]
+  },
+  "metric_keys": [
+    "MeanConstraintError",
+    "MeanAbsCutpointError"
+  ],
+  "best": {
+    "num_runs": 7,
+    "params": {
+      "segmenter.feature_distance_weight": 0.1
+    },
+    "combo_id": 0,
+    "MeanConstraintError_mean": 0.00753387363998201,
+    "MeanConstraintError_std": 1.734723475976807e-18,
+    "MeanAbsCutpointError_mean": 7.700000000000001,
+    "MeanAbsCutpointError_std": 8.881784197001252e-16
+  },
+  "results": [
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "combo_id": 0,
+      "MeanConstraintError_mean": 0.00753387363998201,
+      "MeanConstraintError_std": 1.734723475976807e-18,
+      "MeanAbsCutpointError_mean": 7.700000000000001,
+      "MeanAbsCutpointError_std": 8.881784197001252e-16
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "combo_id": 1,
+      "MeanConstraintError_mean": 0.007980137328174408,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 8.4,
+      "MeanAbsCutpointError_std": 0.0
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "combo_id": 2,
+      "MeanConstraintError_mean": 0.008604277624883827,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 9.700000000000001,
+      "MeanAbsCutpointError_std": 1.7763568394002505e-15
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "combo_id": 3,
+      "MeanConstraintError_mean": 0.008604277624883827,
+      "MeanConstraintError_std": 0.0,
+      "MeanAbsCutpointError_mean": 9.700000000000001,
+      "MeanAbsCutpointError_std": 1.7763568394002505e-15
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "combo_id": 4,
+      "MeanConstraintError_mean": 0.00867940682793714,
+      "MeanConstraintError_std": 0.00011878970022087272,
+      "MeanAbsCutpointError_mean": 9.742857142857144,
+      "MeanAbsCutpointError_std": 0.067763092717894
+    }
+  ]
+}

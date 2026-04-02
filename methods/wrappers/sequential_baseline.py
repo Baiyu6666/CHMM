@@ -21,13 +21,16 @@ class SequentialBaselineSegmenter:
 
     def run(self, dataset: TaskBundle) -> SegmentationResult:
         taus = None
+        disable_plots = bool(self.kwargs.get("disable_plots", False))
         if self.method in {"fchmm", "hmm"}:
             if dataset.env is None:
                 raise ValueError(f"{self.method.upper()} segmenter requires a dataset env with feature API.")
             resolved_kwargs = dict(self.kwargs)
             max_iter = self.kwargs.get("max_iter", 30)
             plot_every = self.kwargs.get("plot_every")
-            if plot_every is None:
+            if disable_plots:
+                plot_every = None
+            elif plot_every is None:
                 plot_every = max_iter
 
             model = FCHMM(
@@ -89,7 +92,6 @@ class SequentialBaselineSegmenter:
                 selected_raw_feature_ids=resolved_kwargs.get("selected_raw_feature_ids"),
                 tau_init=resolved_kwargs.get("tau_init"),
                 tau_init_mode=resolved_kwargs.get("tau_init_mode", "uniform_taus"),
-                left_right=resolved_kwargs.get("left_right", True),
                 min_duration=resolved_kwargs.get("min_duration", 1),
                 max_duration=resolved_kwargs.get("max_duration"),
                 duration_weight=resolved_kwargs.get("duration_weight", 1.0),
@@ -130,7 +132,7 @@ class SequentialBaselineSegmenter:
                 standardize=resolved_kwargs.get("standardize", True),
                 min_len=resolved_kwargs.get("min_len", 3),
                 max_iter=resolved_kwargs.get("max_iter", 20),
-                n_init=resolved_kwargs.get("n_init", 8),
+                n_init=resolved_kwargs.get("n_init", 3),
                 init_mode=resolved_kwargs.get("init_mode", "random_stage_ends"),
                 seed=resolved_kwargs.get("seed", 0),
                 verbose=resolved_kwargs.get("verbose", True),

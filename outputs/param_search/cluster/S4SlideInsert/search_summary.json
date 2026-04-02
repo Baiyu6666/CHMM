@@ -1,0 +1,158 @@
+{
+  "dataset": "S4SlideInsert",
+  "method": "cluster",
+  "dataset_seed": 12342,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "grid": {
+    "segmenter.feature_distance_weight": [
+      0.1,
+      0.3,
+      1.0,
+      3.0,
+      10.0
+    ]
+  },
+  "metric_keys": [
+    "MeanAbsCutpointError",
+    "MeanConstraintError",
+    "MeanConstraintErrorRaw",
+    "MeanStageSubgoalError",
+    "PosthocFeatureObjectiveFinal",
+    "PosthocObjectiveFinal",
+    "SegmentationObjectiveFinal"
+  ],
+  "best": {
+    "num_runs": 5,
+    "params": {
+      "segmenter.feature_distance_weight": 0.3
+    },
+    "combo_id": 1,
+    "MeanAbsCutpointError_mean": 8.84,
+    "MeanAbsCutpointError_std": 6.101125579213507,
+    "MeanConstraintError_mean": 0.1346146559499631,
+    "MeanConstraintError_std": 0.04851394072311379,
+    "MeanConstraintErrorRaw_mean": 0.09627669310209909,
+    "MeanConstraintErrorRaw_std": 0.02087944884954348,
+    "MeanStageSubgoalError_mean": 0.19589755039731008,
+    "MeanStageSubgoalError_std": 0.1217199954043291,
+    "PosthocFeatureObjectiveFinal_mean": -17299999775.51308,
+    "PosthocFeatureObjectiveFinal_std": 4930517398.881945,
+    "PosthocObjectiveFinal_mean": -17299999775.51308,
+    "PosthocObjectiveFinal_std": 4930517398.881945,
+    "SegmentationObjectiveFinal_mean": 399.25977168498196,
+    "SegmentationObjectiveFinal_std": 12.757524827391617
+  },
+  "results": [
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "combo_id": 1,
+      "MeanAbsCutpointError_mean": 8.84,
+      "MeanAbsCutpointError_std": 6.101125579213507,
+      "MeanConstraintError_mean": 0.1346146559499631,
+      "MeanConstraintError_std": 0.04851394072311379,
+      "MeanConstraintErrorRaw_mean": 0.09627669310209909,
+      "MeanConstraintErrorRaw_std": 0.02087944884954348,
+      "MeanStageSubgoalError_mean": 0.19589755039731008,
+      "MeanStageSubgoalError_std": 0.1217199954043291,
+      "PosthocFeatureObjectiveFinal_mean": -17299999775.51308,
+      "PosthocFeatureObjectiveFinal_std": 4930517398.881945,
+      "PosthocObjectiveFinal_mean": -17299999775.51308,
+      "PosthocObjectiveFinal_std": 4930517398.881945,
+      "SegmentationObjectiveFinal_mean": 399.25977168498196,
+      "SegmentationObjectiveFinal_std": 12.757524827391617
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "combo_id": 4,
+      "MeanAbsCutpointError_mean": 9.52,
+      "MeanAbsCutpointError_std": 5.609499878678036,
+      "MeanConstraintError_mean": 0.142495529342118,
+      "MeanConstraintError_std": 0.04280691920512792,
+      "MeanConstraintErrorRaw_mean": 0.1026458631875083,
+      "MeanConstraintErrorRaw_std": 0.018173977486009078,
+      "MeanStageSubgoalError_mean": 0.1987345652067604,
+      "MeanStageSubgoalError_std": 0.11360874214696925,
+      "PosthocFeatureObjectiveFinal_mean": -18049999856.063538,
+      "PosthocFeatureObjectiveFinal_std": 3005827873.8022995,
+      "PosthocObjectiveFinal_mean": -18049999856.063538,
+      "PosthocObjectiveFinal_std": 3005827873.8022995,
+      "SegmentationObjectiveFinal_mean": 10173.806078520309,
+      "SegmentationObjectiveFinal_std": 212.7987009988028
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "combo_id": 3,
+      "MeanAbsCutpointError_mean": 9.533333333333335,
+      "MeanAbsCutpointError_std": 5.611337729197122,
+      "MeanConstraintError_mean": 0.14274084402975937,
+      "MeanConstraintError_std": 0.042794975506364144,
+      "MeanConstraintErrorRaw_mean": 0.10272055876610171,
+      "MeanConstraintErrorRaw_std": 0.018204171479512837,
+      "MeanStageSubgoalError_mean": 0.2000014333374737,
+      "MeanStageSubgoalError_std": 0.11312482004688205,
+      "PosthocFeatureObjectiveFinal_mean": -18099999854.977917,
+      "PosthocFeatureObjectiveFinal_std": 3043846454.1339273,
+      "PosthocObjectiveFinal_mean": -18099999854.977917,
+      "PosthocObjectiveFinal_std": 3043846454.1339273,
+      "SegmentationObjectiveFinal_mean": 3116.934684900526,
+      "SegmentationObjectiveFinal_std": 67.995992962105
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "combo_id": 2,
+      "MeanAbsCutpointError_mean": 9.533333333333335,
+      "MeanAbsCutpointError_std": 5.643915110787704,
+      "MeanConstraintError_mean": 0.14303421496104435,
+      "MeanConstraintError_std": 0.04295847660567375,
+      "MeanConstraintErrorRaw_mean": 0.10280550781926798,
+      "MeanConstraintErrorRaw_std": 0.018251086843418553,
+      "MeanStageSubgoalError_mean": 0.2025171865096005,
+      "MeanStageSubgoalError_std": 0.11472153248023181,
+      "PosthocFeatureObjectiveFinal_mean": -18499999853.275513,
+      "PosthocFeatureObjectiveFinal_std": 2824004443.222742,
+      "PosthocObjectiveFinal_mean": -18499999853.275513,
+      "PosthocObjectiveFinal_std": 2824004443.222742,
+      "SegmentationObjectiveFinal_mean": 1100.5501965944718,
+      "SegmentationObjectiveFinal_std": 26.601877689163377
+    },
+    {
+      "num_runs": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "combo_id": 0,
+      "MeanAbsCutpointError_mean": 8.28,
+      "MeanAbsCutpointError_std": 0.24639624816768432,
+      "MeanConstraintError_mean": 0.1444365486710654,
+      "MeanConstraintError_std": 0.0014313652098145,
+      "MeanConstraintErrorRaw_mean": 0.11195919061256135,
+      "MeanConstraintErrorRaw_std": 0.0004305248065278867,
+      "MeanStageSubgoalError_mean": 0.18103080095235083,
+      "MeanStageSubgoalError_std": 0.00887820361365832,
+      "PosthocFeatureObjectiveFinal_mean": -16250000008.942825,
+      "PosthocFeatureObjectiveFinal_std": 1151086441.5240774,
+      "PosthocObjectiveFinal_mean": -16250000008.942825,
+      "PosthocObjectiveFinal_std": 1151086441.5240774,
+      "SegmentationObjectiveFinal_mean": 182.7461650344408,
+      "SegmentationObjectiveFinal_std": 1.1221822530431094
+    }
+  ]
+}

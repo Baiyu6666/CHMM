@@ -1,0 +1,564 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.feature_distance_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.7,
+        "MeanStageSubgoalError": 0.18946665138799867,
+        "MeanConstraintError": 0.007533873639982012,
+        "MeanConstraintErrorRaw": 0.003697328161846071
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.feature_distance_weight": 0.3
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 8.4,
+        "MeanStageSubgoalError": 0.18131615408636517,
+        "MeanConstraintError": 0.007980137328174408,
+        "MeanConstraintErrorRaw": 0.0037963182115352857
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.feature_distance_weight": 1.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.feature_distance_weight": 3.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 1,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.85,
+        "MeanStageSubgoalError": 0.18011829619380343,
+        "MeanConstraintError": 0.008867229835570423,
+        "MeanConstraintErrorRaw": 0.004033577062384695
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 2,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 3,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.85,
+        "MeanStageSubgoalError": 0.18011829619380343,
+        "MeanConstraintError": 0.008867229835570423,
+        "MeanConstraintErrorRaw": 0.004033577062384695
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 4,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 5,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObAvoid",
+      "method": "cluster",
+      "dataset_seed": 125949,
+      "method_seed": 6,
+      "params": {
+        "segmenter.feature_distance_weight": 10.0
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.7,
+        "MeanStageSubgoalError": 0.17800209532489988,
+        "MeanConstraintError": 0.008604277624883827,
+        "MeanConstraintErrorRaw": 0.003976972738419729
+      }
+    }
+  ]
+}

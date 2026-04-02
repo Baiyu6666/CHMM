@@ -5,12 +5,12 @@ from typing import Any, Callable, Dict
 import numpy as np
 
 from .base import TaskBundle
-from .S3ObAvoid import load_S3ObAvoid
+from .S3ObsAvoid import load_S3ObsAvoid
 from .S4SlideInsert import load_S4SlideInsert
 from .S5SphereInspect import load_S5SphereInspect
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
-    "S3ObAvoid": load_S3ObAvoid,
+    "S3ObsAvoid": load_S3ObsAvoid,
     "S5SphereInspect": load_S5SphereInspect,
     "S4SlideInsert": load_S4SlideInsert,
 }

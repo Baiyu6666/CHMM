@@ -1,0 +1,436 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.01
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.666666666666667,
+        "MeanStageSubgoalError": 0.1992284236040161,
+        "MeanConstraintError": 0.07506551987913004,
+        "MeanConstraintErrorRaw": 0.03340115277787099,
+        "TrainingLogLikelihoodFinal": -32.58919616386123
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.01
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 17.333333333333336,
+        "MeanStageSubgoalError": 0.40458463996544325,
+        "MeanConstraintError": 0.22755520243385535,
+        "MeanConstraintErrorRaw": 0.11176098918482605,
+        "TrainingLogLikelihoodFinal": -21.88248935641498
+      }
+    },
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.01
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 17.099999999999998,
+        "MeanStageSubgoalError": 0.39868268682400704,
+        "MeanConstraintError": 0.22397187487271636,
+        "MeanConstraintErrorRaw": 0.11069896086565677,
+        "TrainingLogLikelihoodFinal": -26.2160635063313
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.02
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.366666666666667,
+        "MeanStageSubgoalError": 0.1514724466205298,
+        "MeanConstraintError": 0.05832775605311298,
+        "MeanConstraintErrorRaw": 0.031788912577323684,
+        "TrainingLogLikelihoodFinal": -21.17330073859124
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.02
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 5.166666666666667,
+        "MeanStageSubgoalError": 0.1663020012492936,
+        "MeanConstraintError": 0.11397531789900098,
+        "MeanConstraintErrorRaw": 0.06849379580168209,
+        "TrainingLogLikelihoodFinal": -10.039979781554717
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.02
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 1.2666666666666668,
+        "MeanStageSubgoalError": 0.08743524168440289,
+        "MeanConstraintError": 0.06446608395115078,
+        "MeanConstraintErrorRaw": 0.03989097540254754,
+        "TrainingLogLikelihoodFinal": -0.10529577551494018
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.01289674839643597,
+        "MeanConstraintErrorRaw": 0.0036485433618388204,
+        "TrainingLogLikelihoodFinal": 92.85849694583635
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.01291925832443988,
+        "MeanConstraintErrorRaw": 0.0036288147112553027,
+        "TrainingLogLikelihoodFinal": 103.87935708426856
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012967555108838364,
+        "MeanConstraintErrorRaw": 0.003642050990132785,
+        "TrainingLogLikelihoodFinal": 99.64243000966005
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012973739875128003,
+        "MeanConstraintErrorRaw": 0.0036719470567155815,
+        "TrainingLogLikelihoodFinal": 285.3457634967973
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012927749074253946,
+        "MeanConstraintErrorRaw": 0.0036302704749618373,
+        "TrainingLogLikelihoodFinal": 294.1493637462449
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012949428697918047,
+        "MeanConstraintErrorRaw": 0.0036359066737482013,
+        "TrainingLogLikelihoodFinal": 290.04874331409064
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.01
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.033333333333333,
+        "MeanStageSubgoalError": 0.18631909936652497,
+        "MeanConstraintError": 0.0739350827407339,
+        "MeanConstraintErrorRaw": 0.03328108520574057,
+        "TrainingLogLikelihoodFinal": -28.225086638164086
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.01
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.7,
+        "MeanStageSubgoalError": 0.3919900170643406,
+        "MeanConstraintError": 0.21992791063125888,
+        "MeanConstraintErrorRaw": 0.11018631864744001,
+        "TrainingLogLikelihoodFinal": -15.634735846466551
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.01
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.4,
+        "MeanStageSubgoalError": 0.38849681075841735,
+        "MeanConstraintError": 0.21718529998224334,
+        "MeanConstraintErrorRaw": 0.10970473364412402,
+        "TrainingLogLikelihoodFinal": -22.525259853962417
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.02
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.299999999999999,
+        "MeanStageSubgoalError": 0.14894147058808235,
+        "MeanConstraintError": 0.05859521401241792,
+        "MeanConstraintErrorRaw": 0.03181309869712938,
+        "TrainingLogLikelihoodFinal": -18.111912340392532
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.02
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 1.5333333333333332,
+        "MeanStageSubgoalError": 0.0825680003868327,
+        "MeanConstraintError": 0.0810717307960973,
+        "MeanConstraintErrorRaw": 0.05466873982788354,
+        "TrainingLogLikelihoodFinal": -10.079768245264106
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.02
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.9666666666666666,
+        "MeanStageSubgoalError": 0.08610605555811526,
+        "MeanConstraintError": 0.08026594990799094,
+        "MeanConstraintErrorRaw": 0.05461820027819366,
+        "TrainingLogLikelihoodFinal": -8.41776227439073
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.01289152194242067,
+        "MeanConstraintErrorRaw": 0.003647540243204768,
+        "TrainingLogLikelihoodFinal": 94.13975743516848
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012924124518938608,
+        "MeanConstraintErrorRaw": 0.0036292973996836604,
+        "TrainingLogLikelihoodFinal": 105.66195335526241
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012965012714929237,
+        "MeanConstraintErrorRaw": 0.003640779231788137,
+        "TrainingLogLikelihoodFinal": 102.6578442366386
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012930130595464596,
+        "MeanConstraintErrorRaw": 0.00362959384209279,
+        "TrainingLogLikelihoodFinal": 286.55621463667046
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 1,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012929062329985235,
+        "MeanConstraintErrorRaw": 0.0036302986762976543,
+        "TrainingLogLikelihoodFinal": 295.9429076067366
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "fchmm",
+      "dataset_seed": 12342,
+      "method_seed": 2,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.07738985814113822,
+        "MeanConstraintError": 0.012947407780565136,
+        "MeanConstraintErrorRaw": 0.0036350649711458017,
+        "TrainingLogLikelihoodFinal": 292.7631333771651
+      }
+    }
+  ]
+}

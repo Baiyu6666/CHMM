@@ -1,0 +1,519 @@
+{
+  "dataset": "S3ObAvoid",
+  "method": "fchmm",
+  "dataset_seed": 125949,
+  "method_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "grid": {
+    "gmm_K": [
+      1,
+      2,
+      3
+    ],
+    "feat_weight": [
+      0.5,
+      1.0,
+      2.0
+    ],
+    "x_weight": [
+      0.003,
+      0.01,
+      0.03,
+      0.1
+    ]
+  },
+  "metric_keys": [
+    "MeanConstraintError",
+    "MeanAbsCutpointError"
+  ],
+  "best": {
+    "num_runs": 7,
+    "params": {
+      "gmm_K": 1,
+      "feat_weight": 0.5,
+      "x_weight": 0.01
+    },
+    "combo_id": 1,
+    "MeanConstraintError_mean": 0.010960540064254754,
+    "MeanConstraintError_std": 0.0041247176951282535,
+    "MeanAbsCutpointError_mean": 16.435714285714287,
+    "MeanAbsCutpointError_std": 12.870695238345416
+  },
+  "results": [
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.5,
+        "x_weight": 0.01
+      },
+      "combo_id": 1,
+      "MeanConstraintError_mean": 0.010960540064254754,
+      "MeanConstraintError_std": 0.0041247176951282535,
+      "MeanAbsCutpointError_mean": 16.435714285714287,
+      "MeanAbsCutpointError_std": 12.870695238345416
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.5,
+        "x_weight": 0.1
+      },
+      "combo_id": 3,
+      "MeanConstraintError_mean": 0.010961965780338648,
+      "MeanConstraintError_std": 0.004083965419470296,
+      "MeanAbsCutpointError_mean": 16.34285714285714,
+      "MeanAbsCutpointError_std": 12.692023045188336
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.5,
+        "x_weight": 0.003
+      },
+      "combo_id": 12,
+      "MeanConstraintError_mean": 0.010962739449834408,
+      "MeanConstraintError_std": 0.004126180274962114,
+      "MeanAbsCutpointError_mean": 16.442857142857143,
+      "MeanAbsCutpointError_std": 12.8768737491295
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.5,
+        "x_weight": 0.003
+      },
+      "combo_id": 0,
+      "MeanConstraintError_mean": 0.010963758300359895,
+      "MeanConstraintError_std": 0.004125020326171536,
+      "MeanAbsCutpointError_mean": 16.442857142857143,
+      "MeanAbsCutpointError_std": 12.8768737491295
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 0.5,
+        "x_weight": 0.003
+      },
+      "combo_id": 24,
+      "MeanConstraintError_mean": 0.010965048127935006,
+      "MeanConstraintError_std": 0.004124886017925892,
+      "MeanAbsCutpointError_mean": 16.442857142857143,
+      "MeanAbsCutpointError_std": 12.8768737491295
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 0.5,
+        "x_weight": 0.03
+      },
+      "combo_id": 2,
+      "MeanConstraintError_mean": 0.010971888263032263,
+      "MeanConstraintError_std": 0.0041035852520510925,
+      "MeanAbsCutpointError_mean": 16.42142857142857,
+      "MeanAbsCutpointError_std": 12.78402622535687
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.5,
+        "x_weight": 0.01
+      },
+      "combo_id": 13,
+      "MeanConstraintError_mean": 0.01098253858341869,
+      "MeanConstraintError_std": 0.004111442559451352,
+      "MeanAbsCutpointError_mean": 16.478571428571428,
+      "MeanAbsCutpointError_std": 12.83315619632145
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 0.5,
+        "x_weight": 0.01
+      },
+      "combo_id": 25,
+      "MeanConstraintError_mean": 0.010982897445317854,
+      "MeanConstraintError_std": 0.0041114631907909985,
+      "MeanAbsCutpointError_mean": 16.478571428571428,
+      "MeanAbsCutpointError_std": 12.83315619632145
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.5,
+        "x_weight": 0.03
+      },
+      "combo_id": 14,
+      "MeanConstraintError_mean": 0.010990863125219949,
+      "MeanConstraintError_std": 0.004098819440346426,
+      "MeanAbsCutpointError_mean": 16.45714285714286,
+      "MeanAbsCutpointError_std": 12.790102997782213
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 0.5,
+        "x_weight": 0.03
+      },
+      "combo_id": 26,
+      "MeanConstraintError_mean": 0.011004036105199299,
+      "MeanConstraintError_std": 0.0040931114106541495,
+      "MeanAbsCutpointError_mean": 16.485714285714288,
+      "MeanAbsCutpointError_std": 12.777874691538223
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 0.5,
+        "x_weight": 0.1
+      },
+      "combo_id": 15,
+      "MeanConstraintError_mean": 0.011027640104786315,
+      "MeanConstraintError_std": 0.004070909956225977,
+      "MeanAbsCutpointError_mean": 16.47142857142857,
+      "MeanAbsCutpointError_std": 12.680971603797815
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 1.0,
+        "x_weight": 0.1
+      },
+      "combo_id": 7,
+      "MeanConstraintError_mean": 0.011039760853611988,
+      "MeanConstraintError_std": 0.004075776369815812,
+      "MeanAbsCutpointError_mean": 16.535714285714285,
+      "MeanAbsCutpointError_std": 12.808582900476047
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 1.0,
+        "x_weight": 0.03
+      },
+      "combo_id": 6,
+      "MeanConstraintError_mean": 0.011044170675430367,
+      "MeanConstraintError_std": 0.004081124254238343,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 1.0,
+        "x_weight": 0.003
+      },
+      "combo_id": 4,
+      "MeanConstraintError_mean": 0.011046989385433937,
+      "MeanConstraintError_std": 0.004082321363795777,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 1.0,
+        "x_weight": 0.01
+      },
+      "combo_id": 5,
+      "MeanConstraintError_mean": 0.01104784715086299,
+      "MeanConstraintError_std": 0.004081563756107764,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 1.0,
+        "x_weight": 0.003
+      },
+      "combo_id": 16,
+      "MeanConstraintError_mean": 0.011048071465027473,
+      "MeanConstraintError_std": 0.004082031525026583,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 1.0,
+        "x_weight": 0.01
+      },
+      "combo_id": 29,
+      "MeanConstraintError_mean": 0.011048387966504694,
+      "MeanConstraintError_std": 0.004082399432465564,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 1.0,
+        "x_weight": 0.003
+      },
+      "combo_id": 28,
+      "MeanConstraintError_mean": 0.011048493687251356,
+      "MeanConstraintError_std": 0.004081851283867446,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 1.0,
+        "x_weight": 0.03
+      },
+      "combo_id": 18,
+      "MeanConstraintError_mean": 0.01105065673305459,
+      "MeanConstraintError_std": 0.004080479401094871,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 1.0,
+        "x_weight": 0.01
+      },
+      "combo_id": 17,
+      "MeanConstraintError_mean": 0.01105134107309121,
+      "MeanConstraintError_std": 0.004080648014637037,
+      "MeanAbsCutpointError_mean": 16.55,
+      "MeanAbsCutpointError_std": 12.82082569215304
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 1.0,
+        "x_weight": 0.03
+      },
+      "combo_id": 30,
+      "MeanConstraintError_mean": 0.011054916840855042,
+      "MeanConstraintError_std": 0.004077776975009508,
+      "MeanAbsCutpointError_mean": 16.564285714285713,
+      "MeanAbsCutpointError_std": 12.808722315162383
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 1.0,
+        "x_weight": 0.1
+      },
+      "combo_id": 19,
+      "MeanConstraintError_mean": 0.011062998016228455,
+      "MeanConstraintError_std": 0.004069878113630074,
+      "MeanAbsCutpointError_mean": 16.564285714285713,
+      "MeanAbsCutpointError_std": 12.772451221440685
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 0.5,
+        "x_weight": 0.1
+      },
+      "combo_id": 27,
+      "MeanConstraintError_mean": 0.011063976356502,
+      "MeanConstraintError_std": 0.0040552952954497675,
+      "MeanAbsCutpointError_mean": 16.52857142857143,
+      "MeanAbsCutpointError_std": 12.622623033462498
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 2.0,
+        "x_weight": 0.03
+      },
+      "combo_id": 22,
+      "MeanConstraintError_mean": 0.011072570846882785,
+      "MeanConstraintError_std": 0.004065502077439594,
+      "MeanAbsCutpointError_mean": 16.585714285714285,
+      "MeanAbsCutpointError_std": 12.790725275027391
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 2.0,
+        "x_weight": 0.03
+      },
+      "combo_id": 34,
+      "MeanConstraintError_mean": 0.011073989616406012,
+      "MeanConstraintError_std": 0.004065130395018794,
+      "MeanAbsCutpointError_mean": 16.585714285714285,
+      "MeanAbsCutpointError_std": 12.790725275027391
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 2.0,
+        "x_weight": 0.1
+      },
+      "combo_id": 11,
+      "MeanConstraintError_mean": 0.01107403093459702,
+      "MeanConstraintError_std": 0.004062322353522331,
+      "MeanAbsCutpointError_mean": 16.585714285714285,
+      "MeanAbsCutpointError_std": 12.790725275027391
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 2.0,
+        "x_weight": 0.01
+      },
+      "combo_id": 9,
+      "MeanConstraintError_mean": 0.01107578857488936,
+      "MeanConstraintError_std": 0.004064295903214025,
+      "MeanAbsCutpointError_mean": 16.599999999999998,
+      "MeanAbsCutpointError_std": 12.803013038232168
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 2.0,
+        "x_weight": 0.03
+      },
+      "combo_id": 10,
+      "MeanConstraintError_mean": 0.011076416673128312,
+      "MeanConstraintError_std": 0.004062873143713982,
+      "MeanAbsCutpointError_mean": 16.585714285714285,
+      "MeanAbsCutpointError_std": 12.790725275027391
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 2.0,
+        "x_weight": 0.01
+      },
+      "combo_id": 33,
+      "MeanConstraintError_mean": 0.011076792235462646,
+      "MeanConstraintError_std": 0.004063514840418235,
+      "MeanAbsCutpointError_mean": 16.599999999999998,
+      "MeanAbsCutpointError_std": 12.803013038232168
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 2.0,
+        "x_weight": 0.01
+      },
+      "combo_id": 21,
+      "MeanConstraintError_mean": 0.011077122485119679,
+      "MeanConstraintError_std": 0.004064096487033547,
+      "MeanAbsCutpointError_mean": 16.599999999999998,
+      "MeanAbsCutpointError_std": 12.803013038232168
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 2.0,
+        "x_weight": 0.1
+      },
+      "combo_id": 23,
+      "MeanConstraintError_mean": 0.011077668967746649,
+      "MeanConstraintError_std": 0.004067465400170697,
+      "MeanAbsCutpointError_mean": 16.599999999999998,
+      "MeanAbsCutpointError_std": 12.803013038232168
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 1,
+        "feat_weight": 2.0,
+        "x_weight": 0.003
+      },
+      "combo_id": 8,
+      "MeanConstraintError_mean": 0.011078323109812629,
+      "MeanConstraintError_std": 0.004067045196684166,
+      "MeanAbsCutpointError_mean": 16.62857142857143,
+      "MeanAbsCutpointError_std": 12.827616890991125
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 2,
+        "feat_weight": 2.0,
+        "x_weight": 0.003
+      },
+      "combo_id": 20,
+      "MeanConstraintError_mean": 0.011078724265988925,
+      "MeanConstraintError_std": 0.004066984798545676,
+      "MeanAbsCutpointError_mean": 16.62857142857143,
+      "MeanAbsCutpointError_std": 12.827616890991125
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 2.0,
+        "x_weight": 0.003
+      },
+      "combo_id": 32,
+      "MeanConstraintError_mean": 0.011078819487569721,
+      "MeanConstraintError_std": 0.00406696426200152,
+      "MeanAbsCutpointError_mean": 16.62857142857143,
+      "MeanAbsCutpointError_std": 12.827616890991125
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 1.0,
+        "x_weight": 0.1
+      },
+      "combo_id": 31,
+      "MeanConstraintError_mean": 0.011081960837275162,
+      "MeanConstraintError_std": 0.004061586084100402,
+      "MeanAbsCutpointError_mean": 16.57857142857143,
+      "MeanAbsCutpointError_std": 12.736473417003658
+    },
+    {
+      "num_runs": 7,
+      "params": {
+        "gmm_K": 3,
+        "feat_weight": 2.0,
+        "x_weight": 0.1
+      },
+      "combo_id": 35,
+      "MeanConstraintError_mean": 0.011097925387967028,
+      "MeanConstraintError_std": 0.004058757021599295,
+      "MeanAbsCutpointError_mean": 16.642857142857142,
+      "MeanAbsCutpointError_std": 12.779543602722185
+    }
+  ]
+}
