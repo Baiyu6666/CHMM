@@ -16,16 +16,18 @@
       "velocity_distance_weight": 1.0,
       "feature_distance_weight": 1.0,
       "selected_raw_feature_ids": [
-        "surface_distance",
+        "surf dist",
         "force",
-        "orientation_error",
+        "orient err",
         "speed",
-        "noise_aux"
+        "noise",
+        "start_dist",
+        "slot_x_err"
       ],
       "standardize": true,
       "min_len": 3,
       "max_iter": 20,
-      "n_init": 8,
+      "n_init": 3,
       "init_mode": "random_stage_ends",
       "seed": 0,
       "verbose": true,
@@ -39,9 +41,22 @@
           0,
           0,
           0,
+          0,
+          0,
           0
         ],
         [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
           1,
           1,
           0,
@@ -53,29 +68,28 @@
           1,
           1,
           1,
-          0
-        ],
-        [
-          1,
-          1,
-          1,
-          1,
+          0,
+          0,
           0
         ]
       ],
       "selected_raw_feature_ids": [
-        "surface_distance",
+        "surf dist",
         "force",
-        "orientation_error",
+        "orient err",
         "speed",
-        "noise_aux"
+        "noise",
+        "start_dist",
+        "slot_x_err"
       ],
       "feature_model_types": {
-        "surface_distance": "student_t",
+        "surf dist": "student_t",
         "force": "margin_exp_lower",
-        "orientation_error": "student_t",
+        "orient err": "student_t",
         "speed": "student_t",
-        "noise_aux": "student_t"
+        "start_dist": "student_t",
+        "slot_x_err": "student_t",
+        "noise": "student_t"
       },
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S4SlideInsert/method_seed_000",
       "constraint_core_trim": 0

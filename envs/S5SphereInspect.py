@@ -29,8 +29,8 @@ class S5SphereInspectEnv:
         stage3_accel_max=0.07,
         stage4_accel_max=0.06,
         tool_align_max_stage2=0.12,
-        angular_speed_max_stage2=0.22,
-        angular_speed_max_stage3=0.55,
+        ang_speed_max_stage2=0.22,
+        ang_speed_max_stage3=0.55,
         dt=0.8,
         noise_std=0.004,
         surface_near_target_ratio=0.5,
@@ -59,8 +59,8 @@ class S5SphereInspectEnv:
         self.stage3_accel_max = float(stage3_accel_max)
         self.stage4_accel_max = float(stage4_accel_max)
         self.tool_align_max_stage2 = float(tool_align_max_stage2)
-        self.angular_speed_max_stage2 = float(angular_speed_max_stage2)
-        self.angular_speed_max_stage3 = float(angular_speed_max_stage3)
+        self.ang_speed_max_stage2 = float(ang_speed_max_stage2)
+        self.ang_speed_max_stage3 = float(ang_speed_max_stage3)
         self.dt = float(dt)
         self.noise_std = float(noise_std)
         self.surface_near_target_ratio = float(surface_near_target_ratio)
@@ -266,16 +266,16 @@ class S5SphereInspectEnv:
     def _resolve_feature_boundary_ramp_half_windows(self, num_boundaries: int) -> np.ndarray:
         num_boundaries = max(int(num_boundaries), 0)
         feature_names = [
-            "surface_distance",
-            "tool_normal_alignment_error",
+            "surf_dist",
+            "normal_err",
             "speed",
-            "angular_speed",
+            "ang_speed",
         ]
         defaults = {
-            "surface_distance": [2] * num_boundaries,
-            "tool_normal_alignment_error": [0] * num_boundaries,
+            "surf_dist": [2] * num_boundaries,
+            "normal_err": [0] * num_boundaries,
             "speed": ([1] + [2] * max(num_boundaries - 1, 0))[:num_boundaries],
-            "angular_speed": [0] * num_boundaries,
+            "ang_speed": [0] * num_boundaries,
         }
         cfg = self.feature_boundary_ramp_half_windows
         resolved = np.asarray(
@@ -307,11 +307,13 @@ class S5SphereInspectEnv:
 
     def get_feature_schema(self):
         return [
-            {"id": 0, "name": "surface_distance", "description": "Absolute radial distance to the sphere surface"},
-            {"id": 1, "name": "tool_normal_alignment_error", "description": "Angle between tool axis and sphere normal"},
+            {"id": 0, "name": "surf_dist", "description": "Absolute radial distance to the sphere surface"},
+            {"id": 1, "name": "normal_err", "description": "Angle between tool axis and sphere normal"},
             {"id": 2, "name": "speed", "description": "3D speed magnitude"},
-            {"id": 3, "name": "angular_speed", "description": "Tool-axis angular speed magnitude"},
-            {"id": 4, "name": "noise_aux", "description": "Deterministic auxiliary irrelevant feature"},
+            {"id": 3, "name": "ang_speed", "description": "Tool-axis angular speed magnitude"},
+            {"id": 4, "name": "noise", "description": "Deterministic auxiliary irrelevant feature"},
+            {"id": 5, "name": "start_dist", "description": "3D distance to the demo start position"},
+            {"id": 6, "name": "goal_dist", "description": "3D distance to the nominal inspection goal"},
         ]
 
     def get_true_constraints(self):
@@ -328,17 +330,17 @@ class S5SphereInspectEnv:
     def get_constraint_specs(self):
         if self.split_stage3_transition:
             return [
-                {"feature_name": "surface_distance", "stage": 1, "semantics": "target_value", "oracle_key": "surface_trace_target"},
-                {"feature_name": "tool_normal_alignment_error", "stage": 1, "semantics": "upper_bound", "oracle_key": "tool_align_max_stage2"},
+                {"feature_name": "surf_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_trace_target"},
+                {"feature_name": "normal_err", "stage": 1, "semantics": "upper_bound", "oracle_key": "tool_align_max_stage2"},
                 {"feature_name": "speed", "stage": 1, "semantics": "upper_bound", "oracle_key": "v23_max"},
-                {"feature_name": "surface_distance", "stage": 3, "semantics": "target_value", "oracle_key": "surface_near_target"},
+                {"feature_name": "surf_dist", "stage": 3, "semantics": "target_value", "oracle_key": "surface_near_target"},
                 {"feature_name": "speed", "stage": 3, "semantics": "upper_bound", "oracle_key": "v23_max"},
             ]
         return [
-            {"feature_name": "surface_distance", "stage": 1, "semantics": "target_value", "oracle_key": "surface_trace_target"},
-            {"feature_name": "tool_normal_alignment_error", "stage": 1, "semantics": "upper_bound", "oracle_key": "tool_align_max_stage2"},
+            {"feature_name": "surf_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_trace_target"},
+            {"feature_name": "normal_err", "stage": 1, "semantics": "upper_bound", "oracle_key": "tool_align_max_stage2"},
             {"feature_name": "speed", "stage": 1, "semantics": "upper_bound", "oracle_key": "v23_max"},
-            {"feature_name": "surface_distance", "stage": 2, "semantics": "target_value", "oracle_key": "surface_near_target"},
+            {"feature_name": "surf_dist", "stage": 2, "semantics": "target_value", "oracle_key": "surface_near_target"},
             {"feature_name": "speed", "stage": 2, "semantics": "upper_bound", "oracle_key": "v23_max"},
         ]
 
@@ -804,7 +806,7 @@ class S5SphereInspectEnv:
         T = len(traj)
         rel = traj - self.sphere_center[None, :]
         radial_dist = np.linalg.norm(rel, axis=1)
-        surface_distance = np.abs(radial_dist - self.sphere_radius)
+        surf_dist = np.abs(radial_dist - self.sphere_radius)
 
         if tool_axis is None:
             tool_axis = self._lookup_cached_tool_axis_trace(traj)
@@ -815,7 +817,7 @@ class S5SphereInspectEnv:
         normals = rel / np.maximum(radial_dist[:, None], 1e-12)
         cos_align = np.sum(tool_axis * normals, axis=1)
         cos_align = np.clip(cos_align, -1.0, 1.0)
-        tool_normal_alignment_error = np.arccos(cos_align)
+        normal_err = np.arccos(cos_align)
 
         speed = np.zeros(T, dtype=float)
         if T > 1:
@@ -823,18 +825,18 @@ class S5SphereInspectEnv:
             speed[0] = speed_edge[0]
             speed[1:] = speed_edge
 
-        angular_speed = np.zeros(T, dtype=float)
+        ang_speed = np.zeros(T, dtype=float)
         if T > 1:
             dots = np.sum(tool_axis[1:] * tool_axis[:-1], axis=1)
             dots = np.clip(dots, -1.0, 1.0)
             ang = np.arccos(dots) / self.dt
-            angular_speed[0] = ang[0]
-            angular_speed[1:] = ang
+            ang_speed[0] = ang[0]
+            ang_speed[1:] = ang
 
-        return surface_distance, tool_normal_alignment_error, speed, angular_speed
+        return surf_dist, normal_err, speed, ang_speed
 
     def _synthesize_feature_trace(self, traj, tool_axis, stage_lengths, rng):
-        surface_distance, tool_alignment_error, speed, angular_speed = self._compute_geometry_feature_traces(
+        surf_dist, tool_alignment_error, speed, ang_speed = self._compute_geometry_feature_traces(
             traj,
             tool_axis=tool_axis,
         )
@@ -913,7 +915,7 @@ class S5SphereInspectEnv:
             speed[s:e] = 0.12 * np.asarray(speed[s:e], dtype=float) + 0.88 * profile
 
         s2, e2 = starts[1], ends[1]
-        surface_distance[s2:e2] = self._make_target_stage_trace(
+        surf_dist[s2:e2] = self._make_target_stage_trace(
             e2 - s2,
             target=float(self.true_constraints["surface_trace_target"]),
             amplitude=0.22 * self.true_constraints["surface_trace_max"],
@@ -937,7 +939,7 @@ class S5SphereInspectEnv:
             near_cycles = 1.2
             near_noise_scale = max(0.10 * self.true_constraints["surface_near_target"], 1e-4)
             near_kernel = 5
-        surface_distance[s3:e3] = self._make_target_stage_trace(
+        surf_dist[s3:e3] = self._make_target_stage_trace(
             e3 - s3,
             target=float(self.true_constraints["surface_near_target"]),
             amplitude=near_amplitude,
@@ -953,10 +955,10 @@ class S5SphereInspectEnv:
         boundaries = np.cumsum(lengths[:-1]) - 1
         feature_matrix_raw = np.stack(
             [
-                surface_distance,
+                surf_dist,
                 tool_alignment_error,
                 speed,
-                angular_speed,
+                ang_speed,
             ],
             axis=1,
         )
@@ -991,24 +993,28 @@ class S5SphereInspectEnv:
         T = len(traj)
         cached_features = self._lookup_cached_feature_trace(traj)
         if cached_features is not None and cached_features.shape[0] == T:
-            surface_distance = np.asarray(cached_features[:, 0], dtype=float)
-            tool_normal_alignment_error = np.asarray(cached_features[:, 1], dtype=float)
+            surf_dist = np.asarray(cached_features[:, 0], dtype=float)
+            normal_err = np.asarray(cached_features[:, 1], dtype=float)
             speed = np.asarray(cached_features[:, 2], dtype=float)
-            angular_speed = np.asarray(cached_features[:, 3], dtype=float)
+            ang_speed = np.asarray(cached_features[:, 3], dtype=float)
         else:
-            surface_distance, tool_normal_alignment_error, speed, angular_speed = self._compute_geometry_feature_traces(traj)
+            surf_dist, normal_err, speed, ang_speed = self._compute_geometry_feature_traces(traj)
 
         t = np.linspace(0.0, 2.0 * np.pi, T)
         phase = float(0.31 * np.mean(traj[:, 0]) - 0.27 * np.mean(traj[:, 1]) + 0.43 * np.mean(traj[:, 2]))
-        noise_aux = 0.15 * np.sin(4.3 * t + phase) + 0.08 * np.cos(1.7 * t - 0.5 * phase)
+        noise = 0.15 * np.sin(4.3 * t + phase) + 0.08 * np.cos(1.7 * t - 0.5 * phase)
+        start_dist = np.linalg.norm(traj - traj[0:1], axis=1)
+        goal_dist = np.linalg.norm(traj - self.goal[None, :], axis=1)
 
         F = np.stack(
             [
-                surface_distance,
-                tool_normal_alignment_error,
+                surf_dist,
+                normal_err,
                 speed,
-                angular_speed,
-                noise_aux,
+                ang_speed,
+                noise,
+                start_dist,
+                goal_dist,
             ],
             axis=1,
         )
@@ -1071,10 +1077,10 @@ def load_S5SphereInspect(
     env_cfg.setdefault(
         "feature_boundary_ramp_half_windows",
         {
-            "surface_distance": [3, 2, 1, 5],
-            "tool_normal_alignment_error": [1, 3, 2, 1],
+            "surf_dist": [3, 2, 1, 5],
+            "normal_err": [1, 3, 2, 1],
             "speed": [1, 2, 2, 1],
-            "angular_speed": [1, 2, 2, 1],
+            "ang_speed": [1, 2, 2, 1],
         },
     )
     env_cfg.setdefault("eval_tag", "S5SphereInspect")

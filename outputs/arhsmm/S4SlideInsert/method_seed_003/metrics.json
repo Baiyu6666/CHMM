@@ -1,17 +1,19 @@
 {
   "scalar_metrics": {
-    "MeanAbsCutpointError": 9.066666666666666,
-    "MeanStageSubgoalError": 0.22227178232887512,
-    "MeanConstraintError": 0.12253489289787096,
-    "MeanConstraintErrorRaw": 0.08545831771117818
+    "MeanAbsCutpointError": 7.3,
+    "MeanStageSubgoalError": 0.13676214633783154,
+    "MeanConstraintError": 0.11311559771988874,
+    "MeanConstraintErrorRaw": 0.08262070413641745
   },
   "all_metrics": {
-    "MeanAbsCutpointError": 9.066666666666666,
-    "MeanStageSubgoalError": 0.22227178232887512,
-    "MeanConstraintError": 0.12253489289787096,
-    "MeanConstraintErrorRaw": 0.08545831771117818,
+    "MeanAbsCutpointError": 7.3,
+    "MeanStageSubgoalError": 0.13676214633783154,
+    "MeanConstraintError": 0.11311559771988874,
+    "MeanConstraintErrorRaw": 0.08262070413641745,
     "ConstraintErrorMatrix": [
       [
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN,
@@ -19,8 +21,10 @@
         NaN
       ],
       [
-        0.2933047919812019,
-        0.3931643526586839,
+        0.1993535250832571,
+        0.3929226677768066,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -30,6 +34,8 @@
         0.3223153619279592,
         0.12170203616562311,
         0.005247084183596346,
+        NaN,
+        NaN,
         NaN
       ],
       [
@@ -37,6 +43,8 @@
         0.0,
         0.008169136151273376,
         0.0012110497627574423,
+        NaN,
+        NaN,
         NaN
       ]
     ],
@@ -46,11 +54,15 @@
         NaN,
         NaN,
         NaN,
+        NaN,
+        NaN,
         NaN
       ],
       [
-        0.08783786267513968,
-        0.39034004491197427,
+        0.05970167565891808,
+        0.3901000961805886,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -60,6 +72,8 @@
         0.31999999999999995,
         0.029795570525939674,
         0.00047219155061260787,
+        NaN,
+        NaN,
         NaN
       ],
       [
@@ -67,6 +81,8 @@
         0.0,
         0.002000000000000189,
         0.00010898385566848745,
+        NaN,
+        NaN,
         NaN
       ]
     ],
@@ -76,6 +92,8 @@
         0,
         0,
         0,
+        0,
+        0,
         0
       ],
       [
@@ -83,6 +101,8 @@
         1,
         0,
         1,
+        0,
+        0,
         0
       ],
       [
@@ -90,6 +110,8 @@
         1,
         1,
         1,
+        0,
+        0,
         0
       ],
       [
@@ -97,6 +119,8 @@
         1,
         1,
         1,
+        0,
+        0,
         0
       ]
     ],
@@ -106,9 +130,22 @@
         0,
         0,
         0,
+        0,
+        0,
         0
       ],
       [
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
         1,
         1,
         0,
@@ -120,18 +157,15 @@
         1,
         1,
         1,
-        0
-      ],
-      [
-        1,
-        1,
-        1,
-        1,
+        0,
+        0,
         0
       ]
     ],
     "ConstraintTargetMatrix": [
       [
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN,
@@ -143,6 +177,8 @@
         0.4,
         NaN,
         0.007,
+        NaN,
+        NaN,
         NaN
       ],
       [
@@ -150,6 +186,8 @@
         0.72,
         0.06,
         0.045,
+        NaN,
+        NaN,
         NaN
       ],
       [
@@ -157,6 +195,8 @@
         1.0,
         0.04,
         0.018,
+        NaN,
+        NaN,
         NaN
       ]
     ],
@@ -166,6 +206,8 @@
         "",
         "",
         "",
+        "",
+        "",
         ""
       ],
       [
@@ -173,6 +215,8 @@
         "lower_bound",
         "",
         "target_value",
+        "",
+        "",
         ""
       ],
       [
@@ -180,6 +224,8 @@
         "lower_bound",
         "upper_bound",
         "target_value",
+        "",
+        "",
         ""
       ],
       [
@@ -187,22 +233,34 @@
         "lower_bound",
         "upper_bound",
         "target_value",
+        "",
+        "",
         ""
       ]
     ],
     "ConstraintFeatureNames": [
-      "surface_distance",
+      "surf dist",
       "force",
-      "orientation_error",
+      "orient err",
       "speed",
-      "noise_aux"
+      "noise",
+      "start_dist",
+      "slot_x_err"
     ],
     "ConstraintFeatureScales": [
       0.2994763981925303,
       0.9928164704464917,
       0.2448239278872144,
       0.08999122828804478,
-      0.8590315177063433
+      0.8590315177063433,
+      2.167415134128614,
+      2.126581024569993
     ]
+  },
+  "objectives": {
+    "ModelObjectiveFinal": 1621.5399557963503,
+    "SegmentationLogLikelihoodFinal": 1621.5399557963503,
+    "PosthocObjectiveFinal": -7500000119.143117,
+    "PosthocFeatureObjectiveFinal": -7500000119.143117
   }
 }

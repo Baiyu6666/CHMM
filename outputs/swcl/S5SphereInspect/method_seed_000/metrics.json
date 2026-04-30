@@ -1,27 +1,51 @@
 {
   "scalar_metrics": {
-    "MeanStageSubgoalError": NaN,
-    "MeanConstraintError": 0.004185517903381754,
-    "MeanConstraintErrorRaw": 0.0022089398272268357
+    "MeanAbsCutpointError": 1.925,
+    "MeanStageSubgoalError": 0.6408334621731985,
+    "MeanConstraintError": 0.004061450875992207,
+    "MeanConstraintErrorRaw": 0.001845187785897845
   },
   "all_metrics": {
-    "MeanStageSubgoalError": NaN,
-    "MeanConstraintError": 0.004185517903381754,
-    "MeanConstraintErrorRaw": 0.0022089398272268357,
+    "MeanAbsCutpointError": 1.925,
+    "MeanStageSubgoalError": 0.6408334621731985,
+    "MeanConstraintError": 0.004061450875992207,
+    "MeanConstraintErrorRaw": 0.001845187785897845,
     "ConstraintErrorMatrix": [
       [
         NaN,
         NaN,
         NaN,
+        NaN,
+        NaN,
         NaN
       ],
       [
-        0.0018692061962040536,
+        0.001468060440802287,
         0.010687347513941207,
         0.0,
+        NaN,
+        NaN,
         NaN
       ],
       [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.00815184642521754,
+        NaN,
+        0.0,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN,
@@ -33,15 +57,37 @@
         NaN,
         NaN,
         NaN,
+        NaN,
+        NaN,
         NaN
       ],
       [
-        0.0006268194816810013,
+        0.0004922992907089724,
         0.005999999999999506,
         0.0,
+        NaN,
+        NaN,
         NaN
       ],
       [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.0027336396387807466,
+        NaN,
+        0.0,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN,
@@ -53,15 +99,37 @@
         0,
         0,
         0,
+        0,
+        0,
         0
       ],
       [
         1,
         1,
         1,
+        0,
+        0,
         0
       ],
       [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
         0,
         0,
         0,
@@ -73,15 +141,37 @@
         0,
         0,
         0,
+        0,
+        0,
         0
       ],
       [
         1,
         1,
         1,
+        0,
+        0,
         0
       ],
       [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
         0,
         0,
         0,
@@ -93,15 +183,37 @@
         NaN,
         NaN,
         NaN,
+        NaN,
+        NaN,
         NaN
       ],
       [
         0.0,
         0.12,
         0.047,
+        NaN,
+        NaN,
         NaN
       ],
       [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.0868,
+        NaN,
+        0.047,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN,
@@ -113,15 +225,37 @@
         "",
         "",
         "",
+        "",
+        "",
         ""
       ],
       [
         "target_value",
         "upper_bound",
         "upper_bound",
+        "",
+        "",
         ""
       ],
       [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "",
+        "upper_bound",
+        "",
+        "",
+        ""
+      ],
+      [
+        "",
+        "",
         "",
         "",
         "",
@@ -129,20 +263,24 @@
       ]
     ],
     "ConstraintFeatureNames": [
-      "surface_distance",
-      "tool_normal_alignment_error",
+      "surf_dist",
+      "normal_err",
       "speed",
-      "angular_speed"
+      "ang_speed",
+      "start_dist",
+      "goal_dist"
     ],
     "ConstraintFeatureScales": [
       0.3353399335792561,
       0.5614115188238009,
       0.03885278069884934,
-      0.11425152491966827
+      0.11425152491966827,
+      2.2016824500314742,
+      1.6775786004900848
     ]
   },
   "objectives": {
-    "ModelObjectiveFinal": -19.07078556972591,
-    "TrainingTotalCostFinal": -19.07078556972591
+    "ModelObjectiveFinal": -9.098413099526578,
+    "TrainingTotalCostFinal": -9.098413099526578
   }
 }

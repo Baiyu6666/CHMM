@@ -20,13 +20,13 @@
       1.0
     ],
     "feature_boundary_ramp_half_windows": {
-      "surface_distance": [
+      "surf dist": [
         3,
         2,
         1,
         5
       ],
-      "tool_normal_alignment_error": [
+      "normal err": [
         1,
         3,
         2,
@@ -38,7 +38,7 @@
         2,
         1
       ],
-      "angular_speed": [
+      "ang speed": [
         1,
         2,
         2,
@@ -66,27 +66,27 @@
     "feat_weight": 0.1,
     "x_weight": 0.01,
     "selected_raw_feature_ids": [
-      "surface_distance",
-      "tool_normal_alignment_error",
+      "surf dist",
+      "normal err",
       "speed",
-      "angular_speed"
+      "ang speed",
+      "start dist",
+      "goal dist"
     ],
     "feature_model_types": {
-      "surface_distance": "student_t",
-      "tool_normal_alignment_error": "margin_exp_upper_right_hn",
+      "surf dist": "student_t",
+      "normal err": "margin_exp_upper_right_hn",
       "speed": "margin_exp_upper_right_hn",
-      "angular_speed": "margin_exp_upper_right_hn",
-      "noise_aux": "student_t"
+      "ang speed": "margin_exp_upper_right_hn",
+      "start dist": "margin_exp_lower",
+      "goal dist": "margin_exp_upper",
+      "noise": "student_t"
     },
     "fixed_feature_mask": [
       [
         1,
         1,
         1,
-        1
-      ],
-      [
-        1,
         1,
         1,
         1
@@ -95,15 +95,29 @@
         1,
         1,
         1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
+        1,
+        1,
+        1,
         1
       ],
       [
         1,
         1,
         1,
+        1,
+        1,
         1
       ],
       [
+        1,
+        1,
         1,
         1,
         1,

@@ -20,13 +20,13 @@
       1.0
     ],
     "feature_boundary_ramp_half_windows": {
-      "surface_distance": [
+      "surf_dist": [
         3,
         2,
         1,
         5
       ],
-      "tool_normal_alignment_error": [
+      "normal_err": [
         1,
         3,
         2,
@@ -38,7 +38,7 @@
         2,
         1
       ],
-      "angular_speed": [
+      "ang_speed": [
         1,
         2,
         2,
@@ -55,20 +55,24 @@
   "method_kwargs": {
     "max_iter": 10,
     "verbose": true,
-    "n_stages": 3,
+    "n_stages": 5,
     "seed": 0,
     "selected_raw_feature_ids": [
-      "surface_distance",
-      "tool_normal_alignment_error",
+      "surf_dist",
+      "normal_err",
       "speed",
-      "angular_speed"
+      "ang_speed",
+      "start_dist",
+      "goal_dist"
     ],
     "feature_model_types": {
-      "surface_distance": "student_t",
-      "tool_normal_alignment_error": "margin_exp_upper",
+      "surf_dist": "student_t",
+      "normal_err": "margin_exp_upper",
       "speed": "margin_exp_upper",
-      "angular_speed": "margin_exp_upper",
-      "noise_aux": "student_t"
+      "ang_speed": "margin_exp_upper",
+      "start_dist": "margin_exp_lower",
+      "goal_dist": "margin_exp_upper",
+      "noise": "student_t"
     },
     "fixed_feature_mask": null,
     "lambda_eq_constraint": 1,
@@ -90,7 +94,7 @@
     "inequality_score_activation_threshold": -0.4,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": 1,
+    "plot_every": null,
     "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspect/method_seed_000"
   }
 }

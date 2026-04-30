@@ -167,12 +167,12 @@
       ]
     ],
     "ConstraintFeatureNames": [
-      "dist_main_obstacle",
+      "obs dist",
       "speed",
-      "terminal_arc_distance",
-      "heading_angle",
-      "decoy_line_distance",
-      "noise_aux"
+      "arc dist",
+      "heading",
+      "decoy dist",
+      "noise"
     ],
     "ConstraintFeatureScales": [
       1.0105451339572489,
@@ -182,5 +182,11 @@
       0.678684724801644,
       0.751738493119704
     ]
+  },
+  "objectives": {
+    "ModelObjectiveFinal": 2414.6172040953716,
+    "SegmentationObjectiveFinal": 2414.6172040953716,
+    "PosthocObjectiveFinal": -5999998919.940501,
+    "PosthocFeatureObjectiveFinal": -5999998919.940501
   }
 }

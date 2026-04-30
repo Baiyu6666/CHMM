@@ -1,0 +1,259 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.2,
+        "equality_dispersion_ratio_threshold": 0.03
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 2.65,
+        "MeanStageSubgoalError": 0.0884489493916698,
+        "MeanConstraintError": 0.004632558822993311,
+        "MeanConstraintErrorRaw": 0.0029930332179562164
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.2,
+        "equality_dispersion_ratio_threshold": 0.04
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 3.45,
+        "MeanStageSubgoalError": 0.12140157308685104,
+        "MeanConstraintError": 0.003825932135399873,
+        "MeanConstraintErrorRaw": 0.002767827622957809
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.2,
+        "equality_dispersion_ratio_threshold": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.3,
+        "MeanStageSubgoalError": 0.12440521618450591,
+        "MeanConstraintError": 0.003111237270007813,
+        "MeanConstraintErrorRaw": 0.0025840302804693693
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.2,
+        "equality_dispersion_ratio_threshold": 0.06
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.15,
+        "MeanStageSubgoalError": 0.12787997368968979,
+        "MeanConstraintError": 0.003105888322439424,
+        "MeanConstraintErrorRaw": 0.0025761066440937435
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.2,
+        "equality_dispersion_ratio_threshold": 0.075
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.6,
+        "MeanStageSubgoalError": 0.114553977029474,
+        "MeanConstraintError": 0.0063909392670948445,
+        "MeanConstraintErrorRaw": 0.0034513249598233722
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.25,
+        "equality_dispersion_ratio_threshold": 0.03
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 2.65,
+        "MeanStageSubgoalError": 0.0884489493916698,
+        "MeanConstraintError": 0.004632558822993311,
+        "MeanConstraintErrorRaw": 0.0029930332179562164
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.25,
+        "equality_dispersion_ratio_threshold": 0.04
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 3.4,
+        "MeanStageSubgoalError": 0.12122802016776682,
+        "MeanConstraintError": 0.003825932135399873,
+        "MeanConstraintErrorRaw": 0.002767827622957809
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.25,
+        "equality_dispersion_ratio_threshold": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.5,
+        "MeanStageSubgoalError": 0.12475701169071227,
+        "MeanConstraintError": 0.003111237270007813,
+        "MeanConstraintErrorRaw": 0.0025840302804693693
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.25,
+        "equality_dispersion_ratio_threshold": 0.06
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.9,
+        "MeanStageSubgoalError": 0.14535073147157154,
+        "MeanConstraintError": 0.00352386086017046,
+        "MeanConstraintErrorRaw": 0.0025519957621130598
+      }
+    },
+    {
+      "combo_id": 9,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.25,
+        "equality_dispersion_ratio_threshold": 0.075
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 7.65,
+        "MeanStageSubgoalError": 0.1146014699599703,
+        "MeanConstraintError": 0.0063909392670948445,
+        "MeanConstraintErrorRaw": 0.0034513249598233722
+      }
+    },
+    {
+      "combo_id": 10,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.3,
+        "equality_dispersion_ratio_threshold": 0.03
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 2.9,
+        "MeanStageSubgoalError": 0.08826365051706067,
+        "MeanConstraintError": 0.004632220713352144,
+        "MeanConstraintErrorRaw": 0.0029929462666480073
+      }
+    },
+    {
+      "combo_id": 11,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.3,
+        "equality_dispersion_ratio_threshold": 0.04
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 3.9,
+        "MeanStageSubgoalError": 0.12077726546213444,
+        "MeanConstraintError": 0.0032711010430117996,
+        "MeanConstraintErrorRaw": 0.002643843393436476
+      }
+    },
+    {
+      "combo_id": 12,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.3,
+        "equality_dispersion_ratio_threshold": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 4.5,
+        "MeanStageSubgoalError": 0.12475701169071227,
+        "MeanConstraintError": 0.003111237270007813,
+        "MeanConstraintErrorRaw": 0.0025840302804693693
+      }
+    },
+    {
+      "combo_id": 13,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.3,
+        "equality_dispersion_ratio_threshold": 0.06
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.45,
+        "MeanStageSubgoalError": 0.12740806234597526,
+        "MeanConstraintError": 0.008152678852305214,
+        "MeanConstraintErrorRaw": 0.003909302314556782
+      }
+    },
+    {
+      "combo_id": 14,
+      "dataset": "S3ObsAvoid",
+      "method": "swcl",
+      "dataset_seed": 125949,
+      "method_seed": 0,
+      "params": {
+        "lambda_activation_consensus": 0.3,
+        "equality_dispersion_ratio_threshold": 0.075
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.0,
+        "MeanStageSubgoalError": 0.09892354973908621,
+        "MeanConstraintError": 0.008445647565136365,
+        "MeanConstraintErrorRaw": 0.003979732176743574
+      }
+    }
+  ]
+}

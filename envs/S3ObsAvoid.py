@@ -101,12 +101,12 @@ class S3ObsAvoidEnv:
 
     def get_feature_schema(self):
         return [
-            {"id": 0, "name": "dist_main_obstacle", "description": "Effective distance to the composite stage-1 obstacle"},
+            {"id": 0, "name": "obs_dist", "description": "Effective distance to the composite stage-1 obstacle"},
             {"id": 1, "name": "speed", "description": "2D speed magnitude"},
-            {"id": 2, "name": "terminal_arc_distance", "description": "Distance to the terminal arc center"},
-            {"id": 3, "name": "heading_angle", "description": "Unwrapped planar heading angle derived from velocity"},
-            {"id": 4, "name": "decoy_line_distance", "description": "Distance to a decoy line unrelated to the true task"},
-            {"id": 5, "name": "noise_aux", "description": "Deterministic auxiliary noise-like feature"},
+            {"id": 2, "name": "arc_dist", "description": "Distance to the terminal arc center"},
+            {"id": 3, "name": "heading", "description": "Unwrapped planar heading angle derived from velocity"},
+            {"id": 4, "name": "line_dist", "description": "Distance to an auxiliary line unrelated to the true task"},
+            {"id": 5, "name": "noise", "description": "Deterministic auxiliary noise-like feature"},
         ]
 
     def get_true_constraints(self):
@@ -115,7 +115,7 @@ class S3ObsAvoidEnv:
     def get_constraint_specs(self):
         return [
             {
-                "feature_name": "dist_main_obstacle",
+                "feature_name": "obs_dist",
                 "stage": 0,
                 "semantics": "lower_bound",
                 "oracle_key": "d_safe",
@@ -127,7 +127,7 @@ class S3ObsAvoidEnv:
                 "oracle_key": "v2_target",
             },
             {
-                "feature_name": "terminal_arc_distance",
+                "feature_name": "arc_dist",
                 "stage": 2,
                 "semantics": "target_value",
                 "oracle_key": "arc_distance_target",
@@ -184,7 +184,7 @@ class S3ObsAvoidEnv:
     def _project_to_terminal_arc(self, path):
         return self._nearest_terminal_arc_points(path)
 
-    def _terminal_arc_distance(self, traj):
+    def _arc_dist(self, traj):
         pts = np.asarray(traj, dtype=float)
         return np.linalg.norm(pts - self.terminal_arc_center[None, :], axis=1)
 
@@ -237,7 +237,7 @@ class S3ObsAvoidEnv:
         pts = (1.0 - u)[:, None] * np.asarray(a, dtype=float)[None, :] + u[:, None] * np.asarray(b, dtype=float)[None, :]
         return float(np.min(self._stage1_effective_distance(pts)))
 
-    def _decoy_line_distance(self, traj):
+    def _decoy_dist(self, traj):
         pts = np.asarray(traj, dtype=float).reshape(-1, 2)
         rel = pts - self.decoy_line_point[None, :]
         normal = np.array([-self.decoy_line_direction[1], self.decoy_line_direction[0]], dtype=float)
@@ -542,9 +542,9 @@ class S3ObsAvoidEnv:
             speeds[0] = 0.0
             heading[0] = 0.0
 
-        d_arc = self._terminal_arc_distance(traj)
+        d_arc = self._arc_dist(traj)
 
-        d_decoy = self._decoy_line_distance(traj)
+        d_decoy = self._decoy_dist(traj)
 
         t = np.linspace(0.0, 2.0 * np.pi, T)
         phase = float(np.dot(traj.mean(axis=0), self.noise_vec) + self.noise_bias)

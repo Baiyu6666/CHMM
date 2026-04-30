@@ -7,12 +7,12 @@
     "f_contact_min": 0.4,
     "f_slide_min": 0.72,
     "f_insert_min": 1.0,
-    "orientation_error_max_stage3": 0.06,
-    "orientation_error_max_stage4": 0.04
+    "orient_err_max_stage3": 0.06,
+    "orient_err_max_stage4": 0.04
   },
   "constraint_specs": [
     {
-      "feature_name": "surface_distance",
+      "feature_name": "surf dist",
       "stage": 1,
       "semantics": "target_value",
       "oracle_key": "surface_target"
@@ -30,7 +30,7 @@
       "oracle_key": "f_contact_min"
     },
     {
-      "feature_name": "surface_distance",
+      "feature_name": "surf dist",
       "stage": 2,
       "semantics": "target_value",
       "oracle_key": "surface_target"
@@ -48,13 +48,13 @@
       "oracle_key": "f_slide_min"
     },
     {
-      "feature_name": "orientation_error",
+      "feature_name": "orient err",
       "stage": 2,
       "semantics": "upper_bound",
-      "oracle_key": "orientation_error_max_stage3"
+      "oracle_key": "orient_err_max_stage3"
     },
     {
-      "feature_name": "surface_distance",
+      "feature_name": "surf dist",
       "stage": 3,
       "semantics": "target_value",
       "oracle_key": "surface_target"
@@ -72,18 +72,20 @@
       "oracle_key": "f_insert_min"
     },
     {
-      "feature_name": "orientation_error",
+      "feature_name": "orient err",
       "stage": 3,
       "semantics": "upper_bound",
-      "oracle_key": "orientation_error_max_stage4"
+      "oracle_key": "orient_err_max_stage4"
     }
   ],
   "ConstraintFeatureNames": [
-    "surface_distance",
+    "surf dist",
     "force",
-    "orientation_error",
+    "orient err",
     "speed",
-    "noise_aux"
+    "noise",
+    "start_dist",
+    "slot_x_err"
   ],
   "ConstraintTrueActiveMask": [
     [
@@ -91,6 +93,8 @@
       0,
       0,
       0,
+      0,
+      0,
       0
     ],
     [
@@ -98,6 +102,8 @@
       1,
       0,
       1,
+      0,
+      0,
       0
     ],
     [
@@ -105,6 +111,8 @@
       1,
       1,
       1,
+      0,
+      0,
       0
     ],
     [
@@ -112,11 +120,15 @@
       1,
       1,
       1,
+      0,
+      0,
       0
     ]
   ],
   "ConstraintTargetMatrix": [
     [
+      NaN,
+      NaN,
       NaN,
       NaN,
       NaN,
@@ -128,6 +140,8 @@
       0.4,
       NaN,
       0.007,
+      NaN,
+      NaN,
       NaN
     ],
     [
@@ -135,6 +149,8 @@
       0.72,
       0.06,
       0.045,
+      NaN,
+      NaN,
       NaN
     ],
     [
@@ -142,6 +158,8 @@
       1.0,
       0.04,
       0.018,
+      NaN,
+      NaN,
       NaN
     ]
   ],
@@ -151,27 +169,35 @@
       NaN,
       NaN,
       NaN,
-      NaN
-    ],
-    [
-      0.2754026298850232,
-      0.3931643526586839,
       NaN,
       NaN,
       NaN
     ],
     [
-      0.05092566030093683,
-      0.3223153619279592,
-      0.026086607070607802,
-      0.001935635541821735,
+      0.04115982105740584,
+      0.3929061059724155,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
       NaN
     ],
     [
-      0.03816223493064662,
-      0.26754484961864405,
-      0.015143857467727487,
-      0.0045205191034944775,
+      0.058296589042618745,
+      0.0,
+      0.023174076186799446,
+      0.012602629638385855,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.03772911644103875,
+      0.2820259416869643,
+      0.017190890660707753,
+      0.0040475905201644196,
+      NaN,
+      NaN,
       NaN
     ]
   ]

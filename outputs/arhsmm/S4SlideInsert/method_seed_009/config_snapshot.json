@@ -19,11 +19,13 @@
       "standardize": true,
       "use_env_features": true,
       "selected_raw_feature_ids": [
-        "surface_distance",
+        "surf dist",
         "force",
-        "orientation_error",
+        "orient err",
         "speed",
-        "noise_aux"
+        "noise",
+        "start_dist",
+        "slot_x_err"
       ],
       "min_duration": 3,
       "max_duration": null,
@@ -39,9 +41,22 @@
           0,
           0,
           0,
+          0,
+          0,
           0
         ],
         [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
           1,
           1,
           0,
@@ -53,29 +68,28 @@
           1,
           1,
           1,
-          0
-        ],
-        [
-          1,
-          1,
-          1,
-          1,
+          0,
+          0,
           0
         ]
       ],
       "selected_raw_feature_ids": [
-        "surface_distance",
+        "surf dist",
         "force",
-        "orientation_error",
+        "orient err",
         "speed",
-        "noise_aux"
+        "noise",
+        "start_dist",
+        "slot_x_err"
       ],
       "feature_model_types": {
-        "surface_distance": "student_t",
+        "surf dist": "student_t",
         "force": "margin_exp_lower",
-        "orientation_error": "margin_exp_upper",
+        "orient err": "margin_exp_upper",
         "speed": "student_t",
-        "noise_aux": "student_t"
+        "start_dist": "student_t",
+        "slot_x_err": "student_t",
+        "noise": "student_t"
       },
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S4SlideInsert/method_seed_009",
       "constraint_core_trim": 2

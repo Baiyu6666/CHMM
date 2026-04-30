@@ -20,13 +20,13 @@
       1.0
     ],
     "feature_boundary_ramp_half_windows": {
-      "surface_distance": [
+      "surf dist": [
         3,
         2,
         1,
         5
       ],
-      "tool_normal_alignment_error": [
+      "normal err": [
         1,
         3,
         2,
@@ -38,7 +38,7 @@
         2,
         1
       ],
-      "angular_speed": [
+      "ang speed": [
         1,
         2,
         2,
@@ -63,15 +63,17 @@
       "velocity_distance_weight": 1.0,
       "feature_distance_weight": 0.1,
       "selected_raw_feature_ids": [
-        "surface_distance",
-        "tool_normal_alignment_error",
+        "surf dist",
+        "normal err",
         "speed",
-        "angular_speed"
+        "ang speed",
+        "start dist",
+        "goal dist"
       ],
       "standardize": true,
       "min_len": 3,
       "max_iter": 20,
-      "n_init": 8,
+      "n_init": 3,
       "init_mode": "random_stage_ends",
       "seed": 7,
       "verbose": true,
@@ -84,27 +86,37 @@
           0,
           0,
           0,
-          0
-        ],
-        [
-          1,
-          1,
-          1,
-          0
-        ],
-        [
-          0,
           0,
           0,
           0
         ],
         [
           1,
-          0,
           1,
+          1,
+          0,
+          0,
           0
         ],
         [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
           0,
           0,
           0,
@@ -112,17 +124,21 @@
         ]
       ],
       "selected_raw_feature_ids": [
-        "surface_distance",
-        "tool_normal_alignment_error",
+        "surf dist",
+        "normal err",
         "speed",
-        "angular_speed"
+        "ang speed",
+        "start dist",
+        "goal dist"
       ],
       "feature_model_types": {
-        "surface_distance": "student_t",
-        "tool_normal_alignment_error": "margin_exp_upper",
+        "surf dist": "student_t",
+        "normal err": "margin_exp_upper",
         "speed": "margin_exp_upper",
-        "angular_speed": "margin_exp_upper",
-        "noise_aux": "student_t"
+        "ang speed": "margin_exp_upper",
+        "start dist": "margin_exp_lower",
+        "goal dist": "margin_exp_upper",
+        "noise": "student_t"
       },
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_007"
     }

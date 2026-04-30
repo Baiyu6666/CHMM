@@ -9,27 +9,31 @@
   "stage2_length_scale_range": [0.4, 0.8],
   "stage4_length_scale_range": [0.5, 1.0],
   "feature_boundary_ramp_half_windows": {
-    "surface_distance": [3, 2, 1, 5],
-    "tool_normal_alignment_error": [1, 3, 2, 1],
+    "surf_dist": [3, 2, 1, 5],
+    "normal_err": [1, 3, 2, 1],
     "speed": [1, 2, 2, 1],
-    "angular_speed": [1, 2, 2, 1]
+    "ang_speed": [1, 2, 2, 1]
   },
   "seg_lengths": [18, 61, 33, 18],
   "method_overrides": {
     "swcl": {
-      "n_stages": 3,
+      "n_stages": 5,
       "selected_raw_feature_ids": [
-        "surface_distance",
-        "tool_normal_alignment_error",
+        "surf_dist",
+        "normal_err",
         "speed",
-        "angular_speed"
+        "ang_speed",
+        "start_dist",
+        "goal_dist"
       ],
       "feature_model_types": {
-        "surface_distance": "student_t",
-        "tool_normal_alignment_error": "margin_exp_upper",
+        "surf_dist": "student_t",
+        "normal_err": "margin_exp_upper",
         "speed": "margin_exp_upper",
-        "angular_speed": "margin_exp_upper",
-        "noise_aux": "student_t"
+        "ang_speed": "margin_exp_upper",
+        "start_dist": "margin_exp_lower",
+        "goal_dist": "margin_exp_upper",
+        "noise": "student_t"
       },
       "max_iter": 10,
       "lambda_subgoal_consensus": 0.0,
@@ -43,57 +47,67 @@
       "n_stages": 5,
       "feat_weight": 0.1,
       "selected_raw_feature_ids": [
-        "surface_distance",
-        "tool_normal_alignment_error",
+        "surf_dist",
+        "normal_err",
         "speed",
-        "angular_speed"
+        "ang_speed",
+        "start_dist",
+        "goal_dist"
       ],
       "feature_model_types": {
-        "surface_distance": "student_t",
-        "tool_normal_alignment_error": "margin_exp_upper_right_hn",
+        "surf_dist": "student_t",
+        "normal_err": "margin_exp_upper_right_hn",
         "speed": "margin_exp_upper_right_hn",
-        "angular_speed": "margin_exp_upper_right_hn",
-        "noise_aux": "student_t"
+        "ang_speed": "margin_exp_upper_right_hn",
+        "start_dist": "margin_exp_lower",
+        "goal_dist": "margin_exp_upper",
+        "noise": "student_t"
       },
       "fixed_feature_mask": [
-        [1, 1, 1, 1],
-        [1, 1, 1, 1],
-        [1, 1, 1, 1],
-        [1, 1, 1, 1],
-        [1, 1, 1, 1]
+        [1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1]
       ]
     },
     "hmm": {
       "segmenter": {
         "n_stages": 5,
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ]
       },
       "posthoc_constraint": {
         "constraint_core_trim": 0,
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ],
         "feature_model_types": {
-          "surface_distance": "student_t",
-          "tool_normal_alignment_error": "margin_exp_upper",
+          "surf_dist": "student_t",
+          "normal_err": "margin_exp_upper",
           "speed": "margin_exp_upper",
-          "angular_speed": "margin_exp_upper",
-          "noise_aux": "student_t"
+          "ang_speed": "margin_exp_upper",
+          "start_dist": "margin_exp_lower",
+          "goal_dist": "margin_exp_upper",
+          "noise": "student_t"
         },
         "fixed_feature_mask": [
-          [0, 0, 0, 0],
-          [1, 1, 1, 0],
-          [0, 0, 0, 0],
-          [1, 0, 1, 0],
-          [0, 0, 0, 0]
+          [0, 0, 0, 0, 0, 0],
+          [1, 1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [1, 0, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0]
         ]
       }
     },
@@ -101,32 +115,38 @@
       "segmenter": {
         "n_stages": 5,
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ]
       },
       "posthoc_constraint": {
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ],
         "feature_model_types": {
-          "surface_distance": "student_t",
-          "tool_normal_alignment_error": "margin_exp_upper",
+          "surf_dist": "student_t",
+          "normal_err": "margin_exp_upper",
           "speed": "margin_exp_upper",
-          "angular_speed": "margin_exp_upper",
-          "noise_aux": "student_t"
+          "ang_speed": "margin_exp_upper",
+          "start_dist": "margin_exp_lower",
+          "goal_dist": "margin_exp_upper",
+          "noise": "student_t"
         },
         "fixed_feature_mask": [
-          [0, 0, 0, 0],
-          [1, 1, 1, 0],
-          [0, 0, 0, 0],
-          [1, 0, 1, 0],
-          [0, 0, 0, 0]
+          [0, 0, 0, 0, 0, 0],
+          [1, 1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [1, 0, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0]
         ]
       }
     },
@@ -134,32 +154,38 @@
       "segmenter": {
         "n_stages": 5,
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ]
       },
       "posthoc_constraint": {
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ],
         "feature_model_types": {
-          "surface_distance": "student_t",
-          "tool_normal_alignment_error": "margin_exp_upper",
+          "surf_dist": "student_t",
+          "normal_err": "margin_exp_upper",
           "speed": "margin_exp_upper",
-          "angular_speed": "margin_exp_upper",
-          "noise_aux": "student_t"
+          "ang_speed": "margin_exp_upper",
+          "start_dist": "margin_exp_lower",
+          "goal_dist": "margin_exp_upper",
+          "noise": "student_t"
         },
         "fixed_feature_mask": [
-          [0, 0, 0, 0],
-          [1, 1, 1, 0],
-          [0, 0, 0, 0],
-          [1, 0, 1, 0],
-          [0, 0, 0, 0]
+          [0, 0, 0, 0, 0, 0],
+          [1, 1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [1, 0, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0]
         ]
       }
     },
@@ -167,10 +193,12 @@
       "segmenter": {
         "n_stages": 5,
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ],
         "feature_distance_weight": 0.1,
         "use_state": true,
@@ -181,27 +209,30 @@
       },
       "posthoc_constraint": {
         "selected_raw_feature_ids": [
-          "surface_distance",
-          "tool_normal_alignment_error",
+          "surf_dist",
+          "normal_err",
           "speed",
-          "angular_speed"
+          "ang_speed",
+          "start_dist",
+          "goal_dist"
         ],
         "feature_model_types": {
-          "surface_distance": "student_t",
-          "tool_normal_alignment_error": "margin_exp_upper",
+          "surf_dist": "student_t",
+          "normal_err": "margin_exp_upper",
           "speed": "margin_exp_upper",
-          "angular_speed": "margin_exp_upper",
-          "noise_aux": "student_t"
+          "ang_speed": "margin_exp_upper",
+          "start_dist": "margin_exp_lower",
+          "goal_dist": "margin_exp_upper",
+          "noise": "student_t"
         },
         "fixed_feature_mask": [
-          [0, 0, 0, 0],
-          [1, 1, 1, 0],
-          [0, 0, 0, 0],
-          [1, 0, 1, 0],
-          [0, 0, 0, 0]
+          [0, 0, 0, 0, 0, 0],
+          [1, 1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [1, 0, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0]
         ]
       }
     }
   }
 }
-

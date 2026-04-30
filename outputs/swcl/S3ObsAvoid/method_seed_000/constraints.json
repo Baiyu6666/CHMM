@@ -7,7 +7,7 @@
   },
   "constraint_specs": [
     {
-      "feature_name": "dist_main_obstacle",
+      "feature_name": "obs_dist",
       "stage": 0,
       "semantics": "lower_bound",
       "oracle_key": "d_safe"
@@ -19,7 +19,7 @@
       "oracle_key": "v2_target"
     },
     {
-      "feature_name": "terminal_arc_distance",
+      "feature_name": "arc_dist",
       "stage": 2,
       "semantics": "target_value",
       "oracle_key": "arc_distance_target"
@@ -32,12 +32,12 @@
     }
   ],
   "ConstraintFeatureNames": [
-    "dist_main_obstacle",
+    "obs_dist",
     "speed",
-    "terminal_arc_distance",
-    "heading_angle",
-    "decoy_line_distance",
-    "noise_aux"
+    "arc_dist",
+    "heading",
+    "line_dist",
+    "noise"
   ],
   "ConstraintTrueActiveMask": [
     [
@@ -52,6 +52,14 @@
       0,
       1,
       0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
       0,
       0,
       0
@@ -73,6 +81,14 @@
       NaN,
       NaN,
       NaN
+    ],
+    [
+      NaN,
+      0.045,
+      0.2,
+      NaN,
+      NaN,
+      NaN
     ]
   ],
   "ConstraintErrorMatrix": [
@@ -86,8 +102,16 @@
     ],
     [
       NaN,
-      0.04041973098075472,
+      7.875177696708336e-06,
       NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.0031723619926490227,
+      0.00033103936448319345,
       NaN,
       NaN,
       NaN

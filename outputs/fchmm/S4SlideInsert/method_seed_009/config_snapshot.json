@@ -19,27 +19,27 @@
     "feat_weight": 0.1,
     "x_weight": 0.01,
     "selected_raw_feature_ids": [
-      "surface_distance",
+      "surf dist",
       "force",
-      "orientation_error",
-      "speed"
+      "orient err",
+      "speed",
+      "start_dist",
+      "slot_x_err"
     ],
     "feature_model_types": {
-      "surface_distance": "student_t",
+      "surf dist": "student_t",
       "force": "margin_exp_lower_left_hn",
-      "orientation_error": "margin_exp_upper_right_hn",
+      "orient err": "margin_exp_upper_right_hn",
       "speed": "student_t",
-      "noise_aux": "student_t"
+      "start_dist": "margin_exp_upper_right_hn",
+      "slot_x_err": "margin_exp_upper_right_hn",
+      "noise": "student_t"
     },
     "fixed_feature_mask": [
       [
         1,
         1,
         1,
-        1
-      ],
-      [
-        1,
         1,
         1,
         1
@@ -48,9 +48,21 @@
         1,
         1,
         1,
+        1,
+        1,
         1
       ],
       [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        1,
         1,
         1,
         1,

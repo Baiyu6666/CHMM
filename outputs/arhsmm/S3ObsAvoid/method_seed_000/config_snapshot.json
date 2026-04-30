@@ -19,12 +19,12 @@
       "standardize": true,
       "use_env_features": true,
       "selected_raw_feature_ids": [
-        "dist_main_obstacle",
+        "obs dist",
         "speed",
-        "terminal_arc_distance",
-        "heading_angle",
-        "decoy_line_distance",
-        "noise_aux"
+        "arc dist",
+        "heading",
+        "decoy dist",
+        "noise"
       ],
       "min_duration": 3,
       "max_duration": null,
@@ -61,20 +61,20 @@
         ]
       ],
       "selected_raw_feature_ids": [
-        "dist_main_obstacle",
+        "obs dist",
         "speed",
-        "terminal_arc_distance",
-        "heading_angle",
-        "decoy_line_distance",
-        "noise_aux"
+        "arc dist",
+        "heading",
+        "decoy dist",
+        "noise"
       ],
       "feature_model_types": {
-        "dist_main_obstacle": "margin_exp_lower",
+        "obs dist": "margin_exp_lower",
         "speed": "student_t",
-        "terminal_arc_distance": "student_t",
-        "heading_angle": "student_t",
-        "decoy_line_distance": "student_t",
-        "noise_aux": "student_t"
+        "arc dist": "student_t",
+        "heading": "student_t",
+        "decoy dist": "student_t",
+        "noise": "student_t"
       },
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObsAvoid/method_seed_000"
     }

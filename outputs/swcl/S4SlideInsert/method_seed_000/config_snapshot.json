@@ -8,28 +8,24 @@
   "method_kwargs": {
     "max_iter": 5,
     "verbose": true,
-    "n_stages": [
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-      8
-    ],
+    "n_stages": 4,
     "seed": 0,
     "selected_raw_feature_ids": [
-      "surface_distance",
+      "surf_dist",
       "force",
-      "orientation_error",
-      "speed"
+      "orient_err",
+      "speed",
+      "start_dist",
+      "insertion_err"
     ],
     "feature_model_types": {
-      "surface_distance": "student_t",
+      "surf_dist": "student_t",
       "force": "margin_exp_lower",
-      "orientation_error": "margin_exp_upper",
+      "orient_err": "margin_exp_upper",
       "speed": "student_t",
-      "noise_aux": "student_t"
+      "start_dist": "margin_exp_upper",
+      "insertion_err": "margin_exp_upper",
+      "noise": "student_t"
     },
     "fixed_feature_mask": null,
     "lambda_eq_constraint": 1,
@@ -47,7 +43,7 @@
     "equality_dispersion_ratio_threshold": 0.075,
     "constraint_core_trim": 0,
     "short_segment_penalty_c": 2,
-    "stage_count_penalty": 10.0,
+    "stage_count_penalty": 12.0,
     "inequality_score_activation_threshold": -0.5,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],

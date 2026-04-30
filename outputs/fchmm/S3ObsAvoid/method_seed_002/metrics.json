@@ -167,12 +167,12 @@
       ]
     ],
     "ConstraintFeatureNames": [
-      "dist_main_obstacle",
+      "obs dist",
       "speed",
-      "terminal_arc_distance",
-      "heading_angle",
-      "decoy_line_distance",
-      "noise_aux"
+      "arc dist",
+      "heading",
+      "decoy dist",
+      "noise"
     ],
     "ConstraintFeatureScales": [
       1.0105451339572489,
@@ -209,5 +209,9 @@
       ]
     ],
     "ConstraintLearnedValuePerDemo": []
+  },
+  "objectives": {
+    "ModelObjectiveFinal": -1450.0067080929632,
+    "TrainingLogLikelihoodFinal": -1450.0067080929632
   }
 }

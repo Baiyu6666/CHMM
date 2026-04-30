@@ -35,8 +35,8 @@ class S4SlideInsertEnv:
         f_contact_min=0.40,
         f_slide_min=0.72,
         f_insert_min=1.00,
-        orientation_error_max_stage3=0.06,
-        orientation_error_max_stage4=0.04,
+        orient_err_max_stage3=0.06,
+        orient_err_max_stage4=0.04,
         transition_half_window: int = 1,
         noise_pos: float = 0.003,
         noise_misc: float = 0.02,
@@ -71,8 +71,8 @@ class S4SlideInsertEnv:
         self.f_contact_min = float(f_contact_min)
         self.f_slide_min = float(f_slide_min)
         self.f_insert_min = float(f_insert_min)
-        self.orientation_error_max_stage3 = float(orientation_error_max_stage3)
-        self.orientation_error_max_stage4 = float(orientation_error_max_stage4)
+        self.orient_err_max_stage3 = float(orient_err_max_stage3)
+        self.orient_err_max_stage4 = float(orient_err_max_stage4)
         self.transition_half_window = int(transition_half_window)
         self.noise_pos = float(noise_pos)
         self.noise_misc = float(noise_misc)
@@ -94,11 +94,13 @@ class S4SlideInsertEnv:
 
     def get_feature_schema(self):
         return [
-            {"id": 0, "name": "surface_distance", "description": "Absolute distance to the contact surface z=0"},
+            {"id": 0, "name": "surf_dist", "description": "Absolute distance to the contact surface z=0"},
             {"id": 1, "name": "force", "description": "Contact force proxy"},
-            {"id": 2, "name": "orientation_error", "description": "Absolute angle error between object and slot"},
+            {"id": 2, "name": "orient_err", "description": "Absolute angle error between object and slot"},
             {"id": 3, "name": "speed", "description": "Planar speed magnitude"},
-            {"id": 4, "name": "noise_aux", "description": "Auxiliary irrelevant feature"},
+            {"id": 4, "name": "noise", "description": "Auxiliary irrelevant feature"},
+            {"id": 5, "name": "start_dist", "description": "Distance to the demo start pose in the x-z plane"},
+            {"id": 6, "name": "insertion_err", "description": "Signed distance to the slot position along the insertion axis"},
         ]
 
     def get_true_constraints(self):
@@ -110,32 +112,32 @@ class S4SlideInsertEnv:
             "f_contact_min": float(self.f_contact_min),
             "f_slide_min": float(self.f_slide_min),
             "f_insert_min": float(self.f_insert_min),
-            "orientation_error_max_stage3": float(self.orientation_error_max_stage3),
-            "orientation_error_max_stage4": float(self.orientation_error_max_stage4),
+            "orient_err_max_stage3": float(self.orient_err_max_stage3),
+            "orient_err_max_stage4": float(self.orient_err_max_stage4),
         }
 
     def get_constraint_specs(self):
         return [
-            {"feature_name": "surface_distance", "stage": 1, "semantics": "target_value", "oracle_key": "surface_target"},
+            {"feature_name": "surf_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_target"},
             {"feature_name": "speed", "stage": 1, "semantics": "target_value", "oracle_key": "v2_target"},
             {"feature_name": "force", "stage": 1, "semantics": "lower_bound", "oracle_key": "f_contact_min"},
-            {"feature_name": "surface_distance", "stage": 2, "semantics": "target_value", "oracle_key": "surface_target"},
+            {"feature_name": "surf_dist", "stage": 2, "semantics": "target_value", "oracle_key": "surface_target"},
             {"feature_name": "speed", "stage": 2, "semantics": "target_value", "oracle_key": "v3_target"},
             {"feature_name": "force", "stage": 2, "semantics": "lower_bound", "oracle_key": "f_slide_min"},
             {
-                "feature_name": "orientation_error",
+                "feature_name": "orient_err",
                 "stage": 2,
                 "semantics": "upper_bound",
-                "oracle_key": "orientation_error_max_stage3",
+                "oracle_key": "orient_err_max_stage3",
             },
-            {"feature_name": "surface_distance", "stage": 3, "semantics": "target_value", "oracle_key": "surface_target"},
+            {"feature_name": "surf_dist", "stage": 3, "semantics": "target_value", "oracle_key": "surface_target"},
             {"feature_name": "speed", "stage": 3, "semantics": "target_value", "oracle_key": "v4_target"},
             {"feature_name": "force", "stage": 3, "semantics": "lower_bound", "oracle_key": "f_insert_min"},
             {
-                "feature_name": "orientation_error",
+                "feature_name": "orient_err",
                 "stage": 3,
                 "semantics": "upper_bound",
-                "oracle_key": "orientation_error_max_stage4",
+                "oracle_key": "orient_err_max_stage4",
             },
         ]
 
@@ -391,7 +393,7 @@ class S4SlideInsertEnv:
         speed: np.ndarray,
         tangential_speed: np.ndarray,
         dz: np.ndarray,
-        orientation_error: np.ndarray,
+        orient_err: np.ndarray,
         contact_gate: np.ndarray,
         slide_progress: np.ndarray,
         insert_progress: np.ndarray,
@@ -543,7 +545,7 @@ class S4SlideInsertEnv:
             tangential_speed[0] = tangential_speed[1]
             dz[1:] = np.abs(delta[:, 1])
             dz[0] = dz[1]
-        orientation_error = np.abs(self._wrap_to_pi(theta - self.slot_theta))
+        orient_err = np.abs(self._wrap_to_pi(theta - self.slot_theta))
         z = pos[:, 1]
         x = pos[:, 0]
         contact_gate = 1.0 / (1.0 + np.exp((z - 0.012) / 0.006))
@@ -575,7 +577,7 @@ class S4SlideInsertEnv:
                 speed=speed[mask],
                 tangential_speed=tangential_speed[mask],
                 dz=dz[mask],
-                orientation_error=orientation_error[mask],
+                orient_err=orient_err[mask],
                 contact_gate=contact_gate[mask],
                 slide_progress=slide_progress[mask],
                 insert_progress=insert_progress[mask],
@@ -712,14 +714,14 @@ class S4SlideInsertEnv:
         if l3 > 0:
             u3_theta = np.linspace(0.0, 1.0, l3, endpoint=False)
             half_wave3 = np.maximum(np.sin(2.35 * np.pi * u3_theta - 0.5 * np.pi + 0.20 * latents["phase"]), 0.0)
-            margin3 = 0.62 * self.orientation_error_max_stage3 * half_wave3 - 0.18 * self.orientation_error_max_stage3
-            abs_theta3 = np.clip(self.orientation_error_max_stage3 - margin3, 0.0, 0.96 * self.orientation_error_max_stage3)
+            margin3 = 0.62 * self.orient_err_max_stage3 * half_wave3 - 0.18 * self.orient_err_max_stage3
+            abs_theta3 = np.clip(self.orient_err_max_stage3 - margin3, 0.0, 0.96 * self.orient_err_max_stage3)
             theta3 = sign3 * self._smooth_trace(abs_theta3, kernel_size=3)
         if l4 > 0:
             u4_theta = np.linspace(0.0, 1.0, l4, endpoint=True)
             half_wave4 = np.maximum(np.sin(1.95 * np.pi * u4_theta - 0.5 * np.pi + 0.16 * latents["phase"]), 0.0)
-            margin4 = 0.58 * self.orientation_error_max_stage4 * half_wave4 - 0.16 * self.orientation_error_max_stage4
-            abs_theta4 = np.clip(self.orientation_error_max_stage4 - margin4, 0.0, 0.96 * self.orientation_error_max_stage4)
+            margin4 = 0.58 * self.orient_err_max_stage4 * half_wave4 - 0.16 * self.orient_err_max_stage4
+            abs_theta4 = np.clip(self.orient_err_max_stage4 - margin4, 0.0, 0.96 * self.orient_err_max_stage4)
             theta4 = sign4 * self._smooth_trace(abs_theta4, kernel_size=3)
         theta = np.concatenate([theta1, theta2, theta3, theta4])
         theta = self._blend_segment_boundary(theta[:, None], boundary=l1 - 1, half_window=self.transition_half_window).ravel()
@@ -749,25 +751,25 @@ class S4SlideInsertEnv:
         ] * theta_noise_scale
         theta[l1 + l2:l1 + l2 + l3] = np.clip(
             theta[l1 + l2:l1 + l2 + l3],
-            -0.95 * self.orientation_error_max_stage3,
-            0.95 * self.orientation_error_max_stage3,
+            -0.95 * self.orient_err_max_stage3,
+            0.95 * self.orient_err_max_stage3,
         )
         theta[l1 + l2 + l3:] = np.clip(
             theta[l1 + l2 + l3:],
-            -0.95 * self.orientation_error_max_stage4,
-            0.95 * self.orientation_error_max_stage4,
+            -0.95 * self.orient_err_max_stage4,
+            0.95 * self.orient_err_max_stage4,
         )
         for boundary in (l1 - 1, l1 + l2 - 1, l1 + l2 + l3 - 1):
             theta = self._blend_segment_boundary(theta[:, None], boundary=boundary, half_window=self.transition_half_window).ravel()
         theta[l1 + l2:l1 + l2 + l3] = np.clip(
             theta[l1 + l2:l1 + l2 + l3],
-            -0.98 * self.orientation_error_max_stage3,
-            0.98 * self.orientation_error_max_stage3,
+            -0.98 * self.orient_err_max_stage3,
+            0.98 * self.orient_err_max_stage3,
         )
         theta[l1 + l2 + l3:] = np.clip(
             theta[l1 + l2 + l3:],
-            -0.98 * self.orientation_error_max_stage4,
-            0.98 * self.orientation_error_max_stage4,
+            -0.98 * self.orient_err_max_stage4,
+            0.98 * self.orient_err_max_stage4,
         )
 
         force = self._compute_force_signal(pos, theta, stage3_end_local[0], labels, rng, latents)
@@ -853,7 +855,7 @@ class S4SlideInsertEnv:
             tangential_speed[0] = tangential_speed[1]
             dz[1:] = np.abs(delta[:, 1])
             dz[0] = dz[1]
-        orientation_error = np.abs(self._wrap_to_pi(theta - self.slot_theta))
+        orient_err = np.abs(self._wrap_to_pi(theta - self.slot_theta))
         z = pos[:, 1]
         x = pos[:, 0]
         contact_gate = 1.0 / (1.0 + np.exp((z - 0.012) / 0.006))
@@ -880,7 +882,7 @@ class S4SlideInsertEnv:
             speed=speed,
             tangential_speed=tangential_speed,
             dz=dz,
-            orientation_error=orientation_error,
+            orient_err=orient_err,
             contact_gate=contact_gate,
             slide_progress=slide_progress,
             insert_progress=insert_progress,
@@ -893,7 +895,7 @@ class S4SlideInsertEnv:
             speed=speed,
             tangential_speed=tangential_speed,
             dz=dz,
-            orientation_error=orientation_error,
+            orient_err=orient_err,
             contact_gate=contact_gate,
             slide_progress=slide_progress,
             insert_progress=insert_progress,
@@ -906,7 +908,7 @@ class S4SlideInsertEnv:
             speed=speed,
             tangential_speed=tangential_speed,
             dz=dz,
-            orientation_error=orientation_error,
+            orient_err=orient_err,
             contact_gate=contact_gate,
             slide_progress=slide_progress,
             insert_progress=insert_progress,
@@ -931,16 +933,19 @@ class S4SlideInsertEnv:
             speed_edge = np.linalg.norm(np.diff(traj[:, :2], axis=0), axis=1) / self.dt
             speed[0] = speed_edge[0]
             speed[1:] = speed_edge
-        surface_distance = np.abs(traj[:, 1])
-        orientation_error = np.abs(self._wrap_to_pi(traj[:, 2] - self.slot_theta))
+        surf_dist = np.abs(traj[:, 1])
+        orient_err = np.abs(self._wrap_to_pi(traj[:, 2] - self.slot_theta))
         if traj.shape[1] >= 4:
             force = np.asarray(traj[:, 3], dtype=float)
         else:
             force = self._lookup_cached_force_trace(traj)
             if force is None:
                 force = self._estimate_force_from_state(traj)
-        noise_aux = 0.35 * np.sin(0.19 * np.arange(T)) + 0.15 * np.cos(0.07 * np.arange(T))
-        F = np.c_[surface_distance, force, orientation_error, speed, noise_aux]
+        start_xy = np.asarray(traj[0, :2], dtype=float)
+        start_dist = np.linalg.norm(np.asarray(traj[:, :2], dtype=float) - start_xy[None, :], axis=1)
+        insertion_err = float(self.slot_x) - np.asarray(traj[:, 0], dtype=float)
+        noise = 0.35 * np.sin(0.19 * np.arange(T)) + 0.15 * np.cos(0.07 * np.arange(T))
+        F = np.c_[surf_dist, force, orient_err, speed, noise, start_dist, insertion_err]
         return F if feat_ids is None else F[:, feat_ids]
 
 

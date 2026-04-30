@@ -20,7 +20,16 @@ from utils.models import (
     StudentTModel,
     ZeroMeanGaussianModel,
 )
-from visualization.swcl_4panel import plt as swcl_plot_plt, plot_swcl_results_4panel
+from visualization.io import learner_plot_dir
+from visualization.swcl_4panel import (
+    plt as swcl_plot_plt,
+    plot_swcl_activation_rate_paper,
+    plot_swcl_constraint_margin_paper,
+    plot_swcl_key_feature_traces_paper,
+    plot_swcl_results_4panel,
+    plot_swcl_true_cutpoint_trajectory_paper,
+    plot_swcl_true_active_paper,
+)
 from visualization.swcl_activation import plot_swcl_activation_dynamics
 
 
@@ -86,6 +95,39 @@ def _hard_gammas_from_stage_ends(lengths: Sequence[int], stage_ends_per_demo: Se
             start = int(end) + 1
         gammas.append(gamma)
     return gammas
+
+
+def _plot_swcl_final_outputs(model, it: int) -> None:
+    out_dir = learner_plot_dir(model)
+    if model.use_score_mode:
+        plot_swcl_activation_dynamics(model, it)
+    plot_swcl_activation_rate_paper(
+        model,
+        save_path=out_dir / f"paper_activation_rate_iter_{int(it):04d}.png",
+    )
+    plot_swcl_true_active_paper(
+        model,
+        save_path=out_dir / f"paper_true_constraint_active_iter_{int(it):04d}.png",
+    )
+    for demo_idx in range(len(model.demos)):
+        plot_swcl_true_cutpoint_trajectory_paper(
+            model,
+            demo_idx=demo_idx,
+            save_path=out_dir / f"paper_true_cutpoint_trajectory_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png",
+        )
+    for demo_idx in range(len(model.demos)):
+        plot_swcl_key_feature_traces_paper(
+            model,
+            demo_idx=demo_idx,
+            save_path=out_dir / f"paper_key_feature_traces_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png",
+        )
+        plot_swcl_constraint_margin_paper(
+            model,
+            demo_idx=demo_idx,
+            save_path=out_dir / f"paper_constraint_margin_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png",
+        )
+        if model.plot_every is not None:
+            plot_swcl_results_4panel(model, it, demo_idx=demo_idx)
 
 
 def _normalize_true_cutpoints(
@@ -1887,9 +1929,6 @@ class StageWiseConstraintLearningModel:
                         },
                     )
                 )
-            if self.plot_every is not None and (iteration + 1) % int(self.plot_every) == 0:
-                pass
-
         should_final_resegment = int(max_iter) > 0 and (
             self.lambda_subgoal_consensus > 0.0
             or self.lambda_param_consensus > 0.0
@@ -2014,9 +2053,8 @@ class StageWiseConstraintLearningModel:
 
         if self.plot_every is not None:
             final_it = int(max_iter)
-            if self.use_score_mode:
-                plot_swcl_activation_dynamics(self, final_it)
-            for demo_idx in range(len(self.demos)):
-                plot_swcl_results_4panel(self, final_it, demo_idx=demo_idx)
+            _plot_swcl_final_outputs(self, final_it)
+        else:
+            _plot_swcl_final_outputs(self, int(max_iter))
 
         return _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_stages)

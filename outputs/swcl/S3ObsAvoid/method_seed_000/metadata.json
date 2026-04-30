@@ -1,13 +1,13 @@
 {
-  "created_at_utc": "2026-04-02T09:10:44.031478+00:00",
+  "created_at_utc": "2026-04-09T09:04:26.068056+00:00",
   "dataset_name": "S3ObsAvoid",
   "method_name": "swcl",
   "pipeline": "joint",
   "dataset_seed": 125949,
   "method_seed": 0,
   "num_demos": 10,
-  "num_stages": 2,
+  "num_stages": 3,
   "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S3ObsAvoid/method_seed_000",
-  "env_config_path": "configs/envs/S3ObsAvoid.json",
-  "method_config_path": "configs/methods/swcl.json"
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S3ObsAvoid.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/swcl.json"
 }

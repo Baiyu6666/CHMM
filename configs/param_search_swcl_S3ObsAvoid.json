@@ -1,0 +1,4 @@
+{
+  "lambda_activation_consensus": [0.2, 0.25, 0.3],
+  "equality_dispersion_ratio_threshold": [0.03, 0.04, 0.05, 0.06, 0.075]
+}

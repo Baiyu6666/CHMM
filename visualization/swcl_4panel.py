@@ -7,6 +7,14 @@ try:
 except ModuleNotFoundError:
     plt = None
 try:
+    from matplotlib.colors import LinearSegmentedColormap
+except ModuleNotFoundError:
+    LinearSegmentedColormap = None
+try:
+    from matplotlib.patches import Rectangle
+except ModuleNotFoundError:
+    Rectangle = None
+try:
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 except ModuleNotFoundError:
     Axes3D = None
@@ -19,7 +27,7 @@ PAPER_TITLE_SIZE = 9
 PAPER_LABEL_SIZE = 8
 PAPER_TICK_SIZE = 7
 PAPER_LEGEND_SIZE = 6.5
-STAGE_COLORS = ["#D55E00", "#0072B2", "#CC79A7", "#009E73"]
+STAGE_COLORS = ["#D55E00", "#0072B2", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 
 
 def _legend(ax, *, outside=False):
@@ -146,6 +154,15 @@ def _z_to_display(learner, feat_idx: int, value: float, standardized: bool):
     if standardized:
         return float(value)
     return float(value) * float(learner.feat_std[fid]) + float(learner.feat_mean[fid])
+
+
+def _raw_to_display(learner, feat_idx: int, value: float, standardized: bool):
+    if not np.isfinite(value):
+        return np.nan
+    fid = learner.selected_feature_columns[feat_idx]
+    if standardized:
+        return (float(value) - float(learner.feat_mean[fid])) / max(float(learner.feat_std[fid]), 1e-8)
+    return float(value)
 
 
 def _summary_center_display(learner, feat_idx: int, summary: dict, kind: str, standardized: bool):
@@ -594,7 +611,7 @@ def _draw_sphere_reference_wireframe(ax, env):
     xx = center[0] + radius * np.cos(th) * np.sin(ph)
     yy = center[1] + radius * np.sin(th) * np.sin(ph)
     zz = center[2] + radius * np.cos(ph)
-    ax.plot_wireframe(xx, yy, zz, color="#8c8c8c", alpha=0.18, linewidth=0.45, rstride=1, cstride=1)
+    ax.plot_wireframe(xx, yy, zz, color="#8c8c8c", alpha=0.28, linewidth=0.65, rstride=1, cstride=1)
 
 
 def _draw_sphere_projection_circle(ax, env, dims):
@@ -807,22 +824,7 @@ def _draw_sphere_feature_overview(ax, learner, demo_idx=0):
         ax.axis("off")
         return
 
-    priority = [
-        "surface_distance",
-        "tool_normal_alignment_error",
-        "speed",
-        "angular_speed",
-        "noise_aux",
-    ]
-    feature_order = []
-    for name in priority:
-        for feat_idx in range(min(int(getattr(learner, "num_features", 0)), F_raw.shape[1])):
-            if _feature_name(learner, feat_idx) == name and feat_idx not in feature_order:
-                feature_order.append(feat_idx)
-    for feat_idx in range(min(int(getattr(learner, "num_features", 0)), F_raw.shape[1])):
-        if feat_idx not in feature_order:
-            feature_order.append(feat_idx)
-    feature_order = feature_order[:5]
+    feature_order = list(range(min(int(getattr(learner, "num_features", 0)), F_raw.shape[1])))
 
     t_axis = np.arange(F_raw.shape[0], dtype=int)
     stage_ends = learner.stage_ends_[demo_idx]
@@ -860,6 +862,253 @@ def _draw_sphere_feature_overview(ax, learner, demo_idx=0):
     ax.set_ylabel("raw value", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     _legend(ax, outside=False)
+
+
+def plot_swcl_key_feature_traces_paper(learner, demo_idx=0, save_path=None):
+    if plt is None:
+        return None
+    demo_idx = int(demo_idx)
+    F_std = np.asarray(learner.standardized_features[demo_idx], dtype=float)
+    if F_std.ndim != 2 or F_std.size == 0:
+        return None
+
+    feature_order = list(range(min(int(getattr(learner, "num_features", 0)), F_std.shape[1])))
+
+    t_axis = np.arange(F_std.shape[0], dtype=int)
+    stage_ends = learner.stage_ends_[demo_idx]
+    starts, ends = _segment_bounds(stage_ends)
+    feature_colors = _feature_plot_colors(len(feature_order))
+
+    fig, ax = plt.subplots(figsize=(3.35, 2.15), constrained_layout=False)
+    for local_idx, feat_idx in enumerate(feature_order):
+        feature_name = _feature_name(learner, feat_idx)
+        color = feature_colors[local_idx % len(feature_colors)]
+        values = np.asarray(F_std[:, feat_idx], dtype=float)
+        ax.plot(t_axis, values, color=color, lw=1.35, label=feature_name)
+
+    for cp_idx, cp in enumerate(stage_ends[:-1]):
+        ax.axvline(
+            int(cp),
+            color="black",
+            linestyle=":",
+            lw=1.1,
+            alpha=0.95,
+            zorder=4,
+            label="learned cutpoints" if cp_idx == 0 else "",
+        )
+    for cp_idx, cp in enumerate(_true_cutpoints_for_demo(learner, demo_idx)):
+        ax.axvline(
+            int(cp),
+            color="#7a7a7a",
+            linestyle="-",
+            lw=1.0,
+            alpha=0.45,
+            zorder=3,
+            label="true cutpoints" if cp_idx == 0 else "",
+        )
+
+    ax.set_xlabel("timestep", fontsize=PAPER_LABEL_SIZE, labelpad=1)
+    ax.set_ylabel("normalized feature", fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _style_paper_axis(ax, grid_axis="y", grid_alpha=0.14)
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        legend_ncol = max(1, int(np.ceil(len(handles) / 2.0)))
+        ax.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.23),
+            ncol=legend_ncol,
+            fontsize=6.2,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=0.7,
+            handletextpad=0.4,
+            labelspacing=0.25,
+            borderaxespad=0.15,
+        )
+    fig.tight_layout(pad=0.10)
+    save_path = learner_plot_dir(learner) / f"paper_key_feature_traces_demo_{demo_idx:02d}.png" if save_path is None else save_path
+    return save_figure(fig, save_path, dpi=300)
+
+
+def _true_stage_ends_for_demo(learner, demo_idx: int):
+    X = np.asarray(learner.demos[demo_idx], dtype=float)
+    cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
+    return [int(x) for x in cutpoints] + [int(len(X) - 1)]
+
+
+def _draw_true_cutpoint_trajectory_panel(ax, learner, demo_idx: int):
+    X = np.asarray(learner.demos[demo_idx], dtype=float)
+    true_stage_ends = _true_stage_ends_for_demo(learner, demo_idx)
+    starts, ends = _segment_bounds(true_stage_ends)
+    colors = _stage_colors(len(true_stage_ends))
+
+    if _is_sphere_inspect(learner.env):
+        _draw_sphere_projection_circle(ax, learner.env, dims=(0, 1))
+    else:
+        _draw_planar_obstacles(ax, learner.env)
+
+    for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+        color = colors[stage_idx % len(colors)]
+        pts = X[s : e + 1]
+        ax.plot(pts[:, 0], pts[:, 1], color=color, lw=1.55, alpha=0.96)
+        ax.scatter(pts[:, 0], pts[:, 1], color=color, s=8.0, alpha=0.36)
+
+    ax.scatter(
+        X[0, 0],
+        X[0, 1],
+        color="#222222",
+        marker="o",
+        s=18,
+        linewidths=0.0,
+        zorder=11,
+        label="start",
+    )
+    ax.scatter(
+        X[-1, 0],
+        X[-1, 1],
+        color="#222222",
+        marker="s",
+        s=18,
+        linewidths=0.0,
+        zorder=11,
+        label="end",
+    )
+
+    learned_cutpoints = [int(cp) for cp in np.asarray(learner.stage_ends_[demo_idx], dtype=int)[:-1]]
+    for cp in learned_cutpoints:
+        cp_pt = X[int(cp)]
+        ax.scatter(
+            cp_pt[0],
+            cp_pt[1],
+            color="black",
+            marker="x",
+            s=32,
+            linewidths=1.45,
+            zorder=12,
+            label="learned cutpoints" if cp == learned_cutpoints[0] else "",
+        )
+
+    _configure_2d_trajectory_axes(ax, learner.env, X[:, :2])
+    ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE, labelpad=1)
+    ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE, pad=1.0)
+    _style_paper_axis(ax)
+    _legend(ax)
+
+
+def _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx: int):
+    X = np.asarray(learner.demos[demo_idx], dtype=float)
+    true_stage_ends = _true_stage_ends_for_demo(learner, demo_idx)
+    starts, ends = _segment_bounds(true_stage_ends)
+    colors = _stage_colors(len(true_stage_ends))
+
+    _draw_sphere_reference_wireframe(ax, learner.env)
+    for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+        color = colors[stage_idx % len(colors)]
+        pts = X[s : e + 1]
+        ax.plot(
+            pts[:, 0],
+            pts[:, 1],
+            pts[:, 2],
+            color=color,
+            lw=1.45,
+            alpha=0.96,
+        )
+        ax.scatter(
+            pts[:, 0],
+            pts[:, 1],
+            pts[:, 2],
+            color=color,
+            s=7.0,
+            alpha=0.34,
+            depthshade=False,
+        )
+
+    ax.scatter(
+        X[0, 0],
+        X[0, 1],
+        X[0, 2],
+        color="#222222",
+        marker="o",
+        s=20,
+        depthshade=False,
+        zorder=11,
+        label="start",
+    )
+    ax.scatter(
+        X[-1, 0],
+        X[-1, 1],
+        X[-1, 2],
+        color="#222222",
+        marker="s",
+        s=20,
+        depthshade=False,
+        zorder=11,
+        label="end",
+    )
+
+    learned_cutpoints = [int(cp) for cp in np.asarray(learner.stage_ends_[demo_idx], dtype=int)[:-1]]
+    for cp_idx, cp in enumerate(learned_cutpoints):
+        cp_pt = X[int(cp)]
+        ax.scatter(
+            cp_pt[0],
+            cp_pt[1],
+            cp_pt[2],
+            color="black",
+            marker="x",
+            s=34,
+            linewidths=1.45,
+            depthshade=False,
+            zorder=10,
+            label="learned cutpoints" if cp_idx == 0 else "",
+        )
+
+    center = np.asarray(getattr(learner.env, "sphere_center", np.zeros(3)), dtype=float).reshape(-1)
+    radius = float(getattr(learner.env, "sphere_radius", 1.0))
+    corners = np.array(
+        [
+            center + np.array([sx, sy, sz], dtype=float) * radius
+            for sx in (-1.0, 1.0)
+            for sy in (-1.0, 1.0)
+            for sz in (-1.0, 1.0)
+        ],
+        dtype=float,
+    )
+    _set_axes_equal_3d_from_xyz(ax, np.vstack([X, corners]))
+    ax.view_init(elev=24, azim=38)
+    ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE, labelpad=1)
+    ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE, labelpad=1)
+    ax.set_zlabel("z", fontsize=PAPER_LABEL_SIZE, labelpad=1)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE, pad=0.5)
+    _legend(ax)
+
+
+def plot_swcl_true_cutpoint_trajectory_paper(learner, demo_idx=0, save_path=None):
+    if plt is None or not getattr(learner, "demos", None):
+        return None
+    demo_idx = int(demo_idx)
+    if demo_idx < 0 or demo_idx >= len(learner.demos):
+        return None
+
+    is_sphere = _is_sphere_inspect(learner.env)
+    if is_sphere:
+        fig = plt.figure(figsize=(3.35, 2.35))
+        ax = fig.add_subplot(1, 1, 1, projection="3d")
+        _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx)
+    else:
+        fig, ax = plt.subplots(1, 1, figsize=(3.35, 2.05), squeeze=False, constrained_layout=False)
+        ax = ax[0, 0]
+        _draw_true_cutpoint_trajectory_panel(ax, learner, demo_idx)
+
+    if is_sphere:
+        fig.subplots_adjust(left=0.02, right=0.98, top=0.96, bottom=0.04)
+    else:
+        fig.subplots_adjust(left=0.16, right=0.99, top=0.95, bottom=0.14)
+    save_path = learner_plot_dir(learner) / f"paper_true_cutpoint_trajectory_demo_{demo_idx:02d}.png" if save_path is None else save_path
+    return save_figure(fig, save_path, dpi=300)
 
 
 def _shortest_coverage_width(values, coverage: float = 0.7) -> float:
@@ -1061,7 +1310,7 @@ def _draw_constraint_cost_matrix(ax, learner, demo_idx=0):
     if not np.isfinite(vmax) or vmax <= 0.0:
         vmax = 1.0
     im = ax.imshow(score_margin_matrix, cmap="RdBu_r", aspect="auto", vmin=-vmax, vmax=vmax)
-    stage_labels = [f"s{i + 1}" for i in range(score_margin_matrix.shape[1])]
+    stage_labels = [f"stage {i + 1}" for i in range(score_margin_matrix.shape[1])]
     feature_labels = [_feature_name(learner, i) for i in range(score_margin_matrix.shape[0])]
     ax.set_title(f"Demo {demo_idx} constraint margin", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xticks(range(score_margin_matrix.shape[1]))
@@ -1079,6 +1328,90 @@ def _draw_constraint_cost_matrix(ax, learner, demo_idx=0):
                 fontsize=8,
             )
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+
+def plot_swcl_constraint_margin_paper(learner, demo_idx=0, save_path=None):
+    if plt is None or not getattr(learner, "current_stage_params_per_demo", None):
+        return None
+    demo_idx = int(demo_idx)
+    raw_score_matrix = np.asarray(
+        [stage_params.feature_scores for stage_params in learner.current_stage_params_per_demo[demo_idx]],
+        dtype=float,
+    ).T
+    if raw_score_matrix.size == 0:
+        return None
+    threshold_mat = np.zeros_like(raw_score_matrix, dtype=float)
+    learned_active = np.zeros_like(raw_score_matrix, dtype=bool)
+    for feat_idx in range(raw_score_matrix.shape[0]):
+        for stage_idx in range(raw_score_matrix.shape[1]):
+            threshold_mat[feat_idx, stage_idx] = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
+            learned_active[feat_idx, stage_idx] = _feature_stage_is_active_for_display(
+                learner,
+                learner.current_stage_params_per_demo[demo_idx],
+                stage_idx,
+                feat_idx,
+            )
+    score_margin_matrix = threshold_mat - raw_score_matrix
+    vmax = float(np.nanmax(np.abs(score_margin_matrix))) if score_margin_matrix.size > 0 else 1.0
+    if not np.isfinite(vmax) or vmax <= 0.0:
+        vmax = 1.0
+
+    fig = _plot_paper_matrix_common(
+        learner,
+        score_margin_matrix,
+        cmap="RdBu_r",
+        fmt=".3f",
+        vmin=-vmax,
+        vmax=vmax,
+        figsize=(3.35, 1.58),
+        hatch_mask=learned_active,
+        text_matrix=score_margin_matrix,
+        title_fontsize=PAPER_TITLE_SIZE - 1,
+    )
+    if fig is None:
+        return None
+    save_path = learner_plot_dir(learner) / f"paper_constraint_margin_demo_{demo_idx:02d}.png" if save_path is None else save_path
+    return save_figure(fig, save_path, dpi=300)
+
+
+def plot_swcl_true_active_paper(learner, save_path=None):
+    if plt is None:
+        return None
+    true_active = np.zeros((int(getattr(learner, "num_features", 0)), int(getattr(learner, "num_stages", 0))), dtype=float)
+    for feat_idx in range(true_active.shape[0]):
+        feature_name = _feature_name(learner, feat_idx)
+        for stage_idx in range(true_active.shape[1]):
+            true_active[feat_idx, stage_idx] = 1.0 if _reference_constraint_value(learner.env, feature_name, stage_idx) is not None else 0.0
+
+    fig, ax = plt.subplots(figsize=(3.35, 1.58), constrained_layout=False)
+    im = ax.imshow(true_active, cmap="Greys", aspect="auto", vmin=0.0, vmax=1.0)
+    stage_labels = [f"stage {i + 1}" for i in range(true_active.shape[1])]
+    feature_labels = [_feature_name(learner, i) for i in range(true_active.shape[0])]
+    ax.set_title("True constraint active", fontsize=PAPER_TITLE_SIZE, pad=3)
+    ax.set_xticks(range(true_active.shape[1]))
+    ax.set_xticklabels(stage_labels)
+    ax.set_yticks(range(true_active.shape[0]))
+    ax.set_yticklabels(feature_labels)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _style_paper_axis(ax)
+    for i in range(true_active.shape[0]):
+        for j in range(true_active.shape[1]):
+            value = int(round(float(true_active[i, j])))
+            ax.text(
+                j,
+                i,
+                str(value),
+                ha="center",
+                va="center",
+                color="white" if value == 1 else "black",
+                fontsize=7.0,
+            )
+    cbar = _add_slim_colorbar(im, ax)
+    cbar.set_ticks([0.0, 1.0])
+    cbar.set_ticklabels(["off", "on"])
+    fig.subplots_adjust(left=0.22, right=0.92, top=0.86, bottom=0.12)
+    save_path = learner_plot_dir(learner) / "paper_true_constraint_active.png" if save_path is None else save_path
+    return save_figure(fig, save_path, dpi=300)
 
 
 def _draw_avg_constraint_cost_matrix(ax, learner, demo_idx=0):
@@ -1102,7 +1435,7 @@ def _draw_avg_constraint_cost_matrix(ax, learner, demo_idx=0):
     if not np.isfinite(vmax) or vmax <= 0.0:
         vmax = 1.0
     im = ax.imshow(matrix, cmap="RdBu_r", aspect="auto", vmin=-vmax, vmax=vmax)
-    stage_labels = [f"s{i + 1}" for i in range(matrix.shape[1])]
+    stage_labels = [f"stage {i + 1}" for i in range(matrix.shape[1])]
     feature_labels = [_feature_name(learner, i) for i in range(matrix.shape[0])]
     ax.set_title(f"Demo {demo_idx} margin / stage length", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xticks(range(matrix.shape[1]))
@@ -1251,6 +1584,92 @@ def _summary_stage_labels(learner):
     return [f"s{i + 1}" for i in range(int(getattr(learner, "num_stages", 0)))]
 
 
+def _paper_env_title(learner):
+    env = getattr(learner, "env", None)
+    if env is None:
+        return ""
+    title = str(getattr(env, "eval_tag", "") or "").strip()
+    if title:
+        return title
+    return env.__class__.__name__.replace("Env", "")
+
+
+def _paper_activation_cmap():
+    if LinearSegmentedColormap is None:
+        return "Oranges"
+    return LinearSegmentedColormap.from_list(
+        "swcl_activation_orange",
+        ["#ffffff", "#f6ddc4", "#f1b67a"],
+    )
+
+
+def _plot_paper_matrix_common(
+    learner,
+    matrix,
+    *,
+    cmap,
+    fmt,
+    vmin,
+    vmax,
+    figsize,
+    hatch_mask=None,
+    text_matrix=None,
+    title_fontsize=None,
+):
+    arr = np.asarray(matrix, dtype=float)
+    if arr.ndim != 2 or arr.size == 0:
+        return None
+    text_arr = arr if text_matrix is None else np.asarray(text_matrix, dtype=float)
+    if text_arr.shape != arr.shape:
+        raise ValueError("text_matrix must have the same shape as matrix.")
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=False)
+    ax.imshow(arr, cmap=cmap, aspect="auto", vmin=vmin, vmax=vmax)
+    stage_labels = [f"stage {i + 1}" for i in range(arr.shape[1])]
+    feature_labels = [_feature_name(learner, i) for i in range(arr.shape[0])]
+    env_title = _paper_env_title(learner)
+    if env_title:
+        ax.set_title(env_title, fontsize=(PAPER_TITLE_SIZE - 1 if title_fontsize is None else title_fontsize), pad=2)
+    ax.set_xticks(range(arr.shape[1]))
+    ax.set_xticklabels(stage_labels)
+    ax.set_yticks(range(arr.shape[0]))
+    ax.set_yticklabels(feature_labels)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _style_paper_axis(ax)
+    scale = max(abs(float(vmin)), abs(float(vmax)), 1e-6)
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            value = float(arr[i, j])
+            text_value = float(text_arr[i, j])
+            if hatch_mask is not None and bool(hatch_mask[i, j]) and Rectangle is not None:
+                ax.add_patch(
+                    Rectangle(
+                        (j - 0.5, i - 0.5),
+                        1.0,
+                        1.0,
+                        facecolor=(1.0, 1.0, 1.0, 0.06),
+                        edgecolor=(0.2, 0.2, 0.2, 0.20),
+                        linewidth=0.4,
+                        hatch="////",
+                        zorder=2,
+                    )
+                )
+            ax.text(
+                j,
+                i,
+                format(text_value, fmt),
+                ha="center",
+                va="center",
+                color=_matrix_text_color(value, scale),
+                fontsize=7.0,
+                zorder=3,
+            )
+    # Keep the heatmap body at a fixed size across environments, regardless of
+    # feature-name length, while still compacting surrounding whitespace.
+    fig.tight_layout(pad=0.10)
+    ax.set_position([0.26, 0.16, 0.70, 0.72])
+    return fig
+
+
 def _draw_summary_heatmap(ax, matrix, title, *, feature_names, stage_labels, cmap="viridis", fmt=".2f", vmin=None, vmax=None):
     arr = np.asarray(matrix, dtype=float)
     if arr.ndim != 2 or arr.size == 0:
@@ -1309,6 +1728,33 @@ def _draw_final_activation_rate_matrix(ax, learner):
         vmin=0.0,
         vmax=1.0,
     )
+
+
+def plot_swcl_activation_rate_paper(learner, save_path=None):
+    if plt is None:
+        return None
+    summary = getattr(learner, "posthoc_activation_summary_", None) or {}
+    matrix = np.asarray(summary.get("activation_rate_matrix", []), dtype=float)
+    if matrix.ndim != 2 or matrix.size == 0:
+        return None
+
+    matrix = matrix.T
+    fig = _plot_paper_matrix_common(
+        learner,
+        matrix,
+        cmap=_paper_activation_cmap(),
+        fmt=".2f",
+        vmin=0.0,
+        vmax=1.0,
+        figsize=(3.35, 1.58),
+        hatch_mask=(matrix > 0.5),
+        text_matrix=matrix,
+        title_fontsize=PAPER_TITLE_SIZE - 1,
+    )
+    if fig is None:
+        return None
+    save_path = learner_plot_dir(learner) / "paper_activation_rate.png" if save_path is None else save_path
+    return save_figure(fig, save_path, dpi=300)
 
 
 def _draw_final_activation_proto_matrix(ax, learner):

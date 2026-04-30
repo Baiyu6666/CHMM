@@ -1,13 +1,15 @@
 {
   "scalar_metrics": {
-    "MeanStageSubgoalError": NaN,
-    "MeanConstraintError": 0.024676701762978523,
-    "MeanConstraintErrorRaw": 0.009711289954040775
+    "MeanAbsCutpointError": 4.5,
+    "MeanStageSubgoalError": 0.12475701169071227,
+    "MeanConstraintError": 0.003111237270007813,
+    "MeanConstraintErrorRaw": 0.0025840302804693693
   },
   "all_metrics": {
-    "MeanStageSubgoalError": NaN,
-    "MeanConstraintError": 0.024676701762978523,
-    "MeanConstraintErrorRaw": 0.009711289954040775,
+    "MeanAbsCutpointError": 4.5,
+    "MeanStageSubgoalError": 0.12475701169071227,
+    "MeanConstraintError": 0.003111237270007813,
+    "MeanConstraintErrorRaw": 0.0025840302804693693,
     "ConstraintErrorMatrix": [
       [
         0.008933672545202328,
@@ -19,8 +21,16 @@
       ],
       [
         NaN,
-        0.04041973098075472,
+        7.875177696708336e-06,
         NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        0.0031723619926490227,
+        0.00033103936448319345,
         NaN,
         NaN,
         NaN
@@ -37,8 +47,16 @@
       ],
       [
         NaN,
-        0.010394700589159866,
+        2.02525133783521e-06,
         NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        0.0008158330665218455,
+        0.0004903834850961131,
         NaN,
         NaN,
         NaN
@@ -60,12 +78,28 @@
         0,
         0,
         0
+      ],
+      [
+        0,
+        1,
+        1,
+        0,
+        0,
+        0
       ]
     ],
     "ConstraintPredictedActiveMask": [
       [
         1,
         0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
         0,
         0,
         0,
@@ -96,6 +130,14 @@
         NaN,
         NaN,
         NaN
+      ],
+      [
+        NaN,
+        0.045,
+        0.2,
+        NaN,
+        NaN,
+        NaN
       ]
     ],
     "ConstraintSemanticsMatrix": [
@@ -114,15 +156,23 @@
         "",
         "",
         ""
+      ],
+      [
+        "",
+        "target_value",
+        "target_value",
+        "",
+        "",
+        ""
       ]
     ],
     "ConstraintFeatureNames": [
-      "dist_main_obstacle",
+      "obs_dist",
       "speed",
-      "terminal_arc_distance",
-      "heading_angle",
-      "decoy_line_distance",
-      "noise_aux"
+      "arc_dist",
+      "heading",
+      "line_dist",
+      "noise"
     ],
     "ConstraintFeatureScales": [
       1.0105451339572489,
@@ -132,5 +182,9 @@
       0.678684724801644,
       0.751738493119704
     ]
+  },
+  "objectives": {
+    "ModelObjectiveFinal": -23.204713779380842,
+    "TrainingTotalCostFinal": -23.204713779380842
   }
 }
