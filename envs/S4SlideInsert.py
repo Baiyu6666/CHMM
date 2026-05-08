@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from .base import TaskBundle
+from .rendering import render_planar_episode
 
 
 class S4SlideInsertEnv:
@@ -140,6 +141,116 @@ class S4SlideInsertEnv:
                 "oracle_key": "orient_err_max_stage4",
             },
         ]
+
+    def get_observation_spec(self):
+        return {
+            "feature_schema": self.get_feature_schema(),
+            "noise_model": {
+                "position_noise_std": float(self.noise_pos),
+                "misc_noise_std": float(self.noise_misc),
+                "force_trace_source": "cached_or_state_estimated",
+                "speed_trace_source": "cached_or_finite_difference",
+            },
+        }
+
+    def get_render_camera_presets(self):
+        return {
+            "default_planar": {
+                "projection": "orthographic_like_2d",
+                "xlabel": "x",
+                "ylabel": "z",
+                "equal_aspect": False,
+            }
+        }
+
+    def get_asset_handles(self):
+        return {
+            "surface": {"type": "line", "axis": "x"},
+            "slot": {"type": "slot_marker"},
+            "object": {"type": "planar_slider"},
+        }
+
+    def sample_scene(self, seed=None, rng=None):
+        return {
+            "task_name": "S4SlideInsert",
+            "geometry": {
+                "start": self.start.tolist(),
+                "stage1_end": self.stage1_end.tolist(),
+                "stage2_end": self.stage2_end.tolist(),
+                "stage3_end": self.stage3_end.tolist(),
+                "stage4_end": self.stage4_end.tolist(),
+                "slot_x": float(self.slot_x),
+                "slot_theta": float(self.slot_theta),
+                "surface_z": 0.0,
+            },
+            "task": {
+                "seg_lengths": list(self.seg_lengths),
+                "seg_length_jitter": list(self.seg_length_jitter),
+                "seg_length_scale_range": list(self.seg_length_scale_range),
+            },
+        }
+
+    def rollout_demo(self, scene, seed=None, rng=None, **kwargs):
+        local_seed = int(seed) if seed is not None else int((scene or {}).get("rollout_seed", 0))
+        pos, theta, labels, force, speed = self.generate_demo(seed=local_seed)
+        traj = np.c_[pos, theta]
+        cutpoints = np.where(np.diff(np.asarray(labels, dtype=int)) != 0)[0].astype(int)
+        return {
+            "trajectory": np.asarray(traj, dtype=float),
+            "true_cutpoints": np.asarray(cutpoints, dtype=int),
+            "true_labels": np.asarray(labels, dtype=int),
+            "force_trace": np.asarray(force, dtype=float),
+            "speed_trace": np.asarray(speed, dtype=float),
+        }
+
+    def compute_observation(self, latent_rollout, scene):
+        traj = np.asarray(latent_rollout["trajectory"], dtype=float)
+        force = np.asarray(latent_rollout.get("force_trace", []), dtype=float)
+        speed = np.asarray(latent_rollout.get("speed_trace", []), dtype=float)
+        if force.size > 0:
+            self.register_force_trace(traj, force)
+        if speed.size > 0:
+            self.register_speed_trace(traj, speed)
+        features = np.asarray(self.compute_all_features_matrix(traj), dtype=float)
+        return {
+            "trajectory": traj,
+            "features": features,
+            "true_cutpoints": np.asarray(latent_rollout.get("true_cutpoints", []), dtype=int),
+            "true_labels": np.asarray(latent_rollout.get("true_labels", []), dtype=int),
+            "feature_schema": self.get_feature_schema(),
+            "observation_spec": self.get_observation_spec(),
+            "scene": dict(scene or {}),
+        }
+
+    def render_episode(self, scene, trajectory, output_path, **kwargs):
+        geometry = dict((scene or {}).get("geometry", {}))
+        cutpoints = kwargs.get("cutpoints")
+        markers = [
+            {"point": [geometry.get("slot_x", self.slot_x), geometry.get("surface_z", 0.0)], "color": "#16A34A", "marker": "s", "size": 34},
+            {"point": geometry.get("stage2_end", self.stage2_end.tolist()), "color": "#F97316", "marker": "^", "size": 30},
+        ]
+        reference_lines = [
+            {
+                "point": [0.0, geometry.get("surface_z", 0.0)],
+                "direction": [1.0, 0.0],
+                "color": "#64748B",
+                "linestyle": "-",
+                "linewidth": 1.0,
+                "alpha": 0.8,
+            }
+        ]
+        return render_planar_episode(
+            trajectory=np.asarray(trajectory, dtype=float)[:, :2],
+            output_path=output_path,
+            cutpoints=cutpoints,
+            title=kwargs.get("title", "S4SlideInsert episode"),
+            obstacles=None,
+            reference_lines=reference_lines,
+            markers=markers,
+            xlabel="x",
+            ylabel="z",
+            equal_aspect=False,
+        )
 
     def _piecewise_segment(self, start, end, length, endpoint=False):
         x = np.linspace(float(start[0]), float(end[0]), int(length), endpoint=endpoint)
@@ -961,15 +1072,19 @@ def load_S4SlideInsert(
 
     demos = []
     labels = []
-    for i in range(n_demos):
-        pos, theta, z, force, speed = env.generate_demo(seed=seed + i)
-        demo = np.c_[pos, theta]
-        env.register_force_trace(demo, force)
-        env.register_speed_trace(demo, speed)
-        demos.append(np.asarray(demo, dtype=float))
-        labels.append(np.asarray(z, dtype=int))
+    cutpoints = []
+    scene_specs = []
+    for i in range(int(n_demos)):
+        scene = env.sample_scene()
+        scene["demo_index"] = int(i)
+        latent = env.rollout_demo(scene, seed=seed + i)
+        observation = env.compute_observation(latent, scene)
+        demo = np.asarray(observation["trajectory"], dtype=float)
+        demos.append(demo)
+        labels.append(np.asarray(observation["true_labels"], dtype=int))
+        cutpoints.append(np.asarray(observation["true_cutpoints"], dtype=int))
+        scene_specs.append(dict(scene))
 
-    cutpoints = [np.where(np.diff(z) != 0)[0].astype(int) for z in labels]
     env.demo_subgoals = [np.asarray(x[int(c[1]), :3], dtype=float).copy() for x, c in zip(demos, cutpoints)]
     env.demo_goals = [np.asarray(x[-1, :3], dtype=float).copy() for x in demos]
     env.demo_stage_lengths = [np.bincount(np.asarray(z, dtype=int), minlength=env.n_segments).astype(int) for z in labels]
@@ -986,5 +1101,13 @@ def load_S4SlideInsert(
         feature_schema=env.get_feature_schema(),
         true_constraints=env.get_true_constraints(),
         constraint_specs=env.get_constraint_specs(),
-        meta={"seed": seed, "cutpoints": [c.tolist() for c in cutpoints], "task_name": "S4SlideInsert"},
+        meta={
+            "seed": seed,
+            "cutpoints": [c.tolist() for c in cutpoints],
+            "task_name": "S4SlideInsert",
+            "scene_specs": scene_specs,
+            "observation_specs": env.get_observation_spec(),
+            "render_camera_presets": env.get_render_camera_presets(),
+            "asset_handles": env.get_asset_handles(),
+        },
     )

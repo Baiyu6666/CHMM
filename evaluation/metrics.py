@@ -5,6 +5,36 @@ from methods.common.tau_init import extract_taus_hat
 
 
 _EQUALITY_MODEL_TYPES = {"gauss", "gaussian", "student_t", "studentt", "t", "gauss_zero", "zero_gaussian"}
+_BOUNDARY_MODEL_TYPES = {
+    "margin_exp_lower",
+    "marginexp",
+    "margin_exp",
+    "margin_exp_lower_left_hn",
+    "marginexp_left_hn",
+    "margin_exp_left_hn",
+    "margin_exp_upper",
+    "marginexp_upper",
+    "margin_exp_upper",
+    "margin_exp_upper_right_hn",
+    "marginexp_upper_right_hn",
+    "margin_exp_upper_right_hn",
+    "trunc_t_lower",
+    "truncated_t_lower",
+    "trunc_t_lower_z",
+    "truncated_t_lower_z",
+    "trunc_t_lower_hn",
+    "truncated_t_lower_hn",
+    "soft_trunc_t_lower_hn",
+    "soft_truncated_t_lower_hn",
+    "trunc_t_upper",
+    "truncated_t_upper",
+    "trunc_t_upper_z",
+    "truncated_t_upper_z",
+    "trunc_t_upper_hn",
+    "truncated_t_upper_hn",
+    "soft_trunc_t_upper_hn",
+    "soft_truncated_t_upper_hn",
+}
 
 
 def _get_env_feature_schema(env):
@@ -301,12 +331,7 @@ def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
         model_type = str(summary.get("type", model_type)).lower()
         if model_type in _EQUALITY_MODEL_TYPES and "mu" in summary:
             z_value = float(summary["mu"])
-        elif model_type in {
-            "margin_exp_lower",
-            "margin_exp_lower_left_hn",
-            "margin_exp_upper",
-            "margin_exp_upper_right_hn",
-        } and "b" in summary:
+        elif model_type in _BOUNDARY_MODEL_TYPES and "b" in summary:
             z_value = float(summary["b"])
         elif "mu" in summary:
             z_value = float(summary["mu"])
@@ -339,9 +364,7 @@ def _compute_constraint_metrics(learner):
     auto_mode = _is_auto_feature_mode(learner)
 
     per_demo_values = None
-    learned_value_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
-    if learner.__class__.__name__ == "FCHMM":
-        learned_value_matrix = _compute_shared_constraint_value_matrix(learner)
+    learned_value_matrix = _compute_shared_constraint_value_matrix(learner)
 
     feature_scales = _constraint_feature_scales_raw(learner)
     raw_error_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
@@ -354,10 +377,7 @@ def _compute_constraint_metrics(learner):
             if not predicted_active[stage_idx, feat_idx]:
                 continue
 
-            if learner.__class__.__name__ == "FCHMM":
-                estimate = learned_value_matrix[stage_idx, feat_idx]
-            else:
-                estimate = _estimate_constraint_value_raw(learner, stage_idx, feat_idx)
+            estimate = learned_value_matrix[stage_idx, feat_idx]
             target = target_matrix[stage_idx, feat_idx]
             if np.isfinite(estimate) and np.isfinite(target):
                 raw_error = float(abs(estimate - target))
@@ -379,9 +399,8 @@ def _compute_constraint_metrics(learner):
         "ConstraintFeatureNames": _selected_feature_names(learner),
         "ConstraintFeatureScales": feature_scales.tolist(),
     }
-    if learner.__class__.__name__ == "FCHMM":
-        metrics["ConstraintLearnedValueMatrix"] = learned_value_matrix.tolist()
-        metrics["ConstraintLearnedValuePerDemo"] = per_demo_values.tolist() if per_demo_values is not None else []
+    metrics["ConstraintLearnedValueMatrix"] = learned_value_matrix.tolist()
+    metrics["ConstraintLearnedValuePerDemo"] = per_demo_values.tolist() if per_demo_values is not None else []
     return metrics
 
 

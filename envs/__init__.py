@@ -5,6 +5,7 @@ from .registry import ENV_REGISTRY, load_env
 from .S5SphereInspect import (
     S5SphereInspectEnv,
     load_S5SphereInspect,
+    load_S5SphereInspectRaw,
 )
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "TaskBundle",
     "load_S3ObsAvoid",
     "load_S5SphereInspect",
+    "load_S5SphereInspectRaw",
     "load_env",
     "load_S4SlideInsert",
 ]

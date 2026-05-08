@@ -24,6 +24,7 @@
   "short_segment_penalty_c": 3,
   "stage_count_penalty": 12.0,
   "inequality_score_activation_threshold": -0.5,
+  "truncated_inequality_z_threshold": 0.7,
   "fixed_true_cutpoint_prefix": 0,
   "fixed_true_cutpoint_indices": null,
   "plot_every": null,

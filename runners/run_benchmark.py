@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -167,6 +168,27 @@ def _clear_png_files(path: Path) -> None:
             child.unlink()
 
 
+def _demo_cache_dataset_dir(dataset_name: str, dataset_cfg: dict[str, Any]) -> Path:
+    cache_root = dataset_cfg.get("demo_cache_dir")
+    if cache_root is None:
+        cache_root_path = PROJECT_ROOT / "envs" / "demo_cache"
+    else:
+        cache_root_path = Path(cache_root)
+        if not cache_root_path.is_absolute():
+            cache_root_path = PROJECT_ROOT / cache_root_path
+    return cache_root_path / str(dataset_name)
+
+
+def _clear_demo_cache_for_dataset(dataset_name: str, dataset_cfg: dict[str, Any]) -> Path:
+    cache_dir = _demo_cache_dataset_dir(dataset_name, dataset_cfg)
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+        print(f"\033[31m[demo cache] cleared {cache_dir}\033[0m", flush=True)
+    else:
+        print(f"\033[31m[demo cache] nothing to clear at {cache_dir}\033[0m", flush=True)
+    return cache_dir
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     metric_keys = sorted({k for row in rows for k in row["metrics"].keys()})
     objective_keys = sorted({k for row in rows for k in row.get("objectives", {}).keys()})
@@ -257,6 +279,7 @@ def run_benchmark(
     outdir: str | Path = "outputs/benchmark",
     dataset_overrides: dict[str, dict[str, Any]] | None = None,
     method_overrides: dict[str, dict[str, Any]] | None = None,
+    refresh_demo_cache: bool = False,
 ) -> dict[str, Any]:
     config_root = Path(config_root)
     if not config_root.is_absolute():
@@ -271,6 +294,7 @@ def run_benchmark(
 
     rows: list[dict[str, Any]] = []
     goal_records: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    refreshed_demo_cache_keys: set[tuple[str, str]] = set()
     for method_name in methods:
         base_method_cfg = _load_method_config(config_root, method_name)
         external_method_override = method_overrides.get(method_name, {})
@@ -284,6 +308,12 @@ def run_benchmark(
                 dataset_cfg = dict(base_dataset_cfg)
                 run_method_cfg = dict(base_method_cfg)
                 dataset_cfg = _deep_merge(dataset_cfg, external_dataset_override)
+                if refresh_demo_cache and bool(dataset_cfg.get("cache_demos", False)):
+                    cache_dir = _demo_cache_dataset_dir(dataset_name, dataset_cfg)
+                    refresh_key = (str(dataset_name), str(cache_dir))
+                    if refresh_key not in refreshed_demo_cache_keys:
+                        _clear_demo_cache_for_dataset(dataset_name, dataset_cfg)
+                        refreshed_demo_cache_keys.add(refresh_key)
                 run_method_cfg = _deep_merge(run_method_cfg, env_method_override)
                 run_method_cfg = _deep_merge(run_method_cfg, external_method_override)
                 if method_name in {"swcl", "fchmm"}:
@@ -353,12 +383,28 @@ def main():
     parser.add_argument("--seeds", default=None)
     parser.add_argument("--config-root", default="configs")
     parser.add_argument("--outdir", default="outputs/benchmark")
+    parser.add_argument("--n-demos", "--n_demos", dest="n_demos", type=int, default=None)
+    parser.add_argument("--plot-every", "--plot_every", dest="plot_every", type=int, default=None)
+    parser.add_argument(
+        "--refresh-demo-cache",
+        "--clear-demo-cache",
+        "--force-regenerate-demos",
+        dest="refresh_demo_cache",
+        action="store_true",
+        help="Delete cached demos for selected datasets before loading them, forcing regeneration.",
+    )
     args = parser.parse_args()
 
     methods = _split_csv(args.methods)
     datasets = _split_csv(args.datasets)
     method_seed_text = args.method_seeds if args.seeds is None else args.seeds
     method_seeds = [int(seed) for seed in _split_csv(method_seed_text)]
+    dataset_overrides = {}
+    method_overrides = {}
+    if args.n_demos is not None:
+        dataset_overrides = {dataset_name: {"n_demos": int(args.n_demos)} for dataset_name in datasets}
+    if args.plot_every is not None:
+        method_overrides = {method_name: {"plot_every": int(args.plot_every)} for method_name in methods}
 
     summary = run_benchmark(
         methods=methods,
@@ -367,6 +413,9 @@ def main():
         dataset_seed=args.dataset_seed,
         config_root=args.config_root,
         outdir=args.outdir,
+        dataset_overrides=dataset_overrides,
+        method_overrides=method_overrides,
+        refresh_demo_cache=bool(args.refresh_demo_cache),
     )
     print(
         f"Completed {len(summary['results'])} runs "

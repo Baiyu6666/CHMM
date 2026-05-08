@@ -381,7 +381,9 @@ def plot_constraint_error_matrix_overview(summary: dict, save_path: Path) -> Pat
         return None
 
     ncols = len(datasets)
-    fig, axes = plt.subplots(1, ncols, figsize=(4.3 * ncols, 2.88), squeeze=False, constrained_layout=False)
+    fig_width = max(5.35, 4.35 * ncols)
+    fig_height = 3.25
+    fig, axes = plt.subplots(1, ncols, figsize=(fig_width, fig_height), squeeze=False, constrained_layout=False)
     axes_flat = axes.ravel()
     vmax = 0.0
     matrices: list[np.ndarray] = []
@@ -395,6 +397,7 @@ def plot_constraint_error_matrix_overview(summary: dict, save_path: Path) -> Pat
             vmax = max(vmax, float(np.max(finite)))
     vmax = max(vmax, 1e-6)
 
+    im = None
     for ax, dataset, matrix, labels in zip(axes_flat, datasets, matrices, labels_per_dataset):
         if matrix.size == 0 or matrix.shape[1] == 0:
             ax.axis("off")
@@ -413,10 +416,22 @@ def plot_constraint_error_matrix_overview(summary: dict, save_path: Path) -> Pat
                 text_color = "white" if value >= 0.55 * vmax else "black"
                 ax.text(col_idx, row_idx, f"{value:.2f}", ha="center", va="center", fontsize=6.5, color=text_color)
 
-    cbar = fig.colorbar(im, ax=axes_flat.tolist(), fraction=0.018, pad=0.015)
-    cbar.ax.tick_params(labelsize=8)
-    cbar.set_label("Normalized constraint error", fontsize=9)
-    fig.subplots_adjust(left=0.07, right=0.95, top=0.90, bottom=0.28, wspace=0.35)
+    if im is not None:
+        cbar = fig.colorbar(im, ax=axes_flat.tolist(), fraction=0.018, pad=0.015)
+        cbar.ax.tick_params(labelsize=8)
+        cbar.set_label("Normalized constraint error", fontsize=9)
+
+    left_margin = 0.95 / fig_width
+    right_margin = 1.02 - (0.62 / fig_width)
+    bottom_margin = 1.05 / fig_height
+    top_margin = 1.0 - (0.34 / fig_height)
+    fig.subplots_adjust(
+        left=left_margin,
+        right=right_margin,
+        top=top_margin,
+        bottom=bottom_margin,
+        wspace=0.35,
+    )
     return save_figure(fig, save_path, dpi=300)
 
 

@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+from pathlib import Path
+
 import numpy as np
 
 from .base import TaskBundle
+from .rendering import render_s5_pybullet_demo_video, render_s5_pybullet_episode, render_sphere_episode
+from .s5_pybullet_backend import check_s5_reference_waypoints_ik, simulate_s5_demo_from_reference
 from planner import optimize_trajectory, resample_polyline
+
+
+_S5_METRIC_SCALE = 0.18
 
 
 class S5SphereInspectEnv:
@@ -14,33 +24,105 @@ class S5SphereInspectEnv:
     def __init__(
         self,
         sphere_center=(0.0, 0.0, 0.0),
-        sphere_radius=1.0,
-        shell_thickness=0.14,
+        sphere_radius=_S5_METRIC_SCALE,
+        shell_thickness=0.24 * _S5_METRIC_SCALE,
         seg_lengths=(18, 34, 26, 18),
         seg_length_jitter=(3, 5, 4, 3),
-        approach_offset=0.42,
-        depart_offset=0.50,
-        stage1_speed_max=0.12,
-        stage2_speed_max=0.05,
-        stage3_speed_max=0.05,
-        stage4_speed_max=0.09,
-        stage1_accel_max=0.08,
-        stage2_accel_max=0.03,
-        stage3_accel_max=0.07,
-        stage4_accel_max=0.06,
-        tool_align_max_stage2=0.12,
+        approach_offset=0.42 * _S5_METRIC_SCALE,
+        depart_offset=0.50 * _S5_METRIC_SCALE,
+        stage1_speed_max=0.12 * _S5_METRIC_SCALE,
+        stage2_speed_max=0.05 * _S5_METRIC_SCALE,
+        stage3_speed_max=0.06 * _S5_METRIC_SCALE,
+        stage4_speed_max=0.09 * _S5_METRIC_SCALE,
+        stage1_accel_max=0.08 * _S5_METRIC_SCALE,
+        stage2_accel_max=0.03 * _S5_METRIC_SCALE,
+        stage3_accel_max=0.07 * _S5_METRIC_SCALE,
+        stage4_accel_max=0.06 * _S5_METRIC_SCALE,
+        tool_align_max_stage2=0.04,
         ang_speed_max_stage2=0.22,
         ang_speed_max_stage3=0.55,
         dt=0.8,
-        noise_std=0.004,
-        surface_near_target_ratio=0.5,
+        noise_std=0.004 * _S5_METRIC_SCALE,
+        surface_near_target_ratio=0.75,
         split_stage3_transition=False,
         transition_stage_fraction=1.0 / 3.0,
-        stage2_trace_angle_range=(0.55, 1.05),
+        contact_theta_range=(-0.55 * np.pi, 0.15 * np.pi),
+        contact_phi_range=(0.22 * np.pi, 0.32 * np.pi),
+        stage2_trace_angle_range=(1.40, 1.75),
+        stage2_robot_lateral_trace=False,
+        stage2_lateral_center_theta=0.0,
+        stage2_lateral_phi_bump_range=(-0.08 * np.pi, 0.08 * np.pi),
         stage2_surface_detour_angle=0.0,
+        stage4_shell_detour_angle=0.10,
         stage2_length_scale_range=(1.0, 1.0),
         stage4_length_scale_range=(1.0, 1.0),
+        stage1_target_speed_ratio=0.68,
+        stage1_speed_taper_fraction=1.0,
+        stage1_speed_taper_end_ratio=0.78,
+        stage2_target_speed_ratio=0.99,
+        stage3_target_speed_ratio=0.75,
+        stage4_target_speed_ratio=0.99,
+        stage5_target_speed_ratio=0.62,
+        stage2_speed_valley_depths=(0.07, 0.18, 0.07),
+        stage2_speed_valley_centers=(0.30, 0.58, 0.80),
+        stage2_speed_valley_widths=(0.018, 0.025, 0.018),
+        stage3_speed_jitter_std=0.04,
+        stage3_speed_jitter_clip=0.09,
+        stage3_speed_jitter_kernel=5,
+        stage4_speed_valley_depth=0.08,
+        stage4_speed_valley_center=0.54,
+        stage4_speed_valley_width=0.025,
+        stage2_noise_scale=0.28,
+        stage4_noise_scale=0.24,
+        stage4_tool_normal_max_error=0.30,
+        stage5_tool_normal_max_error=0.18,
+        trajectory_noise_kernel=9,
+        segment_count_slack=0.35,
+        repos_angle_range=(0.95, 1.18),
+        stage3_shell_blend_range=(0.44, 0.58),
+        stage345_top_phi_range=(0.10 * np.pi, 0.18 * np.pi),
+        stage345_top_theta_pull=0.45,
+        stage345_top_theta_jitter=0.10 * np.pi,
         feature_boundary_ramp_half_windows=None,
+        rollout_backend="analytic",
+        observation_backend=None,
+        pybullet_sim_dt=1.0 / 120.0,
+        pybullet_steps_per_sample=None,
+        pybullet_gravity_z=0.0,
+        pybullet_solver_iterations=80,
+        pybullet_world_scale=1.0,
+        pybullet_world_center=(0.55, 0.0, 0.52),
+        pybullet_ur5_urdf_path=None,
+        pybullet_ur5_base_xyz=(0.0, 0.0, 0.0),
+        pybullet_ur5_base_rpy=(0.0, 0.0, 0.0),
+        pybullet_ur5_ee_link_index=-1,
+        pybullet_ur5_tool_axis="-x",
+        pybullet_ur5_tip_offset=0.0,
+        pybullet_ur5_home_q=(0.0, -1.25, 1.85, -2.10, -1.57, 0.0),
+        pybullet_ur5_ik_iterations=120,
+        pybullet_ur5_ik_damping=0.02,
+        pybullet_ur5_rest_home_blend=0.03,
+        pybullet_ur5_axis_error_weight=0.02,
+        pybullet_ur5_stage1_axis_error_weight=None,
+        pybullet_ur5_stage1_axis_weight_ramp_points=5,
+        pybullet_ur5_ik_position_error_fallback_threshold=0.0005,
+        pybullet_ur5_ik_fallback_axis_error_weight=0.005,
+        pybullet_filter_ik_valid=True,
+        pybullet_filter_max_attempts=80,
+        pybullet_filter_max_position_error=0.012 * _S5_METRIC_SCALE,
+        pybullet_filter_max_axis_error=0.30,
+        pybullet_filter_global_axis_error=False,
+        pybullet_filter_constrained_max_axis_error=0.45,
+        pybullet_filter_max_speed_ratio=1.25,
+        pybullet_precheck_ik_waypoints=True,
+        pybullet_precheck_points_per_stage=3,
+        pybullet_suppress_urdf_warnings=True,
+        pybullet_ur5_position_gain=0.08,
+        pybullet_ur5_velocity_gain=1.0,
+        pybullet_ur5_max_force=500.0,
+        pybullet_ur5_settle_steps=None,
+        pybullet_contact_surface_tol=None,
+        pybullet_sphere_collision=False,
         eval_tag="S5SphereInspect",
     ):
         self.sphere_center = np.asarray(sphere_center, dtype=float)
@@ -66,21 +148,110 @@ class S5SphereInspectEnv:
         self.surface_near_target_ratio = float(surface_near_target_ratio)
         self.split_stage3_transition = bool(split_stage3_transition)
         self.transition_stage_fraction = float(transition_stage_fraction)
+        theta_lo, theta_hi = contact_theta_range
+        phi_lo, phi_hi = contact_phi_range
+        self.contact_theta_range = (float(theta_lo), float(theta_hi))
+        self.contact_phi_range = (float(phi_lo), float(phi_hi))
         angle_lo, angle_hi = stage2_trace_angle_range
         self.stage2_trace_angle_range = (float(angle_lo), float(angle_hi))
+        self.stage2_robot_lateral_trace = bool(stage2_robot_lateral_trace)
+        self.stage2_lateral_center_theta = float(stage2_lateral_center_theta)
+        bump_lo, bump_hi = stage2_lateral_phi_bump_range
+        self.stage2_lateral_phi_bump_range = (float(bump_lo), float(bump_hi))
         self.stage2_surface_detour_angle = float(stage2_surface_detour_angle)
+        self.stage4_shell_detour_angle = float(stage4_shell_detour_angle)
         stage2_scale_lo, stage2_scale_hi = stage2_length_scale_range
         stage4_scale_lo, stage4_scale_hi = stage4_length_scale_range
         self.stage2_length_scale_range = (float(stage2_scale_lo), float(stage2_scale_hi))
         self.stage4_length_scale_range = (float(stage4_scale_lo), float(stage4_scale_hi))
+        self.stage1_target_speed_ratio = float(stage1_target_speed_ratio)
+        self.stage1_speed_taper_fraction = float(stage1_speed_taper_fraction)
+        self.stage1_speed_taper_end_ratio = (
+            None if stage1_speed_taper_end_ratio is None else float(stage1_speed_taper_end_ratio)
+        )
+        self.stage2_target_speed_ratio = float(stage2_target_speed_ratio)
+        self.stage3_target_speed_ratio = float(stage3_target_speed_ratio)
+        self.stage4_target_speed_ratio = float(stage4_target_speed_ratio)
+        self.stage5_target_speed_ratio = float(stage5_target_speed_ratio)
+        self.stage2_speed_valley_depths = tuple(float(x) for x in np.asarray(stage2_speed_valley_depths, dtype=float).reshape(-1))
+        self.stage2_speed_valley_centers = tuple(float(x) for x in np.asarray(stage2_speed_valley_centers, dtype=float).reshape(-1))
+        self.stage2_speed_valley_widths = tuple(float(x) for x in np.asarray(stage2_speed_valley_widths, dtype=float).reshape(-1))
+        self.stage3_speed_jitter_std = float(stage3_speed_jitter_std)
+        self.stage3_speed_jitter_clip = float(stage3_speed_jitter_clip)
+        self.stage3_speed_jitter_kernel = int(max(int(stage3_speed_jitter_kernel), 1))
+        self.stage4_speed_valley_depth = float(stage4_speed_valley_depth)
+        self.stage4_speed_valley_center = float(stage4_speed_valley_center)
+        self.stage4_speed_valley_width = float(stage4_speed_valley_width)
+        self.stage2_noise_scale = float(stage2_noise_scale)
+        self.stage4_noise_scale = float(stage4_noise_scale)
+        self.stage4_tool_normal_max_error = float(stage4_tool_normal_max_error)
+        self.stage5_tool_normal_max_error = float(stage5_tool_normal_max_error)
+        self.trajectory_noise_kernel = int(max(int(trajectory_noise_kernel), 1))
+        self.segment_count_slack = float(segment_count_slack)
+        repos_lo, repos_hi = repos_angle_range
+        shell_blend_lo, shell_blend_hi = stage3_shell_blend_range
+        self.repos_angle_range = (float(repos_lo), float(repos_hi))
+        self.stage3_shell_blend_range = (float(shell_blend_lo), float(shell_blend_hi))
+        top_phi_lo, top_phi_hi = stage345_top_phi_range
+        self.stage345_top_phi_range = (float(top_phi_lo), float(top_phi_hi))
+        self.stage345_top_theta_pull = float(stage345_top_theta_pull)
+        self.stage345_top_theta_jitter = float(stage345_top_theta_jitter)
         self.feature_boundary_ramp_half_windows = feature_boundary_ramp_half_windows
+        self.rollout_backend = str(rollout_backend).lower()
+        requested_observation_backend = self.rollout_backend if observation_backend is None else observation_backend
+        self.observation_backend = self._normalize_observation_backend(requested_observation_backend)
+        if self.rollout_backend not in {"analytic", "pybullet"}:
+            raise ValueError(f"Unsupported S5 rollout_backend '{self.rollout_backend}'.")
+        if self.observation_backend not in {"analytic_raw", "pybullet"}:
+            raise ValueError(f"Unsupported S5 observation_backend '{self.observation_backend}'.")
+        self.pybullet_sim_dt = float(pybullet_sim_dt)
+        self.pybullet_steps_per_sample = None if pybullet_steps_per_sample is None else int(pybullet_steps_per_sample)
+        self.pybullet_gravity_z = float(pybullet_gravity_z)
+        self.pybullet_solver_iterations = int(pybullet_solver_iterations)
+        self.pybullet_world_scale = float(pybullet_world_scale)
+        self.pybullet_world_center = tuple(float(x) for x in np.asarray(pybullet_world_center, dtype=float).reshape(3))
+        self.pybullet_ur5_urdf_path = pybullet_ur5_urdf_path
+        self.pybullet_ur5_base_xyz = tuple(float(x) for x in np.asarray(pybullet_ur5_base_xyz, dtype=float).reshape(3))
+        self.pybullet_ur5_base_rpy = tuple(float(x) for x in np.asarray(pybullet_ur5_base_rpy, dtype=float).reshape(3))
+        self.pybullet_ur5_ee_link_index = int(pybullet_ur5_ee_link_index)
+        self.pybullet_ur5_tool_axis = str(pybullet_ur5_tool_axis)
+        self.pybullet_ur5_tip_offset = float(pybullet_ur5_tip_offset)
+        self.pybullet_ur5_home_q = tuple(float(x) for x in np.asarray(pybullet_ur5_home_q, dtype=float).reshape(6))
+        self.pybullet_ur5_ik_iterations = int(pybullet_ur5_ik_iterations)
+        self.pybullet_ur5_ik_damping = float(pybullet_ur5_ik_damping)
+        self.pybullet_ur5_rest_home_blend = float(pybullet_ur5_rest_home_blend)
+        self.pybullet_ur5_axis_error_weight = float(pybullet_ur5_axis_error_weight)
+        self.pybullet_ur5_stage1_axis_error_weight = (
+            None if pybullet_ur5_stage1_axis_error_weight is None else float(pybullet_ur5_stage1_axis_error_weight)
+        )
+        self.pybullet_ur5_stage1_axis_weight_ramp_points = int(max(int(pybullet_ur5_stage1_axis_weight_ramp_points), 0))
+        self.pybullet_ur5_ik_position_error_fallback_threshold = float(pybullet_ur5_ik_position_error_fallback_threshold)
+        self.pybullet_ur5_ik_fallback_axis_error_weight = float(pybullet_ur5_ik_fallback_axis_error_weight)
+        self.pybullet_filter_ik_valid = bool(pybullet_filter_ik_valid)
+        self.pybullet_filter_max_attempts = int(max(int(pybullet_filter_max_attempts), 1))
+        self.pybullet_filter_max_position_error = float(pybullet_filter_max_position_error)
+        self.pybullet_filter_max_axis_error = float(pybullet_filter_max_axis_error)
+        self.pybullet_filter_global_axis_error = bool(pybullet_filter_global_axis_error)
+        self.pybullet_filter_constrained_max_axis_error = float(pybullet_filter_constrained_max_axis_error)
+        self.pybullet_filter_max_speed_ratio = float(pybullet_filter_max_speed_ratio)
+        self.pybullet_precheck_ik_waypoints = bool(pybullet_precheck_ik_waypoints)
+        self.pybullet_precheck_points_per_stage = int(max(int(pybullet_precheck_points_per_stage), 2))
+        self.pybullet_suppress_urdf_warnings = bool(pybullet_suppress_urdf_warnings)
+        self.pybullet_ur5_position_gain = float(pybullet_ur5_position_gain)
+        self.pybullet_ur5_velocity_gain = float(pybullet_ur5_velocity_gain)
+        self.pybullet_ur5_max_force = float(pybullet_ur5_max_force)
+        self.pybullet_ur5_settle_steps = None if pybullet_ur5_settle_steps is None else int(pybullet_ur5_settle_steps)
+        default_contact_tol = 0.025 * self.sphere_radius
+        self.pybullet_contact_surface_tol = (
+            float(default_contact_tol) if pybullet_contact_surface_tol is None else float(pybullet_contact_surface_tol)
+        )
+        self.pybullet_sphere_collision = bool(pybullet_sphere_collision)
         self.eval_tag = str(eval_tag)
 
         self.feature_schema = self.get_feature_schema()
         self.true_constraints = self.get_true_constraints()
         self.constraint_specs = self.get_constraint_specs()
         self._cached_tool_axis_traces = {}
-        self._cached_feature_traces = {}
 
         nominal_contact = self.sphere_center + np.array([0.0, self.sphere_radius, 0.0], dtype=float)
         nominal_shell = self.sphere_center + np.array(
@@ -107,6 +278,15 @@ class S5SphereInspectEnv:
     def _traj_cache_key(traj: np.ndarray):
         arr = np.ascontiguousarray(np.asarray(traj, dtype=np.float64))
         return arr.shape, arr.tobytes()
+
+    @staticmethod
+    def _normalize_observation_backend(name) -> str:
+        text = str(name).lower()
+        if text == "analytic":
+            return "analytic_raw"
+        if text == "raw":
+            return "analytic_raw"
+        return text
 
     @staticmethod
     def _smooth_trace(values: np.ndarray, kernel_size: int = 7) -> np.ndarray:
@@ -254,57 +434,6 @@ class S5SphereInspectEnv:
             return None
         return np.asarray(axis, dtype=float)
 
-    def register_feature_trace(self, traj: np.ndarray, features: np.ndarray):
-        self._cached_feature_traces[self._traj_cache_key(traj)] = np.asarray(features, dtype=float).copy()
-
-    def _lookup_cached_feature_trace(self, traj: np.ndarray):
-        features = self._cached_feature_traces.get(self._traj_cache_key(traj))
-        if features is None:
-            return None
-        return np.asarray(features, dtype=float)
-
-    def _resolve_feature_boundary_ramp_half_windows(self, num_boundaries: int) -> np.ndarray:
-        num_boundaries = max(int(num_boundaries), 0)
-        feature_names = [
-            "surf_dist",
-            "normal_err",
-            "speed",
-            "ang_speed",
-        ]
-        defaults = {
-            "surf_dist": [2] * num_boundaries,
-            "normal_err": [0] * num_boundaries,
-            "speed": ([1] + [2] * max(num_boundaries - 1, 0))[:num_boundaries],
-            "ang_speed": [0] * num_boundaries,
-        }
-        cfg = self.feature_boundary_ramp_half_windows
-        resolved = np.asarray(
-            [np.asarray(defaults[name], dtype=int) for name in feature_names],
-            dtype=int,
-        )
-        if cfg is None:
-            return resolved
-        if not isinstance(cfg, dict):
-            raise ValueError("feature_boundary_ramp_half_windows must be a dict keyed by feature name.")
-        for feat_idx, feature_name in enumerate(feature_names):
-            value = cfg.get(feature_name, defaults[feature_name])
-            if np.isscalar(value):
-                resolved[feat_idx, :] = int(max(int(value), 0))
-                continue
-            arr = np.asarray(value, dtype=int).reshape(-1)
-            if arr.size == 0:
-                resolved[feat_idx, :] = 0
-                continue
-            if arr.size == 1:
-                resolved[feat_idx, :] = int(max(int(arr[0]), 0))
-                continue
-            if arr.size != num_boundaries:
-                raise ValueError(
-                    f"feature_boundary_ramp_half_windows['{feature_name}'] must have length 1 or {num_boundaries}, got {arr.size}."
-                )
-            resolved[feat_idx, :] = np.maximum(arr.astype(int), 0)
-        return resolved
-
     def get_feature_schema(self):
         return [
             {"id": 0, "name": "surf_dist", "description": "Absolute radial distance to the sphere surface"},
@@ -344,6 +473,740 @@ class S5SphereInspectEnv:
             {"feature_name": "speed", "stage": 2, "semantics": "upper_bound", "oracle_key": "v23_max"},
         ]
 
+    def get_observation_spec(self):
+        return {
+            "feature_schema": self.get_feature_schema(),
+            "default_rollout_backend": str(self.rollout_backend),
+            "default_observation_backend": str(self.observation_backend),
+            "noise_model": {
+                "trajectory_noise_std": float(self.noise_std),
+                "cached_feature_trace": False,
+            },
+            "pybullet_rollout": {
+                "enabled": bool(self.rollout_backend == "pybullet" or self.observation_backend == "pybullet"),
+                "backend": "ur5_ik_position_control",
+                "sim_dt": float(self.pybullet_sim_dt),
+                "steps_per_sample": None if self.pybullet_steps_per_sample is None else int(self.pybullet_steps_per_sample),
+                "world_scale": float(self.pybullet_world_scale),
+                "world_center": list(self.pybullet_world_center),
+                "ur5_ee_link_index": int(self.pybullet_ur5_ee_link_index),
+                "ur5_tool_axis": str(self.pybullet_ur5_tool_axis),
+                "ur5_tip_offset": float(self.pybullet_ur5_tip_offset),
+                "ur5_base_xyz": list(self.pybullet_ur5_base_xyz),
+                "ur5_base_rpy": list(self.pybullet_ur5_base_rpy),
+                "suppress_urdf_warnings": bool(self.pybullet_suppress_urdf_warnings),
+                "ik_filter": {
+                    "enabled": bool(self.pybullet_filter_ik_valid),
+                    "max_attempts": int(self.pybullet_filter_max_attempts),
+                    "max_position_error": float(self.pybullet_filter_max_position_error),
+                    "max_axis_error": float(self.pybullet_filter_max_axis_error),
+                    "global_axis_error": bool(self.pybullet_filter_global_axis_error),
+                    "constrained_max_axis_error": float(self.pybullet_filter_constrained_max_axis_error),
+                    "max_speed_ratio": float(self.pybullet_filter_max_speed_ratio),
+                    "precheck_ik_waypoints": bool(self.pybullet_precheck_ik_waypoints),
+                    "precheck_points_per_stage": int(self.pybullet_precheck_points_per_stage),
+                },
+            },
+        }
+
+    def get_render_camera_presets(self):
+        return {
+            "default_3d": {
+                "backend": "matplotlib",
+                "elev": 24.0,
+                "azim": 38.0,
+            },
+            "paper_orbit": {
+                "backend": "pybullet",
+                "main_yaw": 42.0,
+                "inset_yaw": 205.0,
+            },
+        }
+
+    def get_asset_handles(self):
+        return {
+            "sphere_surface": {"type": "sphere"},
+            "ur5": {"type": "robot_arm", "model": "UR5+hidden_gripper"},
+            "visible_ee": {"type": "urdf_task_tool_link", "normal_axis": "local_-x"},
+            "reference_table": {"type": "tabletop"},
+        }
+
+    def sample_scene(self, seed=None, rng=None):
+        return {
+            "task_name": str(self.eval_tag),
+            "geometry": {
+                "sphere_center": self.sphere_center.tolist(),
+                "sphere_radius": float(self.sphere_radius),
+                "shell_thickness": float(self.shell_thickness),
+                "surface_near_target_ratio": float(self.surface_near_target_ratio),
+            },
+            "task": {
+                "split_stage3_transition": bool(self.split_stage3_transition),
+                "transition_stage_fraction": float(self.transition_stage_fraction),
+                "contact_theta_range": list(self.contact_theta_range),
+                "contact_phi_range": list(self.contact_phi_range),
+                "stage2_trace_angle_range": list(self.stage2_trace_angle_range),
+                "stage2_robot_lateral_trace": bool(self.stage2_robot_lateral_trace),
+                "stage2_lateral_center_theta": float(self.stage2_lateral_center_theta),
+                "stage2_lateral_phi_bump_range": list(self.stage2_lateral_phi_bump_range),
+                "repos_angle_range": list(self.repos_angle_range),
+                "stage3_shell_blend_range": list(self.stage3_shell_blend_range),
+                "stage345_top_phi_range": list(self.stage345_top_phi_range),
+                "stage345_top_theta_pull": float(self.stage345_top_theta_pull),
+                "stage345_top_theta_jitter": float(self.stage345_top_theta_jitter),
+                "stage4_shell_detour_angle": float(self.stage4_shell_detour_angle),
+                "stage2_speed_valley": {
+                    "depths": list(self.stage2_speed_valley_depths),
+                    "centers": list(self.stage2_speed_valley_centers),
+                    "widths": list(self.stage2_speed_valley_widths),
+                },
+                "stage3_speed_jitter": {
+                    "std": float(self.stage3_speed_jitter_std),
+                    "clip": float(self.stage3_speed_jitter_clip),
+                    "kernel": int(self.stage3_speed_jitter_kernel),
+                },
+                "stage4_speed_valley": {
+                    "depth": float(self.stage4_speed_valley_depth),
+                    "center": float(self.stage4_speed_valley_center),
+                    "width": float(self.stage4_speed_valley_width),
+                },
+                "tool_axis": {
+                    "stage4_normal_max_error": float(self.stage4_tool_normal_max_error),
+                    "stage5_normal_max_error": float(self.stage5_tool_normal_max_error),
+                },
+                "trajectory_noise": {
+                    "noise_std": float(self.noise_std),
+                    "kernel": int(self.trajectory_noise_kernel),
+                    "stage2_scale": float(self.stage2_noise_scale),
+                    "stage4_scale": float(self.stage4_noise_scale),
+                },
+                "stage2_length_scale_range": list(self.stage2_length_scale_range),
+                "stage4_length_scale_range": list(self.stage4_length_scale_range),
+            },
+        }
+
+    def _rollout_demo_analytic(self, scene, seed=None, rng=None, **kwargs):
+        if scene is not None and "demo_index" in scene and "demo_index" not in kwargs:
+            kwargs["demo_index"] = int(scene["demo_index"])
+        if rng is not None:
+            traj, cutpoints = self.generate_demo(rng=rng, **kwargs)
+        else:
+            local_seed = int(seed) if seed is not None else int((scene or {}).get("rollout_seed", 0))
+            local_rng = np.random.RandomState(local_seed)
+            traj, cutpoints = self.generate_demo(rng=local_rng, **kwargs)
+        tool_axis = self._lookup_cached_tool_axis_trace(traj)
+        return {
+            "trajectory": np.asarray(traj, dtype=float),
+            "true_cutpoints": np.asarray(cutpoints, dtype=int),
+            "tool_axis": None if tool_axis is None else np.asarray(tool_axis, dtype=float),
+            "rollout_backend": "analytic",
+            "observation_backend": str(self.observation_backend),
+        }
+
+    def _pybullet_attempt_seed(self, seed, scene, attempt: int) -> int:
+        if seed is not None:
+            base = int(seed)
+        else:
+            base = int((scene or {}).get("rollout_seed", 0))
+        return int(base + int(attempt))
+
+    def demo_seed_for_index(self, seed: int, demo_idx: int) -> int:
+        if self.rollout_backend == "pybullet" and bool(self.pybullet_filter_ik_valid):
+            return int(seed) + int(demo_idx) * int(self.pybullet_filter_max_attempts)
+        return int(seed) + int(demo_idx)
+
+    @staticmethod
+    def _stage_slices_from_cutpoints(length: int, cutpoints) -> list[slice]:
+        T = int(length)
+        cuts = np.asarray(cutpoints, dtype=int).reshape(-1)
+        cuts = np.sort(cuts[(cuts >= 0) & (cuts < T - 1)])
+        ends = cuts.tolist() + [T - 1]
+        starts = [0] + [int(v) + 1 for v in ends[:-1]]
+        return [slice(int(a), int(b) + 1) for a, b in zip(starts, ends)]
+
+    @staticmethod
+    def _axis_error_trace(axis_a, axis_b) -> np.ndarray:
+        a = np.asarray(axis_a, dtype=float)
+        b = np.asarray(axis_b, dtype=float)
+        a = a / np.maximum(np.linalg.norm(a, axis=1, keepdims=True), 1e-12)
+        b = b / np.maximum(np.linalg.norm(b, axis=1, keepdims=True), 1e-12)
+        return np.arccos(np.clip(np.sum(a * b, axis=1), -1.0, 1.0))
+
+    def _pybullet_rollout_validity_report(self, reference: dict, latent: dict) -> dict:
+        ref_traj = np.asarray(reference["trajectory"], dtype=float)
+        exe_traj = np.asarray(latent["trajectory"], dtype=float)
+        ref_axis = np.asarray(reference["tool_axis"], dtype=float)
+        exe_axis = np.asarray(latent["tool_axis"], dtype=float)
+        T = min(len(ref_traj), len(exe_traj), len(ref_axis), len(exe_axis))
+        if T <= 1:
+            return {"valid": False, "reason": "empty_or_singleton_rollout"}
+        ref_traj = ref_traj[:T]
+        exe_traj = exe_traj[:T]
+        ref_axis = ref_axis[:T]
+        exe_axis = exe_axis[:T]
+        cutpoints = np.asarray(reference["true_cutpoints"], dtype=int)
+
+        pos_err = np.linalg.norm(exe_traj - ref_traj, axis=1)
+        axis_err = self._axis_error_trace(exe_axis, ref_axis)
+        ref_speed = np.zeros(T, dtype=float)
+        exe_speed = np.zeros(T, dtype=float)
+        ref_speed[1:] = np.linalg.norm(np.diff(ref_traj, axis=0), axis=1) / max(float(self.dt), 1e-12)
+        exe_speed[1:] = np.linalg.norm(np.diff(exe_traj, axis=0), axis=1) / max(float(self.dt), 1e-12)
+        speed_ratio = float(np.max(exe_speed / np.maximum(ref_speed, 1e-6)))
+
+        stage_slices = self._stage_slices_from_cutpoints(T, cutpoints)
+        normal_stage_ids = sorted(
+            {
+                int(spec["stage"])
+                for spec in self.get_constraint_specs()
+                if spec.get("feature_name") == "normal_err"
+            }
+        )
+        constrained_axis_max = 0.0
+        constrained_stage_axis_max = {}
+        for stage_idx in normal_stage_ids:
+            if 0 <= stage_idx < len(stage_slices):
+                val = float(np.max(axis_err[stage_slices[stage_idx]]))
+                constrained_axis_max = max(constrained_axis_max, val)
+                constrained_stage_axis_max[str(stage_idx)] = val
+
+        max_pos = float(np.max(pos_err))
+        max_axis = float(np.max(axis_err))
+        global_axis_ok = (not bool(self.pybullet_filter_global_axis_error)) or (
+            max_axis <= float(self.pybullet_filter_max_axis_error)
+        )
+        valid = (
+            max_pos <= float(self.pybullet_filter_max_position_error)
+            and global_axis_ok
+            and constrained_axis_max <= float(self.pybullet_filter_constrained_max_axis_error)
+            and speed_ratio <= float(self.pybullet_filter_max_speed_ratio)
+        )
+        reason = "ok"
+        if max_pos > float(self.pybullet_filter_max_position_error):
+            reason = "position_error"
+        elif bool(self.pybullet_filter_global_axis_error) and max_axis > float(self.pybullet_filter_max_axis_error):
+            reason = "axis_error"
+        elif constrained_axis_max > float(self.pybullet_filter_constrained_max_axis_error):
+            reason = "constrained_axis_error"
+        elif speed_ratio > float(self.pybullet_filter_max_speed_ratio):
+            reason = "speed_ratio"
+        return {
+            "valid": bool(valid),
+            "reason": reason,
+            "max_position_error": max_pos,
+            "max_axis_error": max_axis,
+            "constrained_max_axis_error": float(constrained_axis_max),
+            "constrained_stage_axis_max": constrained_stage_axis_max,
+            "max_speed_ratio": speed_ratio,
+            "thresholds": {
+                "max_position_error": float(self.pybullet_filter_max_position_error),
+                "max_axis_error": float(self.pybullet_filter_max_axis_error),
+                "global_axis_error": bool(self.pybullet_filter_global_axis_error),
+                "constrained_max_axis_error": float(self.pybullet_filter_constrained_max_axis_error),
+                "max_speed_ratio": float(self.pybullet_filter_max_speed_ratio),
+            },
+        }
+
+    def _rollout_demo_pybullet(self, scene, seed=None, rng=None, **kwargs):
+        progress_callback = kwargs.pop("progress_callback", None)
+        max_attempts = self.pybullet_filter_max_attempts if bool(self.pybullet_filter_ik_valid) else 1
+        last_report = None
+        last_seed = None
+        for attempt in range(int(max_attempts)):
+            if rng is not None:
+                reference = self._rollout_demo_analytic(scene, seed=seed, rng=rng, **kwargs)
+                attempt_seed = None
+            else:
+                attempt_seed = self._pybullet_attempt_seed(seed, scene, attempt)
+                reference = self._rollout_demo_analytic(scene, seed=attempt_seed, rng=None, **kwargs)
+            precheck_report = None
+            if bool(self.pybullet_precheck_ik_waypoints):
+                precheck_report = check_s5_reference_waypoints_ik(
+                    self,
+                    scene=scene,
+                    reference_traj=np.asarray(reference["trajectory"], dtype=float),
+                    reference_tool_axis=np.asarray(reference["tool_axis"], dtype=float),
+                    true_cutpoints=np.asarray(reference["true_cutpoints"], dtype=int),
+                    points_per_stage=int(self.pybullet_precheck_points_per_stage),
+                )
+                last_report = precheck_report
+                last_seed = attempt_seed
+                if not bool(precheck_report.get("valid", False)):
+                    if progress_callback is not None:
+                        progress_callback(
+                            attempt=int(attempt),
+                            max_attempts=int(max_attempts),
+                            attempt_seed=None if attempt_seed is None else int(attempt_seed),
+                            report=dict(precheck_report),
+                        )
+                    continue
+            latent = simulate_s5_demo_from_reference(
+                self,
+                scene=scene,
+                reference_traj=np.asarray(reference["trajectory"], dtype=float),
+                reference_tool_axis=np.asarray(reference["tool_axis"], dtype=float),
+                true_cutpoints=np.asarray(reference["true_cutpoints"], dtype=int),
+            )
+            report = self._pybullet_rollout_validity_report(reference, latent)
+            last_report = report
+            last_seed = attempt_seed
+            if progress_callback is not None:
+                progress_callback(
+                    attempt=int(attempt),
+                    max_attempts=int(max_attempts),
+                    attempt_seed=None if attempt_seed is None else int(attempt_seed),
+                    report=dict(report),
+                )
+            if report["valid"] or not bool(self.pybullet_filter_ik_valid):
+                latent["rollout_backend"] = "pybullet"
+                latent["observation_backend"] = "pybullet"
+                latent["reference_seed"] = None if attempt_seed is None else int(attempt_seed)
+                latent["ik_filter"] = dict(report)
+                if precheck_report is not None:
+                    latent["ik_filter"]["precheck"] = dict(precheck_report)
+                latent["ik_filter"]["attempt"] = int(attempt)
+                latent["ik_filter"]["max_attempts"] = int(max_attempts)
+                return latent
+
+        raise RuntimeError(
+            "Failed to sample an IK-valid S5 pybullet demo after "
+            f"{int(max_attempts)} attempts. Last seed={last_seed}, last_report={last_report}"
+        )
+
+    def rollout_demo(self, scene, seed=None, rng=None, backend=None, **kwargs):
+        active_backend = str(self.rollout_backend if backend is None else backend).lower()
+        if active_backend == "analytic":
+            return self._rollout_demo_analytic(scene, seed=seed, rng=rng, **kwargs)
+        if active_backend == "pybullet":
+            return self._rollout_demo_pybullet(scene, seed=seed, rng=rng, **kwargs)
+        raise ValueError(f"Unsupported S5 rollout backend '{active_backend}'.")
+
+    @staticmethod
+    def _lookup_plan_constraint_value(values, stage_idx: int, feature_name: str, default):
+        if values is None:
+            return float(default)
+        if not isinstance(values, dict):
+            return float(default)
+        keys = (
+            f"s{int(stage_idx) + 1}:{feature_name}",
+            f"stage{int(stage_idx) + 1}:{feature_name}",
+            f"{int(stage_idx) + 1}:{feature_name}",
+            f"{int(stage_idx)}:{feature_name}",
+        )
+        for key in keys:
+            if key in values and values[key] is not None:
+                try:
+                    value = float(values[key])
+                except (TypeError, ValueError):
+                    continue
+                if np.isfinite(value):
+                    return value
+        return float(default)
+
+    def _clean_axis_near_normals(self, normals, *, max_error: float, fraction: float = 0.0, phase: float = 0.0):
+        normals = np.asarray(normals, dtype=float)
+        out = np.empty_like(normals)
+        angle = float(max(max_error, 0.0)) * float(np.clip(fraction, 0.0, 1.0))
+        for i, normal in enumerate(normals):
+            normal = self._unit(normal)
+            if angle <= 1e-10:
+                out[i] = normal
+                continue
+            ref = np.array([0.0, 0.0, 1.0], dtype=float)
+            if abs(float(np.dot(normal, ref))) > 0.9:
+                ref = np.array([0.0, 1.0, 0.0], dtype=float)
+            t1 = self._unit(np.cross(normal, ref))
+            t2 = self._unit(np.cross(normal, t1))
+            theta = float(phase) + 2.0 * np.pi * (float(i) / max(len(normals) - 1, 1))
+            tangent = self._unit(np.cos(theta) * t1 + np.sin(theta) * t2)
+            out[i] = self._unit(np.cos(angle) * normal + np.sin(angle) * tangent)
+        return out
+
+    def _clean_shell_arc_by_speed(self, n_start, n_end, *, radius_offset: float, n_points: int):
+        raw = self._make_spherical_shell_path(
+            n_start,
+            n_end,
+            max(int(n_points) * 4, 64),
+            radius_offset=float(radius_offset),
+            detour_angle=0.0,
+        )
+        return self._resample_fixed_count_with_speed_profile(raw, int(n_points))
+
+    def _normal_with_geodesic_angle(self, n_start, *, tangent_hint, angle: float, sign: float = 1.0):
+        n_start = self._unit(n_start)
+        tangent = np.asarray(tangent_hint, dtype=float).reshape(3)
+        tangent = tangent - float(np.dot(tangent, n_start)) * n_start
+        if float(np.linalg.norm(tangent)) <= 1e-10:
+            _, tangent, _ = self._orthonormal_frame(n_start, np.random.RandomState(0))
+        tangent = self._unit(tangent)
+        angle = float(np.clip(angle, 0.0, np.pi - 1e-5))
+        return self._unit(np.cos(angle) * n_start + float(sign) * np.sin(angle) * tangent)
+
+    @staticmethod
+    def _latitude_delta_for_geodesic_angle(phi: float, angle: float, max_delta: float) -> float:
+        sin_phi = max(float(np.sin(float(phi))), 1e-6)
+        arg = float(np.sin(0.5 * float(angle))) / sin_phi
+        if arg < 1.0:
+            delta = 2.0 * float(np.arcsin(np.clip(arg, -1.0, 1.0)))
+        else:
+            delta = float(max_delta)
+        return float(np.clip(delta, 0.0, float(max_delta)))
+
+    def plan_episode_from_constraints(
+        self,
+        scene,
+        constraint_values,
+        seed=None,
+        *,
+        stage_lengths=None,
+        speed_safety: float = 1.0,
+    ):
+        rng = np.random.RandomState(0 if seed is None else int(seed))
+        values = dict(constraint_values or {})
+        true = dict(self.true_constraints)
+
+        s2_surf = max(0.0, self._lookup_plan_constraint_value(values, 1, "surf_dist", true["surface_trace_target"]))
+        s2_normal = max(0.0, self._lookup_plan_constraint_value(values, 1, "normal_err", true["tool_align_max_stage2"]))
+        s2_speed = max(1e-5, self._lookup_plan_constraint_value(values, 1, "speed", true["v23_max"]))
+        s4_surf = max(0.0, self._lookup_plan_constraint_value(values, 3, "surf_dist", true["surface_near_target"]))
+        s4_speed = max(1e-5, self._lookup_plan_constraint_value(values, 3, "speed", true["v23_max"]))
+
+        base_lengths = [int(x) for x in self.seg_lengths]
+        while len(base_lengths) < 4:
+            base_lengths.append(base_lengths[-1] if base_lengths else 18)
+        lengths = {
+            "stage1": int(base_lengths[0]),
+            "stage2": int(base_lengths[1]),
+            "stage3": int(base_lengths[2]),
+            "stage4": int(base_lengths[3]),
+            "stage5": int(base_lengths[3]),
+        }
+        if stage_lengths is not None:
+            for key, value in dict(stage_lengths).items():
+                if key in lengths:
+                    lengths[key] = int(max(int(value), 4))
+        l1 = max(lengths["stage1"], 4)
+        l2 = max(lengths["stage2"], 8)
+        l3 = max(lengths["stage3"], 8)
+        l4 = max(lengths["stage4"], 8)
+        l5 = max(lengths["stage5"], 6)
+
+        r2 = float(self.sphere_radius + s2_surf)
+        r4 = float(self.sphere_radius + s4_surf)
+        speed_safety = float(np.clip(speed_safety, 0.10, 1.0))
+        phi_lo, phi_hi = self.contact_phi_range
+        phi0 = float(np.clip(0.5 * (phi_lo + phi_hi) + rng.uniform(-0.025 * np.pi, 0.025 * np.pi), phi_lo, phi_hi))
+        lateral_sign = -1.0 if float(rng.rand()) < 0.5 else 1.0
+
+        stage2_length = speed_safety * float(s2_speed) * float(self.dt) * max(l2 - 1, 1)
+        stage2_angle = float(np.clip(stage2_length / max(r2, 1e-8), 0.28, 1.28))
+        theta_center = float(self.stage2_lateral_center_theta)
+        delta_theta2 = self._latitude_delta_for_geodesic_angle(phi0, stage2_angle, 0.92 * np.pi)
+        theta0 = theta_center - 0.5 * lateral_sign * delta_theta2
+        theta1 = theta_center + 0.5 * lateral_sign * delta_theta2
+        n0 = self._normal_from_spherical(theta0, phi0)
+        n1 = self._normal_from_spherical(theta1, phi0)
+
+        top_phi_lo, top_phi_hi = self.stage345_top_phi_range
+        phi_top = float(np.clip(0.5 * (top_phi_lo + top_phi_hi) + rng.uniform(-0.018 * np.pi, 0.018 * np.pi), top_phi_lo, top_phi_hi))
+        stage4_length = speed_safety * float(s4_speed) * float(self.dt) * max(l4 - 1, 1)
+        stage4_angle = float(np.clip(stage4_length / max(r4, 1e-8), 0.18, 0.72))
+        theta_top = theta_center + rng.uniform(-0.045 * np.pi, 0.045 * np.pi)
+        delta_theta4 = self._latitude_delta_for_geodesic_angle(phi_top, stage4_angle, 0.72 * np.pi)
+        theta4_start = theta_top - 0.5 * lateral_sign * delta_theta4
+        theta4_end = theta_top + 0.5 * lateral_sign * delta_theta4
+        n4_start = self._normal_from_spherical(theta4_start, phi_top)
+        n4_end = self._normal_from_spherical(theta4_end, phi_top)
+
+        p_contact = self.sphere_center + r2 * n0
+        p_start = self.sphere_center + (r2 + self.approach_offset) * n0
+        stage1_ctrl = np.vstack([p_start, 0.35 * p_start + 0.65 * p_contact, p_contact])
+        stage1 = self._resample_fixed_count_with_speed_profile(stage1_ctrl, l1)
+        stage2 = self._clean_shell_arc_by_speed(n0, n1, radius_offset=s2_surf, n_points=l2)
+
+        stage3_normals = self._slerp_unit(n1, n4_start, l3, endpoint=True)
+        u3 = np.linspace(0.0, 1.0, l3, endpoint=True)
+        stage3_radius = (1.0 - u3) * r2 + u3 * r4
+        stage3 = self.sphere_center[None, :] + stage3_radius[:, None] * stage3_normals
+
+        stage4 = self._clean_shell_arc_by_speed(n4_start, n4_end, radius_offset=s4_surf, n_points=l4)
+        p_depart = self.sphere_center + (r4 + self.depart_offset) * n4_end
+        stage5_ctrl = np.vstack([stage4[-1], 0.55 * stage4[-1] + 0.45 * p_depart, p_depart])
+        stage5 = self._resample_fixed_count_with_speed_profile(stage5_ctrl, l5)
+
+        traj = np.vstack([stage1, stage2[1:], stage3[1:], stage4[1:], stage5[1:]])
+        true_cutpoints = np.asarray(
+            [
+                int(len(stage1) - 1),
+                int(len(stage1) + len(stage2) - 2),
+                int(len(stage1) + len(stage2) + len(stage3) - 3),
+                int(len(stage1) + len(stage2) + len(stage3) + len(stage4) - 4),
+            ],
+            dtype=int,
+        )
+
+        normals = traj - self.sphere_center[None, :]
+        normals = normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+        s1 = slice(0, true_cutpoints[0] + 1)
+        s2 = slice(true_cutpoints[0] + 1, true_cutpoints[1] + 1)
+        s3 = slice(true_cutpoints[1] + 1, true_cutpoints[2] + 1)
+        s4 = slice(true_cutpoints[2] + 1, true_cutpoints[3] + 1)
+        s5 = slice(true_cutpoints[3] + 1, len(traj))
+
+        axis = np.empty_like(traj)
+        axis[s2] = self._clean_axis_near_normals(normals[s2], max_error=s2_normal, fraction=1.0, phase=0.2)
+        axis[s1] = self._interpolate_unit_axes(normals[s1][0], axis[s2][0], len(axis[s1]))
+        axis[s3] = self._interpolate_unit_axes(axis[s2][-1], normals[s3][-1], len(axis[s3]))
+        axis[s4] = self._clean_axis_near_normals(normals[s4], max_error=0.0, fraction=0.0)
+        axis[s5] = self._interpolate_unit_axes(axis[s4][-1], normals[s5][-1], len(axis[s5]))
+        axis = axis / np.maximum(np.linalg.norm(axis, axis=1, keepdims=True), 1e-12)
+
+        self.register_tool_axis_trace(traj, axis)
+        return {
+            "trajectory": np.asarray(traj, dtype=float),
+            "tool_axis": np.asarray(axis, dtype=float),
+            "true_cutpoints": true_cutpoints.astype(int),
+            "rollout_backend": "geometric_plan",
+            "observation_backend": "analytic_raw",
+            "planner": "s5_clean_geometric_shell_planner",
+            "constraint_values": {
+                "s2:surf_dist": float(s2_surf),
+                "s2:normal_err": float(s2_normal),
+                "s2:speed": float(s2_speed),
+                "s4:surf_dist": float(s4_surf),
+                "s4:speed": float(s4_speed),
+            },
+            "stage_lengths": {
+                "stage1": int(len(stage1)),
+                "stage2": int(len(stage2) - 1),
+                "stage3": int(len(stage3) - 1),
+                "stage4": int(len(stage4) - 1),
+                "stage5": int(len(stage5) - 1),
+            },
+        }
+
+    def execute_plan_pybullet(self, scene, planned_episode, *, precheck=None, filter_valid=None):
+        reference = {
+            "trajectory": np.asarray(planned_episode["trajectory"], dtype=float),
+            "tool_axis": np.asarray(planned_episode["tool_axis"], dtype=float),
+            "true_cutpoints": np.asarray(planned_episode["true_cutpoints"], dtype=int),
+        }
+        do_precheck = bool(self.pybullet_precheck_ik_waypoints if precheck is None else precheck)
+        do_filter = bool(self.pybullet_filter_ik_valid if filter_valid is None else filter_valid)
+        precheck_report = None
+        if do_precheck:
+            precheck_report = check_s5_reference_waypoints_ik(
+                self,
+                scene=scene,
+                reference_traj=reference["trajectory"],
+                reference_tool_axis=reference["tool_axis"],
+                true_cutpoints=reference["true_cutpoints"],
+                points_per_stage=int(self.pybullet_precheck_points_per_stage),
+            )
+            if do_filter and not bool(precheck_report.get("valid", False)):
+                raise RuntimeError(f"S5 planned trajectory failed PyBullet IK precheck: {precheck_report}")
+
+        latent = simulate_s5_demo_from_reference(
+            self,
+            scene=scene,
+            reference_traj=reference["trajectory"],
+            reference_tool_axis=reference["tool_axis"],
+            true_cutpoints=reference["true_cutpoints"],
+        )
+        report = self._pybullet_rollout_validity_report(reference, latent)
+        if do_filter and not bool(report.get("valid", False)):
+            raise RuntimeError(f"S5 planned trajectory failed PyBullet rollout filter: {report}")
+        latent["rollout_backend"] = "pybullet_plan"
+        latent["observation_backend"] = "pybullet"
+        latent["planner"] = str(planned_episode.get("planner", "s5_clean_geometric_shell_planner"))
+        latent["planned_constraint_values"] = dict(planned_episode.get("constraint_values", {}))
+        latent["ik_filter"] = dict(report)
+        if precheck_report is not None:
+            latent["ik_filter"]["precheck"] = dict(precheck_report)
+        return latent
+
+    def _assemble_feature_matrix(self, traj, *, tool_axis=None, use_cached=True):
+        traj = np.asarray(traj, dtype=float)
+        surf_dist, normal_err, speed, ang_speed = self._compute_geometry_feature_traces(traj, tool_axis=tool_axis)
+
+        return {
+            "surf_dist": np.asarray(surf_dist, dtype=float),
+            "normal_err": np.asarray(normal_err, dtype=float),
+            "speed": np.asarray(speed, dtype=float),
+            "ang_speed": np.asarray(ang_speed, dtype=float),
+        }
+
+    def compute_all_features_matrix(self, traj, feat_ids=None, *, tool_axis=None, use_cached=None):
+        traj = np.asarray(traj, dtype=float)
+        T = len(traj)
+        base = self._assemble_feature_matrix(traj, tool_axis=tool_axis, use_cached=False)
+        surf_dist = np.asarray(base["surf_dist"], dtype=float)
+        normal_err = np.asarray(base["normal_err"], dtype=float)
+        speed = np.asarray(base["speed"], dtype=float)
+        ang_speed = np.asarray(base["ang_speed"], dtype=float)
+
+        t = np.linspace(0.0, 2.0 * np.pi, T)
+        phase = float(0.31 * np.mean(traj[:, 0]) - 0.27 * np.mean(traj[:, 1]) + 0.43 * np.mean(traj[:, 2]))
+        noise = 0.15 * np.sin(4.3 * t + phase) + 0.08 * np.cos(1.7 * t - 0.5 * phase)
+        start_dist = np.linalg.norm(traj - traj[0:1], axis=1)
+        goal_dist = np.linalg.norm(traj - self.goal[None, :], axis=1)
+
+        F = np.stack(
+            [
+                surf_dist,
+                normal_err,
+                speed,
+                ang_speed,
+                noise,
+                start_dist,
+                goal_dist,
+            ],
+            axis=1,
+        )
+        return F if feat_ids is None else F[:, feat_ids]
+
+    def compute_observation(self, latent_rollout, scene, backend=None):
+        suggested = latent_rollout.get("observation_backend", self.observation_backend) if backend is None else backend
+        active_backend = self._normalize_observation_backend(suggested)
+        traj = np.asarray(latent_rollout["trajectory"], dtype=float)
+        tool_axis = latent_rollout.get("tool_axis")
+        if tool_axis is not None:
+            tool_axis = np.asarray(tool_axis, dtype=float)
+        if active_backend == "analytic_raw":
+            features = np.asarray(self.compute_all_features_matrix(traj, tool_axis=tool_axis, use_cached=False), dtype=float)
+        elif active_backend == "pybullet":
+            features = np.asarray(self.compute_all_features_matrix(traj, tool_axis=tool_axis, use_cached=False), dtype=float)
+        else:
+            raise ValueError(f"Unsupported S5 observation backend '{active_backend}'.")
+        observation = {
+            "trajectory": traj,
+            "features": features,
+            "true_cutpoints": np.asarray(latent_rollout.get("true_cutpoints", []), dtype=int),
+            "feature_schema": self.get_feature_schema(),
+            "observation_spec": self.get_observation_spec(),
+            "tool_axis": tool_axis,
+            "scene": dict(scene or {}),
+        }
+        for key in (
+            "quaternions",
+            "linear_velocity",
+            "angular_velocity",
+            "contact_flags",
+            "joint_positions",
+            "joint_velocities",
+            "joint_position_commands",
+            "true_labels",
+            "sim_dt",
+            "steps_per_sample",
+            "reference_trajectory",
+            "reference_tool_axis",
+            "reference_trajectory_world",
+            "target_ee_trajectory_world",
+            "realized_trajectory_world",
+            "realized_ee_trajectory_world",
+            "ik_position_error_world",
+            "ik_axis_error",
+            "ur5_tool_axis",
+            "ur5_tip_offset",
+            "robot_backend",
+            "reference_seed",
+            "ik_filter",
+        ):
+            if key in latent_rollout:
+                observation[key] = latent_rollout.get(key)
+        return observation
+
+    def render_episode(self, scene, trajectory, output_path, **kwargs):
+        geometry = dict((scene or {}).get("geometry", {}))
+        camera_name = str(kwargs.get("camera", "default_3d"))
+        presets = self.get_render_camera_presets()
+        preset = dict(presets.get(camera_name, presets["default_3d"]))
+        backend = str(kwargs.get("backend", preset.get("backend", "matplotlib"))).lower()
+        traj = np.asarray(trajectory, dtype=float)[:, :3]
+        sphere_center = geometry.get("sphere_center", self.sphere_center.tolist())
+        sphere_radius = float(geometry.get("sphere_radius", self.sphere_radius))
+        if backend in {"matplotlib", "mpl"}:
+            return render_sphere_episode(
+                trajectory=traj,
+                output_path=output_path,
+                sphere_center=sphere_center,
+                sphere_radius=sphere_radius,
+                cutpoints=kwargs.get("cutpoints"),
+                title=kwargs.get("title", str(self.eval_tag)),
+                elev=float(kwargs.get("elev", preset.get("elev", 24.0))),
+                azim=float(kwargs.get("azim", preset.get("azim", 38.0))),
+            )
+        if backend == "pybullet":
+            tool_axis = kwargs.get("tool_axis")
+            if tool_axis is None:
+                tool_axis = self._lookup_cached_tool_axis_trace(traj)
+            if tool_axis is None:
+                tool_axis = self._estimate_tool_axis_from_geometry(traj)
+            return render_s5_pybullet_episode(
+                trajectory=traj,
+                output_path=output_path,
+                sphere_center=sphere_center,
+                sphere_radius=sphere_radius,
+                cutpoints=kwargs.get("cutpoints"),
+                overlay_cutpoints=kwargs.get("overlay_cutpoints"),
+                tool_axis=np.asarray(tool_axis, dtype=float),
+                title=kwargs.get("title", str(self.eval_tag)),
+                center_world=kwargs.get("center_world", self.pybullet_world_center),
+                world_scale=float(kwargs.get("world_scale", self.pybullet_world_scale)),
+                main_yaw=float(kwargs.get("main_yaw", preset.get("main_yaw", 42.0))),
+                inset_yaw=float(kwargs.get("inset_yaw", preset.get("inset_yaw", 205.0))),
+                main_pitch=float(kwargs.get("main_pitch", -18.0)),
+                inset_pitch=float(kwargs.get("inset_pitch", -16.0)),
+                main_distance=float(kwargs.get("main_distance", 1.42)),
+                inset_distance=float(kwargs.get("inset_distance", 1.46)),
+                tube_radius=float(kwargs.get("tube_radius", 0.0065)),
+            )
+        if backend in {"pybullet_video", "video"}:
+            tool_axis = kwargs.get("tool_axis")
+            if tool_axis is None:
+                tool_axis = self._lookup_cached_tool_axis_trace(traj)
+            if tool_axis is None:
+                tool_axis = self._estimate_tool_axis_from_geometry(traj)
+            return render_s5_pybullet_demo_video(
+                trajectory=traj,
+                output_path=output_path,
+                sphere_center=sphere_center,
+                sphere_radius=sphere_radius,
+                cutpoints=kwargs.get("cutpoints"),
+                tool_axis=np.asarray(tool_axis, dtype=float),
+                joint_positions=kwargs.get("joint_positions"),
+                title=kwargs.get("title", str(self.eval_tag)),
+                center_world=kwargs.get("center_world", self.pybullet_world_center),
+                world_scale=float(kwargs.get("world_scale", self.pybullet_world_scale)),
+                urdf_path=kwargs.get("urdf_path", self.pybullet_ur5_urdf_path),
+                ur5_base_xyz=kwargs.get("ur5_base_xyz", self.pybullet_ur5_base_xyz),
+                ur5_base_rpy=kwargs.get("ur5_base_rpy", self.pybullet_ur5_base_rpy),
+                gui=int(kwargs.get("gui", 1)),
+                fps=float(kwargs.get("fps", 30.0)),
+                width=int(kwargs.get("width", 1024)),
+                height=int(kwargs.get("height", 768)),
+                render_frame_stride=int(kwargs.get("render_frame_stride", 1)),
+                realtime=bool(kwargs.get("realtime", False)),
+                gui_hold_seconds=float(kwargs.get("gui_hold_seconds", 0.0)),
+                camera_yaw=float(kwargs.get("camera_yaw", preset.get("main_yaw", 90.0))),
+                camera_pitch=float(kwargs.get("camera_pitch", -34.0)),
+                camera_distance=float(kwargs.get("camera_distance", 1.62)),
+                camera_target=kwargs.get("camera_target"),
+                camera_fov=float(kwargs.get("camera_fov", 38.0)),
+                tube_radius=float(kwargs.get("tube_radius", 0.0055)),
+                trace_stride=int(kwargs.get("trace_stride", 1)),
+                draw_stage_trace=bool(kwargs.get("draw_stage_trace", True)),
+                hide_gripper=bool(kwargs.get("hide_gripper", True)),
+                draw_tool_bar=bool(kwargs.get("draw_tool_bar", False)),
+                tool_bar_length=float(kwargs.get("tool_bar_length", 0.105)),
+                tool_bar_radius=float(kwargs.get("tool_bar_radius", 0.005)),
+                suppress_urdf_warnings=bool(
+                    kwargs.get("suppress_urdf_warnings", self.pybullet_suppress_urdf_warnings)
+                ),
+                connect_client=bool(kwargs.get("connect_client", True)),
+            )
+        raise ValueError(f"Unsupported S5 render backend '{backend}'.")
+
     def _sample_segment_lengths(self, rng):
         out = []
         for base, jitter in zip(self.seg_lengths, self.seg_length_jitter):
@@ -366,6 +1229,49 @@ class S5SphereInspectEnv:
         t2 = self._unit(np.cross(normal, t1))
         return normal, t1, t2
 
+    def _normal_from_spherical(self, theta, phi):
+        theta = float(theta)
+        phi = float(phi)
+        return self._unit(
+            [
+                np.cos(theta) * np.sin(phi),
+                np.sin(theta) * np.sin(phi),
+                np.cos(phi),
+            ]
+        )
+
+    def _spherical_from_normal(self, normal):
+        normal = self._unit(normal)
+        theta = float(np.arctan2(normal[1], normal[0]))
+        phi = float(np.arccos(np.clip(normal[2], -1.0, 1.0)))
+        return theta, phi
+
+    def _make_latitude_surface_path(
+        self,
+        theta_start,
+        theta_end,
+        phi,
+        num_points,
+        *,
+        radius_offset=0.0,
+        phi_bump=0.0,
+    ):
+        theta = np.linspace(float(theta_start), float(theta_end), int(num_points), endpoint=True)
+        u = np.linspace(0.0, 1.0, int(num_points), endpoint=True)
+        phi = float(phi) + float(phi_bump) * np.sin(np.pi * u)
+        phi = np.clip(phi, 0.08 * np.pi, 0.48 * np.pi)
+        normals = np.stack(
+            [
+                np.cos(theta) * np.sin(phi),
+                np.sin(theta) * np.sin(phi),
+                np.cos(phi),
+            ],
+            axis=1,
+        )
+        normals = normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+        radius = float(self.sphere_radius + float(radius_offset))
+        return self.sphere_center[None, :] + radius * normals
+
     def _slerp_unit(self, u0, u1, num_points, endpoint=True):
         u0 = self._unit(u0)
         u1 = self._unit(u1)
@@ -383,9 +1289,10 @@ class S5SphereInspectEnv:
         ) / max(sin_omega, 1e-12)
         return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-12)
 
-    def _make_surface_path(self, n_start, n_end, num_points):
+    def _make_spherical_shell_path(self, n_start, n_end, num_points, *, radius_offset=0.0, detour_angle=None):
         normals = self._slerp_unit(n_start, n_end, num_points, endpoint=True)
-        detour_angle = float(max(self.stage2_surface_detour_angle, 0.0))
+        detour_angle = self.stage2_surface_detour_angle if detour_angle is None else detour_angle
+        detour_angle = float(max(detour_angle, 0.0))
         if detour_angle > 1e-8 and len(normals) > 2:
             axis = np.cross(self._unit(n_start), self._unit(n_end))
             if float(np.linalg.norm(axis)) <= 1e-8:
@@ -401,14 +1308,378 @@ class S5SphereInspectEnv:
                 + np.sin(bend)[:, None] * detour_dir
             )
             normals = normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
-        return self.sphere_center[None, :] + self.sphere_radius * normals
+        radius = float(self.sphere_radius + float(radius_offset))
+        return self.sphere_center[None, :] + radius * normals
 
-    def _resample_with_speed(self, path, v_max, a_max):
-        ref = resample_polyline(np.asarray(path, dtype=float), max(float(v_max) * self.dt, 1e-3))
+    def _make_surface_path(self, n_start, n_end, num_points):
+        return self._make_spherical_shell_path(n_start, n_end, num_points, radius_offset=0.0)
+
+    def _build_stage3_transition(self, n_start, n_end, n_points, shell_offset, rng):
+        n_points = int(max(n_points, 8))
+        n_start = self._unit(n_start)
+        n_end = self._unit(n_end)
+        normals = self._slerp_unit(n_start, n_end, n_points, endpoint=True)
+        if len(normals) > 2:
+            phase = float(rng.uniform(-0.25 * np.pi, 0.25 * np.pi))
+            u = np.linspace(0.0, 1.0, len(normals), endpoint=True)
+            envelope = np.sin(np.pi * u) ** 1.05
+            wiggle = 0.035 * np.sin(2.2 * np.pi * u + phase) * envelope
+            ref = np.cross(n_start, n_end)
+            if float(np.linalg.norm(ref)) <= 1e-8:
+                _, _, ref = self._orthonormal_frame(n_start, rng)
+            ref = self._unit(ref)
+            detour = np.cross(ref[None, :], normals)
+            detour = detour / np.maximum(np.linalg.norm(detour, axis=1, keepdims=True), 1e-12)
+            normals = normals + wiggle[:, None] * detour
+            normals = normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+
+        u = np.linspace(0.0, 1.0, len(normals), endpoint=True)
+        radial_progress = u
+        radius = self.sphere_radius + float(shell_offset) * radial_progress
+        return self.sphere_center[None, :] + radius[:, None] * normals
+
+    @staticmethod
+    def _polyline_length(path) -> float:
+        pts = np.asarray(path, dtype=float)
+        if len(pts) <= 1:
+            return 0.0
+        return float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+
+    @staticmethod
+    def _sample_polyline_at_distances(path, sample_distances):
+        pts = np.asarray(path, dtype=float)
+        distances = np.asarray(sample_distances, dtype=float).reshape(-1)
+        if len(pts) == 0:
+            return np.zeros((0, 3), dtype=float)
+        if len(pts) == 1:
+            return np.repeat(pts, len(distances), axis=0)
+        edges = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        cum = np.concatenate([[0.0], np.cumsum(edges)])
+        total = float(cum[-1])
+        if total <= 1e-12:
+            return np.repeat(pts[:1], len(distances), axis=0)
+        d = np.clip(distances, 0.0, total)
+        out = np.empty((len(d), pts.shape[1]), dtype=float)
+        for i, target in enumerate(d):
+            idx = int(np.searchsorted(cum, target, side="right") - 1)
+            idx = max(0, min(idx, len(pts) - 2))
+            span = float(cum[idx + 1] - cum[idx])
+            alpha = 0.0 if span <= 1e-12 else float((target - cum[idx]) / span)
+            out[i] = (1.0 - alpha) * pts[idx] + alpha * pts[idx + 1]
+        return out
+
+    def _make_cruise_valley_weights(self, num_edges: int, *, depth, center, width) -> np.ndarray:
+        n = int(max(num_edges, 1))
+        if n == 1:
+            return np.ones(1, dtype=float)
+        u = np.linspace(0.0, 1.0, n, endpoint=True)
+        depths = np.asarray(depth, dtype=float).reshape(-1)
+        centers = np.asarray(center, dtype=float).reshape(-1)
+        widths = np.asarray(width, dtype=float).reshape(-1)
+        count = max(len(depths), len(centers), len(widths))
+        if len(depths) == 1 and count > 1:
+            depths = np.repeat(depths, count)
+        if len(centers) == 1 and count > 1:
+            centers = np.repeat(centers, count)
+        if len(widths) == 1 and count > 1:
+            widths = np.repeat(widths, count)
+        if not (len(depths) == len(centers) == len(widths)):
+            raise ValueError("depth, center, and width must broadcast to the same number of valleys.")
+        valley = np.zeros_like(u)
+        for d, c, w in zip(depths, centers, widths):
+            c = float(np.clip(c, 0.08, 0.92))
+            w = float(max(w, 0.015))
+            d = float(np.clip(d, 0.0, 0.45))
+            valley = valley + d * np.exp(-0.5 * ((u - c) / w) ** 2)
+        weights = 1.0 - valley
+        weights = self._smooth_trace(weights, kernel_size=3)
+        return np.clip(weights, 0.55, None)
+
+    @staticmethod
+    def _stabilize_tail_weights(weights, *, tail_len: int = 3, floor_ratio: float = 0.94):
+        arr = np.asarray(weights, dtype=float).copy()
+        n = len(arr)
+        tail_len = int(max(tail_len, 0))
+        if n <= 2 or tail_len <= 0:
+            return arr
+        start = max(0, n - tail_len)
+        anchor_lo = max(0, start - 3)
+        anchor = float(np.mean(arr[anchor_lo:start])) if start > anchor_lo else float(arr[start - 1])
+        floor = float(floor_ratio) * anchor
+        arr[start:] = np.maximum(arr[start:], floor)
+        return arr
+
+    def _sample_stage3_speed_profile_weights(self, num_edges: int, rng) -> np.ndarray:
+        n = int(max(num_edges, 1))
+        if n == 1:
+            return np.ones(1, dtype=float)
+        local_rng = np.random if rng is None else rng
+        noise = np.asarray(local_rng.randn(n), dtype=float)
+        noise = self._smooth_trace(noise, kernel_size=self.stage3_speed_jitter_kernel)
+        noise = noise - float(np.mean(noise))
+        scale = float(np.std(noise))
+        if scale > 1e-8:
+            noise = noise / scale
+        jitter_std = float(max(self.stage3_speed_jitter_std, 0.0))
+        clip = float(max(self.stage3_speed_jitter_clip, 0.0))
+        weights = 1.0 + jitter_std * noise
+        if clip > 0.0:
+            weights = np.clip(weights, 1.0 - clip, 1.0 + clip)
+        weights = self._smooth_trace(weights, kernel_size=3)
+        mean = float(np.mean(weights))
+        if mean > 1e-8:
+            weights = weights / mean
+        return np.clip(weights, 1e-6, None)
+
+    def _stage4_speed_profile_weights(self, num_edges: int) -> np.ndarray:
+        return self._stabilize_tail_weights(
+            self._make_cruise_valley_weights(
+                num_edges,
+                depth=self.stage4_speed_valley_depth,
+                center=self.stage4_speed_valley_center,
+                width=self.stage4_speed_valley_width,
+            ),
+            tail_len=2,
+            floor_ratio=0.98,
+        )
+
+    def _resample_fixed_count_with_speed_profile(self, path, num_points: int, *, speed_profile_weights=None):
+        pts = np.asarray(path, dtype=float)
+        target_count = int(max(int(num_points), 2))
+        if len(pts) <= 1 or target_count <= 1:
+            return pts.copy()
+        path_length = self._polyline_length(pts)
+        if path_length <= 1e-10:
+            return np.repeat(pts[:1], target_count, axis=0)
+        num_edges = target_count - 1
+        if speed_profile_weights is None:
+            dists = np.linspace(0.0, path_length, target_count, endpoint=True)
+        else:
+            weights = np.asarray(speed_profile_weights(num_edges), dtype=float).reshape(-1)
+            if weights.size != num_edges:
+                raise ValueError(f"speed_profile_weights produced {weights.size} values, expected {num_edges}.")
+            weights = np.clip(weights, 1e-6, None)
+            step_lengths = path_length * (weights / np.sum(weights))
+            dists = np.concatenate([[0.0], np.cumsum(step_lengths)])
+            dists[-1] = path_length
+        return self._sample_polyline_at_distances(pts, dists)
+
+    def _project_to_shell(self, path, *, shell_offset):
+        pts = np.asarray(path, dtype=float)
+        rel = pts - self.sphere_center[None, :]
+        rel_norm = np.maximum(np.linalg.norm(rel, axis=1, keepdims=True), 1e-12)
+        shell_radius = float(self.sphere_radius + shell_offset)
+        return self.sphere_center[None, :] + shell_radius * rel / rel_norm
+
+    def _soften_stage3_radial_profile(self, path, *, shell_offset, blend=0.7):
+        pts = np.asarray(path, dtype=float)
+        if len(pts) <= 1:
+            return pts.copy()
+        rel = pts - self.sphere_center[None, :]
+        rel_norm = np.maximum(np.linalg.norm(rel, axis=1, keepdims=True), 1e-12)
+        normals = rel / rel_norm
+        u = np.linspace(0.0, 1.0, len(pts), endpoint=True)
+        current_radius = rel_norm.reshape(-1)
+        linear_radius = self.sphere_radius + float(shell_offset) * u
+        blend = float(np.clip(blend, 0.0, 1.0))
+        radius = (1.0 - blend) * current_radius + blend * linear_radius
+        return self.sphere_center[None, :] + radius[:, None] * normals
+
+    def _regularize_stage3_transition_path(
+        self,
+        path,
+        *,
+        shell_offset,
+        radial_blend=0.8,
+        normal_kernel=5,
+        dense_factor=6,
+        speed_profile_weights=None,
+    ):
+        pts = np.asarray(path, dtype=float)
+        target_count = len(pts)
+        if target_count <= 1:
+            return pts.copy()
+        if target_count <= 3:
+            out = self._soften_stage3_radial_profile(pts, shell_offset=shell_offset, blend=radial_blend)
+            return self._resample_fixed_count_with_speed_profile(
+                out,
+                target_count,
+                speed_profile_weights=speed_profile_weights,
+            )
+
+        rel = pts - self.sphere_center[None, :]
+        rel_norm = np.maximum(np.linalg.norm(rel, axis=1), 1e-12)
+        normals = rel / rel_norm[:, None]
+
+        smooth_normals = np.stack(
+            [self._smooth_trace(normals[:, dim], kernel_size=normal_kernel) for dim in range(normals.shape[1])],
+            axis=1,
+        )
+        smooth_normals[0] = normals[0]
+        smooth_normals[-1] = normals[-1]
+        smooth_normals = smooth_normals / np.maximum(np.linalg.norm(smooth_normals, axis=1, keepdims=True), 1e-12)
+
+        u = np.linspace(0.0, 1.0, target_count, endpoint=True)
+        linear_radius = self.sphere_radius + float(shell_offset) * u
+        blend = float(np.clip(radial_blend, 0.0, 1.0))
+        radius = (1.0 - blend) * rel_norm + blend * linear_radius
+        radius[0] = self.sphere_radius
+        radius[-1] = self.sphere_radius + float(shell_offset)
+
+        dense_count = max(int(target_count) * int(max(dense_factor, 1)), 32)
+        dense_u = np.linspace(0.0, 1.0, dense_count, endpoint=True)
+        dense_normals = np.stack(
+            [np.interp(dense_u, u, smooth_normals[:, dim]) for dim in range(smooth_normals.shape[1])],
+            axis=1,
+        )
+        dense_normals = dense_normals / np.maximum(np.linalg.norm(dense_normals, axis=1, keepdims=True), 1e-12)
+        dense_radius = np.interp(dense_u, u, radius)
+        dense_path = self.sphere_center[None, :] + dense_radius[:, None] * dense_normals
+        return self._resample_fixed_count_with_speed_profile(
+            dense_path,
+            target_count,
+            speed_profile_weights=speed_profile_weights,
+        )
+
+    def _regularize_tail_spacing(self, path, *, tail_points: int = 5):
+        pts = np.asarray(path, dtype=float).copy()
+        tail_points = int(max(tail_points, 0))
+        if len(pts) < max(tail_points, 3):
+            return pts
+        start = len(pts) - tail_points
+        tail = pts[start:].copy()
+        edges = np.linalg.norm(np.diff(tail, axis=0), axis=1)
+        total = float(np.sum(edges))
+        if total <= 1e-10:
+            return pts
+        dists = np.linspace(0.0, total, len(tail), endpoint=True)
+        pts[start:] = self._sample_polyline_at_distances(tail, dists)
+        return pts
+
+    def _repair_stage4_departure_tail(self, path, departure_target, *, shell_offset, tail_points: int = 9):
+        pts = np.asarray(path, dtype=float).copy()
+        if len(pts) < 4:
+            return pts
+        tail_points = int(max(tail_points, 2))
+        departure_target = np.asarray(departure_target, dtype=float).reshape(3)
+        shell_radius = float(self.sphere_radius + shell_offset)
+
+        rel = pts - self.sphere_center[None, :]
+        normals = rel / np.maximum(np.linalg.norm(rel, axis=1, keepdims=True), 1e-12)
+        pts = self.sphere_center[None, :] + shell_radius * normals
+        end_normal = self._unit(normals[-1])
+        dep = departure_target - pts[-1]
+        dep_norm = float(np.linalg.norm(dep))
+        if dep_norm <= 1e-10:
+            return pts
+        dep_u = dep / dep_norm
+
+        check_start = max(0, len(pts) - tail_points)
+        tail_edges = np.diff(pts[check_start:], axis=0)
+        if len(tail_edges) > 0 and float(np.min(tail_edges @ dep_u)) >= -1e-6:
+            return pts
+
+        original_edge_lengths = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        nominal_step = float(np.median(original_edge_lengths)) if len(original_edge_lengths) else 0.0
+        nominal_step = max(nominal_step, 1e-6)
+        best = pts
+        best_min_proj = -float("inf")
+        first_start = max(1, len(pts) - tail_points)
+        for start in range(first_start, 0, -1):
+            candidate = pts.copy()
+            anchor_normal = self._unit(normals[start - 1])
+            repaired_normals = self._slerp_unit(anchor_normal, end_normal, len(pts) - start + 1, endpoint=True)
+            candidate[start:] = self.sphere_center[None, :] + shell_radius * repaired_normals[1:]
+            candidate[-1] = self.sphere_center + shell_radius * end_normal
+            candidate_edges = np.diff(candidate[check_start:], axis=0)
+            min_proj = float(np.min(candidate_edges @ dep_u)) if len(candidate_edges) else 0.0
+            candidate_step = float(np.max(np.linalg.norm(np.diff(candidate[start - 1 :], axis=0), axis=1)))
+            if min_proj > best_min_proj:
+                best_min_proj = min_proj
+                best = candidate
+            if min_proj >= -1e-6:
+                return candidate
+
+        tangent = dep_u - float(np.dot(dep_u, end_normal)) * end_normal
+        tangent_norm = float(np.linalg.norm(tangent))
+        if tangent_norm > 1e-10:
+            tangent = tangent / tangent_norm
+            for start in range(len(pts) - 2, first_start - 1, -1):
+                candidate = pts.copy()
+                anchor_normal = self._unit(normals[start - 1])
+                span = float(np.dot(end_normal - anchor_normal, tangent))
+                if span <= 1e-4:
+                    continue
+                span = float(np.clip(span, 0.02, 0.18))
+                alphas = np.linspace(span, 0.0, len(pts) - start, endpoint=True)
+                repaired_normals = end_normal[None, :] - alphas[:, None] * tangent[None, :]
+                repaired_normals = repaired_normals / np.maximum(
+                    np.linalg.norm(repaired_normals, axis=1, keepdims=True), 1e-12
+                )
+                candidate[start:] = self.sphere_center[None, :] + shell_radius * repaired_normals
+                candidate[-1] = self.sphere_center + shell_radius * end_normal
+                candidate_edges = np.diff(candidate[check_start:], axis=0)
+                min_proj = float(np.min(candidate_edges @ dep_u)) if len(candidate_edges) else 0.0
+                candidate_step = float(np.max(np.linalg.norm(np.diff(candidate[start - 1 :], axis=0), axis=1)))
+                if min_proj > best_min_proj:
+                    best_min_proj = min_proj
+                    best = candidate
+                if min_proj >= -1e-6 and candidate_step <= 3.0 * nominal_step:
+                    return candidate
+        return best
+
+    def _resample_with_speed(
+        self,
+        path,
+        v_max,
+        a_max,
+        *,
+        target_speed=None,
+        nominal_count=None,
+        use_optimizer=True,
+        speed_profile_weights=None,
+    ):
+        pts = np.asarray(path, dtype=float)
+        if len(pts) <= 2:
+            return pts.copy()
+
+        v_max = float(v_max)
+        if target_speed is None:
+            target_speed = 0.78 * v_max
+        target_speed = float(np.clip(target_speed, 1e-4, max(1e-4, 0.995 * v_max)))
+
+        path_length = self._polyline_length(pts)
+        if path_length <= 1e-10:
+            ref = pts.copy()
+        else:
+            derived_count = int(np.ceil(path_length / max(target_speed * self.dt, 1e-6))) + 1
+            if nominal_count is not None:
+                nominal = max(int(nominal_count), 2)
+                slack = max(float(self.segment_count_slack), 0.0)
+                lo = max(2, int(np.floor((1.0 - slack) * nominal)))
+                hi = max(lo + 1, int(np.ceil((1.0 + slack) * nominal)))
+                target_count = int(np.clip(derived_count, lo, hi))
+            else:
+                target_count = max(2, int(derived_count))
+            num_edges = max(target_count - 1, 1)
+            if speed_profile_weights is None:
+                max_step = path_length / max(num_edges, 1)
+                ref = resample_polyline(pts, max_step=max(max_step, 1e-6))
+            else:
+                weights = np.asarray(speed_profile_weights(num_edges), dtype=float).reshape(-1)
+                if weights.size != num_edges:
+                    raise ValueError(f"speed_profile_weights produced {weights.size} values, expected {num_edges}.")
+                weights = np.clip(weights, 1e-6, None)
+                step_lengths = path_length * (weights / np.sum(weights))
+                dists = np.concatenate([[0.0], np.cumsum(step_lengths)])
+                dists[-1] = path_length
+                ref = self._sample_polyline_at_distances(pts, dists)
+        if not bool(use_optimizer):
+            return np.asarray(ref, dtype=float)
         return optimize_trajectory(
             ref,
             dt=self.dt,
-            v_max=float(v_max),
+            v_max=v_max,
             a_max=float(a_max),
             projector=None,
         )
@@ -452,7 +1723,35 @@ class S5SphereInspectEnv:
     def _build_stage1(self, p_start, p_contact, n_points, v_max, a_max):
         mid = 0.35 * np.asarray(p_start, dtype=float) + 0.65 * np.asarray(p_contact, dtype=float)
         ctrl = np.vstack([p_start, mid, p_contact])
-        return self._resample_with_speed(ctrl, v_max=v_max, a_max=a_max)
+        return self._resample_with_speed(
+            ctrl,
+            v_max=v_max,
+            a_max=a_max,
+            target_speed=self.stage1_target_speed_ratio * float(v_max),
+            nominal_count=n_points,
+            speed_profile_weights=lambda n: self._stage1_speed_profile_weights(n, v_max=v_max),
+        )
+
+    def _stage1_speed_profile_weights(self, num_edges: int, *, v_max=None) -> np.ndarray:
+        n = int(max(num_edges, 1))
+        if n == 1:
+            return np.ones(1, dtype=float)
+        taper_fraction = float(np.clip(self.stage1_speed_taper_fraction, 0.0, 1.0))
+        if taper_fraction <= 1e-8:
+            return np.ones(n, dtype=float)
+        if self.stage1_speed_taper_end_ratio is None:
+            stage1_v = self.stage1_target_speed_ratio * float(self.stage1_speed_max if v_max is None else v_max)
+            stage2_v = self.stage2_target_speed_ratio * float(self.stage2_speed_max)
+            end_ratio = stage2_v / max(stage1_v, 1e-8)
+            end_ratio = float(np.clip(end_ratio, 0.72, 0.92))
+        else:
+            end_ratio = float(np.clip(self.stage1_speed_taper_end_ratio, 0.45, 1.0))
+        u = np.linspace(0.0, 1.0, n, endpoint=True)
+        start = 1.0 - taper_fraction
+        alpha = np.clip((u - start) / max(taper_fraction, 1e-8), 0.0, 1.0)
+        smooth = alpha * alpha * (3.0 - 2.0 * alpha)
+        weights = 1.0 - (1.0 - end_ratio) * smooth
+        return np.clip(weights, 0.45, None)
 
     def _build_stage3(self, n_start, n_end, n_points, rng):
         n_points = int(max(n_points, 8))
@@ -555,16 +1854,16 @@ class S5SphereInspectEnv:
         phase0 = float(rng.uniform(-np.pi, np.pi))
         angle_margin = self._make_stage_margin_profile(
             n,
-            offset=0.08 * max_error,
-            amplitude=1.02 * max_error,
+            offset=0.03 * max_error,
+            amplitude=0.52 * max_error,
             cycles=4.6,
             phase=0.0,
             noise_scale=0.0,
             rng=None,
             kernel_size=1,
         )
-        angle = np.minimum(max_error, max_error - angle_margin)
-        angle = np.clip(angle, 0.24 * max_error, 0.95 * max_error)
+        angle = 1.00 * max_error - angle_margin
+        angle = np.clip(angle, 0.48 * max_error, 0.99 * max_error)
 
         tangent_phase = (
             phase0
@@ -584,6 +1883,22 @@ class S5SphereInspectEnv:
             out[i] = self._unit(np.cos(angle[i]) * normal + np.sin(angle[i]) * tangent)
         return out
 
+    def _sample_axis_near_normal(self, normal, rng, max_error, min_fraction=0.35):
+        normal = self._unit(normal)
+        max_error = float(max(max_error, 0.0))
+        if max_error <= 1e-8:
+            return normal
+        ref = np.array([0.0, 0.0, 1.0], dtype=float)
+        if abs(float(np.dot(normal, ref))) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0], dtype=float)
+        t1 = self._unit(np.cross(normal, ref))
+        t2 = self._unit(np.cross(normal, t1))
+        phase = float(rng.uniform(-np.pi, np.pi))
+        tangent = self._unit(np.cos(phase) * t1 + np.sin(phase) * t2)
+        lo = float(np.clip(min_fraction, 0.0, 1.0)) * max_error
+        angle = float(rng.uniform(lo, max_error))
+        return self._unit(np.cos(angle) * normal + np.sin(angle) * tangent)
+
     def _generate_tool_axis_trace(self, traj, stage_lengths, normals_stage2, normals_stage3, n_contact, rng):
         lengths = [int(x) for x in stage_lengths]
         total = int(sum(stage_lengths))
@@ -599,7 +1914,7 @@ class S5SphereInspectEnv:
         stage2 = self._make_aligned_axis_trace(normals_stage2, rng, max_error=self.tool_align_max_stage2)
 
         if len(lengths) == 5:
-            _, _, l3, l4, l5 = lengths
+            l1, l2, l3, l4, l5 = lengths
             mid_anchor = self._unit(0.72 * self._unit(normals_stage3[0]) + 0.28 * self._unit(rng.randn(3)))
             stage3 = self._make_irregular_axis_transition(
                 stage2[-1],
@@ -608,7 +1923,12 @@ class S5SphereInspectEnv:
                 rng=rng,
                 max_tilt=0.46 * float(self.tool_align_max_stage2),
             )
-            free_axis = self._unit(0.6 * normals_stage3[-1] + 0.4 * self._unit(rng.randn(3)))
+            free_axis = self._sample_axis_near_normal(
+                normals_stage3[-1],
+                rng,
+                max_error=self.stage4_tool_normal_max_error,
+                min_fraction=0.45,
+            )
             stage4 = self._make_irregular_axis_transition(
                 stage3[-1],
                 free_axis,
@@ -616,7 +1936,19 @@ class S5SphereInspectEnv:
                 rng=rng,
                 max_tilt=0.92 * float(self.tool_align_max_stage2),
             )
-            stage5_end = self._unit(0.78 * self._unit(stage4[-1]) + 0.22 * self._unit(rng.randn(3)))
+            s5_start = int(l1 + l2 + l3 + l4)
+            stage5_rel = np.asarray(traj[s5_start : s5_start + l5], dtype=float) - self.sphere_center[None, :]
+            if len(stage5_rel) > 0:
+                stage5_normals = stage5_rel / np.maximum(np.linalg.norm(stage5_rel, axis=1, keepdims=True), 1e-12)
+                stage5_target_normal = stage5_normals[-1]
+            else:
+                stage5_target_normal = normals_stage3[-1]
+            stage5_end = self._sample_axis_near_normal(
+                stage5_target_normal,
+                rng,
+                max_error=self.stage5_tool_normal_max_error,
+                min_fraction=0.25,
+            )
             stage5 = self._make_irregular_axis_transition(
                 stage4[-1],
                 stage5_end,
@@ -650,28 +1982,52 @@ class S5SphereInspectEnv:
 
     def generate_demo(self, rng=None, **kwargs):
         rng = np.random if rng is None else rng
+        demo_index = kwargs.get("demo_index", None)
         l1, l2, l3, l4 = self._sample_segment_lengths(rng)
 
-        theta0 = float(rng.uniform(-0.55 * np.pi, 0.15 * np.pi))
-        phi0 = float(rng.uniform(0.22 * np.pi, 0.42 * np.pi))
-        n_contact = self._unit(
-            [
-                np.cos(theta0) * np.sin(phi0),
-                np.sin(theta0) * np.sin(phi0),
-                np.cos(phi0),
-            ]
-        )
-        normal0, t1, t2 = self._orthonormal_frame(n_contact, rng)
-
+        phi0 = float(rng.uniform(self.contact_phi_range[0], self.contact_phi_range[1]))
         trace_angle = float(rng.uniform(self.stage2_trace_angle_range[0], self.stage2_trace_angle_range[1]))
-        n_trace_end = self._unit(np.cos(trace_angle) * normal0 + np.sin(trace_angle) * t1)
+        stage2_latitude_path = None
+        if bool(self.stage2_robot_lateral_trace):
+            lateral_sign = -1.0 if float(rng.rand()) < 0.5 else 1.0
+            sin_phi = max(float(np.sin(phi0)), 1e-6)
+            delta_theta = min(float(trace_angle) / sin_phi, 0.92 * np.pi)
+            theta_center = float(self.stage2_lateral_center_theta)
+            bump_lo, bump_hi = self.stage2_lateral_phi_bump_range
+            phi_bump = float(rng.uniform(bump_lo, bump_hi))
+            theta0 = theta_center - 0.5 * lateral_sign * delta_theta
+            theta1 = theta_center + 0.5 * lateral_sign * delta_theta
+            n_contact = self._normal_from_spherical(theta0, phi0)
+            n_trace_end = self._normal_from_spherical(theta1, phi0)
+            normal0 = n_contact
+            t1 = self._unit(
+                [
+                    -lateral_sign * np.sin(theta0) * np.sin(phi0),
+                    lateral_sign * np.cos(theta0) * np.sin(phi0),
+                    0.0,
+                ]
+            )
+            t2 = self._unit(np.cross(normal0, t1))
+            stage2_latitude_path = (theta0, theta1, phi0, phi_bump)
+        else:
+            theta0 = float(rng.uniform(self.contact_theta_range[0], self.contact_theta_range[1]))
+            n_contact = self._normal_from_spherical(theta0, phi0)
+            normal0, t1, t2 = self._orthonormal_frame(n_contact, rng)
+            n_trace_end = self._unit(np.cos(trace_angle) * normal0 + np.sin(trace_angle) * t1)
 
-        repos_angle = float(rng.uniform(0.65, 1.10))
-        blend_dir = self._unit(0.55 * t2 + 0.45 * n_trace_end)
-        n_repos_end = self._unit(np.cos(repos_angle) * n_trace_end + np.sin(repos_angle) * blend_dir)
+        theta_trace_end, phi_trace_end = self._spherical_from_normal(n_trace_end)
+        top_phi_lo, top_phi_hi = self.stage345_top_phi_range
+        phi_cap = float(rng.uniform(min(top_phi_lo, top_phi_hi), max(top_phi_lo, top_phi_hi)))
+        theta_pull = float(np.clip(self.stage345_top_theta_pull, 0.0, 1.0))
+        theta_repos = (
+            (1.0 - theta_pull) * theta_trace_end
+            + theta_pull * float(self.stage2_lateral_center_theta)
+            + float(rng.uniform(-self.stage345_top_theta_jitter, self.stage345_top_theta_jitter))
+        )
+        n_repos_end = self._normal_from_spherical(theta_repos, phi_cap)
 
         p_contact = self.sphere_center + self.sphere_radius * n_contact
-        p_precontact = self.sphere_center + (self.sphere_radius + 0.18) * n_contact
+        p_precontact = self.sphere_center + (self.sphere_radius + 0.18 * self.sphere_radius) * n_contact
         p_start = (
             self.sphere_center
             + (self.sphere_radius + self.approach_offset * rng.uniform(0.85, 1.15)) * n_contact
@@ -682,40 +2038,180 @@ class S5SphereInspectEnv:
         stage1 = self._build_stage1(p_start, p_contact, l1, v_max=self.stage1_speed_max, a_max=self.stage1_accel_max)
         stage2_length_scale = max(self._sample_range_value(rng, self.stage2_length_scale_range), 1e-3)
         stage4_length_scale = max(self._sample_range_value(rng, self.stage4_length_scale_range), 1e-3)
-        stage2_raw = self._make_surface_path(n_contact, n_trace_end, l2)
+        if stage2_latitude_path is None:
+            stage2_raw = self._make_surface_path(n_contact, n_trace_end, max(int(4 * l2), 96))
+        else:
+            stage2_raw = self._make_latitude_surface_path(
+                stage2_latitude_path[0],
+                stage2_latitude_path[1],
+                stage2_latitude_path[2],
+                max(int(4 * l2), 96),
+                phi_bump=stage2_latitude_path[3],
+            )
         stage2 = self._resample_with_speed(
             stage2_raw,
             v_max=self.stage2_speed_max / stage2_length_scale,
             a_max=self.stage2_accel_max / stage2_length_scale,
+            target_speed=self.stage2_target_speed_ratio * self.stage2_speed_max,
+            nominal_count=l2,
+            use_optimizer=False,
+            speed_profile_weights=lambda n: self._make_cruise_valley_weights(
+                n,
+                depth=self.stage2_speed_valley_depths,
+                center=self.stage2_speed_valley_centers,
+                width=self.stage2_speed_valley_widths,
+            ),
         )
-        stage3_raw_full = self._build_stage3(n_trace_end, n_repos_end, l3, rng=rng)
         if self.split_stage3_transition:
-            stage3_raw, stage4_raw = self._split_polyline_by_fraction(
-                stage3_raw_full,
-                fraction=self.transition_stage_fraction,
+            shell_offset = float(self.true_constraints["surface_near_target"])
+            shell_blend = float(rng.uniform(self.stage3_shell_blend_range[0], self.stage3_shell_blend_range[1]))
+            n_shell_start = self._unit((1.0 - shell_blend) * n_trace_end + shell_blend * n_repos_end)
+            stage3_raw = self._build_stage3_transition(
+                n_trace_end,
+                n_shell_start,
+                max(int(5 * l3), 96),
+                shell_offset=shell_offset,
+                rng=rng,
             )
-            stage3 = self._resample_with_speed(stage3_raw, v_max=self.stage2_speed_max, a_max=self.stage3_accel_max)
+            stage3 = self._resample_with_speed(
+                stage3_raw,
+                v_max=self.stage3_speed_max,
+                a_max=self.stage3_accel_max,
+                target_speed=self.stage3_target_speed_ratio * self.stage3_speed_max,
+                nominal_count=l3,
+                use_optimizer=False,
+            )
+            stage3_speed_weights = self._sample_stage3_speed_profile_weights(max(len(stage3) - 1, 1), rng)
+            stage3 = self._regularize_stage3_transition_path(
+                stage3,
+                shell_offset=shell_offset,
+                radial_blend=0.8,
+                speed_profile_weights=lambda n, w=stage3_speed_weights: w,
+            )
+            stage4_raw = self._make_spherical_shell_path(
+                n_shell_start,
+                n_repos_end,
+                max(int(5 * l4), 96),
+                radius_offset=shell_offset,
+                detour_angle=float(max(self.stage4_shell_detour_angle, 0.0)),
+            )
             stage4 = self._resample_with_speed(
                 stage4_raw,
                 v_max=self.stage2_speed_max / stage4_length_scale,
                 a_max=self.stage3_accel_max / stage4_length_scale,
+                target_speed=self.stage4_target_speed_ratio * self.stage2_speed_max,
+                nominal_count=None,
+                use_optimizer=False,
+                speed_profile_weights=self._stage4_speed_profile_weights,
             )
+            stage4 = self._regularize_tail_spacing(stage4, tail_points=5)
             stage5_ctrl = self._build_stage4(stage4[-1], n_repos_end, rng=rng)
-            stage5 = self._resample_with_speed(stage5_ctrl, v_max=self.stage4_speed_max, a_max=self.stage4_accel_max)
+            stage4 = self._repair_stage4_departure_tail(
+                stage4,
+                stage5_ctrl[-1],
+                shell_offset=shell_offset,
+                tail_points=min(5, max(2, len(stage4) // 2)),
+            )
+            stage4 = self._resample_with_speed(
+                stage4,
+                v_max=self.stage2_speed_max / stage4_length_scale,
+                a_max=self.stage3_accel_max / stage4_length_scale,
+                target_speed=self.stage4_target_speed_ratio * self.stage2_speed_max,
+                nominal_count=None,
+                use_optimizer=False,
+                speed_profile_weights=self._stage4_speed_profile_weights,
+            )
+            stage4 = self._project_to_shell(stage4, shell_offset=shell_offset)
+            stage5 = self._resample_with_speed(
+                stage5_ctrl,
+                v_max=self.stage4_speed_max,
+                a_max=self.stage4_accel_max,
+                target_speed=self.stage5_target_speed_ratio * self.stage4_speed_max,
+                nominal_count=l4,
+            )
             traj = np.vstack([stage1, stage2[1:], stage3[1:], stage4[1:], stage5[1:]])
         else:
-            stage3 = self._resample_with_speed(stage3_raw_full, v_max=self.stage2_speed_max, a_max=self.stage3_accel_max)
+            stage3_raw_full = self._build_stage3(n_trace_end, n_repos_end, l3, rng=rng)
+            stage3 = self._resample_with_speed(
+                stage3_raw_full,
+                v_max=self.stage2_speed_max,
+                a_max=self.stage3_accel_max,
+                target_speed=self.stage3_target_speed_ratio * self.stage2_speed_max,
+                nominal_count=l3,
+            )
             stage4_ctrl = self._build_stage4(stage3[-1], n_repos_end, rng=rng)
-            stage4 = self._resample_with_speed(stage4_ctrl, v_max=self.stage4_speed_max, a_max=self.stage4_accel_max)
+            stage4 = self._resample_with_speed(
+                stage4_ctrl,
+                v_max=self.stage4_speed_max,
+                a_max=self.stage4_accel_max,
+                target_speed=self.stage5_target_speed_ratio * self.stage4_speed_max,
+                nominal_count=l4,
+            )
             traj = np.vstack([stage1, stage2[1:], stage3[1:], stage4[1:]])
         if self.noise_std > 0.0:
-            traj = traj + rng.randn(*traj.shape) * self.noise_std
+            noise = np.stack(
+                [
+                    self._smooth_noise(rng, len(traj), scale=self.noise_std, kernel_size=self.trajectory_noise_kernel)
+                    for _ in range(traj.shape[1])
+                ],
+                axis=1,
+            )
+            stage_noise_scale = np.ones(len(traj), dtype=float)
+            if self.split_stage3_transition:
+                stage2_slice = slice(len(stage1), len(stage1) + len(stage2) - 1)
+                stage4_slice = slice(
+                    len(stage1) + len(stage2) + len(stage3) - 2,
+                    len(stage1) + len(stage2) + len(stage3) + len(stage4) - 3,
+                )
+                stage_noise_scale[stage2_slice] *= float(self.stage2_noise_scale)
+                stage_noise_scale[stage4_slice] *= float(self.stage4_noise_scale)
+            else:
+                stage2_slice = slice(len(stage1), len(stage1) + len(stage2) - 1)
+                stage_noise_scale[stage2_slice] *= float(self.stage2_noise_scale)
+            traj = traj + noise * stage_noise_scale[:, None]
             radii = np.linalg.norm(traj - self.sphere_center[None, :], axis=1)
             contact_mask = slice(len(stage1), len(stage1) + len(stage2) - 1)
             safe = np.maximum(radii[contact_mask], 1e-12)
             traj[contact_mask] = self.sphere_center[None, :] + (
                 self.sphere_radius * (traj[contact_mask] - self.sphere_center[None, :]) / safe[:, None]
             )
+            if self.split_stage3_transition:
+                shell_offset = float(self.true_constraints["surface_near_target"])
+                stage3_slice_after_noise = slice(
+                    len(stage1) + len(stage2) - 2,
+                    len(stage1) + len(stage2) + len(stage3) - 2,
+                )
+                if (stage3_slice_after_noise.stop - stage3_slice_after_noise.start) >= 4:
+                    traj[stage3_slice_after_noise] = self._regularize_stage3_transition_path(
+                        traj[stage3_slice_after_noise],
+                        shell_offset=shell_offset,
+                        radial_blend=0.9,
+                        speed_profile_weights=lambda n, w=stage3_speed_weights: w,
+                    )
+                stage4_slice_after_noise = slice(
+                    len(stage1) + len(stage2) + len(stage3) - 2,
+                    len(stage1) + len(stage2) + len(stage3) + len(stage4) - 3,
+                )
+                if (stage4_slice_after_noise.stop - stage4_slice_after_noise.start) >= 5:
+                    stage4_tail_fixed = self._regularize_tail_spacing(
+                        traj[stage4_slice_after_noise],
+                        tail_points=5,
+                    )
+                    stage4_tail_fixed = self._project_to_shell(stage4_tail_fixed, shell_offset=shell_offset)
+                    departure_target = traj[min(stage4_slice_after_noise.stop, len(traj) - 1)]
+                    stage4_tail_fixed = self._repair_stage4_departure_tail(
+                        stage4_tail_fixed,
+                        departure_target,
+                        shell_offset=shell_offset,
+                        tail_points=min(5, max(2, len(stage4_tail_fixed) // 2)),
+                    )
+                    stage4_tail_fixed = self._resample_fixed_count_with_speed_profile(
+                        stage4_tail_fixed,
+                        len(stage4_tail_fixed),
+                        speed_profile_weights=self._stage4_speed_profile_weights,
+                    )
+                    stage4_tail_fixed = self._project_to_shell(stage4_tail_fixed, shell_offset=shell_offset)
+                    traj[stage4_slice_after_noise] = stage4_tail_fixed
 
         if self.split_stage3_transition:
             true_cutpoints = np.asarray(
@@ -776,13 +2272,6 @@ class S5SphereInspectEnv:
                 axis_fixed[len(tool_axis) :] = tool_axis[-1]
             tool_axis = axis_fixed
         self.register_tool_axis_trace(traj, tool_axis)
-        feature_trace = self._synthesize_feature_trace(
-            traj,
-            tool_axis=tool_axis,
-            stage_lengths=stage_lengths,
-            rng=rng,
-        )
-        self.register_feature_trace(traj, feature_trace)
         return traj, true_cutpoints
 
     def generate_demos(self, n_demos=10, rng=None, **kwargs):
@@ -835,194 +2324,137 @@ class S5SphereInspectEnv:
 
         return surf_dist, normal_err, speed, ang_speed
 
-    def _synthesize_feature_trace(self, traj, tool_axis, stage_lengths, rng):
-        surf_dist, tool_alignment_error, speed, ang_speed = self._compute_geometry_feature_traces(
-            traj,
-            tool_axis=tool_axis,
-        )
-
-        lengths = [int(x) for x in stage_lengths]
-        starts = np.cumsum([0] + lengths[:-1]).tolist()
-        ends = [s + l for s, l in zip(starts, lengths)]
-        phase = float(rng.uniform(-0.35 * np.pi, 0.35 * np.pi))
-
-        if len(lengths) == 5:
-            speed_maxima = [
-                float(self.stage1_speed_max),
-                float(self.stage2_speed_max),
-                float(self.stage2_speed_max),
-                float(self.stage2_speed_max),
-                float(self.stage4_speed_max),
-            ]
-            speed_offsets = [0.26, 0.20, 0.24, 0.20, 0.24]
-            speed_amps = [0.52, 0.60, 0.38, 0.42, 0.50]
-            speed_cycles = [1.55, 2.15, 1.75, 1.90, 1.65]
-        else:
-            speed_maxima = [
-                float(self.stage1_speed_max),
-                float(self.stage2_speed_max),
-                float(self.stage2_speed_max),
-                float(self.stage4_speed_max),
-            ]
-            speed_offsets = [0.26, 0.20, 0.28, 0.24]
-            speed_amps = [0.52, 0.60, 0.42, 0.50]
-            speed_cycles = [1.55, 2.15, 1.90, 1.65]
-        for stage_idx, (s, e, vmax) in enumerate(zip(starts, ends, speed_maxima)):
-            if stage_idx == 0:
-                profile = self._make_irregular_positive_stage_trace(
-                    e - s,
-                    base=0.52 * vmax,
-                    amplitude=0.34 * vmax,
-                    phase=phase,
-                    noise_scale=0.08 * vmax,
-                    rng=rng,
-                    kernel_size=3,
-                    lower=0.18 * vmax,
-                    upper=0.995 * vmax,
-                )
-                speed[s:e] = 0.28 * np.asarray(speed[s:e], dtype=float) + 0.72 * profile
-                continue
-            if (len(lengths) == 5 and stage_idx in {2, 4}) or (len(lengths) != 5 and stage_idx == 3):
-                base = 0.60 * vmax if stage_idx == 2 else 0.56 * vmax
-                amplitude = 0.34 * vmax if stage_idx == 2 else 0.40 * vmax
-                upper = 1.08 * vmax if stage_idx == 2 else 1.16 * vmax
-                profile = self._make_irregular_positive_stage_trace(
-                    e - s,
-                    base=base,
-                    amplitude=amplitude,
-                    phase=phase + 0.50 + 0.20 * stage_idx,
-                    noise_scale=0.04 * vmax if stage_idx == 2 else 0.05 * vmax,
-                    rng=rng,
-                    kernel_size=3,
-                    lower=0.16 * vmax,
-                    upper=upper,
-                )
-                mix = 0.78 if stage_idx == 2 else 0.76
-                speed[s:e] = (1.0 - mix) * np.asarray(speed[s:e], dtype=float) + mix * profile
-                continue
-            margin = self._make_stage_margin_profile(
-                e - s,
-                offset=speed_offsets[stage_idx] * vmax,
-                amplitude=speed_amps[stage_idx] * vmax,
-                cycles=speed_cycles[stage_idx],
-                phase=phase + 0.18 * stage_idx,
-                noise_scale=(0.028 if stage_idx == 1 else 0.022) * vmax,
-                rng=rng,
-                kernel_size=5,
-            )
-            profile = np.minimum(vmax, vmax - margin)
-            profile = np.clip(profile, 0.0, None)
-            speed[s:e] = 0.12 * np.asarray(speed[s:e], dtype=float) + 0.88 * profile
-
-        s2, e2 = starts[1], ends[1]
-        surf_dist[s2:e2] = self._make_target_stage_trace(
-            e2 - s2,
-            target=float(self.true_constraints["surface_trace_target"]),
-            amplitude=0.22 * self.true_constraints["surface_trace_max"],
-            cycles=1.35,
-            phase=phase,
-            noise_scale=max(0.18 * self.true_constraints["surface_trace_max"], 1e-4),
-            rng=rng,
-            kernel_size=5,
-            lower=0.0,
-            upper=float(self.true_constraints["surface_trace_max"]),
-        )
-        near_stage_idx = 3 if len(lengths) == 5 else 2
-        s3, e3 = starts[near_stage_idx], ends[near_stage_idx]
-        if len(lengths) == 5:
-            near_amplitude = 0.12 * self.true_constraints["surface_near_target"]
-            near_cycles = 0.85
-            near_noise_scale = max(0.05 * self.true_constraints["surface_near_target"], 1e-4)
-            near_kernel = 7
-        else:
-            near_amplitude = 0.22 * self.true_constraints["surface_near_target"]
-            near_cycles = 1.2
-            near_noise_scale = max(0.10 * self.true_constraints["surface_near_target"], 1e-4)
-            near_kernel = 5
-        surf_dist[s3:e3] = self._make_target_stage_trace(
-            e3 - s3,
-            target=float(self.true_constraints["surface_near_target"]),
-            amplitude=near_amplitude,
-            cycles=near_cycles,
-            phase=phase - 0.25,
-            noise_scale=near_noise_scale,
-            rng=rng,
-            kernel_size=near_kernel,
-            lower=0.0,
-            upper=float(self.true_constraints["surface_near_max"]),
-        )
-
-        boundaries = np.cumsum(lengths[:-1]) - 1
-        feature_matrix_raw = np.stack(
-            [
-                surf_dist,
-                tool_alignment_error,
-                speed,
-                ang_speed,
-            ],
-            axis=1,
-        )
-        feature_matrix = np.asarray(feature_matrix_raw, dtype=float).copy()
-        ramp_windows = self._resolve_feature_boundary_ramp_half_windows(len(boundaries))
-        for feat_idx in range(feature_matrix.shape[1]):
-            trace = np.asarray(feature_matrix_raw[:, feat_idx], dtype=float).copy()
-            for boundary_idx, boundary in enumerate(boundaries.tolist()):
-                half_window = int(ramp_windows[feat_idx, boundary_idx])
-                if half_window <= 0:
-                    continue
-                trace = self._blend_segment_boundary(
-                    trace,
-                    boundary=int(boundary),
-                    half_window=half_window,
-                )
-            feature_matrix[:, feat_idx] = trace
-
-        for stage_idx, (s, e, vmax) in enumerate(zip(starts, ends, speed_maxima)):
-            if len(lengths) == 5:
-                unconstrained_speed_stage = {2, 4}
-            else:
-                unconstrained_speed_stage = {3}
-            upper = None if stage_idx in unconstrained_speed_stage else float(vmax)
-            feature_matrix[s:e, 2] = np.clip(feature_matrix[s:e, 2], 0.0, np.inf if upper is None else upper)
-        feature_matrix[s2:e2, 0] = np.clip(feature_matrix[s2:e2, 0], 0.0, float(self.true_constraints["surface_trace_max"]))
-        feature_matrix[s3:e3, 0] = np.clip(feature_matrix[s3:e3, 0], 0.0, float(self.true_constraints["surface_near_max"]))
-        return np.asarray(feature_matrix, dtype=float)
-
-    def compute_all_features_matrix(self, traj, feat_ids=None):
-        traj = np.asarray(traj, dtype=float)
-        T = len(traj)
-        cached_features = self._lookup_cached_feature_trace(traj)
-        if cached_features is not None and cached_features.shape[0] == T:
-            surf_dist = np.asarray(cached_features[:, 0], dtype=float)
-            normal_err = np.asarray(cached_features[:, 1], dtype=float)
-            speed = np.asarray(cached_features[:, 2], dtype=float)
-            ang_speed = np.asarray(cached_features[:, 3], dtype=float)
-        else:
-            surf_dist, normal_err, speed, ang_speed = self._compute_geometry_feature_traces(traj)
-
-        t = np.linspace(0.0, 2.0 * np.pi, T)
-        phase = float(0.31 * np.mean(traj[:, 0]) - 0.27 * np.mean(traj[:, 1]) + 0.43 * np.mean(traj[:, 2]))
-        noise = 0.15 * np.sin(4.3 * t + phase) + 0.08 * np.cos(1.7 * t - 0.5 * phase)
-        start_dist = np.linalg.norm(traj - traj[0:1], axis=1)
-        goal_dist = np.linalg.norm(traj - self.goal[None, :], axis=1)
-
-        F = np.stack(
-            [
-                surf_dist,
-                normal_err,
-                speed,
-                ang_speed,
-                noise,
-                start_dist,
-                goal_dist,
-            ],
-            axis=1,
-        )
-        return F if feat_ids is None else F[:, feat_ids]
-
     def compute_features_all(self, traj):
         F = self.compute_all_features_matrix(traj)
         return F[:, 0], F[:, 2]
+
+
+def _jsonable(value):
+    if isinstance(value, np.ndarray):
+        return [_jsonable(v) for v in value.tolist()]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _s5_demo_cache_path(*, task_name: str, n_seed: int, env_cfg: dict, run_kwargs: dict, cache_dir=None) -> Path:
+    root = Path(cache_dir) if cache_dir is not None else Path(__file__).resolve().parent / "demo_cache"
+    payload = {
+        "task_name": str(task_name),
+        "seed": int(n_seed),
+        "env_cfg": _jsonable(env_cfg),
+        "run_kwargs": _jsonable(run_kwargs),
+        "cache_version": 17,
+    }
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return root / str(task_name) / f"seed_{int(n_seed)}_{digest}.npz"
+
+
+def _make_s5_bundle_from_arrays(
+    *,
+    task_name: str,
+    seed: int,
+    env: S5SphereInspectEnv,
+    demos: list[np.ndarray],
+    true_cutpoints: list[np.ndarray],
+    scene_specs: list[dict],
+    cache_path: Path | None,
+    cache_hit: bool,
+) -> TaskBundle:
+    return TaskBundle(
+        name=task_name,
+        demos=demos,
+        env=env,
+        true_taus=[None for _ in demos],
+        true_cutpoints=true_cutpoints,
+        feature_schema=env.get_feature_schema(),
+        true_constraints=dict(env.true_constraints),
+        constraint_specs=env.get_constraint_specs(),
+        meta={
+            "seed": int(seed),
+            "task_name": task_name,
+            "scene_specs": scene_specs,
+            "observation_specs": env.get_observation_spec(),
+            "render_camera_presets": env.get_render_camera_presets(),
+            "asset_handles": env.get_asset_handles(),
+            "demo_cache": None if cache_path is None else {"path": str(cache_path), "hit": bool(cache_hit)},
+        },
+    )
+
+
+def _try_load_s5_demo_cache(*, cache_path: Path, task_name: str, n_demos: int, seed: int, env: S5SphereInspectEnv):
+    if not cache_path.exists():
+        return None
+    try:
+        with np.load(cache_path, allow_pickle=True) as data:
+            count = int(data["count"])
+            if count < int(n_demos):
+                return None
+            demos = [np.asarray(data[f"demo_{i}"], dtype=float) for i in range(int(n_demos))]
+            cutpoints = [np.asarray(data[f"cutpoints_{i}"], dtype=int) for i in range(int(n_demos))]
+            tool_axes = []
+            for i in range(int(n_demos)):
+                key = f"tool_axis_{i}"
+                tool_axes.append(None if key not in data else np.asarray(data[key], dtype=float))
+            scene_specs = json.loads(str(data["scene_specs_json"].item()))[: int(n_demos)]
+    except Exception:
+        return None
+
+    print(
+        f"\033[31m[S5 demo cache] loaded {int(n_demos)}/{int(count)} demos from {cache_path}\033[0m",
+        flush=True,
+    )
+    for traj, axis in zip(demos, tool_axes):
+        if axis is not None:
+            env.register_tool_axis_trace(traj, axis)
+    return _make_s5_bundle_from_arrays(
+        task_name=task_name,
+        seed=seed,
+        env=env,
+        demos=demos,
+        true_cutpoints=cutpoints,
+        scene_specs=scene_specs,
+        cache_path=cache_path,
+        cache_hit=True,
+    )
+
+
+def _save_s5_demo_cache(*, cache_path: Path, bundle: TaskBundle, tool_axis_traces: list, env_cfg: dict, run_kwargs: dict):
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    arrays = {
+        "count": np.asarray(len(bundle.demos), dtype=np.int64),
+        "metadata_json": np.asarray(
+            json.dumps(
+                {
+                    "task_name": bundle.name,
+                    "seed": bundle.meta.get("seed"),
+                    "env_cfg": _jsonable(env_cfg),
+                    "run_kwargs": _jsonable(run_kwargs),
+                    "cache_version": 17,
+                },
+                sort_keys=True,
+            )
+        ),
+        "scene_specs_json": np.asarray(json.dumps(_jsonable(bundle.meta.get("scene_specs", [])), sort_keys=True)),
+    }
+    for i, demo in enumerate(bundle.demos):
+        arrays[f"demo_{i}"] = np.asarray(demo, dtype=float)
+        arrays[f"cutpoints_{i}"] = np.asarray(bundle.true_cutpoints[i], dtype=int)
+        if i < len(tool_axis_traces) and tool_axis_traces[i] is not None:
+            arrays[f"tool_axis_{i}"] = np.asarray(tool_axis_traces[i], dtype=float)
+    tmp_path = cache_path.with_name(cache_path.name + ".tmp")
+    np.savez_compressed(tmp_path, **arrays)
+    written = tmp_path if tmp_path.exists() else tmp_path.with_suffix(tmp_path.suffix + ".npz")
+    os.replace(written, cache_path)
 
 
 def _build_sphere_inspect_bundle(
@@ -1036,12 +2468,49 @@ def _build_sphere_inspect_bundle(
 ) -> TaskBundle:
     env_cfg = dict(env_kwargs or {})
     env_cfg.update(extra_env_kwargs)
+    cache_demos = bool(env_cfg.pop("cache_demos", False))
+    cache_dir = env_cfg.pop("demo_cache_dir", None)
     run_kwargs = dict(demo_kwargs or {})
-    rng = np.random.RandomState(seed)
     env = S5SphereInspectEnv(**env_cfg)
-    demos, true_cutpoints = env.generate_demos(n_demos=n_demos, rng=rng, **run_kwargs)
+    cache_path = None
+    if cache_demos:
+        cache_path = _s5_demo_cache_path(
+            task_name=task_name,
+            n_seed=int(seed),
+            env_cfg=env_cfg,
+            run_kwargs=run_kwargs,
+            cache_dir=cache_dir,
+        )
+        cached_bundle = _try_load_s5_demo_cache(
+            cache_path=cache_path,
+            task_name=task_name,
+            n_demos=int(n_demos),
+            seed=int(seed),
+            env=env,
+        )
+        if cached_bundle is not None:
+            return cached_bundle
+
+    demos = []
+    true_cutpoints = []
+    scene_specs = []
+    tool_axis_traces = []
+    for demo_idx in range(int(n_demos)):
+        scene = env.sample_scene()
+        scene["demo_index"] = int(demo_idx)
+        latent = env.rollout_demo(scene, seed=env.demo_seed_for_index(seed, demo_idx), **run_kwargs)
+        observation = env.compute_observation(latent, scene)
+        traj = np.asarray(observation["trajectory"], dtype=float)
+        tool_axis = observation.get("tool_axis")
+        if tool_axis is not None:
+            tool_axis = np.asarray(tool_axis, dtype=float)
+            env.register_tool_axis_trace(traj, tool_axis)
+        demos.append(traj)
+        true_cutpoints.append(np.asarray(observation["true_cutpoints"], dtype=int))
+        scene_specs.append(dict(scene))
+        tool_axis_traces.append(None if tool_axis is None else np.asarray(tool_axis, dtype=float))
     true_taus = [None for _ in demos]
-    return TaskBundle(
+    bundle = TaskBundle(
         name=task_name,
         demos=demos,
         env=env,
@@ -1050,8 +2519,25 @@ def _build_sphere_inspect_bundle(
         feature_schema=env.get_feature_schema(),
         true_constraints=dict(env.true_constraints),
         constraint_specs=env.get_constraint_specs(),
-        meta={"seed": seed, "task_name": task_name},
+        meta={
+            "seed": seed,
+            "task_name": task_name,
+            "scene_specs": scene_specs,
+            "observation_specs": env.get_observation_spec(),
+            "render_camera_presets": env.get_render_camera_presets(),
+            "asset_handles": env.get_asset_handles(),
+            "demo_cache": None if cache_path is None else {"path": str(cache_path), "hit": False},
+        },
     )
+    if cache_path is not None:
+        _save_s5_demo_cache(
+            cache_path=cache_path,
+            bundle=bundle,
+            tool_axis_traces=tool_axis_traces,
+            env_cfg=env_cfg,
+            run_kwargs=run_kwargs,
+        )
+    return bundle
 
 
 def load_S5SphereInspect(
@@ -1063,29 +2549,88 @@ def load_S5SphereInspect(
 ) -> TaskBundle:
     env_cfg = dict(env_kwargs or {})
     env_cfg.update(extra_env_kwargs)
-    env_cfg.setdefault("seg_lengths", (18, 34, 33, 18))
-    env_cfg.setdefault("seg_length_jitter", (3, 5, 5, 3))
-    env_cfg.setdefault("surface_near_target_ratio", 0.62)
-    env_cfg.setdefault("split_stage3_transition", True)
-    env_cfg.setdefault("transition_stage_fraction", 0.40)
-    env_cfg.setdefault("stage2_speed_max", 0.047)
-    env_cfg.setdefault("stage3_speed_max", 0.047)
-    env_cfg.setdefault("stage2_trace_angle_range", (2.85, 3.12))
-    env_cfg.setdefault("stage2_surface_detour_angle", 0.42)
-    env_cfg.setdefault("stage2_length_scale_range", (0.4, 0.8))
-    env_cfg.setdefault("stage4_length_scale_range", (0.5, 1.0))
-    env_cfg.setdefault(
-        "feature_boundary_ramp_half_windows",
-        {
-            "surf_dist": [3, 2, 1, 5],
-            "normal_err": [1, 3, 2, 1],
-            "speed": [1, 2, 2, 1],
-            "ang_speed": [1, 2, 2, 1],
-        },
-    )
+    env_cfg = _apply_default_s5_loader_config(env_cfg)
     env_cfg.setdefault("eval_tag", "S5SphereInspect")
     return _build_sphere_inspect_bundle(
         task_name="S5SphereInspect",
+        n_demos=n_demos,
+        seed=seed,
+        env_kwargs=env_cfg,
+        demo_kwargs=demo_kwargs,
+    )
+
+
+def _apply_default_s5_loader_config(env_cfg: dict) -> dict:
+    env_cfg = dict(env_cfg)
+    env_cfg.setdefault("seg_lengths", (18, 34, 24, 18))
+    env_cfg.setdefault("seg_length_jitter", (3, 5, 5, 3))
+    env_cfg.setdefault("sphere_radius", 1.0 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("shell_thickness", 0.24 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("approach_offset", 0.42 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("depart_offset", 0.50 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("surface_near_target_ratio", 0.75)
+    env_cfg.setdefault("split_stage3_transition", True)
+    env_cfg.setdefault("transition_stage_fraction", 0.40)
+    env_cfg.setdefault("contact_theta_range", (-0.12 * np.pi, 0.16 * np.pi))
+    env_cfg.setdefault("contact_phi_range", (0.20 * np.pi, 0.34 * np.pi))
+    env_cfg.setdefault("stage1_speed_max", 0.12 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage2_speed_max", 0.047 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage3_speed_max", 0.060 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage4_speed_max", 0.09 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage1_accel_max", 0.08 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage2_accel_max", 0.03 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage3_accel_max", 0.07 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage4_accel_max", 0.06 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage2_trace_angle_range", (1.184, 1.376))
+    env_cfg.setdefault("stage2_robot_lateral_trace", True)
+    env_cfg.setdefault("stage2_lateral_center_theta", 0.0)
+    env_cfg.setdefault("stage2_lateral_phi_bump_range", (-0.035 * np.pi, 0.035 * np.pi))
+    env_cfg.setdefault("repos_angle_range", (0.95, 1.18))
+    env_cfg.setdefault("stage3_shell_blend_range", (0.44, 0.58))
+    env_cfg.setdefault("stage345_top_phi_range", (0.10 * np.pi, 0.18 * np.pi))
+    env_cfg.setdefault("stage345_top_theta_pull", 0.45)
+    env_cfg.setdefault("stage345_top_theta_jitter", 0.10 * np.pi)
+    env_cfg.setdefault("stage2_surface_detour_angle", 0.0)
+    env_cfg.setdefault("stage4_shell_detour_angle", 0.10)
+    env_cfg.setdefault("stage2_length_scale_range", (1.0, 1.0))
+    env_cfg.setdefault("stage4_length_scale_range", (1.0, 1.0))
+    env_cfg.setdefault("stage1_speed_taper_fraction", 1.0)
+    env_cfg.setdefault("stage1_speed_taper_end_ratio", 0.78)
+    env_cfg.setdefault("stage2_target_speed_ratio", 0.99)
+    env_cfg.setdefault("stage3_target_speed_ratio", 0.75)
+    env_cfg.setdefault("stage4_target_speed_ratio", 0.99)
+    env_cfg.setdefault("stage2_speed_valley_depths", (0.07, 0.18, 0.07))
+    env_cfg.setdefault("stage2_speed_valley_centers", (0.30, 0.58, 0.80))
+    env_cfg.setdefault("stage2_speed_valley_widths", (0.018, 0.025, 0.018))
+    env_cfg.setdefault("stage3_speed_jitter_std", 0.04)
+    env_cfg.setdefault("stage3_speed_jitter_clip", 0.09)
+    env_cfg.setdefault("stage3_speed_jitter_kernel", 5)
+    env_cfg.setdefault("stage4_speed_valley_depth", 0.08)
+    env_cfg.setdefault("stage4_speed_valley_center", 0.54)
+    env_cfg.setdefault("stage4_speed_valley_width", 0.025)
+    env_cfg.setdefault("noise_std", 0.004 * _S5_METRIC_SCALE)
+    env_cfg.setdefault("stage2_noise_scale", 0.28)
+    env_cfg.setdefault("stage4_noise_scale", 0.24)
+    env_cfg.setdefault("trajectory_noise_kernel", 9)
+    env_cfg.setdefault("pybullet_world_scale", 1.0)
+    env_cfg.setdefault("pybullet_filter_max_position_error", 0.012 * _S5_METRIC_SCALE)
+    return env_cfg
+
+
+def load_S5SphereInspectRaw(
+    n_demos: int = 10,
+    seed: int = 0,
+    env_kwargs=None,
+    demo_kwargs=None,
+    **extra_env_kwargs,
+) -> TaskBundle:
+    env_cfg = dict(env_kwargs or {})
+    env_cfg.update(extra_env_kwargs)
+    env_cfg = _apply_default_s5_loader_config(env_cfg)
+    env_cfg.setdefault("observation_backend", "analytic_raw")
+    env_cfg.setdefault("eval_tag", "S5SphereInspectRaw")
+    return _build_sphere_inspect_bundle(
+        task_name="S5SphereInspectRaw",
         n_demos=n_demos,
         seed=seed,
         env_kwargs=env_cfg,

@@ -1,6 +1,7 @@
 import numpy as np
 
 from .base import TaskBundle
+from .rendering import render_planar_episode
 from planner import optimize_trajectory, repair_trajectory_constraints, resample_polyline
 
 
@@ -139,6 +140,142 @@ class S3ObsAvoidEnv:
                 "oracle_key": "v3_target",
             },
         ]
+
+    def get_observation_spec(self):
+        return {
+            "feature_schema": self.get_feature_schema(),
+            "noise_model": {
+                "trajectory_noise_std": float(self.noise_std),
+                "smooth_process_noise": {
+                    "kind": "piecewise_linear_knots",
+                    "default_scale": 0.03,
+                    "default_knots": 7,
+                },
+                "aux_feature_noise": {
+                    "kind": "deterministic_sinusoid",
+                    "phase_source": "trajectory_mean_projection",
+                },
+            },
+        }
+
+    def get_render_camera_presets(self):
+        return {
+            "default_planar": {
+                "projection": "orthographic_like_2d",
+                "xlabel": "x",
+                "ylabel": "y",
+                "equal_aspect": True,
+            }
+        }
+
+    def get_asset_handles(self):
+        return {
+            "main_obstacle": {"type": "circle"},
+            "aux_obstacles": [{"type": "circle"} for _ in range(len(self.stage1_aux_obstacle_radii))],
+            "terminal_arc": {"type": "circular_arc"},
+            "decoy_line": {"type": "line"},
+        }
+
+    def sample_scene(self, seed=None, rng=None):
+        return {
+            "task_name": "S3ObsAvoid",
+            "direction": None,
+            "geometry": {
+                "start": self.start.tolist(),
+                "stage1_end": self.stage1_end.tolist(),
+                "stage2_end": self.stage2_end.tolist(),
+                "stage3_end": self.stage3_end.tolist(),
+                "obs_center": self.obs_center.tolist(),
+                "obs_radius": float(self.obs_radius),
+                "aux_obstacle_centers": self.stage1_aux_obstacle_centers.tolist(),
+                "aux_obstacle_radii": self.stage1_aux_obstacle_radii.tolist(),
+                "terminal_arc_center": self.terminal_arc_center.tolist(),
+                "terminal_arc_radius": float(self.terminal_arc_radius),
+                "decoy_line_point": self.decoy_line_point.tolist(),
+                "decoy_line_direction": self.decoy_line_direction.tolist(),
+            },
+            "task": {
+                "clearance": float(self.clearance),
+                "dt": float(self.dt),
+            },
+        }
+
+    def rollout_demo(self, scene, seed=None, rng=None, **kwargs):
+        local_kwargs = dict(kwargs)
+        if "direction" not in local_kwargs and scene is not None:
+            local_kwargs["direction"] = scene.get("direction")
+        if rng is not None:
+            traj, cutpoints = self.generate_demo(rng=rng, **local_kwargs)
+        else:
+            local_rng = np.random.RandomState(int(seed)) if seed is not None else np.random
+            traj, cutpoints = self.generate_demo(rng=local_rng, **local_kwargs)
+        return {
+            "trajectory": np.asarray(traj, dtype=float),
+            "true_cutpoints": np.asarray(cutpoints, dtype=int),
+        }
+
+    def compute_observation(self, latent_rollout, scene):
+        traj = np.asarray(latent_rollout["trajectory"], dtype=float)
+        features = np.asarray(self.compute_all_features_matrix(traj), dtype=float)
+        return {
+            "trajectory": traj,
+            "features": features,
+            "true_cutpoints": np.asarray(latent_rollout.get("true_cutpoints", []), dtype=int),
+            "feature_schema": self.get_feature_schema(),
+            "observation_spec": self.get_observation_spec(),
+            "scene": dict(scene or {}),
+        }
+
+    def render_episode(self, scene, trajectory, output_path, **kwargs):
+        geometry = dict((scene or {}).get("geometry", {}))
+        obstacles = [
+            {
+                "center": geometry.get("obs_center", self.obs_center.tolist()),
+                "radius": geometry.get("obs_radius", float(self.obs_radius)),
+                "facecolor": "#CBD5E1",
+                "edgecolor": "#475569",
+                "alpha": 0.38,
+            }
+        ]
+        aux_centers = np.asarray(geometry.get("aux_obstacle_centers", self.stage1_aux_obstacle_centers.tolist()), dtype=float)
+        aux_radii = np.asarray(geometry.get("aux_obstacle_radii", self.stage1_aux_obstacle_radii.tolist()), dtype=float)
+        for center, radius in zip(aux_centers, aux_radii):
+            obstacles.append(
+                {
+                    "center": np.asarray(center, dtype=float).tolist(),
+                    "radius": float(radius),
+                    "facecolor": "#E2E8F0",
+                    "edgecolor": "#64748B",
+                    "alpha": 0.28,
+                }
+            )
+        markers = [
+            {"point": geometry.get("stage1_end", self.stage1_end.tolist()), "color": "#F97316", "marker": "^", "size": 34},
+            {"point": geometry.get("stage3_end", self.stage3_end.tolist()), "color": "#16A34A", "marker": "D", "size": 30},
+        ]
+        reference_lines = [
+            {
+                "point": geometry.get("decoy_line_point", self.decoy_line_point.tolist()),
+                "direction": geometry.get("decoy_line_direction", self.decoy_line_direction.tolist()),
+                "color": "#94A3B8",
+                "linestyle": "--",
+                "linewidth": 1.0,
+                "alpha": 0.8,
+            }
+        ]
+        cutpoints = kwargs.get("cutpoints")
+        title = kwargs.get("title", "S3ObsAvoid episode")
+        return render_planar_episode(
+            trajectory=np.asarray(trajectory, dtype=float)[:, :2],
+            output_path=output_path,
+            cutpoints=cutpoints,
+            title=title,
+            obstacles=obstacles,
+            reference_lines=reference_lines,
+            markers=markers,
+            xlabel="x",
+            ylabel="y",
+        )
 
     def _arc_points(self, theta_start: float, theta_end: float, direction: str, radius: float, n_arc: int):
         if direction == "up":
@@ -567,13 +704,16 @@ def load_S3ObsAvoid(
     env_cfg = dict(env_kwargs or {})
     run_kwargs = dict(demo_kwargs or {})
 
-    rng = np.random.RandomState(seed)
     env = S3ObsAvoidEnv(**env_cfg)
-    demos, true_cutpoints = [], []
-    for _ in range(n_demos):
-        X, cuts = env.generate_demo(rng=rng, **run_kwargs)
-        demos.append(X)
-        true_cutpoints.append(np.asarray(cuts, dtype=int))
+    demos, true_cutpoints, scene_specs = [], [], []
+    for demo_idx in range(int(n_demos)):
+        scene = env.sample_scene()
+        scene["demo_index"] = int(demo_idx)
+        latent = env.rollout_demo(scene, seed=seed + demo_idx, **run_kwargs)
+        observation = env.compute_observation(latent, scene)
+        demos.append(np.asarray(observation["trajectory"], dtype=float))
+        true_cutpoints.append(np.asarray(observation["true_cutpoints"], dtype=int))
+        scene_specs.append(dict(scene))
     return TaskBundle(
         name="S3ObsAvoid",
         demos=demos,
@@ -583,5 +723,12 @@ def load_S3ObsAvoid(
         feature_schema=env.get_feature_schema(),
         true_constraints=env.get_true_constraints(),
         constraint_specs=env.get_constraint_specs(),
-        meta={"seed": seed, "task_name": "S3ObsAvoid"},
+        meta={
+            "seed": seed,
+            "task_name": "S3ObsAvoid",
+            "scene_specs": scene_specs,
+            "observation_specs": env.get_observation_spec(),
+            "render_camera_presets": env.get_render_camera_presets(),
+            "asset_handles": env.get_asset_handles(),
+        },
     )

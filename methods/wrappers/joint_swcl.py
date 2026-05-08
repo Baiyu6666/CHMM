@@ -61,6 +61,7 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
             kwargs.get("equality_score_uncertainty_c", 0.1),
         ),
         inequality_score_activation_threshold=kwargs.get("inequality_score_activation_threshold", -0.5),
+        truncated_inequality_z_threshold=kwargs.get("truncated_inequality_z_threshold", 2.0),
         activation_proto_temperature=kwargs.get("activation_proto_temperature", 0.1),
         joint_mask_search_max_masks=kwargs.get("joint_mask_search_max_masks", 4096),
         fixed_true_cutpoint_prefix=kwargs.get("fixed_true_cutpoint_prefix", 0),

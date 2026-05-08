@@ -1,10 +1,10 @@
 {
   "true_constraints": {
     "surface_trace_target": 0.0,
-    "surface_near_target": 0.0868,
-    "surface_trace_max": 0.018,
-    "surface_near_max": 0.14,
-    "tool_align_max_stage2": 0.12,
+    "surface_near_target": 0.18,
+    "surface_trace_max": 0.00324,
+    "surface_near_max": 0.24,
+    "tool_align_max_stage2": 0.04,
     "v23_max": 0.047
   },
   "constraint_specs": [
@@ -100,7 +100,7 @@
     ],
     [
       0.0,
-      0.12,
+      0.04,
       0.047,
       NaN,
       NaN,
@@ -115,7 +115,7 @@
       NaN
     ],
     [
-      0.0868,
+      0.18,
       NaN,
       0.047,
       NaN,
@@ -141,25 +141,25 @@
       NaN
     ],
     [
-      0.001468060440802287,
-      0.010687347513941207,
-      0.0,
-      NaN,
-      NaN,
-      NaN
-    ],
-    [
-      NaN,
-      NaN,
+      3.854941057726238e-17,
+      0.02397900706946363,
       NaN,
       NaN,
       NaN,
       NaN
     ],
     [
-      0.00815184642521754,
       NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
       0.0,
+      NaN,
+      NaN,
       NaN,
       NaN,
       NaN

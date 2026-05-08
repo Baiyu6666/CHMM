@@ -12,6 +12,8 @@ from utils.models import (
     MarginExpUpperEmission,
     MarginExpUpperRightHNEmission,
     StudentTModel,
+    TruncatedStudentTLowerEmission,
+    TruncatedStudentTUpperEmission,
     ZeroMeanGaussianModel,
 )
 
@@ -252,10 +254,14 @@ class FixedTauConstraintModel:
             return MarginExpLowerEmission(b_init=0.0, lam_init=1.0)
         if kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
             return MarginExpLowerLeftHNEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+            return TruncatedStudentTLowerEmission()
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             return MarginExpUpperEmission(b_init=0.0, lam_init=1.0)
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
             return MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+            return TruncatedStudentTUpperEmission()
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
     def _fit_local_model(self, kind, xs):
@@ -280,6 +286,11 @@ class FixedTauConstraintModel:
             model.m_step_update([xs])
             model._update_interval()
             return model
+        if kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+            model = TruncatedStudentTLowerEmission()
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             model = MarginExpUpperEmission(b_init=0.0, lam_init=1.0)
             model.m_step_update([xs])
@@ -287,6 +298,11 @@ class FixedTauConstraintModel:
             return model
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
             model = MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0)
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+            model = TruncatedStudentTUpperEmission()
             model.m_step_update([xs])
             model._update_interval()
             return model
@@ -325,6 +341,15 @@ class FixedTauConstraintModel:
                 ],
                 dtype=float,
             )
+        if kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(summary["mu"]),
+                    float(np.log(max(float(summary["sigma"]), 1e-12))),
+                ],
+                dtype=float,
+            )
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             return np.asarray(
                 [float(summary["b"]), float(np.log(max(float(summary["lam"]), 1e-12)))],
@@ -338,6 +363,15 @@ class FixedTauConstraintModel:
                     float(np.log(max(float(summary["lam"]), 1e-12))),
                     float(np.log(max(float(summary["sigma_right"]), 1e-12))),
                     float(np.log(pi_right / max(1.0 - pi_right, 1e-12))),
+                ],
+                dtype=float,
+            )
+        if kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(summary["mu"]),
+                    float(np.log(max(float(summary["sigma"]), 1e-12))),
                 ],
                 dtype=float,
             )
@@ -366,6 +400,12 @@ class FixedTauConstraintModel:
                 sigma_left_init=float(np.exp(vec[2])),
                 pi_left_init=float(pi_left),
             )
+        if kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+            return TruncatedStudentTLowerEmission(
+                b_init=float(vec[0]),
+                mu_init=float(vec[1]),
+                sigma_init=float(np.exp(vec[2])),
+            )
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             return MarginExpUpperEmission(b_init=float(vec[0]), lam_init=float(np.exp(vec[1])))
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
@@ -375,6 +415,12 @@ class FixedTauConstraintModel:
                 lam_init=float(np.exp(vec[1])),
                 sigma_right_init=float(np.exp(vec[2])),
                 pi_right_init=float(pi_right),
+            )
+        if kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+            return TruncatedStudentTUpperEmission(
+                b_init=float(vec[0]),
+                mu_init=float(vec[1]),
+                sigma_init=float(np.exp(vec[2])),
             )
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 

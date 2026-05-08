@@ -174,12 +174,28 @@ def _summary_center_z(summary: dict, kind: str):
         "margin_exp_lower_left_hn",
         "marginexp_left_hn",
         "margin_exp_left_hn",
+        "trunc_t_lower",
+        "truncated_t_lower",
+        "trunc_t_lower_z",
+        "truncated_t_lower_z",
+        "trunc_t_lower_hn",
+        "truncated_t_lower_hn",
+        "soft_trunc_t_lower_hn",
+        "soft_truncated_t_lower_hn",
         "margin_exp_upper",
         "marginexp_upper",
         "margin_exp_upper",
         "margin_exp_upper_right_hn",
         "marginexp_upper_right_hn",
         "margin_exp_upper_right_hn",
+        "trunc_t_upper",
+        "truncated_t_upper",
+        "trunc_t_upper_z",
+        "truncated_t_upper_z",
+        "trunc_t_upper_hn",
+        "truncated_t_upper_hn",
+        "soft_trunc_t_upper_hn",
+        "soft_truncated_t_upper_hn",
     } and "b" in summary:
         return float(summary["b"])
     if "mu" in summary:
@@ -342,7 +358,18 @@ def _plot_feature_evolution_panel(ax, learner, taus, gammas, demo_idx: int = 0, 
                 ax.plot(t_seg, np.full_like(t_seg, up, dtype=float), "-", color=color_m, alpha=0.55, linewidth=0.9, zorder=3)
             if np.isfinite(center):
                 ax.plot(t_seg, np.full_like(t_seg, center, dtype=float), "--", color=color_m, alpha=0.75, linewidth=1.0, zorder=3)
-            if model_type in ("margin_exp_lower", "margin_exp_lower_left_hn", "margin_exp_upper", "margin_exp_upper_right_hn"):
+            if model_type in (
+                "margin_exp_lower", "margin_exp_lower_left_hn",
+                "trunc_t_lower", "truncated_t_lower",
+                "trunc_t_lower_z", "truncated_t_lower_z",
+                "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+                "soft_truncated_t_lower_hn",
+                "margin_exp_upper", "margin_exp_upper_right_hn",
+                "trunc_t_upper", "truncated_t_upper",
+                "trunc_t_upper_z", "truncated_t_upper_z",
+                "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+                "soft_truncated_t_upper_hn",
+            ):
                 ref_value = _reference_constraint_value(learner.env, feature_name, stage=stage_idx)
                 if ref_value is not None:
                     ref_plot = float(ref_value)
@@ -373,9 +400,23 @@ def _learned_constraint_value_raw(values_raw, kind: str):
     if vals.size == 0:
         return np.nan
     kind_l = str(kind).lower()
-    if kind_l in {"margin_exp_lower", "marginexp", "margin_exp", "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+    if kind_l in {
+        "margin_exp_lower", "marginexp", "margin_exp",
+        "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+        "trunc_t_lower", "truncated_t_lower",
+        "trunc_t_lower_z", "truncated_t_lower_z",
+        "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+        "soft_truncated_t_lower_hn",
+    }:
         return float(np.quantile(vals, 0.02))
-    if kind_l in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper", "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+    if kind_l in {
+        "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
+        "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+        "trunc_t_upper", "truncated_t_upper",
+        "trunc_t_upper_z", "truncated_t_upper_z",
+        "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+        "soft_truncated_t_upper_hn",
+    }:
         return float(np.quantile(vals, 0.98))
     return float(np.median(vals))
 

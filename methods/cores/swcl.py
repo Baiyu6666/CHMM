@@ -17,7 +17,11 @@ from utils.models import (
     MarginExpLowerLeftHNEmission,
     MarginExpUpperEmission,
     MarginExpUpperRightHNEmission,
+    SoftTruncatedStudentTLowerHNEmission,
+    SoftTruncatedStudentTUpperHNEmission,
     StudentTModel,
+    TruncatedStudentTLowerEmission,
+    TruncatedStudentTUpperEmission,
     ZeroMeanGaussianModel,
 )
 from visualization.io import learner_plot_dir
@@ -234,6 +238,7 @@ class StageWiseConstraintLearningModel:
         constraint_core_trim=0,
         short_segment_penalty_c=0.1,
         inequality_score_activation_threshold=-0.5,
+        truncated_inequality_z_threshold=2.0,
         activation_proto_temperature=0.1,
         joint_mask_search_max_masks=4096,
         fixed_true_cutpoint_prefix=0,
@@ -282,6 +287,7 @@ class StageWiseConstraintLearningModel:
         self.constraint_core_trim = max(int(constraint_core_trim), 0)
         self.short_segment_penalty_c = float(short_segment_penalty_c)
         self.inequality_score_activation_threshold = float(inequality_score_activation_threshold)
+        self.truncated_inequality_z_threshold = float(truncated_inequality_z_threshold)
         self.activation_proto_temperature = max(float(activation_proto_temperature), 1e-6)
         self.joint_mask_search_max_masks = max(int(joint_mask_search_max_masks), 1)
         self.fixed_true_cutpoint_prefix = max(int(fixed_true_cutpoint_prefix), 0)
@@ -355,7 +361,7 @@ class StageWiseConstraintLearningModel:
         self.stage_ends_: List[List[int]] = []
         self.feature_models = self._build_feature_model_grid()
         self.shared_param_vectors: List[List[np.ndarray | None]] = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
-        self.shared_stage_subgoals: List[np.ndarray] = [np.zeros(self.state_dim, dtype=float) for _ in range(self.num_stages)]
+        self.shared_stage_subgoals: List[np.ndarray | None] = [None for _ in range(self.num_stages)]
         self.shared_r_mean: np.ndarray | None = None
         self.shared_feature_score_mean: np.ndarray | None = None
         self.shared_activation_proto: np.ndarray | None = None
@@ -373,6 +379,13 @@ class StageWiseConstraintLearningModel:
         return str(kind).lower() in {"auto", "auto_constraint", "auto_eq_ineq", "auto_constraint_type"}
 
     @staticmethod
+    def _kind_is_truncated_z(kind) -> bool:
+        return str(kind).lower() in {
+            "trunc_t_lower_z", "truncated_t_lower_z",
+            "trunc_t_upper_z", "truncated_t_upper_z",
+        }
+
+    @staticmethod
     def _kind_is_equality(kind) -> bool:
         kind_l = str(kind).lower()
         return kind_l in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
@@ -383,6 +396,10 @@ class StageWiseConstraintLearningModel:
         return kind_l in {
             "margin_exp_lower", "marginexp", "margin_exp",
             "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+            "trunc_t_lower", "truncated_t_lower",
+            "trunc_t_lower_z", "truncated_t_lower_z",
+            "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+            "soft_truncated_t_lower_hn",
         }
 
     @staticmethod
@@ -391,6 +408,10 @@ class StageWiseConstraintLearningModel:
         return kind_l in {
             "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
             "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+            "trunc_t_upper", "truncated_t_upper",
+            "trunc_t_upper_z", "truncated_t_upper_z",
+            "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+            "soft_truncated_t_upper_hn",
         }
 
     def _feature_supports_equality(self, feat_idx: int) -> bool:
@@ -407,6 +428,8 @@ class StageWiseConstraintLearningModel:
             return self._auto_constraint_threshold()
         if self._kind_is_equality(kind):
             return float(self._equality_score_threshold())
+        if self._kind_is_truncated_z(kind):
+            return float(self.truncated_inequality_z_threshold)
         return float(self.inequality_score_activation_threshold)
 
     def _stage_feature_kind(self, stage_params, feat_idx: int) -> str:
@@ -655,10 +678,22 @@ class StageWiseConstraintLearningModel:
             return MarginExpLowerEmission(b_init=0.0, lam_init=1.0)
         if kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
             return MarginExpLowerLeftHNEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"trunc_t_lower", "truncated_t_lower"}:
+            return TruncatedStudentTLowerEmission()
+        if kind in {"trunc_t_lower_z", "truncated_t_lower_z"}:
+            return TruncatedStudentTLowerEmission()
+        if kind in {"trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn", "soft_truncated_t_lower_hn"}:
+            return SoftTruncatedStudentTLowerHNEmission()
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             return MarginExpUpperEmission(b_init=0.0, lam_init=1.0)
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
             return MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0)
+        if kind in {"trunc_t_upper", "truncated_t_upper"}:
+            return TruncatedStudentTUpperEmission()
+        if kind in {"trunc_t_upper_z", "truncated_t_upper_z"}:
+            return TruncatedStudentTUpperEmission()
+        if kind in {"trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn", "soft_truncated_t_upper_hn"}:
+            return SoftTruncatedStudentTUpperHNEmission()
         raise ValueError(f"Unsupported feature model type '{kind}'.")
 
     def _fit_local_model(self, kind, xs):
@@ -688,6 +723,21 @@ class StageWiseConstraintLearningModel:
             model.m_step_update([xs])
             model._update_interval()
             return model
+        if kind in {"trunc_t_lower", "truncated_t_lower"}:
+            model = TruncatedStudentTLowerEmission()
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"trunc_t_lower_z", "truncated_t_lower_z"}:
+            model = TruncatedStudentTLowerEmission()
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn", "soft_truncated_t_lower_hn"}:
+            model = SoftTruncatedStudentTLowerHNEmission()
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             model = MarginExpUpperEmission(b_init=0.0, lam_init=1.0)
             model.m_step_update([xs])
@@ -695,6 +745,21 @@ class StageWiseConstraintLearningModel:
             return model
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
             model = MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0)
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"trunc_t_upper", "truncated_t_upper"}:
+            model = TruncatedStudentTUpperEmission()
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"trunc_t_upper_z", "truncated_t_upper_z"}:
+            model = TruncatedStudentTUpperEmission()
+            model.m_step_update([xs])
+            model._update_interval()
+            return model
+        if kind in {"trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn", "soft_truncated_t_upper_hn"}:
+            model = SoftTruncatedStudentTUpperHNEmission()
             model.m_step_update([xs])
             model._update_interval()
             return model
@@ -706,6 +771,17 @@ class StageWiseConstraintLearningModel:
         model.m_step_update([xs])
         model._update_interval()
         return model
+
+    def _truncated_z_score(self, kind, summary) -> float:
+        sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
+        mu = float(summary.get("mu", 0.0))
+        b = float(summary["b"])
+        kind_l = str(kind).lower()
+        if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
+            return float((mu - b) / sigma)
+        if kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
+            return float((b - mu) / sigma)
+        raise ValueError(f"Unsupported truncated-z feature model type '{kind}'.")
 
     def _fit_auto_constraint_feature(self, feat_idx: int, values, F_demo, segment_median: float):
         values = np.asarray(values, dtype=float).reshape(-1)
@@ -941,12 +1017,20 @@ class StageWiseConstraintLearningModel:
                     local_loss = -np.asarray(local_gaussian.logpdf(values), dtype=float)
                     global_loss = -np.asarray(global_gaussian.logpdf(values), dtype=float)
                     score = float(np.mean(local_loss) - np.mean(global_loss))
+                elif self._kind_is_truncated_z(kind_l):
+                    score = self._truncated_z_score(kind_l, summary)
                 else:
                     if kind_l in {
                         "margin_exp_lower", "marginexp", "margin_exp",
                         "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
                         "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
                         "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+                        "trunc_t_lower", "truncated_t_lower",
+                        "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+                        "soft_truncated_t_lower_hn",
+                        "trunc_t_upper", "truncated_t_upper",
+                        "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+                        "soft_truncated_t_upper_hn",
                     }:
                         baseline_model = self._fit_student_t_baseline(values)
                     else:
@@ -965,14 +1049,27 @@ class StageWiseConstraintLearningModel:
                     avg_step_cost = min(float(score) - float(self._equality_score_threshold()), 0.0)
                     feature_constraint_costs[feat_idx] = float(weight * len(values) * avg_step_cost)
                 else:
-                    avg_step_cost = min(float(score) - float(self.inequality_score_activation_threshold), 0.0)
+                    threshold = self._score_threshold_for_kind(kind_l)
+                    avg_step_cost = min(float(score) - float(threshold), 0.0)
                     feature_constraint_costs[feat_idx] = float(weight * len(values) * avg_step_cost)
             else:
+                if self._kind_is_truncated_z(kind_l):
+                    if self.r[int(stage_idx), feat_idx]:
+                        feature_scores[feat_idx] = self._truncated_z_score(kind_l, summary)
+                        active_mask[feat_idx] = 1
+                        active_fit_losses[feat_idx] = fitted_loss
+                    continue
                 if kind_l in {
                     "margin_exp_lower", "marginexp", "margin_exp",
                     "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
                     "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
                     "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+                    "trunc_t_lower", "truncated_t_lower",
+                    "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+                    "soft_truncated_t_lower_hn",
+                    "trunc_t_upper", "truncated_t_upper",
+                    "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+                    "soft_truncated_t_upper_hn",
                 }:
                     baseline_model = self._fit_student_t_baseline(values)
                 else:
@@ -1071,7 +1168,19 @@ class StageWiseConstraintLearningModel:
                     {
                         "feature_idx": int(feat_idx),
                         "feature_name": feature_names[feat_idx],
-                        "score_type": "auto_margin" if self._is_auto_constraint_feature(feat_idx) else (self._equality_score_type() if self._is_equality_feature(feat_idx) else "-ll_gain"),
+                        "score_type": (
+                            "auto_margin"
+                            if self._is_auto_constraint_feature(feat_idx)
+                            else (
+                                self._equality_score_type()
+                                if self._is_equality_feature(feat_idx)
+                                else (
+                                    "truncated_z"
+                                    if self._kind_is_truncated_z(self.feature_model_types[feat_idx])
+                                    else "-ll_gain"
+                                )
+                            )
+                        ),
                         "threshold": float(thresholds[stage_idx, feat_idx]),
                         "activation_rate": float(activation_rate[stage_idx, feat_idx]),
                         "mean_score": float(np.mean(scores[:, stage_idx, feat_idx])),
@@ -1124,6 +1233,27 @@ class StageWiseConstraintLearningModel:
                 ],
                 dtype=float,
             )
+        if kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(summary["mu"]),
+                    float(np.log(max(float(summary["sigma"]), 1e-12))),
+                ],
+                dtype=float,
+            )
+        if kind in {"trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn", "soft_truncated_t_lower_hn"}:
+            pi_left = float(np.clip(float(summary["pi_left"]), 1e-6, 1.0 - 1e-6))
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(summary["mu"]),
+                    float(np.log(max(float(summary["sigma"]), 1e-12))),
+                    float(np.log(max(float(summary["sigma_left"]), 1e-12))),
+                    float(np.log(pi_left / max(1.0 - pi_left, 1e-12))),
+                ],
+                dtype=float,
+            )
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             return np.asarray([float(summary["b"]), float(np.log(max(float(summary["lam"]), 1e-12)))], dtype=float)
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
@@ -1132,6 +1262,27 @@ class StageWiseConstraintLearningModel:
                 [
                     float(summary["b"]),
                     float(np.log(max(float(summary["lam"]), 1e-12))),
+                    float(np.log(max(float(summary["sigma_right"]), 1e-12))),
+                    float(np.log(pi_right / max(1.0 - pi_right, 1e-12))),
+                ],
+                dtype=float,
+            )
+        if kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(summary["mu"]),
+                    float(np.log(max(float(summary["sigma"]), 1e-12))),
+                ],
+                dtype=float,
+            )
+        if kind in {"trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn", "soft_truncated_t_upper_hn"}:
+            pi_right = float(np.clip(float(summary["pi_right"]), 1e-6, 1.0 - 1e-6))
+            return np.asarray(
+                [
+                    float(summary["b"]),
+                    float(summary["mu"]),
+                    float(np.log(max(float(summary["sigma"]), 1e-12))),
                     float(np.log(max(float(summary["sigma_right"]), 1e-12))),
                     float(np.log(pi_right / max(1.0 - pi_right, 1e-12))),
                 ],
@@ -1159,6 +1310,21 @@ class StageWiseConstraintLearningModel:
                 sigma_left_init=float(np.exp(vec[2])),
                 pi_left_init=float(pi_left),
             )
+        if kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+            return TruncatedStudentTLowerEmission(
+                b_init=float(vec[0]),
+                mu_init=float(vec[1]),
+                sigma_init=float(np.exp(vec[2])),
+            )
+        if kind in {"trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn", "soft_truncated_t_lower_hn"}:
+            pi_left = 1.0 / (1.0 + np.exp(-float(vec[4])))
+            return SoftTruncatedStudentTLowerHNEmission(
+                b_init=float(vec[0]),
+                mu_init=float(vec[1]),
+                sigma_init=float(np.exp(vec[2])),
+                sigma_left_init=float(np.exp(vec[3])),
+                pi_left_init=float(pi_left),
+            )
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
             return MarginExpUpperEmission(b_init=float(vec[0]), lam_init=float(np.exp(vec[1])))
         if kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
@@ -1167,6 +1333,21 @@ class StageWiseConstraintLearningModel:
                 b_init=float(vec[0]),
                 lam_init=float(np.exp(vec[1])),
                 sigma_right_init=float(np.exp(vec[2])),
+                pi_right_init=float(pi_right),
+            )
+        if kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+            return TruncatedStudentTUpperEmission(
+                b_init=float(vec[0]),
+                mu_init=float(vec[1]),
+                sigma_init=float(np.exp(vec[2])),
+            )
+        if kind in {"trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn", "soft_truncated_t_upper_hn"}:
+            pi_right = 1.0 / (1.0 + np.exp(-float(vec[4])))
+            return SoftTruncatedStudentTUpperHNEmission(
+                b_init=float(vec[0]),
+                mu_init=float(vec[1]),
+                sigma_init=float(np.exp(vec[2])),
+                sigma_right_init=float(np.exp(vec[3])),
                 pi_right_init=float(pi_right),
             )
         raise ValueError(f"Unsupported feature model type '{kind}'.")
@@ -1187,12 +1368,28 @@ class StageWiseConstraintLearningModel:
             "margin_exp_lower_left_hn",
             "marginexp_left_hn",
             "margin_exp_left_hn",
+            "trunc_t_lower",
+            "truncated_t_lower",
+            "trunc_t_lower_z",
+            "truncated_t_lower_z",
+            "trunc_t_lower_hn",
+            "truncated_t_lower_hn",
+            "soft_trunc_t_lower_hn",
+            "soft_truncated_t_lower_hn",
             "margin_exp_upper",
             "marginexp_upper",
             "margin_exp_upper",
             "margin_exp_upper_right_hn",
             "marginexp_upper_right_hn",
             "margin_exp_upper_right_hn",
+            "trunc_t_upper",
+            "truncated_t_upper",
+            "trunc_t_upper_z",
+            "truncated_t_upper_z",
+            "trunc_t_upper_hn",
+            "truncated_t_upper_hn",
+            "soft_trunc_t_upper_hn",
+            "soft_truncated_t_upper_hn",
         }:
             return (0,)
         return None
@@ -1213,9 +1410,14 @@ class StageWiseConstraintLearningModel:
         return self._summary_to_vector_or_none(kind, stage_params.model_summaries[feat_idx])
 
     def _subgoal_consensus_cost(self, candidate_stage_params, shared_stage_subgoals):
+        if shared_stage_subgoals is None:
+            return 0.0
         total = 0.0
         for stage_idx in range(self.num_stages):
-            diff = np.asarray(candidate_stage_params[stage_idx].subgoal, dtype=float) - np.asarray(shared_stage_subgoals[stage_idx], dtype=float)
+            shared_subgoal = shared_stage_subgoals[stage_idx]
+            if shared_subgoal is None:
+                continue
+            diff = np.asarray(candidate_stage_params[stage_idx].subgoal, dtype=float) - np.asarray(shared_subgoal, dtype=float)
             total += float(np.dot(diff, diff))
         return total
 
@@ -1313,8 +1515,9 @@ class StageWiseConstraintLearningModel:
         if self.use_score_mode and self.has_equality_feature:
             short_segment_penalty = float(self.short_segment_penalty_c / np.sqrt(max(stage_len, 1)))
         subgoal_consensus_cost = 0.0
-        if lam_subgoal_consensus > 0.0:
-            diff = np.asarray(stage_params.subgoal, dtype=float) - np.asarray(shared_stage_subgoals[stage_idx], dtype=float)
+        shared_subgoal = None if shared_stage_subgoals is None else shared_stage_subgoals[stage_idx]
+        if lam_subgoal_consensus > 0.0 and shared_subgoal is not None:
+            diff = np.asarray(stage_params.subgoal, dtype=float) - np.asarray(shared_subgoal, dtype=float)
             subgoal_consensus_cost = float(np.dot(diff, diff))
         param_consensus_cost = 0.0
         if lam_param_consensus > 0.0:
@@ -1762,7 +1965,14 @@ class StageWiseConstraintLearningModel:
                 self.feature_models[stage_idx][feat_idx] = self._vector_to_model(kind, vec)
 
     def _current_scheduled_lambda(self, base_lambda, iteration, max_iter):
-        frac = 1.0 if max_iter <= 1 else float(iteration) / float(max_iter - 1)
+        iteration_i = int(iteration)
+        max_iter_i = int(max_iter)
+        if iteration_i <= 0:
+            frac = 0.0
+        elif max_iter_i <= 1:
+            frac = 1.0
+        else:
+            frac = float(iteration_i) / float(max_iter_i - 1)
         if self.consensus_schedule == "linear":
             return float(base_lambda) * frac
         if self.consensus_schedule == "quadratic":
@@ -1780,7 +1990,7 @@ class StageWiseConstraintLearningModel:
         self.stage_subgoals_hist = []
         self.g1_hist = []
         self.g2_hist = []
-        shared_stage_subgoals = [np.zeros(self.state_dim, dtype=float) for _ in range(self.num_stages)]
+        shared_stage_subgoals = [None for _ in range(self.num_stages)]
         shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
         shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
         shared_activation_mask = None

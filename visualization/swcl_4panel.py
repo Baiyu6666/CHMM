@@ -110,6 +110,13 @@ def _kind_is_equality_display(kind: str) -> bool:
     return str(kind).lower() in {"gauss", "gaussian", "student_t", "studentt", "t", "zero_gauss", "zero_gaussian"}
 
 
+def _kind_is_truncated_z_display(kind: str) -> bool:
+    return str(kind).lower() in {
+        "trunc_t_lower_z", "truncated_t_lower_z",
+        "trunc_t_upper_z", "truncated_t_upper_z",
+    }
+
+
 def _summary_center_z(summary: dict, kind: str):
     kind_l = str(kind).lower()
     if _kind_is_equality_display(kind_l):
@@ -124,12 +131,28 @@ def _summary_center_z(summary: dict, kind: str):
         "margin_exp_lower_left_hn",
         "marginexp_left_hn",
         "margin_exp_left_hn",
+        "trunc_t_lower",
+        "truncated_t_lower",
+        "trunc_t_lower_z",
+        "truncated_t_lower_z",
+        "trunc_t_lower_hn",
+        "truncated_t_lower_hn",
+        "soft_trunc_t_lower_hn",
+        "soft_truncated_t_lower_hn",
         "margin_exp_upper",
         "marginexp_upper",
         "margin_exp_upper",
         "margin_exp_upper_right_hn",
         "marginexp_upper_right_hn",
         "margin_exp_upper_right_hn",
+        "trunc_t_upper",
+        "truncated_t_upper",
+        "trunc_t_upper_z",
+        "truncated_t_upper_z",
+        "trunc_t_upper_hn",
+        "truncated_t_upper_hn",
+        "soft_trunc_t_upper_hn",
+        "soft_truncated_t_upper_hn",
     } and "b" in summary:
         return float(summary["b"])
     if "mu" in summary:
@@ -224,9 +247,23 @@ def _learned_constraint_value_raw(values_raw, kind: str):
     if vals.size == 0:
         return np.nan
     kind_l = str(kind).lower()
-    if kind_l in {"margin_exp_lower", "marginexp", "margin_exp", "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
+    if kind_l in {
+        "margin_exp_lower", "marginexp", "margin_exp",
+        "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+        "trunc_t_lower", "truncated_t_lower",
+        "trunc_t_lower_z", "truncated_t_lower_z",
+        "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+        "soft_truncated_t_lower_hn",
+    }:
         return float(np.quantile(vals, 0.02))
-    if kind_l in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper", "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
+    if kind_l in {
+        "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
+        "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+        "trunc_t_upper", "truncated_t_upper",
+        "trunc_t_upper_z", "truncated_t_upper_z",
+        "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+        "soft_truncated_t_upper_hn",
+    }:
         return float(np.quantile(vals, 0.98))
     return float(np.median(vals))
 
@@ -335,11 +372,19 @@ def _constraint_type_bucket_for_display(learner, local_stage_params, stage_idx, 
     if str(kind).lower() in {
         "margin_exp_lower", "marginexp", "margin_exp",
         "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+        "trunc_t_lower", "truncated_t_lower",
+        "trunc_t_lower_z", "truncated_t_lower_z",
+        "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+        "soft_truncated_t_lower_hn",
     }:
         return "lower"
     if str(kind).lower() in {
         "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
         "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+        "trunc_t_upper", "truncated_t_upper",
+        "trunc_t_upper_z", "truncated_t_upper_z",
+        "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+        "soft_truncated_t_upper_hn",
     }:
         return "upper"
     return "unconstrained"
@@ -429,6 +474,9 @@ def _score_threshold(learner, feat_idx, stage_idx=None):
         if hasattr(learner, "_equality_score_threshold"):
             return float(learner._equality_score_threshold())
         return float(getattr(learner, "equality_dispersion_ratio_threshold", 0.1))
+    kind = _feature_kind(learner, feat_idx)
+    if _kind_is_truncated_z_display(kind):
+        return float(getattr(learner, "truncated_inequality_z_threshold", 2.0))
     return float(getattr(learner, "inequality_score_activation_threshold", -0.5))
 
 
@@ -2215,6 +2263,7 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     continue
                 kind = _stage_feature_kind_for_display(learner, stage_params_list, stage_idx, feat_idx)
                 is_equality_feature = _kind_is_equality_display(kind)
+                is_truncated_z_feature = _kind_is_truncated_z_display(kind)
                 show_full_demo = is_equality_feature
                 is_dispersion_equality = (
                     is_equality_feature
@@ -2230,6 +2279,8 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                             mu=float(np.mean(full_vals)),
                             sigma=float(max(np.std(full_vals), 1e-6)),
                         )
+                    elif is_truncated_z_feature:
+                        baseline_model = None
                     else:
                         baseline_model = learner._fit_student_t_baseline(vals)
 
@@ -2292,11 +2343,12 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 threshold = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
                 score_margin = threshold - raw_score
                 weighted_cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
+                score_label = "z score" if is_truncated_z_feature else "raw score"
                 info_lines = [
                     f"core steps = {len(vals)}",
                     f"segment = [{s},{e}]",
                     f"core = [{core_s},{core_e}]",
-                    f"raw score = {raw_score:.3f}",
+                    f"{score_label} = {raw_score:.3f}",
                     f"margin = {score_margin:.3f}",
                     f"weighted cost = {weighted_cost:.3f}",
                 ]
@@ -2328,6 +2380,11 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                         info_lines.append(f"short seg penalty = {short_segment_penalty:.3f}")
                     info_lines.append(f"threshold = {threshold:.3f}")
                 else:
+                    if is_truncated_z_feature:
+                        summary = stage_params.model_summaries[feat_idx]
+                        info_lines.append(f"b = {float(summary.get('b', np.nan)):.3f}")
+                        info_lines.append(f"mu = {float(summary.get('mu', np.nan)):.3f}")
+                        info_lines.append(f"sigma = {float(summary.get('sigma', np.nan)):.3f}")
                     info_lines.append(f"threshold = {threshold:.3f}")
 
                 ax.set_title(f"{scenario_label} | stage {stage_idx + 1} | {feature_names[feat_idx]}", fontsize=PAPER_TITLE_SIZE, pad=4)

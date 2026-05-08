@@ -22,6 +22,41 @@ def _weighted_quantile(values, weights, q):
     return float(vals[min(idx, len(vals) - 1)])
 
 
+def _student_t_logpdf(x, *, mu, sigma, nu):
+    x = np.asarray(x, float)
+    sigma = max(float(sigma), 1e-6)
+    nu = max(float(nu), 1e-6)
+    z2 = ((x - float(mu)) / sigma) ** 2
+    log_norm = (
+        math.lgamma((nu + 1.0) / 2.0)
+        - math.lgamma(nu / 2.0)
+        - 0.5 * (math.log(nu) + math.log(math.pi))
+        - math.log(sigma)
+    )
+    return log_norm - 0.5 * (nu + 1.0) * np.log1p(z2 / nu)
+
+
+def _student_t_standard_cdf(z, nu):
+    z = np.asarray(z, float)
+    nu = float(nu)
+    if abs(nu - 3.0) < 1e-8:
+        root_nu = math.sqrt(3.0)
+        return 0.5 + (np.arctan(z / root_nu) + root_nu * z / (z * z + 3.0)) / math.pi
+    # Fallback approximation. Current project models use nu=3 by default.
+    return 0.5 * (1.0 + np.vectorize(math.erf)(z / math.sqrt(2.0)))
+
+
+def _student_t_cdf(x, *, mu, sigma, nu):
+    z = (np.asarray(x, float) - float(mu)) / max(float(sigma), 1e-6)
+    return _student_t_standard_cdf(z, nu)
+
+
+def _halfnormal_logpdf(slack, sigma):
+    slack = np.asarray(slack, float)
+    sigma = max(float(sigma), 1e-6)
+    return 0.5 * math.log(2.0 / math.pi) - math.log(sigma) - 0.5 * (slack / sigma) ** 2
+
+
 class BaseEmissionModel:
     model_type = "base"
 
@@ -714,4 +749,480 @@ class MarginExpUpperRightHNEmission(BaseEmissionModel):
             "L": float(self.L),
             "U": float(self.U),
             "tail_nu": float(self.tail_nu),
+        }
+
+
+class TruncatedStudentTUpperEmission(BaseEmissionModel):
+    model_type = "trunc_t_upper"
+
+    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0):
+        self.mu = float(mu_init)
+        self.sigma = max(float(sigma_init), 1e-6)
+        self.b = float(b_init)
+        self.q_low = float(q_low)
+        self.q_high = float(q_high)
+        self.nu = max(float(nu), 1e-3)
+        self._update_interval()
+
+    def _update_interval(self):
+        base = StudentTModel(mu=self.mu, sigma=self.sigma, nu=self.nu, q_low=self.q_low, q_high=self.q_high)
+        self.L = float(min(base.L, self.b))
+        self.U = float(self.b)
+
+    def logpdf(self, x):
+        x = np.asarray(x, float)
+        cdf_b = float(np.clip(_student_t_cdf(self.b, mu=self.mu, sigma=self.sigma, nu=self.nu), 1e-10, 1.0))
+        logp = np.full_like(x, -1e9, dtype=float)
+        inside = x <= self.b
+        if np.any(inside):
+            logp[inside] = _student_t_logpdf(x[inside], mu=self.mu, sigma=self.sigma, nu=self.nu) - math.log(cdf_b)
+        return logp
+
+    def m_step_update(self, xs, ws=None):
+        vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
+        if vals.size == 0:
+            return
+        if ws is None:
+            weights = np.ones_like(vals)
+        else:
+            weights = np.concatenate([np.asarray(w, float).reshape(-1) for w in ws], axis=0)
+        active = weights > 1e-12
+        vals = vals[active]
+        weights = weights[active]
+        if vals.size == 0:
+            return
+        total_w = float(np.sum(weights))
+        if total_w <= 1e-12:
+            return
+
+        x_min = float(np.min(vals))
+        x_max = float(np.max(vals))
+        span = max(float(x_max - x_min), 1e-4)
+        grid_lo = _weighted_quantile(vals, weights, 0.70)
+        grid_hi = x_max + 0.02 * span + 0.005
+        if grid_hi <= grid_lo + 1e-8:
+            grid_lo = x_min
+            grid_hi = x_max + 0.01
+        b_grid = np.linspace(grid_lo, grid_hi, 56)
+
+        best_total = -np.inf
+        best = (self.mu, self.sigma, self.b)
+        for b_hat in b_grid:
+            inside = vals <= float(b_hat)
+            if not np.all(inside):
+                continue
+            mu = _weighted_quantile(vals, weights, 0.5)
+            sigma = max(float(np.sqrt(np.sum(weights * (vals - mu) ** 2) / total_w)), 1e-6)
+            cdf_b = float(np.clip(_student_t_cdf(float(b_hat), mu=mu, sigma=sigma, nu=self.nu), 1e-10, 1.0))
+            logp = _student_t_logpdf(vals, mu=mu, sigma=sigma, nu=self.nu) - math.log(cdf_b)
+            total = float(np.sum(weights * logp))
+            if total > best_total:
+                best_total = total
+                best = (float(mu), float(sigma), float(b_hat))
+
+        self.mu, self.sigma, self.b = best
+        self.sigma = max(float(self.sigma), 1e-6)
+        self._update_interval()
+
+    def get_summary(self):
+        return {
+            "type": self.model_type,
+            "mu": float(self.mu),
+            "sigma": float(self.sigma),
+            "b": float(self.b),
+            "nu": float(self.nu),
+            "L": float(self.L),
+            "U": float(self.U),
+        }
+
+
+class TruncatedStudentTLowerEmission(BaseEmissionModel):
+    model_type = "trunc_t_lower"
+
+    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0):
+        self.mu = float(mu_init)
+        self.sigma = max(float(sigma_init), 1e-6)
+        self.b = float(b_init)
+        self.q_low = float(q_low)
+        self.q_high = float(q_high)
+        self.nu = max(float(nu), 1e-3)
+        self._update_interval()
+
+    def _update_interval(self):
+        base = StudentTModel(mu=self.mu, sigma=self.sigma, nu=self.nu, q_low=self.q_low, q_high=self.q_high)
+        self.L = float(self.b)
+        self.U = float(max(base.U, self.b))
+
+    def logpdf(self, x):
+        x = np.asarray(x, float)
+        cdf_b = float(np.clip(_student_t_cdf(self.b, mu=self.mu, sigma=self.sigma, nu=self.nu), 0.0, 1.0 - 1e-10))
+        survival_b = max(1.0 - cdf_b, 1e-10)
+        logp = np.full_like(x, -1e9, dtype=float)
+        inside = x >= self.b
+        if np.any(inside):
+            logp[inside] = _student_t_logpdf(x[inside], mu=self.mu, sigma=self.sigma, nu=self.nu) - math.log(survival_b)
+        return logp
+
+    def m_step_update(self, xs, ws=None):
+        vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
+        if vals.size == 0:
+            return
+        if ws is None:
+            weights = np.ones_like(vals)
+        else:
+            weights = np.concatenate([np.asarray(w, float).reshape(-1) for w in ws], axis=0)
+        active = weights > 1e-12
+        vals = vals[active]
+        weights = weights[active]
+        if vals.size == 0:
+            return
+        total_w = float(np.sum(weights))
+        if total_w <= 1e-12:
+            return
+
+        x_min = float(np.min(vals))
+        x_max = float(np.max(vals))
+        span = max(float(x_max - x_min), 1e-4)
+        grid_lo = x_min - 0.02 * span - 0.005
+        grid_hi = _weighted_quantile(vals, weights, 0.30)
+        if grid_hi <= grid_lo + 1e-8:
+            grid_lo = x_min - 0.01
+            grid_hi = x_max
+        b_grid = np.linspace(grid_lo, grid_hi, 56)
+
+        best_total = -np.inf
+        best = (self.mu, self.sigma, self.b)
+        for b_hat in b_grid:
+            inside = vals >= float(b_hat)
+            if not np.all(inside):
+                continue
+            mu = _weighted_quantile(vals, weights, 0.5)
+            sigma = max(float(np.sqrt(np.sum(weights * (vals - mu) ** 2) / total_w)), 1e-6)
+            cdf_b = float(np.clip(_student_t_cdf(float(b_hat), mu=mu, sigma=sigma, nu=self.nu), 0.0, 1.0 - 1e-10))
+            survival_b = max(1.0 - cdf_b, 1e-10)
+            logp = _student_t_logpdf(vals, mu=mu, sigma=sigma, nu=self.nu) - math.log(survival_b)
+            total = float(np.sum(weights * logp))
+            if total > best_total:
+                best_total = total
+                best = (float(mu), float(sigma), float(b_hat))
+
+        self.mu, self.sigma, self.b = best
+        self.sigma = max(float(self.sigma), 1e-6)
+        self._update_interval()
+
+    def get_summary(self):
+        return {
+            "type": self.model_type,
+            "mu": float(self.mu),
+            "sigma": float(self.sigma),
+            "b": float(self.b),
+            "nu": float(self.nu),
+            "L": float(self.L),
+            "U": float(self.U),
+        }
+
+
+class SoftTruncatedStudentTUpperHNEmission(BaseEmissionModel):
+    model_type = "trunc_t_upper_hn"
+
+    def __init__(
+        self,
+        mu_init=0.0,
+        sigma_init=1.0,
+        b_init=0.0,
+        sigma_right_init=0.1,
+        pi_right_init=0.05,
+        q_low=0.1,
+        q_high=0.9,
+        nu=3.0,
+        pi_right_max=0.1,
+        violation_sigma_min=1e-3,
+        violation_sigma_min_ratio=0.25,
+        violation_sigma_span_ratio=0.08,
+    ):
+        self.mu = float(mu_init)
+        self.sigma = max(float(sigma_init), 1e-6)
+        self.b = float(b_init)
+        self.violation_sigma_min = max(float(violation_sigma_min), 1e-8)
+        self.violation_sigma_min_ratio = max(float(violation_sigma_min_ratio), 0.0)
+        self.violation_sigma_span_ratio = max(float(violation_sigma_span_ratio), 0.0)
+        self.sigma_right = max(float(sigma_right_init), self.violation_sigma_min)
+        self.pi_right_max = float(np.clip(float(pi_right_max), 1e-3, 0.49))
+        self.pi_right = float(np.clip(float(pi_right_init), 1e-4, self.pi_right_max))
+        self.q_low = float(q_low)
+        self.q_high = float(q_high)
+        self.nu = max(float(nu), 1e-3)
+        self._update_interval()
+
+    def _update_interval(self):
+        base = StudentTModel(mu=self.mu, sigma=self.sigma, nu=self.nu, q_low=self.q_low, q_high=self.q_high)
+        self.L = float(min(base.L, self.b))
+        self.U = float(self.b)
+
+    def logpdf(self, x):
+        x = np.asarray(x, float)
+        pi_right = float(np.clip(self.pi_right, 1e-8, 1.0 - 1e-8))
+        cdf_b = float(np.clip(_student_t_cdf(self.b, mu=self.mu, sigma=self.sigma, nu=self.nu), 1e-10, 1.0))
+        logp = np.empty_like(x, dtype=float)
+        inside = x <= self.b
+        if np.any(inside):
+            logp[inside] = (
+                math.log(max(1.0 - pi_right, 1e-12))
+                + _student_t_logpdf(x[inside], mu=self.mu, sigma=self.sigma, nu=self.nu)
+                - math.log(cdf_b)
+            )
+        if np.any(~inside):
+            slack = x[~inside] - self.b
+            logp[~inside] = math.log(pi_right) + _halfnormal_logpdf(
+                slack,
+                max(float(self.sigma_right), self.violation_sigma_min),
+            )
+        return logp
+
+    def _violation_sigma_floor(self, *, span, inside_sigma):
+        return max(
+            float(self.violation_sigma_min),
+            float(self.violation_sigma_min_ratio) * max(float(inside_sigma), 1e-6),
+            float(self.violation_sigma_span_ratio) * max(float(span), 1e-6),
+        )
+
+    def m_step_update(self, xs, ws=None):
+        vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
+        if vals.size == 0:
+            return
+        if ws is None:
+            weights = np.ones_like(vals)
+        else:
+            weights = np.concatenate([np.asarray(w, float).reshape(-1) for w in ws], axis=0)
+        total_w = float(np.sum(weights))
+        if total_w <= 1e-12:
+            return
+
+        x_min = float(np.min(vals))
+        x_max = float(np.max(vals))
+        span = max(float(x_max - x_min), 1e-4)
+        grid_lo = _weighted_quantile(vals, weights, 0.70)
+        grid_hi = x_max + 0.02 * span + 0.005
+        if grid_hi <= grid_lo + 1e-8:
+            grid_lo = x_min
+            grid_hi = x_max + 0.01
+        b_grid = np.linspace(grid_lo, grid_hi, 56)
+
+        best_total = -np.inf
+        best = (self.mu, self.sigma, self.b, self.sigma_right, self.pi_right)
+        for b_hat in b_grid:
+            inside = vals <= float(b_hat)
+            inside_w_total = float(np.sum(weights[inside]))
+            if inside_w_total <= 1e-12:
+                continue
+            inside_vals = vals[inside]
+            inside_weights = weights[inside]
+            mu = _weighted_quantile(inside_vals, inside_weights, 0.5)
+            sigma = max(
+                float(np.sqrt(np.sum(inside_weights * (inside_vals - mu) ** 2) / inside_w_total)),
+                1e-6,
+            )
+
+            outside = ~inside
+            outside_w_total = float(np.sum(weights[outside]))
+            raw_pi_right = outside_w_total / total_w
+            pi_right = float(np.clip(raw_pi_right, 1e-4, self.pi_right_max))
+            if outside_w_total > 1e-12:
+                slack = vals[outside] - float(b_hat)
+                sigma_floor = self._violation_sigma_floor(span=span, inside_sigma=sigma)
+                sigma_right = max(
+                    float(np.sqrt(np.sum(weights[outside] * slack * slack) / outside_w_total)),
+                    sigma_floor,
+                )
+            else:
+                sigma_right = self._violation_sigma_floor(span=span, inside_sigma=sigma)
+
+            cdf_b = float(np.clip(_student_t_cdf(float(b_hat), mu=mu, sigma=sigma, nu=self.nu), 1e-10, 1.0))
+            logp = np.empty_like(vals, dtype=float)
+            logp[inside] = (
+                math.log(max(1.0 - pi_right, 1e-12))
+                + _student_t_logpdf(vals[inside], mu=mu, sigma=sigma, nu=self.nu)
+                - math.log(cdf_b)
+            )
+            if np.any(outside):
+                logp[outside] = math.log(pi_right) + _halfnormal_logpdf(vals[outside] - float(b_hat), sigma_right)
+            total = float(np.sum(weights * logp))
+            if total > best_total:
+                best_total = total
+                best = (float(mu), float(sigma), float(b_hat), float(sigma_right), float(pi_right))
+
+        self.mu, self.sigma, self.b, self.sigma_right, self.pi_right = best
+        self.sigma = max(float(self.sigma), 1e-6)
+        self.sigma_right = max(float(self.sigma_right), self.violation_sigma_min)
+        self.pi_right = float(np.clip(self.pi_right, 1e-4, self.pi_right_max))
+        self._update_interval()
+
+    def get_summary(self):
+        return {
+            "type": self.model_type,
+            "mu": float(self.mu),
+            "sigma": float(self.sigma),
+            "b": float(self.b),
+            "sigma_right": float(self.sigma_right),
+            "pi_right": float(self.pi_right),
+            "nu": float(self.nu),
+            "violation_sigma_min": float(self.violation_sigma_min),
+            "violation_sigma_min_ratio": float(self.violation_sigma_min_ratio),
+            "violation_sigma_span_ratio": float(self.violation_sigma_span_ratio),
+            "L": float(self.L),
+            "U": float(self.U),
+        }
+
+
+class SoftTruncatedStudentTLowerHNEmission(BaseEmissionModel):
+    model_type = "trunc_t_lower_hn"
+
+    def __init__(
+        self,
+        mu_init=0.0,
+        sigma_init=1.0,
+        b_init=0.0,
+        sigma_left_init=0.1,
+        pi_left_init=0.05,
+        q_low=0.1,
+        q_high=0.9,
+        nu=3.0,
+        pi_left_max=0.1,
+        violation_sigma_min=1e-3,
+        violation_sigma_min_ratio=0.25,
+        violation_sigma_span_ratio=0.08,
+    ):
+        self.mu = float(mu_init)
+        self.sigma = max(float(sigma_init), 1e-6)
+        self.b = float(b_init)
+        self.violation_sigma_min = max(float(violation_sigma_min), 1e-8)
+        self.violation_sigma_min_ratio = max(float(violation_sigma_min_ratio), 0.0)
+        self.violation_sigma_span_ratio = max(float(violation_sigma_span_ratio), 0.0)
+        self.sigma_left = max(float(sigma_left_init), self.violation_sigma_min)
+        self.pi_left_max = float(np.clip(float(pi_left_max), 1e-3, 0.49))
+        self.pi_left = float(np.clip(float(pi_left_init), 1e-4, self.pi_left_max))
+        self.q_low = float(q_low)
+        self.q_high = float(q_high)
+        self.nu = max(float(nu), 1e-3)
+        self._update_interval()
+
+    def _update_interval(self):
+        base = StudentTModel(mu=self.mu, sigma=self.sigma, nu=self.nu, q_low=self.q_low, q_high=self.q_high)
+        self.L = float(self.b)
+        self.U = float(max(base.U, self.b))
+
+    def logpdf(self, x):
+        x = np.asarray(x, float)
+        pi_left = float(np.clip(self.pi_left, 1e-8, 1.0 - 1e-8))
+        cdf_b = float(np.clip(_student_t_cdf(self.b, mu=self.mu, sigma=self.sigma, nu=self.nu), 0.0, 1.0 - 1e-10))
+        survival_b = max(1.0 - cdf_b, 1e-10)
+        logp = np.empty_like(x, dtype=float)
+        inside = x >= self.b
+        if np.any(inside):
+            logp[inside] = (
+                math.log(max(1.0 - pi_left, 1e-12))
+                + _student_t_logpdf(x[inside], mu=self.mu, sigma=self.sigma, nu=self.nu)
+                - math.log(survival_b)
+            )
+        if np.any(~inside):
+            slack = self.b - x[~inside]
+            logp[~inside] = math.log(pi_left) + _halfnormal_logpdf(
+                slack,
+                max(float(self.sigma_left), self.violation_sigma_min),
+            )
+        return logp
+
+    def _violation_sigma_floor(self, *, span, inside_sigma):
+        return max(
+            float(self.violation_sigma_min),
+            float(self.violation_sigma_min_ratio) * max(float(inside_sigma), 1e-6),
+            float(self.violation_sigma_span_ratio) * max(float(span), 1e-6),
+        )
+
+    def m_step_update(self, xs, ws=None):
+        vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
+        if vals.size == 0:
+            return
+        if ws is None:
+            weights = np.ones_like(vals)
+        else:
+            weights = np.concatenate([np.asarray(w, float).reshape(-1) for w in ws], axis=0)
+        total_w = float(np.sum(weights))
+        if total_w <= 1e-12:
+            return
+
+        x_min = float(np.min(vals))
+        x_max = float(np.max(vals))
+        span = max(float(x_max - x_min), 1e-4)
+        grid_lo = x_min - 0.02 * span - 0.005
+        grid_hi = _weighted_quantile(vals, weights, 0.30)
+        if grid_hi <= grid_lo + 1e-8:
+            grid_lo = x_min - 0.01
+            grid_hi = x_max
+        b_grid = np.linspace(grid_lo, grid_hi, 56)
+
+        best_total = -np.inf
+        best = (self.mu, self.sigma, self.b, self.sigma_left, self.pi_left)
+        for b_hat in b_grid:
+            inside = vals >= float(b_hat)
+            inside_w_total = float(np.sum(weights[inside]))
+            if inside_w_total <= 1e-12:
+                continue
+            inside_vals = vals[inside]
+            inside_weights = weights[inside]
+            mu = _weighted_quantile(inside_vals, inside_weights, 0.5)
+            sigma = max(
+                float(np.sqrt(np.sum(inside_weights * (inside_vals - mu) ** 2) / inside_w_total)),
+                1e-6,
+            )
+
+            outside = ~inside
+            outside_w_total = float(np.sum(weights[outside]))
+            raw_pi_left = outside_w_total / total_w
+            pi_left = float(np.clip(raw_pi_left, 1e-4, self.pi_left_max))
+            if outside_w_total > 1e-12:
+                slack = float(b_hat) - vals[outside]
+                sigma_floor = self._violation_sigma_floor(span=span, inside_sigma=sigma)
+                sigma_left = max(
+                    float(np.sqrt(np.sum(weights[outside] * slack * slack) / outside_w_total)),
+                    sigma_floor,
+                )
+            else:
+                sigma_left = self._violation_sigma_floor(span=span, inside_sigma=sigma)
+
+            cdf_b = float(np.clip(_student_t_cdf(float(b_hat), mu=mu, sigma=sigma, nu=self.nu), 0.0, 1.0 - 1e-10))
+            survival_b = max(1.0 - cdf_b, 1e-10)
+            logp = np.empty_like(vals, dtype=float)
+            logp[inside] = (
+                math.log(max(1.0 - pi_left, 1e-12))
+                + _student_t_logpdf(vals[inside], mu=mu, sigma=sigma, nu=self.nu)
+                - math.log(survival_b)
+            )
+            if np.any(outside):
+                logp[outside] = math.log(pi_left) + _halfnormal_logpdf(float(b_hat) - vals[outside], sigma_left)
+            total = float(np.sum(weights * logp))
+            if total > best_total:
+                best_total = total
+                best = (float(mu), float(sigma), float(b_hat), float(sigma_left), float(pi_left))
+
+        self.mu, self.sigma, self.b, self.sigma_left, self.pi_left = best
+        self.sigma = max(float(self.sigma), 1e-6)
+        self.sigma_left = max(float(self.sigma_left), self.violation_sigma_min)
+        self.pi_left = float(np.clip(self.pi_left, 1e-4, self.pi_left_max))
+        self._update_interval()
+
+    def get_summary(self):
+        return {
+            "type": self.model_type,
+            "mu": float(self.mu),
+            "sigma": float(self.sigma),
+            "b": float(self.b),
+            "sigma_left": float(self.sigma_left),
+            "pi_left": float(self.pi_left),
+            "nu": float(self.nu),
+            "violation_sigma_min": float(self.violation_sigma_min),
+            "violation_sigma_min_ratio": float(self.violation_sigma_min_ratio),
+            "violation_sigma_span_ratio": float(self.violation_sigma_span_ratio),
+            "L": float(self.L),
+            "U": float(self.U),
         }

@@ -14,6 +14,8 @@ from utils.models import (
     MarginExpUpperEmission,
     MarginExpUpperRightHNEmission,
     StudentTModel,
+    TruncatedStudentTLowerEmission,
+    TruncatedStudentTUpperEmission,
     ZeroMeanGaussianModel,
 )
 from visualization.plot4panel import plot_results_4panel
@@ -422,10 +424,14 @@ class FCHMM:
                     row.append(MarginExpLowerEmission(b_init=0.0, lam_init=1.0))
                 elif kind in {"margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn"}:
                     row.append(MarginExpLowerLeftHNEmission(b_init=0.0, lam_init=1.0))
+                elif kind in {"trunc_t_lower", "truncated_t_lower", "trunc_t_lower_z", "truncated_t_lower_z"}:
+                    row.append(TruncatedStudentTLowerEmission())
                 elif kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
                     row.append(MarginExpUpperEmission(b_init=0.0, lam_init=1.0))
                 elif kind in {"margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn"}:
                     row.append(MarginExpUpperRightHNEmission(b_init=0.0, lam_init=1.0))
+                elif kind in {"trunc_t_upper", "truncated_t_upper", "trunc_t_upper_z", "truncated_t_upper_z"}:
+                    row.append(TruncatedStudentTUpperEmission())
                 else:
                     raise ValueError(f"Unknown emission type '{kind}' for feature {m}")
             feature_models.append(row)
