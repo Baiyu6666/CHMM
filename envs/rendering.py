@@ -17,6 +17,13 @@ except ModuleNotFoundError:
     plt = None
 
 try:
+    from PIL import Image, ImageDraw, ImageFont
+except ModuleNotFoundError:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+
+try:
     import pybullet as p
     import pybullet_data
 except ModuleNotFoundError:
@@ -49,6 +56,185 @@ def stage_segments(length: int, cutpoints: Sequence[int] | None = None) -> list[
     ends = cuts.tolist() + [T - 1]
     starts = [0] + [int(v) + 1 for v in ends[:-1]]
     return [(int(s), int(e)) for s, e in zip(starts, ends)]
+
+
+def _constraint_semantics_kind(spec: dict) -> str:
+    text = str(spec.get("semantics", "")).strip().lower()
+    if text in {"target", "target_value", "equality", "eq", "equal"}:
+        return "target"
+    if text in {"upper", "upper_bound", "max", "maximum", "<=", "leq"}:
+        return "upper"
+    if text in {"lower", "lower_bound", "min", "minimum", ">=", "geq"}:
+        return "lower"
+    return text
+
+
+def _dash_line(draw, xy, *, fill, width=1, dash=4, gap=3) -> None:
+    x0, y0, x1, y1 = [float(v) for v in xy]
+    length = float(np.hypot(x1 - x0, y1 - y0))
+    if length <= 1e-9:
+        draw.line((x0, y0, x1, y1), fill=fill, width=width)
+        return
+    ux, uy = (x1 - x0) / length, (y1 - y0) / length
+    pos = 0.0
+    while pos < length:
+        end = min(pos + float(dash), length)
+        draw.line((x0 + ux * pos, y0 + uy * pos, x0 + ux * end, y0 + uy * end), fill=fill, width=width)
+        pos = end + float(gap)
+
+
+def _overlay_feature_panel(
+    frame: np.ndarray,
+    *,
+    features: np.ndarray,
+    feature_names: Sequence[str],
+    current_index: int,
+    cutpoints: Sequence[int] | None,
+    constraint_specs: Sequence[dict] | None,
+    true_constraints: dict | None,
+    title: str,
+) -> np.ndarray:
+    if Image is None or ImageDraw is None:
+        return frame
+    F_all = np.asarray(features, dtype=float)
+    if F_all.ndim != 2 or F_all.shape[0] <= 0:
+        return frame
+    idx = int(np.clip(int(current_index), 0, F_all.shape[0] - 1))
+    F = F_all[: idx + 1]
+    names = [str(v) for v in feature_names]
+    if not names:
+        names = [f"feature_{i}" for i in range(F_all.shape[1])]
+    name_to_idx = {name: i for i, name in enumerate(names[: F_all.shape[1]])}
+    specs = [dict(s) for s in (constraint_specs or []) if str(s.get("feature_name", "")) in name_to_idx]
+    shown = []
+    for name in names:
+        if name in name_to_idx:
+            shown.append(name)
+    if not shown:
+        return frame
+
+    height, width = int(frame.shape[0]), int(frame.shape[1])
+    rows = len(shown)
+    panel_w = int(min(max(445, 0.40 * width), max(width - 28, 1), 610))
+    title_text = str(title or "Executed trajectory feature profile")
+    if " (planned with " in title_text:
+        first, rest = title_text.split(" (planned with ", 1)
+        title_lines = [first, "(planned with " + rest]
+    else:
+        title_lines = [title_text]
+    header_h = 66 + 15 * max(0, len(title_lines) - 1)
+    pad = 10
+    row_h = int(np.clip((max(1, height - 2 * 14 - pad) - header_h) / max(rows, 1), 34, 54))
+    panel_h = header_h + rows * row_h + pad
+    x0 = max(8, width - panel_w - 14)
+    y0 = 14
+    image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 12)
+        font_bold = ImageFont.truetype("DejaVuSans-Bold.ttf", 12)
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 13)
+    except Exception:
+        font = ImageFont.load_default() if ImageFont is not None else None
+        font_bold = font
+        font_title = font
+
+    draw.rounded_rectangle((x0, y0, x0 + panel_w, y0 + panel_h), radius=7, fill=(255, 255, 255, 218), outline=(36, 42, 50, 185), width=1)
+    for line_idx, line in enumerate(title_lines):
+        draw.text((x0 + 9, y0 + 5 + 15 * line_idx), line, fill=(20, 24, 30, 255), font=font_title)
+    constraint_orange = (234, 88, 12, 245)
+    constraint_orange_text = (194, 65, 12, 255)
+    feasible_yellow = (254, 240, 138, 145)
+    equality_band = (253, 186, 116, 92)
+    legend_y = y0 + 27 + 15 * max(0, len(title_lines) - 1)
+    legend_x = x0 + 10
+    draw.line((legend_x, legend_y + 6, legend_x + 26, legend_y + 6), fill=constraint_orange, width=3)
+    draw.text((legend_x + 32, legend_y), "GT equality constraint target", fill=constraint_orange_text, font=font)
+    legend_y2 = legend_y + 16
+    draw.rectangle((legend_x, legend_y2 + 2, legend_x + 28, legend_y2 + 12), fill=feasible_yellow)
+    _dash_line(draw, (legend_x, legend_y2 + 6, legend_x + 28, legend_y2 + 6), fill=constraint_orange, width=2, dash=6, gap=4)
+    draw.text((legend_x + 34, legend_y2), "GT inequality constraint bound and feasible region", fill=constraint_orange_text, font=font)
+
+    spans = stage_segments(F_all.shape[0], cutpoints=cutpoints)
+    true_constraints = dict(true_constraints or {})
+    plot_x0 = x0 + 120
+    plot_x1 = x0 + panel_w - 12
+    plot_w = max(1, plot_x1 - plot_x0)
+    total_den = max(F_all.shape[0] - 1, 1)
+    for row, name in enumerate(shown):
+        feat_idx = int(name_to_idx[name])
+        ry0 = y0 + header_h + row * row_h + 5
+        ry1 = ry0 + row_h - 12
+        py0 = ry0 + 4
+        py1 = ry1
+        full = np.asarray(F_all[:, feat_idx], dtype=float)
+        trace = np.asarray(F[:, feat_idx], dtype=float)
+        finite_vals = full[np.isfinite(full)]
+        spec_vals = []
+        for spec in specs:
+            if str(spec.get("feature_name", "")) != name:
+                continue
+            key = str(spec.get("oracle_key", ""))
+            if key in true_constraints and np.isfinite(float(true_constraints[key])):
+                spec_vals.append(float(true_constraints[key]))
+        all_vals = np.concatenate([finite_vals, np.asarray(spec_vals, dtype=float)]) if spec_vals else finite_vals
+        if all_vals.size == 0:
+            continue
+        vmin = float(np.min(all_vals))
+        vmax = float(np.max(all_vals))
+        if abs(vmax - vmin) < 1e-8:
+            margin = max(1e-4, abs(vmax) * 0.15 + 1e-4)
+        else:
+            margin = 0.12 * (vmax - vmin)
+        vmin -= margin
+        vmax += margin
+
+        def x_at(t: int) -> float:
+            return float(plot_x0) + float(np.clip(t, 0, total_den)) / float(total_den) * float(plot_w)
+
+        def y_at(v: float) -> float:
+            return float(py1) - (float(v) - vmin) / max(vmax - vmin, 1e-12) * float(py1 - py0)
+
+        draw.text((x0 + 9, ry0 + 4), name, fill=(18, 24, 38, 255), font=font_bold)
+        draw.text((x0 + 9, ry0 + 21), f"{trace[-1]:.3g}", fill=(37, 99, 235, 255), font=font)
+        draw.rectangle((plot_x0, py0, plot_x1, py1), outline=(188, 196, 206, 220), fill=(248, 250, 252, 205), width=1)
+        for cp in np.asarray(cutpoints if cutpoints is not None else [], dtype=int).reshape(-1):
+            x = x_at(int(cp))
+            draw.line((x, py0, x, py1), fill=(150, 158, 170, 150), width=1)
+        for spec in specs:
+            if str(spec.get("feature_name", "")) != name:
+                continue
+            stage_idx = int(spec.get("stage", -1))
+            if stage_idx < 0 or stage_idx >= len(spans):
+                continue
+            key = str(spec.get("oracle_key", ""))
+            if key not in true_constraints:
+                continue
+            value = float(true_constraints[key])
+            if not np.isfinite(value):
+                continue
+            a, b = spans[stage_idx]
+            y = y_at(value)
+            xa, xb = x_at(a), x_at(b)
+            kind = _constraint_semantics_kind(spec)
+            if kind == "target":
+                band = max(1.5, 0.05 * float(py1 - py0))
+                draw.rectangle((xa, max(py0, y - band), xb, min(py1, y + band)), fill=equality_band)
+                draw.line((xa, y, xb, y), fill=constraint_orange, width=3)
+            elif kind == "upper":
+                draw.rectangle((xa, max(py0, min(py1, y)), xb, py1), fill=feasible_yellow)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+            elif kind == "lower":
+                draw.rectangle((xa, py0, xb, max(py0, min(py1, y))), fill=feasible_yellow)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+        if trace.size >= 2:
+            pts = [(x_at(i), y_at(float(v))) for i, v in enumerate(trace) if np.isfinite(float(v))]
+            if len(pts) >= 2:
+                draw.line(pts, fill=(37, 99, 235, 255), width=2)
+        cx = x_at(idx)
+        draw.line((cx, py0, cx, py1), fill=(99, 102, 241, 210), width=1)
+    return np.asarray(Image.alpha_composite(image, overlay).convert("RGB"), dtype=np.uint8)
 
 
 def _require_matplotlib() -> None:
@@ -328,26 +514,29 @@ def _env_to_world(points: np.ndarray, sphere_center: np.ndarray, center_world: n
     return center_world[None, :] + float(scale) * (pts - np.asarray(sphere_center, dtype=float)[None, :])
 
 
-def _spawn_table(table_top_z: float) -> None:
-    half_extents = [0.54, 0.54, 0.028]
+def _spawn_table(
+    table_top_z: float,
+    *,
+    center_xy: Sequence[float] = (0.0, 0.0),
+    half_extents_xy: Sequence[float] = (0.54, 0.54),
+) -> None:
+    center_xy = np.asarray(center_xy, dtype=float).reshape(2)
+    half_extents_xy = np.asarray(half_extents_xy, dtype=float).reshape(2)
+    half_extents = [float(half_extents_xy[0]), float(half_extents_xy[1]), 0.028]
     col_id = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents)
     vis_id = p.createVisualShape(
         p.GEOM_BOX,
         halfExtents=half_extents,
-        rgbaColor=[1.0, 1.0, 1.0, 1.0],
-        specularColor=[0.10, 0.08, 0.06],
+        rgbaColor=[0.78, 0.79, 0.78, 1.0],
+        specularColor=[0.22, 0.22, 0.22],
     )
     body_id = p.createMultiBody(
         baseMass=0.0,
         baseCollisionShapeIndex=col_id,
         baseVisualShapeIndex=vis_id,
-        basePosition=[0.0, 0.0, table_top_z - half_extents[2]],
+        basePosition=[float(center_xy[0]), float(center_xy[1]), table_top_z - half_extents[2]],
     )
-    tex_path = Path(pybullet_data.getDataPath()) / "table" / "table.png"
-    if tex_path.exists():
-        tex_id = p.loadTexture(str(tex_path))
-        p.changeVisualShape(body_id, -1, textureUniqueId=tex_id)
-
+    p.changeVisualShape(body_id, -1, rgbaColor=[0.82, 0.82, 0.80, 1.0])
     leg_half = [0.03, 0.03, 0.30]
     leg_col = p.createCollisionShape(p.GEOM_BOX, halfExtents=leg_half)
     leg_vis = p.createVisualShape(
@@ -356,44 +545,118 @@ def _spawn_table(table_top_z: float) -> None:
         rgbaColor=[0.30, 0.27, 0.24, 1.0],
         specularColor=[0.05, 0.05, 0.05],
     )
-    for sx in (-0.44, 0.44):
-        for sy in (-0.44, 0.44):
+    leg_margin = 0.10
+    for sx in (-half_extents[0] + leg_margin, half_extents[0] - leg_margin):
+        for sy in (-half_extents[1] + leg_margin, half_extents[1] - leg_margin):
             p.createMultiBody(
                 baseMass=0.0,
                 baseCollisionShapeIndex=leg_col,
                 baseVisualShapeIndex=leg_vis,
-                basePosition=[sx, sy, table_top_z - 2.0 * half_extents[2] - leg_half[2]],
+                basePosition=[
+                    float(center_xy[0] + sx),
+                    float(center_xy[1] + sy),
+                    table_top_z - 2.0 * half_extents[2] - leg_half[2],
+                ],
             )
 
 
-def _spawn_sphere(center_world: np.ndarray, radius_world: float) -> None:
+def _spawn_sphere(
+    center_world: np.ndarray,
+    radius_world: float,
+    *,
+    shell_radius_world: float | None = None,
+    texture_name: str = "",
+    draw_shell_surface: bool = False,
+    draw_surface_rings: bool = False,
+) -> None:
     data_root = Path(pybullet_data.getDataPath())
     sphere_mesh = data_root / "sphere_smooth.obj"
     col_id = p.createCollisionShape(p.GEOM_SPHERE, radius=radius_world)
+    use_texture = bool(str(texture_name).strip())
     outer_vis = p.createVisualShape(
         p.GEOM_MESH,
         fileName=str(sphere_mesh),
         meshScale=[radius_world, radius_world, radius_world],
-        rgbaColor=[0.90, 0.95, 0.99, 0.40],
-        specularColor=[0.98, 0.99, 1.00],
+        rgbaColor=([0.96, 0.98, 1.00, 1.0] if use_texture else [0.63, 0.75, 0.88, 1.0]),
+        specularColor=[0.48, 0.52, 0.58],
     )
-    inner_vis = p.createVisualShape(
-        p.GEOM_MESH,
-        fileName=str(sphere_mesh),
-        meshScale=[0.986 * radius_world, 0.986 * radius_world, 0.986 * radius_world],
-        rgbaColor=[0.82, 0.88, 0.94, 0.13],
-        specularColor=[0.55, 0.58, 0.62],
-    )
-    p.createMultiBody(
+    sphere_body = p.createMultiBody(
         baseMass=0.0,
         baseCollisionShapeIndex=col_id,
         baseVisualShapeIndex=outer_vis,
         basePosition=center_world.tolist(),
     )
+    texture_path = data_root / str(texture_name)
+    if use_texture and texture_path.exists():
+        try:
+            tex_id = p.loadTexture(str(texture_path))
+            p.changeVisualShape(sphere_body, -1, textureUniqueId=tex_id, rgbaColor=[1.0, 1.0, 1.0, 1.0])
+        except Exception:
+            pass
+
+    def _draw_sphere_rings(
+        radius: float,
+        color: tuple[float, float, float, float],
+        ring_scale: float,
+        *,
+        ring_axes: Sequence[tuple[np.ndarray, np.ndarray]] | None = None,
+    ) -> None:
+        ring_radius = max(0.0008, float(ring_scale) * float(radius_world))
+        axes = ring_axes or (
+            (np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])),
+            (np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])),
+            (np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])),
+        )
+        for basis_a, basis_b in axes:
+            theta = np.linspace(0.0, 2.0 * np.pi, 96, endpoint=True)
+            ring = center_world[None, :] + float(radius) * (
+                np.cos(theta)[:, None] * basis_a[None, :] + np.sin(theta)[:, None] * basis_b[None, :]
+            )
+            for a, b in zip(ring[:-1], ring[1:]):
+                _spawn_capsule_segment(a, b, radius=ring_radius, color=color)
+
+    if bool(draw_surface_rings):
+        _draw_sphere_rings(
+            1.004 * float(radius_world),
+            color=(0.20, 0.30, 0.42, 0.18),
+            ring_scale=0.0017,
+        )
+    if shell_radius_world is not None and float(shell_radius_world) > float(radius_world) + 1e-5:
+        if bool(draw_shell_surface):
+            shell_vis = p.createVisualShape(
+                p.GEOM_MESH,
+                fileName=str(sphere_mesh),
+                meshScale=[float(shell_radius_world), float(shell_radius_world), float(shell_radius_world)],
+                rgbaColor=[0.28, 0.58, 0.95, 0.065],
+                specularColor=[0.45, 0.55, 0.70],
+            )
+            p.createMultiBody(
+                baseMass=0.0,
+                baseVisualShapeIndex=shell_vis,
+                basePosition=center_world.tolist(),
+            )
+        _draw_sphere_rings(
+            float(shell_radius_world),
+            color=(0.05, 0.25, 0.62, 0.42),
+            ring_scale=0.0022,
+            ring_axes=(
+                (np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])),
+                (np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])),
+            ),
+        )
+    stand_radius = 0.42 * float(radius_world)
+    stand_height = 0.13 * float(radius_world)
+    stand_vis = p.createVisualShape(
+        p.GEOM_CYLINDER,
+        radius=stand_radius,
+        length=stand_height,
+        rgbaColor=[0.40, 0.43, 0.45, 1.0],
+        specularColor=[0.38, 0.38, 0.38],
+    )
     p.createMultiBody(
         baseMass=0.0,
-        baseVisualShapeIndex=inner_vis,
-        basePosition=center_world.tolist(),
+        baseVisualShapeIndex=stand_vis,
+        basePosition=[float(center_world[0]), float(center_world[1]), float(center_world[2] - radius_world - 0.5 * stand_height)],
     )
 
 
@@ -691,14 +954,25 @@ def render_s5_pybullet_demo_video(
     camera_target: Sequence[float] | None = None,
     camera_fov: float = 42.0,
     tube_radius: float = 0.0055,
+    stage4_shell_offset: float | None = None,
+    sphere_texture_name: str = "checker_blue.png",
     trace_stride: int = 1,
     draw_stage_trace: bool = True,
+    draw_executed_trace: bool = True,
+    trace_width: float = 3.0,
+    draw_current_marker: bool = False,
     hide_gripper: bool = True,
     draw_tool_bar: bool = False,
     tool_bar_length: float = 0.105,
     tool_bar_radius: float = 0.005,
     suppress_urdf_warnings: bool = True,
     connect_client: bool = True,
+    feature_overlay: bool = False,
+    feature_overlay_features: np.ndarray | None = None,
+    feature_overlay_names: Sequence[str] | None = None,
+    feature_overlay_specs: Sequence[dict] | None = None,
+    feature_overlay_true_constraints: dict | None = None,
+    feature_overlay_title: str | None = None,
 ) -> dict:
     _require_pybullet()
     pts = np.asarray(trajectory, dtype=float)
@@ -732,9 +1006,32 @@ def render_s5_pybullet_demo_video(
     radius_world = float(world_scale) * float(sphere_radius)
     table_top_z = float(center_world[2] - 1.03 * radius_world)
     traj_world = _env_to_world(pts[:, :3], sphere_center=sphere_center, center_world=center_world, scale=world_scale)
+    shell_radius_world = None
+    if stage4_shell_offset is not None:
+        shell_radius_world = radius_world + float(world_scale) * max(0.0, float(stage4_shell_offset))
+    table_center_xy = (0.5 * float(center_world[0]), 0.5 * float(center_world[1]))
+    table_half_extents_xy = (
+        max(0.82, 0.5 * abs(float(center_world[0])) + float(radius_world) + 0.46),
+        max(0.68, 0.5 * abs(float(center_world[1])) + float(radius_world) + 0.44),
+    )
     bounds = stage_segments(len(pts), cutpoints=cutpoints)
     trace_stride = int(max(1, trace_stride))
+    trace_width = float(max(0.5, trace_width))
+    trace_radius = float(max(0.0012, 0.0008 * trace_width))
+    exec_trace_palette = [
+        (0.28, 0.14, 0.46, 0.94),
+        (0.21, 0.36, 0.55, 0.94),
+        (0.13, 0.57, 0.55, 0.94),
+        (0.40, 0.76, 0.39, 0.94),
+        (0.90, 0.85, 0.22, 0.94),
+    ]
     render_frame_stride = int(max(1, render_frame_stride))
+
+    def _stage_index_at(frame_idx: int) -> int:
+        for stage_idx, (start, end) in enumerate(bounds):
+            if int(start) <= int(frame_idx) <= int(end):
+                return int(stage_idx)
+        return int(max(0, min(len(bounds) - 1, len(bounds) - 1)))
 
     client = p.connect(p.GUI if use_gui else p.DIRECT) if bool(connect_client) else None
     writer = None
@@ -749,8 +1046,19 @@ def render_s5_pybullet_demo_video(
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)
 
-        _spawn_table(table_top_z=table_top_z)
-        _spawn_sphere(center_world=center_world, radius_world=radius_world)
+        _spawn_table(
+            table_top_z=table_top_z,
+            center_xy=table_center_xy,
+            half_extents_xy=table_half_extents_xy,
+        )
+        _spawn_sphere(
+            center_world=center_world,
+            radius_world=radius_world,
+            shell_radius_world=shell_radius_world,
+            texture_name=str(sphere_texture_name),
+            draw_shell_surface=bool(use_gui),
+            draw_surface_rings=False,
+        )
 
         if bool(draw_stage_trace):
             for stage_idx, (start, end) in enumerate(bounds):
@@ -758,16 +1066,16 @@ def render_s5_pybullet_demo_video(
                 if int(idx[-1]) != int(end):
                     idx = np.concatenate([idx, np.asarray([int(end)], dtype=int)])
                 seg = traj_world[idx]
-                color = _hex_to_rgba(STAGE_COLORS[stage_idx % len(STAGE_COLORS)], alpha=0.95)
+                color = exec_trace_palette[stage_idx % len(exec_trace_palette)]
                 for a, b in zip(seg[:-1], seg[1:]):
                     _spawn_capsule_segment(a, b, radius=float(tube_radius), color=color)
 
-        _spawn_marker(traj_world[0], radius=0.014, color=(0.10, 0.65, 0.25, 1.0))
-        _spawn_marker(traj_world[-1], radius=0.014, color=(0.86, 0.18, 0.18, 1.0))
+        _spawn_marker(traj_world[0], radius=0.0045, color=(0.10, 0.65, 0.25, 1.0))
+        _spawn_marker(traj_world[-1], radius=0.0045, color=(0.86, 0.18, 0.18, 1.0))
         if cutpoints is not None:
             for cp in np.asarray(cutpoints, dtype=int).reshape(-1):
                 if 0 <= int(cp) < len(traj_world):
-                    _spawn_marker(traj_world[int(cp)], radius=0.010, color=(0.08, 0.08, 0.08, 1.0))
+                    _spawn_marker(traj_world[int(cp)], radius=0.0022, color=(0.08, 0.08, 0.08, 0.72))
 
         robot_id = None
         joint_indices: list[int] = []
@@ -788,7 +1096,9 @@ def render_s5_pybullet_demo_video(
                 _hide_robot_links_by_name(robot_id, ("gripper", "finger", "palm"))
             _set_robot_q(robot_id, joint_indices, q_path[0])
 
-        current_marker_id = _spawn_current_marker(radius=0.010, color=(0.98, 0.78, 0.16, 1.0))
+        current_marker_id = None
+        if bool(draw_current_marker):
+            current_marker_id = _spawn_current_marker(radius=0.0045, color=(0.98, 0.78, 0.16, 1.0))
         tool_bar_id = None
         if bool(draw_tool_bar):
             tool_bar_id = _spawn_tool_bar(
@@ -826,6 +1136,7 @@ def render_s5_pybullet_demo_video(
 
         i = 0
         paused = False
+        prev_trace_pos: np.ndarray | None = None
         while i < len(pts):
             if use_gui and _space_was_triggered():
                 paused = not paused
@@ -844,9 +1155,18 @@ def render_s5_pybullet_demo_video(
 
             if robot_id is not None and q_path is not None:
                 _set_robot_q(robot_id, joint_indices, q_path[i])
-            p.resetBasePositionAndOrientation(current_marker_id, traj_world[i].tolist(), [0.0, 0.0, 0.0, 1.0])
+            if current_marker_id is not None:
+                p.resetBasePositionAndOrientation(current_marker_id, traj_world[i].tolist(), [0.0, 0.0, 0.0, 1.0])
             if tool_bar_id is not None:
                 _set_tool_bar_pose(tool_bar_id, traj_world[i], axis[i], float(tool_bar_length))
+            if bool(draw_executed_trace) and (i % trace_stride == 0 or i == len(pts) - 1):
+                radial = _normalize3(traj_world[i] - center_world)
+                lift = radial * max(0.006, 2.8 * trace_radius)
+                cur_trace_pos = traj_world[i] + lift
+                if prev_trace_pos is not None:
+                    color = exec_trace_palette[_stage_index_at(i) % len(exec_trace_palette)]
+                    _spawn_capsule_segment(prev_trace_pos, cur_trace_pos, radius=trace_radius, color=color)
+                prev_trace_pos = cur_trace_pos
             p.stepSimulation()
             write_frame = (i % render_frame_stride == 0) or (i == len(pts) - 1)
             if save_video and writer is not None and write_frame:
@@ -883,11 +1203,72 @@ def render_s5_pybullet_demo_video(
                         shadow=1,
                     )
                     frame = np.asarray(rgba, dtype=np.uint8).reshape(int(height), int(width), 4)[:, :, :3]
+                if bool(feature_overlay) and feature_overlay_features is not None:
+                    frame = _overlay_feature_panel(
+                        frame,
+                        features=np.asarray(feature_overlay_features, dtype=float),
+                        feature_names=list(feature_overlay_names or []),
+                        current_index=int(i),
+                        cutpoints=cutpoints,
+                        constraint_specs=list(feature_overlay_specs or []),
+                        true_constraints=dict(feature_overlay_true_constraints or {}),
+                        title=str(feature_overlay_title or "Executed trajectory feature profile"),
+                    )
                 writer.append_data(frame)
                 frames_written += 1
             i += 1
             if use_gui and bool(realtime):
                 time.sleep(1.0 / max(float(fps), 1e-6))
+        if save_video and writer is not None and float(gui_hold_seconds) > 0.0:
+            hold_frames = int(round(float(gui_hold_seconds) * float(fps)))
+            if hold_frames > 0:
+                frame = _render_rgb(
+                    yaw_deg=float(camera_yaw),
+                    target=target,
+                    distance=float(camera_distance),
+                    width=int(width),
+                    height=int(height),
+                    pitch_deg=float(camera_pitch),
+                )
+                if abs(float(camera_fov) - 37.0) > 1e-8:
+                    view = p.computeViewMatrixFromYawPitchRoll(
+                        cameraTargetPosition=target.tolist(),
+                        distance=float(camera_distance),
+                        yaw=float(camera_yaw),
+                        pitch=float(camera_pitch),
+                        roll=0.0,
+                        upAxisIndex=2,
+                    )
+                    proj = p.computeProjectionMatrixFOV(
+                        fov=float(camera_fov),
+                        aspect=float(width) / float(height),
+                        nearVal=0.05,
+                        farVal=8.0,
+                    )
+                    _, _, rgba, _, _ = p.getCameraImage(
+                        width=int(width),
+                        height=int(height),
+                        viewMatrix=view,
+                        projectionMatrix=proj,
+                        renderer=p.ER_TINY_RENDERER,
+                        lightDirection=[1.8, -1.1, 2.8],
+                        shadow=1,
+                    )
+                    frame = np.asarray(rgba, dtype=np.uint8).reshape(int(height), int(width), 4)[:, :, :3]
+                if bool(feature_overlay) and feature_overlay_features is not None:
+                    frame = _overlay_feature_panel(
+                        frame,
+                        features=np.asarray(feature_overlay_features, dtype=float),
+                        feature_names=list(feature_overlay_names or []),
+                        current_index=int(len(pts) - 1),
+                        cutpoints=cutpoints,
+                        constraint_specs=list(feature_overlay_specs or []),
+                        true_constraints=dict(feature_overlay_true_constraints or {}),
+                        title=str(feature_overlay_title or "Executed trajectory feature profile"),
+                    )
+                for _ in range(hold_frames):
+                    writer.append_data(frame)
+                frames_written += int(hold_frames)
         if use_gui:
             hold_seconds = float(gui_hold_seconds)
             if hold_seconds < 0.0:
@@ -930,6 +1311,13 @@ def render_s5_pybullet_demo_video(
         "has_robot_joint_playback": bool(q_path is not None),
         "hide_gripper": bool(hide_gripper),
         "draw_tool_bar": bool(draw_tool_bar),
+        "draw_stage_trace": bool(draw_stage_trace),
+        "draw_executed_trace": bool(draw_executed_trace),
+        "trace_stride": int(trace_stride),
+        "trace_width": float(trace_width),
+        "draw_current_marker": bool(draw_current_marker),
+        "stage4_shell_offset": None if stage4_shell_offset is None else float(stage4_shell_offset),
+        "sphere_texture_name": str(sphere_texture_name),
         "title": title,
     }
 

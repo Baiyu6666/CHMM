@@ -56,6 +56,8 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         equality_score_mode=kwargs.get("equality_score_mode", "dispersion"),
         equality_dispersion_ratio_threshold=kwargs.get("equality_dispersion_ratio_threshold", 0.1),
         constraint_core_trim=kwargs.get("constraint_core_trim", 0),
+        inequality_trim_fraction=kwargs.get("inequality_trim_fraction", 0.0),
+        inequality_trim_min_n=kwargs.get("inequality_trim_min_n", 20),
         short_segment_penalty_c=kwargs.get(
             "short_segment_penalty_c",
             kwargs.get("equality_score_uncertainty_c", 0.1),
@@ -68,6 +70,7 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         fixed_true_cutpoint_indices=kwargs.get("fixed_true_cutpoint_indices"),
         plot_every=kwargs.get("plot_every"),
         plot_dir=kwargs.get("plot_dir", "outputs/plots"),
+        disable_plots=kwargs.get("disable_plots", False),
         verbose=kwargs.get("verbose", True),
     )
     gammas = learner.fit(

@@ -231,7 +231,7 @@ class _UR5PoseTracker:
         self.sphere_radius_s5 = float(sphere_radius_s5)
         self.sphere_center_world = self.s5_to_world(self.sphere_center_s5)
         self.sphere_radius_world = self.world_scale * self.sphere_radius_s5
-        self.client_id = p.connect(p.DIRECT)
+        self.client_id = p.connect(p.GUI if bool(getattr(env, "pybullet_force_gui", False)) else p.DIRECT)
         self.patched_urdf = None
 
         p.resetSimulation(physicsClientId=self.client_id)
@@ -579,6 +579,21 @@ def _finite_difference(values: np.ndarray, dt: float) -> np.ndarray:
     return grad
 
 
+def _smooth_command_noise(shape, *, std: float, smooth: float, seed: int | None) -> np.ndarray:
+    std = float(std)
+    if std <= 0.0:
+        return np.zeros(tuple(shape), dtype=float)
+    rng = np.random.RandomState(0 if seed is None else int(seed))
+    raw = rng.normal(loc=0.0, scale=std, size=tuple(shape))
+    if raw.shape[0] > 0:
+        raw[0] = 0.0
+    alpha = float(np.clip(float(smooth), 0.0, 0.999))
+    out = np.zeros_like(raw, dtype=float)
+    for i in range(1, raw.shape[0]):
+        out[i] = alpha * out[i - 1] + (1.0 - alpha) * raw[i]
+    return out
+
+
 def _smoothstep01(x: float) -> float:
     u = float(np.clip(x, 0.0, 1.0))
     return u * u * (3.0 - 2.0 * u)
@@ -737,6 +752,9 @@ def simulate_s5_demo_from_reference(
     reference_traj: np.ndarray,
     reference_tool_axis: np.ndarray,
     true_cutpoints: np.ndarray,
+    execution_joint_noise_std: float = 0.0,
+    execution_joint_noise_smooth: float = 0.90,
+    execution_noise_seed: int | None = None,
 ) -> dict[str, Any]:
     _require_pybullet()
 
@@ -799,6 +817,17 @@ def simulate_s5_demo_from_reference(
                     axis_weight=stage1_axis_weight,
                 )
                 q_cmd[i] = q_next
+        q_cmd_nominal = np.asarray(q_cmd, dtype=float).copy()
+        execution_noise = _smooth_command_noise(
+            q_cmd.shape,
+            std=float(execution_joint_noise_std),
+            smooth=float(execution_joint_noise_smooth),
+            seed=execution_noise_seed,
+        )
+        if float(execution_joint_noise_std) > 0.0:
+            q_cmd = np.clip(q_cmd + execution_noise, tracker.q_lo[None, :], tracker.q_hi[None, :])
+        else:
+            execution_noise = np.zeros_like(q_cmd, dtype=float)
 
         realized_tip_world = np.zeros_like(target_tip_world)
         realized_ee_world = np.zeros_like(target_tip_world)
@@ -851,6 +880,8 @@ def simulate_s5_demo_from_reference(
         "joint_positions": np.asarray(q_meas, dtype=float),
         "joint_velocities": np.asarray(qd_meas, dtype=float),
         "joint_position_commands": np.asarray(q_cmd, dtype=float),
+        "joint_position_commands_nominal": np.asarray(q_cmd_nominal, dtype=float),
+        "execution_joint_noise": np.asarray(execution_noise, dtype=float),
         "true_cutpoints": np.asarray(true_cutpoints, dtype=int),
         "true_labels": _make_stage_labels(true_cutpoints, len(realized_pos)),
         "reference_trajectory": np.asarray(ref_traj, dtype=float),

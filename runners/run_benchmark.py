@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -76,6 +77,53 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = value
     return merged
+
+
+def _parse_override_value(text: str) -> Any:
+    raw = str(text).strip()
+    lowered = raw.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered in {"none", "null"}:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _set_nested_override(target: dict[str, Any], key_path: str, value: Any) -> None:
+    keys = [part.strip() for part in str(key_path).split(".") if part.strip()]
+    if not keys:
+        raise ValueError(f"Invalid override key '{key_path}'.")
+    cur = target
+    for key in keys[:-1]:
+        existing = cur.get(key)
+        if existing is None:
+            existing = {}
+            cur[key] = existing
+        if not isinstance(existing, dict):
+            raise ValueError(f"Cannot set nested override '{key_path}': '{key}' is not a dict.")
+        cur = existing
+    cur[keys[-1]] = value
+
+
+def _parse_kv_overrides(items: list[str] | None) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    for item in items or []:
+        if "=" not in str(item):
+            raise ValueError(f"Override must be KEY=VALUE, got '{item}'.")
+        key, value_text = str(item).split("=", 1)
+        _set_nested_override(overrides, key, _parse_override_value(value_text))
+    return overrides
+
+
+def _top_level_or_segmenter_override(method_name: str, key: str, value: Any) -> dict[str, Any]:
+    if str(method_name) in {"swcl", "fchmm"}:
+        return {str(key): value}
+    return {"segmenter": {str(key): value}}
 
 
 def _extract_metrics(method_name: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -385,6 +433,23 @@ def main():
     parser.add_argument("--outdir", default="outputs/benchmark")
     parser.add_argument("--n-demos", "--n_demos", dest="n_demos", type=int, default=None)
     parser.add_argument("--plot-every", "--plot_every", dest="plot_every", type=int, default=None)
+    parser.add_argument("--max-iter", "--max_iter", dest="max_iter", type=int, default=None)
+    parser.add_argument(
+        "--method-param",
+        "--method-override",
+        dest="method_params",
+        action="append",
+        default=[],
+        help="Override a method parameter as KEY=VALUE. Repeat as needed. Dot paths are supported, e.g. segmenter.max_iter=1.",
+    )
+    parser.add_argument(
+        "--dataset-param",
+        "--dataset-override",
+        dest="dataset_params",
+        action="append",
+        default=[],
+        help="Override a dataset/env parameter as KEY=VALUE. Repeat as needed, e.g. dt=0.2 or seg_lengths='[35,14,67,21]'.",
+    )
     parser.add_argument(
         "--refresh-demo-cache",
         "--clear-demo-cache",
@@ -399,12 +464,28 @@ def main():
     datasets = _split_csv(args.datasets)
     method_seed_text = args.method_seeds if args.seeds is None else args.seeds
     method_seeds = [int(seed) for seed in _split_csv(method_seed_text)]
-    dataset_overrides = {}
-    method_overrides = {}
+    dataset_cli_overrides = _parse_kv_overrides(args.dataset_params)
+    method_cli_overrides = _parse_kv_overrides(args.method_params)
+    dataset_overrides = {dataset_name: dict(dataset_cli_overrides) for dataset_name in datasets} if dataset_cli_overrides else {}
+    method_overrides = {method_name: dict(method_cli_overrides) for method_name in methods} if method_cli_overrides else {}
     if args.n_demos is not None:
-        dataset_overrides = {dataset_name: {"n_demos": int(args.n_demos)} for dataset_name in datasets}
+        for dataset_name in datasets:
+            dataset_overrides[dataset_name] = _deep_merge(
+                dataset_overrides.get(dataset_name, {}),
+                {"n_demos": int(args.n_demos)},
+            )
     if args.plot_every is not None:
-        method_overrides = {method_name: {"plot_every": int(args.plot_every)} for method_name in methods}
+        for method_name in methods:
+            method_overrides[method_name] = _deep_merge(
+                method_overrides.get(method_name, {}),
+                _top_level_or_segmenter_override(method_name, "plot_every", int(args.plot_every)),
+            )
+    if args.max_iter is not None:
+        for method_name in methods:
+            method_overrides[method_name] = _deep_merge(
+                method_overrides.get(method_name, {}),
+                _top_level_or_segmenter_override(method_name, "max_iter", int(args.max_iter)),
+            )
 
     summary = run_benchmark(
         methods=methods,

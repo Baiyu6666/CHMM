@@ -25,6 +25,13 @@ def _parse_csv_ints(text: str | None) -> list[int] | None:
     return [int(item.strip()) for item in str(text).split(",") if item.strip()]
 
 
+def _parse_vec3(text: str) -> tuple[float, float, float]:
+    parts = [float(item.strip()) for item in str(text).split(",") if item.strip()]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("Expected three comma-separated values, e.g. 0.18,0,0.04.")
+    return float(parts[0]), float(parts[1]), float(parts[2])
+
+
 def _demo_indices(n_demos: int, explicit: list[int] | None) -> list[int]:
     if explicit:
         return [int(np.clip(v, 0, max(0, int(n_demos) - 1))) for v in explicit]
@@ -94,6 +101,15 @@ def _format_float(value, precision: int = 4) -> str:
         return "n/a"
 
 
+def _feature_names(feature_schema: list[dict], dim: int) -> list[str]:
+    names = [f"feature_{idx}" for idx in range(int(dim))]
+    for idx, item in enumerate(feature_schema or []):
+        col = int(item.get("column_idx", item.get("id", idx)))
+        if 0 <= col < len(names):
+            names[col] = str(item.get("name", names[col]))
+    return names
+
+
 def render_s5_demonstrations(
     *,
     n_demos: int,
@@ -111,11 +127,18 @@ def render_s5_demonstrations(
     camera_pitch: float,
     camera_distance: float,
     camera_fov: float,
+    camera_target_offset: tuple[float, float, float],
     hide_gripper: bool,
     draw_tool_bar: bool,
     tool_bar_length: float,
     tool_bar_radius: float,
+    draw_stage_trace: bool,
+    draw_executed_trace: bool,
+    trace_stride: int,
+    trace_width: float,
+    draw_current_marker: bool,
     plot_features: bool,
+    feature_overlay: bool,
     rollout_backend: str,
     no_precheck: bool,
     no_filter: bool,
@@ -217,10 +240,11 @@ def render_s5_demonstrations(
                 output_path = out_dir / f"s5_demo_{int(demo_idx):02d}.mp4"
             effective_realtime = bool(realtime) or int(gui) == 2
             effective_hold_seconds = (
-                (-1.0 if int(gui) == 2 else 0.0)
+                (-1.0 if int(gui) == 2 else 2.0)
                 if gui_hold_seconds is None
                 else float(gui_hold_seconds)
             )
+            feature_matrix = np.asarray(obs["features"], dtype=float)
             render_summary = env.render_episode(
                 scene,
                 trajectory,
@@ -240,11 +264,25 @@ def render_s5_demonstrations(
                 camera_yaw=float(camera_yaw),
                 camera_pitch=float(camera_pitch),
                 camera_distance=float(camera_distance),
+                camera_target=np.asarray(env.pybullet_world_center, dtype=float)
+                + np.asarray(camera_target_offset, dtype=float),
                 camera_fov=float(camera_fov),
+                stage4_shell_offset=float(env.get_true_constraints()["surface_near_target"]),
                 hide_gripper=bool(hide_gripper),
                 draw_tool_bar=bool(draw_tool_bar),
                 tool_bar_length=float(tool_bar_length),
                 tool_bar_radius=float(tool_bar_radius),
+                draw_stage_trace=bool(draw_stage_trace),
+                draw_executed_trace=bool(draw_executed_trace),
+                trace_stride=int(trace_stride),
+                trace_width=float(trace_width),
+                draw_current_marker=bool(draw_current_marker),
+                feature_overlay=bool(feature_overlay),
+                feature_overlay_features=feature_matrix,
+                feature_overlay_names=_feature_names(list(obs["feature_schema"]), feature_matrix.shape[1]),
+                feature_overlay_specs=list(env.get_constraint_specs()),
+                feature_overlay_true_constraints=dict(env.true_constraints),
+                feature_overlay_title="Executed demonstration feature profile",
                 connect_client=pybullet_client is None,
             )
             summary = {
@@ -257,6 +295,7 @@ def render_s5_demonstrations(
                 "true_cutpoints": cutpoints,
                 "feature_plot": None if feature_plot_path is None else str(Path(feature_plot_path).resolve()),
                 "feature_plot_series": feature_plot_series,
+                "feature_overlay": bool(feature_overlay),
                 "video": render_summary,
             }
             if "ik_position_error_world" in obs:
@@ -325,26 +364,37 @@ def main() -> None:
         help="0: dry-run/no video; 1: DIRECT offscreen MP4; 2: GUI playback/no video.",
     )
     parser.add_argument("--rollout-backend", choices=["pybullet", "analytic"], default="pybullet")
-    parser.add_argument("--fps", type=float, default=30.0)
-    parser.add_argument("--width", type=int, default=1024)
-    parser.add_argument("--height", type=int, default=768)
+    parser.add_argument("--fps", type=float, default=15.0)
+    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--render-frame-stride", type=int, default=1)
     parser.add_argument("--realtime", type=int, default=0)
     parser.add_argument(
         "--gui-hold-seconds",
         type=float,
         default=None,
-        help="Extra hold time after GUI playback. Defaults to waiting for SPACE for gui=2 and 0 otherwise.",
+        help="Extra hold time after GUI playback. Defaults to waiting for SPACE for gui=2 and 2 seconds otherwise.",
     )
     parser.add_argument("--camera-yaw", type=float, default=90.0)
-    parser.add_argument("--camera-pitch", type=float, default=-34.0)
-    parser.add_argument("--camera-distance", type=float, default=1.62)
+    parser.add_argument("--camera-pitch", type=float, default=-8.0)
+    parser.add_argument("--camera-distance", type=float, default=1.45)
     parser.add_argument("--camera-fov", type=float, default=38.0)
+    parser.add_argument(
+        "--camera-target-offset",
+        default="0.00,0.24,0.07",
+        help="World-frame camera target offset from pybullet_world_center, e.g. '0,0.26,0.04'.",
+    )
     parser.add_argument("--hide-gripper", type=int, default=1, help="1 to hide Robotiq gripper links and keep the URDF task tool visible.")
     parser.add_argument("--draw-tool-bar", type=int, default=0, help="1 to draw a detached debug bar instead of the URDF task tool.")
-    parser.add_argument("--tool-bar-length", type=float, default=0.105)
+    parser.add_argument("--tool-bar-length", type=float, default=0.165)
     parser.add_argument("--tool-bar-radius", type=float, default=0.005)
+    parser.add_argument("--draw-stage-trace", type=int, default=0)
+    parser.add_argument("--draw-executed-trace", type=int, default=1)
+    parser.add_argument("--trace-stride", type=int, default=1)
+    parser.add_argument("--trace-width", type=float, default=3.0)
+    parser.add_argument("--draw-current-marker", type=int, default=0)
     parser.add_argument("--plot-features", type=int, default=1, help="1 to save per-demo S5 feature trace PNGs.")
+    parser.add_argument("--feature-overlay", type=int, default=1, help="1 to overlay feature traces on rendered videos.")
     parser.add_argument("--no-precheck", action="store_true", help="Disable waypoint IK precheck before full PyBullet rollout.")
     parser.add_argument("--no-filter", action="store_true", help="Disable final IK/rollout rejection filter.")
     parser.add_argument("--no-ik-checks", action="store_true", help="Disable both waypoint precheck and final IK/rollout filter.")
@@ -366,11 +416,18 @@ def main() -> None:
         camera_pitch=float(args.camera_pitch),
         camera_distance=float(args.camera_distance),
         camera_fov=float(args.camera_fov),
+        camera_target_offset=_parse_vec3(args.camera_target_offset),
         hide_gripper=bool(args.hide_gripper),
         draw_tool_bar=bool(args.draw_tool_bar),
         tool_bar_length=float(args.tool_bar_length),
         tool_bar_radius=float(args.tool_bar_radius),
+        draw_stage_trace=bool(args.draw_stage_trace),
+        draw_executed_trace=bool(args.draw_executed_trace),
+        trace_stride=int(args.trace_stride),
+        trace_width=float(args.trace_width),
+        draw_current_marker=bool(args.draw_current_marker),
         plot_features=bool(args.plot_features),
+        feature_overlay=bool(args.feature_overlay),
         rollout_backend=str(args.rollout_backend),
         no_precheck=bool(args.no_precheck),
         no_filter=bool(args.no_filter),

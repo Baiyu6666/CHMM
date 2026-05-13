@@ -280,6 +280,48 @@
     ],
     "ConstraintLearnedValueMatrix": [
       [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        2.1256432388983004e-06,
+        0.03963016383645935,
+        0.008504419505739555,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.032399881794703676,
+        NaN,
+        0.008131519126941409,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ]
+    ],
+    "ConstraintLearnedRawValueMatrix": [
+      [
         0.020452199595892187,
         0.1015848930282091,
         0.0076390865944124696,

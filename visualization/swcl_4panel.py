@@ -542,7 +542,7 @@ def _all_true_stage_end_points(env, label_name: str):
 
 
 def _is_press_slide_insert(env) -> bool:
-    return getattr(env, "eval_tag", "") == "S4SlideInsert"
+    return str(getattr(env, "eval_tag", "")).startswith("S4SlideInsert")
 
 
 def _is_sphere_inspect(env) -> bool:
@@ -2264,6 +2264,21 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 kind = _stage_feature_kind_for_display(learner, stage_params_list, stage_idx, feat_idx)
                 is_equality_feature = _kind_is_equality_display(kind)
                 is_truncated_z_feature = _kind_is_truncated_z_display(kind)
+                kept_vals = vals
+                trimmed_vals = np.asarray([], dtype=float)
+                if not is_equality_feature:
+                    trim_fraction = float(getattr(learner, "inequality_trim_fraction", 0.0))
+                    trim_min_n = int(getattr(learner, "inequality_trim_min_n", 20))
+                    trim_n = int(np.floor(vals.size * trim_fraction)) if vals.size >= trim_min_n else 0
+                    if trim_n > 0 and vals.size - trim_n >= 3 and hasattr(learner, "_fit_student_t_baseline"):
+                        trim_baseline = learner._fit_student_t_baseline(vals)
+                        trim_nll = -np.asarray(trim_baseline.logpdf(vals), dtype=float)
+                        trim_order = np.argsort(trim_nll, kind="mergesort")
+                        kept_idx = trim_order[: vals.size - trim_n]
+                        trimmed_idx = trim_order[vals.size - trim_n :]
+                        kept_vals = vals[kept_idx]
+                        trimmed_vals = vals[trimmed_idx]
+                plot_vals = kept_vals if trimmed_vals.size > 0 else vals
                 show_full_demo = is_equality_feature
                 is_dispersion_equality = (
                     is_equality_feature
@@ -2282,26 +2297,27 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     elif is_truncated_z_feature:
                         baseline_model = None
                     else:
-                        baseline_model = learner._fit_student_t_baseline(vals)
+                        baseline_model = learner._fit_student_t_baseline(plot_vals)
 
                 if show_full_demo:
-                    lo_candidates = [np.min(vals), np.min(full_vals)]
-                    hi_candidates = [np.max(vals), np.max(full_vals)]
+                    lo_candidates = [np.min(plot_vals), np.min(full_vals)]
+                    hi_candidates = [np.max(plot_vals), np.max(full_vals)]
                     if fitted_model is not None:
-                        lo_candidates.append(getattr(fitted_model, "L", np.min(vals)))
-                        hi_candidates.append(getattr(fitted_model, "U", np.max(vals)))
+                        lo_candidates.append(getattr(fitted_model, "L", np.min(plot_vals)))
+                        hi_candidates.append(getattr(fitted_model, "U", np.max(plot_vals)))
                     if baseline_model is not None:
-                        lo_candidates.append(getattr(baseline_model, "L", np.min(vals)))
-                        hi_candidates.append(getattr(baseline_model, "U", np.max(vals)))
+                        lo_candidates.append(getattr(baseline_model, "L", np.min(plot_vals)))
+                        hi_candidates.append(getattr(baseline_model, "U", np.max(plot_vals)))
                     lo = float(min(lo_candidates))
                     hi = float(max(hi_candidates))
                     pad = max(0.15 * (hi - lo + 1e-6), 0.2)
                 else:
-                    q_lo, q_hi = np.quantile(vals, [0.02, 0.98])
-                    center = float(np.median(vals))
+                    visible_vals = vals if trimmed_vals.size > 0 else plot_vals
+                    q_lo, q_hi = np.quantile(visible_vals, [0.02, 0.98])
+                    center = float(np.median(plot_vals))
                     span = max(float(q_hi - q_lo), 0.03)
-                    lo = min(float(np.min(vals)), center - 1.25 * span)
-                    hi = max(float(np.max(vals)), center + 1.25 * span)
+                    lo = min(float(np.min(visible_vals)), center - 1.25 * span)
+                    hi = max(float(np.max(visible_vals)), center + 1.25 * span)
                     pad = max(0.08 * (hi - lo + 1e-6), 0.01)
                 xs = np.linspace(lo - pad, hi + pad, 300)
 
@@ -2317,13 +2333,27 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     )
                 _safe_hist(
                     ax,
-                    vals,
+                    plot_vals,
                     max_bins=16,
                     min_bins=6,
                     color="tab:blue",
                     alpha=0.35,
-                    label="segment",
+                    label="kept segment" if trimmed_vals.size > 0 else "segment",
                 )
+                if trimmed_vals.size > 0:
+                    ymin, ymax = ax.get_ylim()
+                    rug_y = ymin + 0.08 * (ymax - ymin)
+                    ax.scatter(
+                        trimmed_vals,
+                        np.full(trimmed_vals.shape, rug_y),
+                        color="tab:orange",
+                        marker="x",
+                        s=34,
+                        linewidths=1.4,
+                        label="ineq trim ignored",
+                        zorder=5,
+                    )
+                    ax.set_ylim(ymin, ymax)
                 if fitted_model is not None:
                     ax.plot(xs, np.exp(fitted_model.logpdf(xs)), color="tab:red", lw=2.0, label="fitted")
                 if baseline_model is not None:
@@ -2335,7 +2365,7 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                         linestyle="--",
                         label="baseline",
                     )
-                ax.axvline(float(np.mean(vals)), color="tab:blue", lw=1.0, linestyle=":", alpha=0.8)
+                ax.axvline(float(np.mean(plot_vals)), color="tab:blue", lw=1.0, linestyle=":", alpha=0.8)
                 if show_full_demo:
                     ax.axvline(float(np.mean(full_vals)), color="tab:gray", lw=1.0, linestyle="-.", alpha=0.9)
 
@@ -2352,9 +2382,11 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     f"margin = {score_margin:.3f}",
                     f"weighted cost = {weighted_cost:.3f}",
                 ]
+                if trimmed_vals.size > 0:
+                    info_lines.insert(3, f"ineq kept/trim = {kept_vals.size}/{trimmed_vals.size}")
                 if fitted_model is not None and baseline_model is not None:
-                    fitted_ll = np.asarray(fitted_model.logpdf(vals), dtype=float)
-                    baseline_ll = np.asarray(baseline_model.logpdf(vals), dtype=float)
+                    fitted_ll = np.asarray(fitted_model.logpdf(plot_vals), dtype=float)
+                    baseline_ll = np.asarray(baseline_model.logpdf(plot_vals), dtype=float)
                     fitted_step = float(np.mean(fitted_ll))
                     baseline_step = float(np.mean(baseline_ll))
                     info_lines[3:3] = [

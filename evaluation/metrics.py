@@ -364,7 +364,9 @@ def _compute_constraint_metrics(learner):
     auto_mode = _is_auto_feature_mode(learner)
 
     per_demo_values = None
-    learned_value_matrix = _compute_shared_constraint_value_matrix(learner)
+    learned_raw_value_matrix = _compute_shared_constraint_value_matrix(learner)
+    learned_value_matrix = learned_raw_value_matrix.copy()
+    learned_value_matrix[~predicted_active] = np.nan
 
     feature_scales = _constraint_feature_scales_raw(learner)
     raw_error_matrix = np.full((num_stages, num_features), np.nan, dtype=float)
@@ -400,6 +402,7 @@ def _compute_constraint_metrics(learner):
         "ConstraintFeatureScales": feature_scales.tolist(),
     }
     metrics["ConstraintLearnedValueMatrix"] = learned_value_matrix.tolist()
+    metrics["ConstraintLearnedRawValueMatrix"] = learned_raw_value_matrix.tolist()
     metrics["ConstraintLearnedValuePerDemo"] = per_demo_values.tolist() if per_demo_values is not None else []
     return metrics
 

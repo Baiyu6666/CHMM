@@ -985,7 +985,17 @@ class S5SphereInspectEnv:
             },
         }
 
-    def execute_plan_pybullet(self, scene, planned_episode, *, precheck=None, filter_valid=None):
+    def execute_plan_pybullet(
+        self,
+        scene,
+        planned_episode,
+        *,
+        precheck=None,
+        filter_valid=None,
+        execution_joint_noise_std: float = 0.0,
+        execution_joint_noise_smooth: float = 0.90,
+        execution_noise_seed=None,
+    ):
         reference = {
             "trajectory": np.asarray(planned_episode["trajectory"], dtype=float),
             "tool_axis": np.asarray(planned_episode["tool_axis"], dtype=float),
@@ -1012,6 +1022,9 @@ class S5SphereInspectEnv:
             reference_traj=reference["trajectory"],
             reference_tool_axis=reference["tool_axis"],
             true_cutpoints=reference["true_cutpoints"],
+            execution_joint_noise_std=float(execution_joint_noise_std),
+            execution_joint_noise_smooth=float(execution_joint_noise_smooth),
+            execution_noise_seed=execution_noise_seed,
         )
         report = self._pybullet_rollout_validity_report(reference, latent)
         if do_filter and not bool(report.get("valid", False)):
@@ -1095,6 +1108,8 @@ class S5SphereInspectEnv:
             "joint_positions",
             "joint_velocities",
             "joint_position_commands",
+            "joint_position_commands_nominal",
+            "execution_joint_noise",
             "true_labels",
             "sim_dt",
             "steps_per_sample",
@@ -1194,8 +1209,15 @@ class S5SphereInspectEnv:
                 camera_target=kwargs.get("camera_target"),
                 camera_fov=float(kwargs.get("camera_fov", 38.0)),
                 tube_radius=float(kwargs.get("tube_radius", 0.0055)),
+                stage4_shell_offset=float(
+                    kwargs.get("stage4_shell_offset", self.get_true_constraints().get("surface_near_target", 0.0))
+                ),
+                sphere_texture_name=str(kwargs.get("sphere_texture_name", "")),
                 trace_stride=int(kwargs.get("trace_stride", 1)),
                 draw_stage_trace=bool(kwargs.get("draw_stage_trace", True)),
+                draw_executed_trace=bool(kwargs.get("draw_executed_trace", True)),
+                trace_width=float(kwargs.get("trace_width", 3.0)),
+                draw_current_marker=bool(kwargs.get("draw_current_marker", False)),
                 hide_gripper=bool(kwargs.get("hide_gripper", True)),
                 draw_tool_bar=bool(kwargs.get("draw_tool_bar", False)),
                 tool_bar_length=float(kwargs.get("tool_bar_length", 0.105)),
@@ -1204,6 +1226,12 @@ class S5SphereInspectEnv:
                     kwargs.get("suppress_urdf_warnings", self.pybullet_suppress_urdf_warnings)
                 ),
                 connect_client=bool(kwargs.get("connect_client", True)),
+                feature_overlay=bool(kwargs.get("feature_overlay", False)),
+                feature_overlay_features=kwargs.get("feature_overlay_features"),
+                feature_overlay_names=kwargs.get("feature_overlay_names"),
+                feature_overlay_specs=kwargs.get("feature_overlay_specs"),
+                feature_overlay_true_constraints=kwargs.get("feature_overlay_true_constraints"),
+                feature_overlay_title=kwargs.get("feature_overlay_title"),
             )
         raise ValueError(f"Unsupported S5 render backend '{backend}'.")
 

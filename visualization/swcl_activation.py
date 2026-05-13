@@ -5,6 +5,7 @@ import math
 import numpy as np
 
 from .io import learner_plot_dir, save_figure
+from .swcl_4panel import _reference_constraint_value
 
 try:
     import matplotlib.pyplot as plt
@@ -42,6 +43,21 @@ def _matrix_text_color(value, vmax):
         return "black"
     threshold = 0.55 * float(max(vmax, 1e-6))
     return "white" if abs(float(value)) >= threshold else "black"
+
+
+def _true_activation_matrix(learner):
+    env = getattr(learner, "env", None)
+    if env is None:
+        return None
+    feature_names = _feature_names(learner)
+    true_active = np.zeros((len(feature_names), int(learner.num_stages)), dtype=float)
+    any_reference = False
+    for feat_idx, feature_name in enumerate(feature_names):
+        for stage_idx in range(int(learner.num_stages)):
+            active = _reference_constraint_value(env, feature_name, stage_idx) is not None
+            true_active[feat_idx, stage_idx] = 1.0 if active else 0.0
+            any_reference = any_reference or active
+    return true_active if any_reference else None
 
 
 def _activation_line_specs(learner):
@@ -168,10 +184,18 @@ def plot_swcl_activation_masks(learner, it):
         return None
 
     feature_names = _feature_names(learner)
+    true_matrix = _true_activation_matrix(learner)
+    show_truth_panel = true_matrix is not None
     show_rate_panel = is_score_mode and getattr(learner, "posthoc_activation_summary_", None) is not None
     show_std_panel = is_score_mode and bool(getattr(learner, "demo_feature_score_matrices_", []))
     show_proto_panel = is_score_mode and getattr(learner, "shared_activation_proto", None) is not None
-    total_panels = len(matrices) + (1 if show_rate_panel else 0) + (1 if show_std_panel else 0) + (1 if show_proto_panel else 0)
+    total_panels = (
+        len(matrices)
+        + (1 if show_rate_panel else 0)
+        + (1 if show_std_panel else 0)
+        + (1 if show_proto_panel else 0)
+        + (1 if show_truth_panel else 0)
+    )
     ncols = min(4, max(1, total_panels))
     nrows = int(math.ceil(float(total_panels) / float(ncols)))
     fig, axes = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.2 * nrows), squeeze=False)
@@ -184,6 +208,14 @@ def plot_swcl_activation_masks(learner, it):
         rate_panel_idx = len(matrices) if show_rate_panel else None
         std_panel_idx = len(matrices) + (1 if show_rate_panel else 0) if show_std_panel else None
         proto_panel_idx = len(matrices) + (1 if show_rate_panel else 0) + (1 if show_std_panel else 0) if show_proto_panel else None
+        truth_panel_idx = (
+            len(matrices)
+            + (1 if show_rate_panel else 0)
+            + (1 if show_std_panel else 0)
+            + (1 if show_proto_panel else 0)
+            if show_truth_panel
+            else None
+        )
         if show_rate_panel and panel_idx == rate_panel_idx:
             matrix = np.asarray(learner.posthoc_activation_summary_["activation_rate_matrix"], dtype=float).T
             ax.set_title("activation rate")
@@ -203,6 +235,12 @@ def plot_swcl_activation_masks(learner, it):
             vmin, vmax = 0.0, 1.0
             panel_cmap = "Greys"
             panel_formatter = (lambda x: str(int(round(float(x))))) if is_joint_mask_search else (lambda x: f"{float(x):.2f}")
+        elif show_truth_panel and panel_idx == truth_panel_idx:
+            matrix = true_matrix
+            ax.set_title("ground truth")
+            vmin, vmax = 0.0, 1.0
+            panel_cmap = "Greys"
+            panel_formatter = lambda x: str(int(round(float(x))))
         else:
             demo_idx = panel_idx
             matrix = matrices[demo_idx].T

@@ -34,7 +34,7 @@ from visualization.swcl_4panel import (
     plot_swcl_true_cutpoint_trajectory_paper,
     plot_swcl_true_active_paper,
 )
-from visualization.swcl_activation import plot_swcl_activation_dynamics
+from visualization.swcl_activation import plot_swcl_activation_dynamics, plot_swcl_activation_masks
 
 
 _SWCL_PRECOMPUTE_MODEL = None
@@ -105,6 +105,7 @@ def _plot_swcl_final_outputs(model, it: int) -> None:
     out_dir = learner_plot_dir(model)
     if model.use_score_mode:
         plot_swcl_activation_dynamics(model, it)
+        plot_swcl_activation_masks(model, it)
     plot_swcl_activation_rate_paper(
         model,
         save_path=out_dir / f"paper_activation_rate_iter_{int(it):04d}.png",
@@ -113,12 +114,14 @@ def _plot_swcl_final_outputs(model, it: int) -> None:
         model,
         save_path=out_dir / f"paper_true_constraint_active_iter_{int(it):04d}.png",
     )
-    for demo_idx in range(len(model.demos)):
-        plot_swcl_true_cutpoint_trajectory_paper(
-            model,
-            demo_idx=demo_idx,
-            save_path=out_dir / f"paper_true_cutpoint_trajectory_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png",
-        )
+    env_tag = str(getattr(model.env, "eval_tag", model.env.__class__.__name__))
+    if env_tag != "S4SlideInsertRealistic":
+        for demo_idx in range(len(model.demos)):
+            plot_swcl_true_cutpoint_trajectory_paper(
+                model,
+                demo_idx=demo_idx,
+                save_path=out_dir / f"paper_true_cutpoint_trajectory_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png",
+            )
     for demo_idx in range(len(model.demos)):
         plot_swcl_key_feature_traces_paper(
             model,
@@ -236,6 +239,8 @@ class StageWiseConstraintLearningModel:
         equality_score_mode="dispersion",
         equality_dispersion_ratio_threshold=0.1,
         constraint_core_trim=0,
+        inequality_trim_fraction=0.0,
+        inequality_trim_min_n=20,
         short_segment_penalty_c=0.1,
         inequality_score_activation_threshold=-0.5,
         truncated_inequality_z_threshold=2.0,
@@ -246,6 +251,7 @@ class StageWiseConstraintLearningModel:
         precompute_num_workers=None,
         plot_every=None,
         plot_dir="outputs/plots",
+        disable_plots=False,
         eval_fn=evaluate_model_metrics,
         verbose=True,
     ):
@@ -285,6 +291,8 @@ class StageWiseConstraintLearningModel:
             raise ValueError("equality_score_mode must be one of {'dispersion', 'gaussian_ll_gain'}.")
         self.equality_dispersion_ratio_threshold = float(equality_dispersion_ratio_threshold)
         self.constraint_core_trim = max(int(constraint_core_trim), 0)
+        self.inequality_trim_fraction = float(np.clip(float(inequality_trim_fraction), 0.0, 0.45))
+        self.inequality_trim_min_n = max(int(inequality_trim_min_n), 1)
         self.short_segment_penalty_c = float(short_segment_penalty_c)
         self.inequality_score_activation_threshold = float(inequality_score_activation_threshold)
         self.truncated_inequality_z_threshold = float(truncated_inequality_z_threshold)
@@ -307,6 +315,7 @@ class StageWiseConstraintLearningModel:
                 )
         self.plot_every = plot_every
         self.plot_dir = plot_dir
+        self.disable_plots = bool(disable_plots)
         self.eval_fn = eval_fn
         self.verbose = bool(verbose)
         if self.plot_every is not None and swcl_plot_plt is None:
@@ -772,6 +781,22 @@ class StageWiseConstraintLearningModel:
         model._update_interval()
         return model
 
+    def _trim_values_for_inequality_fit(self, values):
+        vals = np.asarray(values, dtype=float).reshape(-1)
+        frac = float(getattr(self, "inequality_trim_fraction", 0.0))
+        min_n = int(getattr(self, "inequality_trim_min_n", 20))
+        if vals.size < min_n or frac <= 0.0:
+            return vals
+        trim_n = int(np.floor(float(vals.size) * frac))
+        if trim_n <= 0 or vals.size - trim_n < 3:
+            return vals
+        baseline = self._fit_student_t_baseline(vals)
+        nll = -np.asarray(baseline.logpdf(vals), dtype=float)
+        keep_n = int(vals.size - trim_n)
+        order = np.argsort(nll, kind="mergesort")
+        kept = vals[order[:keep_n]]
+        return kept if kept.size >= 3 else vals
+
     def _truncated_z_score(self, kind, summary) -> float:
         sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
         mu = float(summary.get("mu", 0.0))
@@ -951,9 +976,10 @@ class StageWiseConstraintLearningModel:
         feature_constraint_costs = np.zeros(self.num_features, dtype=float)
         active_fit_losses = [None for _ in range(self.num_features)]
         for feat_idx, kind in enumerate(self.feature_model_types):
-            values = F[:, feat_idx]
-            segment_median = float(np.median(values))
+            raw_values = F[:, feat_idx]
+            values = raw_values
             if self._is_auto_constraint_feature(feat_idx):
+                segment_median = float(np.median(values))
                 auto_info = self._fit_auto_constraint_feature(feat_idx, values, F_demo[:, feat_idx], segment_median)
                 summaries.append(dict(auto_info["summary"]))
                 selected_feature_kinds.append(str(auto_info["selected_kind"]))
@@ -965,6 +991,9 @@ class StageWiseConstraintLearningModel:
                 feature_constraint_costs[feat_idx] = float(auto_info["constraint_cost"])
                 continue
             is_equality_feature = self._is_equality_feature(feat_idx)
+            if not is_equality_feature:
+                values = self._trim_values_for_inequality_fit(raw_values)
+            segment_median = float(np.median(values))
             if self.use_score_mode and is_equality_feature and self.equality_score_mode == "dispersion":
                 kind_l = str(kind).lower()
                 if kind_l in {"gauss", "gaussian"}:
@@ -2260,6 +2289,9 @@ class StageWiseConstraintLearningModel:
                         value_f = float(value)
                         if np.isfinite(value_f) and self.metrics_hist.get(name):
                             self.metrics_hist[name][-1] = value_f
+
+        if self.disable_plots:
+            return _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_stages)
 
         if self.plot_every is not None:
             final_it = int(max_iter)

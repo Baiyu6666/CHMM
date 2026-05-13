@@ -1,0 +1,102 @@
+{
+  "task": "s5_planned_trajectory_render",
+  "constraints_json": "outputs/swcl/S5SphereInspectRaw/method_seed_000/constraints.json",
+  "resolved_constraints_payload": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspectRaw/method_seed_000/constraints.json",
+  "constraint_source": "target",
+  "plan_dt": 0.25,
+  "seed": 7,
+  "gui": 1,
+  "constraint_values": {
+    "s2:surf_dist": 0.0,
+    "s2:normal_err": 0.04,
+    "s2:speed": 0.00846,
+    "s4:surf_dist": 0.0324,
+    "s4:speed": 0.00846
+  },
+  "global_speed_max": 0.013,
+  "planner": "s5_direct_stage_constraint_optimizer",
+  "stage_lengths": {
+    "stage1": 23,
+    "stage2": 55,
+    "stage3": 18,
+    "stage4": 18,
+    "stage5": 20
+  },
+  "stage_length_info": {
+    "source": "learned-ratio",
+    "ratio_source": "predicted_stage_ends",
+    "segmentation_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspectRaw/method_seed_000/segmentation.json",
+    "ratios": [
+      0.1501448388656344,
+      0.44393674190661775,
+      0.13547858901204982,
+      0.1458456501911551,
+      0.12459418002454305
+    ],
+    "mean_total_length": 80,
+    "stage_length_scale": 0.65,
+    "auto_total_length": 124,
+    "lengths": [
+      19,
+      55,
+      17,
+      18,
+      15
+    ]
+  },
+  "cutpoints": [
+    22,
+    77,
+    95,
+    113
+  ],
+  "trajectory_points": 134,
+  "feature_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_planned_render/s5_planned_features.png",
+  "rollout_npz": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_planned_render/s5_planned_rollout.npz",
+  "video": {
+    "video_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_planned_render/s5_planned_pybullet.mp4",
+    "frames_written": 164,
+    "source_frames": 134,
+    "fps": 15.0,
+    "gui": 1,
+    "wall_seconds": 141.10520577430725,
+    "has_robot_joint_playback": true,
+    "hide_gripper": true,
+    "draw_tool_bar": false,
+    "draw_stage_trace": false,
+    "draw_executed_trace": true,
+    "trace_stride": 1,
+    "trace_width": 3.0,
+    "draw_current_marker": false,
+    "stage4_shell_offset": 0.0324,
+    "sphere_texture_name": "",
+    "title": "S5 planned trajectory"
+  },
+  "ik_filter": {
+    "valid": true,
+    "reason": "ok",
+    "max_position_error": 0.0010951177755116892,
+    "max_axis_error": 0.010529273090194255,
+    "constrained_max_axis_error": 0.010529273090194255,
+    "constrained_stage_axis_max": {
+      "1": 0.010529273090194255
+    },
+    "max_speed_ratio": 1.1184584743555999,
+    "thresholds": {
+      "max_position_error": 0.00216,
+      "max_axis_error": 0.3,
+      "global_axis_error": false,
+      "constrained_max_axis_error": 0.45,
+      "max_speed_ratio": 1.25
+    }
+  },
+  "feature_overlay": true,
+  "execution_joint_noise_std": 0.002,
+  "execution_joint_noise_smooth": 0.9,
+  "execution_noise_seed": null,
+  "strict_ik_filter": false,
+  "ik_position_error_mean": 0.0005238318918565578,
+  "ik_position_error_max": 0.001095117775511687,
+  "ik_axis_error_mean": 0.0026662101358351205,
+  "ik_axis_error_max": 0.010529273090194255
+}

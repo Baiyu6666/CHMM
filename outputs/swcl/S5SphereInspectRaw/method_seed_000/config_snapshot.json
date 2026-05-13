@@ -148,7 +148,7 @@
     "truncated_inequality_z_threshold": 0.5,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": null,
+    "plot_every": 10,
     "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspectRaw/method_seed_000"
   }
 }

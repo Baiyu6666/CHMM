@@ -17,10 +17,15 @@ DEFAULT_RUN_ROOT = PROJECT_ROOT / "outputs"
 _CONSTRAINT_KEYS = (
     "ConstraintFeatureNames",
     "ConstraintTrueActiveMask",
+    "ConstraintPredictedActiveMask",
     "ConstraintTargetMatrix",
     "ConstraintLearnedValueMatrix",
+    "ConstraintLearnedRawValueMatrix",
     "ConstraintLearnedValuePerDemo",
     "ConstraintErrorMatrix",
+    "ConstraintErrorMatrixRaw",
+    "ConstraintSemanticsMatrix",
+    "ConstraintFeatureScales",
     "ConstraintLearnedDemoCount",
 )
 

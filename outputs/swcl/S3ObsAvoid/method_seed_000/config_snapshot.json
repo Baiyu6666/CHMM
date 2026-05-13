@@ -19,7 +19,7 @@
       "noise"
     ],
     "feature_model_types": {
-      "obs_dist": "margin_exp_lower",
+      "obs_dist": "trunc_t_lower_z",
       "speed": "student_t",
       "arc_dist": "student_t",
       "heading": "student_t",
@@ -44,6 +44,7 @@
     "short_segment_penalty_c": 3,
     "stage_count_penalty": 12.0,
     "inequality_score_activation_threshold": -0.4,
+    "truncated_inequality_z_threshold": 0.5,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": null,
     "plot_every": null,
