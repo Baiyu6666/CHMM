@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 import numpy as np
 
+from scipy.optimize import minimize as _scipy_minimize
+
 
 def _weighted_quantile(values, weights, q):
     vals = np.asarray(values, dtype=float).reshape(-1)
@@ -36,6 +38,17 @@ def _student_t_logpdf(x, *, mu, sigma, nu):
     return log_norm - 0.5 * (nu + 1.0) * np.log1p(z2 / nu)
 
 
+def _student_t_standard_pdf(z, nu):
+    z = np.asarray(z, float)
+    nu = max(float(nu), 1e-6)
+    log_norm = (
+        math.lgamma((nu + 1.0) / 2.0)
+        - math.lgamma(nu / 2.0)
+        - 0.5 * (math.log(nu) + math.log(math.pi))
+    )
+    return np.exp(log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu))
+
+
 def _student_t_standard_cdf(z, nu):
     z = np.asarray(z, float)
     nu = float(nu)
@@ -49,6 +62,78 @@ def _student_t_standard_cdf(z, nu):
 def _student_t_cdf(x, *, mu, sigma, nu):
     z = (np.asarray(x, float) - float(mu)) / max(float(sigma), 1e-6)
     return _student_t_standard_cdf(z, nu)
+
+
+def _fit_truncated_student_t_fixed_boundary(vals, weights, *, b, side, mu0, sigma0, nu):
+    vals = np.asarray(vals, dtype=float).reshape(-1)
+    weights = np.asarray(weights, dtype=float).reshape(-1)
+    total_w = float(np.sum(weights))
+    if vals.size == 0 or total_w <= 1e-12:
+        return float(mu0), max(float(sigma0), 1e-6)
+
+    x_min = float(np.min(vals))
+    x_max = float(np.max(vals))
+    span = max(float(x_max - x_min), 1e-4)
+    sigma0 = max(float(sigma0), 1e-6)
+    center = 0.5 * (x_min + x_max)
+    mu_lo = center - 6.0 * max(span, sigma0)
+    mu_hi = center + 6.0 * max(span, sigma0)
+    if side == "upper":
+        mu_hi = min(float(mu_hi), float(b))
+    elif side == "lower":
+        mu_lo = max(float(mu_lo), float(b))
+    else:
+        raise ValueError(f"Unknown truncated Student-t side '{side}'.")
+    sigma_floor = max(1e-5, 0.05 * span)
+    log_sigma_lo = math.log(sigma_floor)
+    log_sigma_hi = math.log(max(10.0 * span, 10.0 * sigma0, 1e-3))
+
+    def objective_and_grad(theta):
+        theta = np.asarray(theta, dtype=float).reshape(2)
+        mu = float(theta[0])
+        log_sigma = float(theta[1])
+        mu = float(np.clip(float(mu), mu_lo, mu_hi))
+        log_sigma = float(np.clip(float(log_sigma), log_sigma_lo, log_sigma_hi))
+        sigma = max(float(math.exp(log_sigma)), 1e-6)
+        delta = vals - mu
+        y = delta / sigma
+        logpdf = _student_t_logpdf(vals, mu=mu, sigma=sigma, nu=nu)
+        alpha = (float(b) - mu) / sigma
+        cdf_b = float(_student_t_standard_cdf(alpha, nu))
+        pdf_b = float(_student_t_standard_pdf(alpha, nu))
+        if side == "upper":
+            log_z = math.log(float(np.clip(cdf_b, 1e-10, 1.0)))
+            z_denom = float(np.clip(cdf_b, 1e-10, 1.0))
+            dlogz_dmu = -pdf_b / (sigma * z_denom)
+            dlogz_dlogsigma = -alpha * pdf_b / z_denom
+        elif side == "lower":
+            z_denom = float(np.clip(1.0 - cdf_b, 1e-10, 1.0))
+            log_z = math.log(z_denom)
+            dlogz_dmu = pdf_b / (sigma * z_denom)
+            dlogz_dlogsigma = alpha * pdf_b / z_denom
+        denom = nu + y * y
+        dlogpdf_dmu = (nu + 1.0) * y / (sigma * denom)
+        dlogpdf_dlogsigma = -1.0 + (nu + 1.0) * y * y / denom
+        value = -float(np.sum(weights * (logpdf - log_z)))
+        grad_mu = -float(np.sum(weights * dlogpdf_dmu)) + total_w * float(dlogz_dmu)
+        grad_logsigma = -float(np.sum(weights * dlogpdf_dlogsigma)) + total_w * float(dlogz_dlogsigma)
+        grad = np.asarray([grad_mu, grad_logsigma], dtype=float)
+        return value, grad
+
+    base_mu = float(np.clip(float(mu0), mu_lo, mu_hi))
+    base_log_sigma = float(np.clip(math.log(sigma0), log_sigma_lo, log_sigma_hi))
+    res = _scipy_minimize(
+        objective_and_grad,
+        np.asarray([base_mu, base_log_sigma], dtype=float),
+        jac=True,
+        method="L-BFGS-B",
+        bounds=((mu_lo, mu_hi), (log_sigma_lo, log_sigma_hi)),
+        options={"maxiter": 6, "ftol": 1e-6},
+    )
+    if not np.isfinite(float(res.fun)):
+        return float(mu0), max(float(sigma0), 1e-6)
+    mu_hat, log_sigma_hat = np.asarray(res.x, dtype=float).reshape(2)
+    return float(mu_hat), max(float(math.exp(float(log_sigma_hat))), 1e-6)
 
 
 def _halfnormal_logpdf(slack, sigma):
@@ -755,13 +840,14 @@ class MarginExpUpperRightHNEmission(BaseEmissionModel):
 class TruncatedStudentTUpperEmission(BaseEmissionModel):
     model_type = "trunc_t_upper"
 
-    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0):
+    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0, optimize_m_step=False):
         self.mu = float(mu_init)
         self.sigma = max(float(sigma_init), 1e-6)
         self.b = float(b_init)
         self.q_low = float(q_low)
         self.q_high = float(q_high)
         self.nu = max(float(nu), 1e-3)
+        self.optimize_m_step = bool(optimize_m_step)
         self._update_interval()
 
     def _update_interval(self):
@@ -795,32 +881,21 @@ class TruncatedStudentTUpperEmission(BaseEmissionModel):
         if total_w <= 1e-12:
             return
 
-        x_min = float(np.min(vals))
-        x_max = float(np.max(vals))
-        span = max(float(x_max - x_min), 1e-4)
-        grid_lo = _weighted_quantile(vals, weights, 0.70)
-        grid_hi = x_max + 0.02 * span + 0.005
-        if grid_hi <= grid_lo + 1e-8:
-            grid_lo = x_min
-            grid_hi = x_max + 0.01
-        b_grid = np.linspace(grid_lo, grid_hi, 56)
-
-        best_total = -np.inf
-        best = (self.mu, self.sigma, self.b)
-        for b_hat in b_grid:
-            inside = vals <= float(b_hat)
-            if not np.all(inside):
-                continue
-            mu = _weighted_quantile(vals, weights, 0.5)
-            sigma = max(float(np.sqrt(np.sum(weights * (vals - mu) ** 2) / total_w)), 1e-6)
-            cdf_b = float(np.clip(_student_t_cdf(float(b_hat), mu=mu, sigma=sigma, nu=self.nu), 1e-10, 1.0))
-            logp = _student_t_logpdf(vals, mu=mu, sigma=sigma, nu=self.nu) - math.log(cdf_b)
-            total = float(np.sum(weights * logp))
-            if total > best_total:
-                best_total = total
-                best = (float(mu), float(sigma), float(b_hat))
-
-        self.mu, self.sigma, self.b = best
+        self.b = float(np.max(vals))
+        mu0 = float(np.median(vals))
+        sigma0 = max(float(np.std(vals)), 1e-6)
+        if self.optimize_m_step:
+            self.mu, self.sigma = _fit_truncated_student_t_fixed_boundary(
+                vals,
+                weights,
+                b=self.b,
+                side="upper",
+                mu0=mu0,
+                sigma0=sigma0,
+                nu=self.nu,
+            )
+        else:
+            self.mu, self.sigma = float(mu0), float(sigma0)
         self.sigma = max(float(self.sigma), 1e-6)
         self._update_interval()
 
@@ -833,19 +908,21 @@ class TruncatedStudentTUpperEmission(BaseEmissionModel):
             "nu": float(self.nu),
             "L": float(self.L),
             "U": float(self.U),
+            "fit_mode": "optimized_mle" if self.optimize_m_step else "fast_median_std",
         }
 
 
 class TruncatedStudentTLowerEmission(BaseEmissionModel):
     model_type = "trunc_t_lower"
 
-    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0):
+    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0, optimize_m_step=False):
         self.mu = float(mu_init)
         self.sigma = max(float(sigma_init), 1e-6)
         self.b = float(b_init)
         self.q_low = float(q_low)
         self.q_high = float(q_high)
         self.nu = max(float(nu), 1e-3)
+        self.optimize_m_step = bool(optimize_m_step)
         self._update_interval()
 
     def _update_interval(self):
@@ -880,33 +957,21 @@ class TruncatedStudentTLowerEmission(BaseEmissionModel):
         if total_w <= 1e-12:
             return
 
-        x_min = float(np.min(vals))
-        x_max = float(np.max(vals))
-        span = max(float(x_max - x_min), 1e-4)
-        grid_lo = x_min - 0.02 * span - 0.005
-        grid_hi = _weighted_quantile(vals, weights, 0.30)
-        if grid_hi <= grid_lo + 1e-8:
-            grid_lo = x_min - 0.01
-            grid_hi = x_max
-        b_grid = np.linspace(grid_lo, grid_hi, 56)
-
-        best_total = -np.inf
-        best = (self.mu, self.sigma, self.b)
-        for b_hat in b_grid:
-            inside = vals >= float(b_hat)
-            if not np.all(inside):
-                continue
-            mu = _weighted_quantile(vals, weights, 0.5)
-            sigma = max(float(np.sqrt(np.sum(weights * (vals - mu) ** 2) / total_w)), 1e-6)
-            cdf_b = float(np.clip(_student_t_cdf(float(b_hat), mu=mu, sigma=sigma, nu=self.nu), 0.0, 1.0 - 1e-10))
-            survival_b = max(1.0 - cdf_b, 1e-10)
-            logp = _student_t_logpdf(vals, mu=mu, sigma=sigma, nu=self.nu) - math.log(survival_b)
-            total = float(np.sum(weights * logp))
-            if total > best_total:
-                best_total = total
-                best = (float(mu), float(sigma), float(b_hat))
-
-        self.mu, self.sigma, self.b = best
+        self.b = float(np.min(vals))
+        mu0 = float(np.median(vals))
+        sigma0 = max(float(np.std(vals)), 1e-6)
+        if self.optimize_m_step:
+            self.mu, self.sigma = _fit_truncated_student_t_fixed_boundary(
+                vals,
+                weights,
+                b=self.b,
+                side="lower",
+                mu0=mu0,
+                sigma0=sigma0,
+                nu=self.nu,
+            )
+        else:
+            self.mu, self.sigma = float(mu0), float(sigma0)
         self.sigma = max(float(self.sigma), 1e-6)
         self._update_interval()
 
@@ -919,6 +984,7 @@ class TruncatedStudentTLowerEmission(BaseEmissionModel):
             "nu": float(self.nu),
             "L": float(self.L),
             "U": float(self.U),
+            "fit_mode": "optimized_mle" if self.optimize_m_step else "fast_median_std",
         }
 
 

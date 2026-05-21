@@ -5,67 +5,80 @@
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods swcl \
-  --datasets S3ObsAvoid \
+  --datasets S3ObsAvoid,S4SlideInsert,S5SphereInspect  \
   --method-seeds 0 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5 \
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
   --refresh-demo-cache
 
 ```
+python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
+  --methods swcl \
+  --datasets S4SlideInsert  \
+  --method-seeds 0 \
+  --dataset-seed 0 \
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 
+
+python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
+  --methods swcl \
+  --datasets S3ObsAvoid  \
+  --method-seeds 0 \
+  --dataset-seed 0 \
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods fchmm,arhsmm,cluster \
-  --datasets S3ObsAvoid \
+  --datasets S3ObsAvoid,S4SlideInsert,S5SphereInspect  \
   --method-seeds 0,1,2,3,4,5,6,7,8,9 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1
 ```
 
-## Benchmarks: S5SphereInspectRaw
+## Benchmarks: S5SphereInspect
 
 ```bash
-python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py   --methods fchmm --datasets S5SphereInspectRaw   --method-seeds 0   --dataset-seed 0   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5   --n_demos 1   --plot_every 10
+python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py   --methods fchmm --datasets S5SphereInspect   --method-seeds 0   --dataset-seed 0   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1   --n_demos 1   --plot_every 10
 ```
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods fchmm,arhsmm,cluster \
-  --datasets S5SphereInspectRaw \
+  --datasets S5SphereInspect \
   --method-seeds 0,1,2,3,4,5,6,7,8,9 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1
 ```
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods swcl \
-  --datasets S5SphereInspectRaw \
+  --datasets S5SphereInspect \
   --method-seeds 0 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5 \
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
   --plot-every 10 \
   --refresh-demo-cache
 ```
 
-## Benchmarks: S4SlideInsertRealistic
+## Benchmarks: S4SlideInsert
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods fchmm,arhsmm,cluster \
-  --datasets S4SlideInsertRealistic \
+  --datasets S4SlideInsert \
   --method-seeds 0,1,2,3,4,5,6,7,8,9 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1
 ```
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods swcl \
-  --datasets S4SlideInsertRealistic \
+  --datasets S4SlideInsert \
   --method-seeds 0 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5 \
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
   --plot-every 5 \
   --refresh-demo-cache
 ```
@@ -74,7 +87,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/experiments/plot_benchmark_comparison.py \
-  --input /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/new_s5/benchmark_results.json
+  --input /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1/benchmark_results.json
 ```
 
 ```bash
@@ -84,54 +97,61 @@ python experiments/collect_swcl_paper_figures.py  --demo-map S3ObsAvoid:7,S4Slid
 ## S5 Render
 
 ```bash
-python experiments/render_s5_demonstrations.py   --n-demos 1   --seed 7   --demo-indices 0   --gui 1   --fps 10 --outdir outputs/swcl/videos/s5_demonstrations
+python experiments/render_s5_demonstrations.py   --n-demos 3   --seed 127   --gui 1   --fps 10 --outdir outputs/swcl/videos/s5_demonstrations --playback-speed 1.5
 ```
 
 ```bash
 python experiments/render_s5_planned_trajectory.py \
-  --constraints-json outputs/swcl/S5SphereInspectRaw/method_seed_000/constraints.json \
+  --constraints-json outputs/swcl/S5SphereInspect/method_seed_000/constraints.json \
   --constraint-source target \
-  --gui 2 \
-  --fps 5 \
-  --planner optimizer \
+  --gui 1 \
+  --fps 10 \
+  --outdir outputs/swcl/videos/s5_planned_render \
   --render-frame-stride 1 \
-  --outdir outputs/swcl/videos/s5_planned_render
+  --feature-overlay 1 \
+  --save-frame-indices 10,50,90,115,130 
 ```
 
-## S4 Realistic Render
+## S4 Demonstration Render
 
 ```bash
-python experiments/render_s4_realistic_demonstrations.py   --n-demos 1   --seed 7   --outdir outputs/swcl/video/s4_realistic_demonstrations   --gui 1   --fps 20   --render-frame-stride 1
+python experiments/render_s4_demonstrations.py   --n-demos 1   --seed 7   --outdir outputs/swcl/videos/s4_demonstrations   --gui 0   --fps 20    --feature-overlay 0  --save-frame-indices 0,50,100,130 
+
 ```
 
 ```bash
-python experiments/render_s4_planned_trajectory.py   --constraints-json outputs/swcl/S4SlideInsertRealistic/method_seed_000/constraints.json    --planner optimizer   --gui 1   --fps 20   --outdir outputs/swcl/video/s4_optimizer_gt_gui2   --constraint-source learned
+python experiments/render_s4_planned_trajectory.py   --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json    --planner optimizer   --gui 1   --fps 20   --outdir outputs/swcl/video/s4_optimizer_gt_gui2   --constraint-source learned
 ```
 
 ## S4 Transfer Render
 
 ```bash
 python experiments/render_s4_planned_trajectory.py \
-  --constraints-json outputs/swcl/S4SlideInsertRealistic/method_seed_000/constraints.json \
-  --constraint-source learned \
-  --planner optimizer \
+  --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json \
+  --constraint-source target \
   --rail-shape sine \
   --rail-bend-amp 0.03 \
-  --gui 2 \
+  --gui 0 \
   --fps 20 \
-  --outdir outputs/swcl/videos/s4_transfer_sine_optimizer
+  --outdir outputs/swcl/videos/s4_transfer_curve_guide \
+  --feature-overlay 0 \
+    --n-plans 3 \
+  --save-frame-indices 0,50,100,130 
+
 ```
 
 ```bash
 python experiments/render_s4_planned_trajectory.py \
-  --constraints-json outputs/swcl/S4SlideInsertRealistic/method_seed_000/constraints.json \
+  --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json \
   --constraint-source target \
-  --planner optimizer \
   --rail-shape straight \
   --surface-tilt-x 0.2 \
-  --gui 1 \
+  --gui 0 \
   --fps 20 \
-  --outdir outputs/swcl/videos/s4_transfer_tilted_table
+  --outdir outputs/swcl/videos/s4_transfer_tilted_table \
+  --feature-overlay 0 \
+    --n-plans 3 \
+  --save-frame-indices 0,50,100,130
 ```
 
 ## Paper Wording: Active Constraints

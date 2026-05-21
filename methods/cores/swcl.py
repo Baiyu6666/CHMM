@@ -115,7 +115,7 @@ def _plot_swcl_final_outputs(model, it: int) -> None:
         save_path=out_dir / f"paper_true_constraint_active_iter_{int(it):04d}.png",
     )
     env_tag = str(getattr(model.env, "eval_tag", model.env.__class__.__name__))
-    if env_tag != "S4SlideInsertRealistic":
+    if env_tag != "S4SlideInsert" and not env_tag.startswith("S5SphereInspect"):
         for demo_idx in range(len(model.demos)):
             plot_swcl_true_cutpoint_trajectory_paper(
                 model,
@@ -224,10 +224,10 @@ class StageWiseConstraintLearningModel:
         selected_raw_feature_ids=None,
         feature_model_types=None,
         fixed_feature_mask=None,
+        force_inactive_feature_ids=None,
         lambda_eq_constraint=1.0,
         lambda_ineq_constraint=1.0,
         lambda_progress=1.0,
-        lambda_subgoal_consensus=1.0,
         lambda_param_consensus=1.0,
         lambda_activation_consensus=1.0,
         lambda_feature_score_consensus=None,
@@ -244,6 +244,10 @@ class StageWiseConstraintLearningModel:
         short_segment_penalty_c=0.1,
         inequality_score_activation_threshold=-0.5,
         truncated_inequality_z_threshold=2.0,
+        truncated_auto_z_score_gap_threshold=0.05,
+        truncated_z_score_mode="z",
+        truncated_z_optimize=False,
+        truncated_z_optimize_trigger_scale=3.0,
         activation_proto_temperature=0.1,
         joint_mask_search_max_masks=4096,
         fixed_true_cutpoint_prefix=0,
@@ -270,10 +274,10 @@ class StageWiseConstraintLearningModel:
         self.selected_raw_feature_ids = selected_raw_feature_ids
         self.feature_model_types_raw = feature_model_types
         self.fixed_feature_mask = fixed_feature_mask
+        self.force_inactive_feature_ids = [] if force_inactive_feature_ids is None else list(force_inactive_feature_ids)
         self.lambda_eq_constraint = float(lambda_eq_constraint)
         self.lambda_ineq_constraint = float(lambda_ineq_constraint)
         self.lambda_progress = float(lambda_progress)
-        self.lambda_subgoal_consensus = float(lambda_subgoal_consensus)
         self.lambda_param_consensus = float(lambda_param_consensus)
         if lambda_feature_score_consensus is None:
             lambda_feature_score_consensus = lambda_activation_consensus
@@ -296,6 +300,12 @@ class StageWiseConstraintLearningModel:
         self.short_segment_penalty_c = float(short_segment_penalty_c)
         self.inequality_score_activation_threshold = float(inequality_score_activation_threshold)
         self.truncated_inequality_z_threshold = float(truncated_inequality_z_threshold)
+        self.truncated_auto_z_score_gap_threshold = float(truncated_auto_z_score_gap_threshold)
+        self.truncated_z_score_mode = str(truncated_z_score_mode).lower()
+        if self.truncated_z_score_mode not in {"z", "median_slack"}:
+            raise ValueError("truncated_z_score_mode must be one of {'z', 'median_slack'}.")
+        self.truncated_z_optimize = bool(truncated_z_optimize)
+        self.truncated_z_optimize_trigger_scale = max(float(truncated_z_optimize_trigger_scale), 1.0)
         self.activation_proto_temperature = max(float(activation_proto_temperature), 1e-6)
         self.joint_mask_search_max_masks = max(int(joint_mask_search_max_masks), 1)
         self.fixed_true_cutpoint_prefix = max(int(fixed_true_cutpoint_prefix), 0)
@@ -305,7 +315,7 @@ class StageWiseConstraintLearningModel:
             self.fixed_true_cutpoint_indices = sorted({int(idx) for idx in fixed_true_cutpoint_indices})
         if precompute_num_workers is None:
             cpu_count = os.cpu_count() or 1
-            precompute_num_workers = min(max(cpu_count, 1), max(len(self.demos), 1))
+            precompute_num_workers = max(cpu_count, 1)
         self.precompute_num_workers = max(int(precompute_num_workers), 1)
         max_boundary_idx = self.num_stages - 2
         for idx in self.fixed_true_cutpoint_indices:
@@ -322,6 +332,7 @@ class StageWiseConstraintLearningModel:
             print("[SWCL] matplotlib is not installed; SWCL 4-panel plots will not be generated.")
 
         self._init_feature_preprocessing()
+        self.force_inactive_feature_indices = self._resolve_force_inactive_feature_indices(self.force_inactive_feature_ids)
         self.feature_model_types = self._normalize_feature_model_types(self.num_features)
         if any(self._is_auto_constraint_feature(feat_idx) for feat_idx in range(self.num_features)) and not self.use_score_mode:
             raise ValueError("auto constraint type selection currently requires feature_activation_mode in {'score', 'joint_mask_search'}.")
@@ -346,16 +357,13 @@ class StageWiseConstraintLearningModel:
         self.loss_constraint: List[float] = []
         self.loss_short_segment_penalty: List[float] = []
         self.loss_progress: List[float] = []
-        self.loss_subgoal_consensus: List[float] = []
         self.loss_param_consensus: List[float] = []
         self.loss_activation_consensus: List[float] = []
         self.metrics_hist: Dict[str, List[float]] = {}
         self.segmentation_history: List[List[List[int]]] = []
         self.activation_rate_history: List[np.ndarray] = []
-        self.subgoal_consensus_lambda_hist: List[float] = []
         self.param_consensus_lambda_hist: List[float] = []
         self.activation_consensus_lambda_hist: List[float] = []
-        self.current_subgoal_consensus_lambda = 0.0
         self.current_param_consensus_lambda = 0.0
         self.current_activation_consensus_lambda = 0.0
         self.current_stage_params_per_demo: List[List[_StageParams]] = []
@@ -373,9 +381,11 @@ class StageWiseConstraintLearningModel:
         self.shared_stage_subgoals: List[np.ndarray | None] = [None for _ in range(self.num_stages)]
         self.shared_r_mean: np.ndarray | None = None
         self.shared_feature_score_mean: np.ndarray | None = None
+        self.shared_activation_signature_mean: np.ndarray | None = None
         self.shared_activation_proto: np.ndarray | None = None
         self.demo_feature_score_matrices_: List[np.ndarray] = []
         self.demo_activation_matrices_: List[np.ndarray] = []
+        self.demo_activation_signature_matrices_: List[np.ndarray] = []
         self.posthoc_activation_summary_: Dict[str, object] | None = None
         self._joint_mask_fallback_warned = False
         self.demo_activation_history: List[np.ndarray] = []
@@ -393,6 +403,10 @@ class StageWiseConstraintLearningModel:
             "trunc_t_lower_z", "truncated_t_lower_z",
             "trunc_t_upper_z", "truncated_t_upper_z",
         }
+
+    @staticmethod
+    def _kind_is_truncated_auto_z(kind) -> bool:
+        return str(kind).lower() in {"trunc_t_auto_z", "truncated_t_auto_z"}
 
     @staticmethod
     def _kind_is_equality(kind) -> bool:
@@ -437,7 +451,7 @@ class StageWiseConstraintLearningModel:
             return self._auto_constraint_threshold()
         if self._kind_is_equality(kind):
             return float(self._equality_score_threshold())
-        if self._kind_is_truncated_z(kind):
+        if self._kind_is_truncated_z(kind) or self._kind_is_truncated_auto_z(kind):
             return float(self.truncated_inequality_z_threshold)
         return float(self.inequality_score_activation_threshold)
 
@@ -530,6 +544,29 @@ class StageWiseConstraintLearningModel:
             self.raw_id_to_local_idx[raw_id] = int(local_idx)
             self.feature_name_to_local_idx[name] = int(local_idx)
 
+    def _resolve_force_inactive_feature_indices(self, feature_ids):
+        indices = []
+        for value in feature_ids or []:
+            if isinstance(value, str):
+                key = value.strip()
+                if key in self.feature_name_to_local_idx:
+                    indices.append(int(self.feature_name_to_local_idx[key]))
+                    continue
+                try:
+                    raw_id = int(key)
+                except ValueError as exc:
+                    raise ValueError(f"Unknown force-inactive feature '{value}'.") from exc
+            else:
+                raw_id = int(value)
+            if raw_id in self.raw_id_to_local_idx:
+                indices.append(int(self.raw_id_to_local_idx[raw_id]))
+                continue
+            if 0 <= raw_id < self.num_features:
+                indices.append(int(raw_id))
+                continue
+            raise ValueError(f"Unknown force-inactive feature id '{value}'.")
+        return sorted(set(indices))
+
     def _segment_base_cache_work_items_for_demo(self, demo_idx: int):
         X = self.demos[int(demo_idx)]
         T = len(X)
@@ -588,11 +625,11 @@ class StageWiseConstraintLearningModel:
             return
         if self.verbose:
             noun = "local segment summaries" if self.use_score_mode else "local segment costs"
-            workers = min(self.precompute_num_workers, len(self.demos))
-            print(f"[SWCL] preparing DP {noun}: {total_items} segments with {workers} workers...")
+            workers = max(int(self.precompute_num_workers), 1)
+            print(f"[SWCL] preparing DP {noun}: {total_items} segments with {workers} workers...", flush=True)
         start_time = time.time()
         overall_done = 0
-        worker_count = min(self.precompute_num_workers, len(self.demos))
+        worker_count = max(int(self.precompute_num_workers), 1)
         if worker_count <= 1:
             for demo_idx, items in enumerate(demo_items):
                 demo_total = len(items)
@@ -616,43 +653,61 @@ class StageWiseConstraintLearningModel:
                         print(
                             f"[SWCL] DP prep demo {demo_idx + 1}/{len(self.demos)}: "
                             f"{local_idx + 1}/{demo_total} local segments | "
-                            f"overall {overall_done}/{total_items} ({elapsed:.1f}s elapsed)"
+                            f"overall {overall_done}/{total_items} ({elapsed:.1f}s elapsed)",
+                            flush=True,
                         )
         else:
             try:
                 mp_context = mp.get_context("fork")
             except ValueError:
                 mp_context = mp.get_context()
+            target_chunks_per_worker = 32
+            chunk_size = max(50, total_items // max(worker_count * target_chunks_per_worker, 1))
+            demo_done_counts = [0 for _ in demo_items]
             with ProcessPoolExecutor(
                 max_workers=worker_count,
                 mp_context=mp_context,
                 initializer=_swcl_precompute_worker_init,
                 initargs=(self,),
             ) as executor:
-                future_to_demo = {
-                    executor.submit(_swcl_precompute_worker_run, demo_idx, items): (demo_idx, len(items))
-                    for demo_idx, items in enumerate(demo_items)
-                    if len(items) > 0
-                }
-                for future in as_completed(future_to_demo):
-                    demo_idx, demo_total = future_to_demo[future]
+                future_to_chunk = {}
+                for demo_idx, items in enumerate(demo_items):
+                    if len(items) <= 0:
+                        continue
+                    for chunk_start in range(0, len(items), chunk_size):
+                        chunk = items[chunk_start : chunk_start + chunk_size]
+                        future = executor.submit(_swcl_precompute_worker_run, demo_idx, chunk)
+                        future_to_chunk[future] = (demo_idx, len(chunk), len(items))
+                if self.verbose:
+                    print(
+                        f"[SWCL] DP prep submitted {len(future_to_chunk)} chunks "
+                        f"(chunk_size={chunk_size})",
+                        flush=True,
+                    )
+                for future in as_completed(future_to_chunk):
+                    demo_idx, chunk_total, demo_total = future_to_chunk[future]
                     cache_entries = future.result()
                     if self.use_score_mode:
                         self._segment_base_cache.update(cache_entries)
                     else:
                         self._segment_stage_cache.update(cache_entries)
-                    overall_done += int(demo_total)
+                    overall_done += int(chunk_total)
+                    demo_done_counts[demo_idx] += int(chunk_total)
+                    demo_done = demo_done_counts[demo_idx]
                     if self.verbose:
                         elapsed = time.time() - start_time
+                        rate = overall_done / max(elapsed, 1e-9)
+                        pct = 100.0 * overall_done / max(total_items, 1)
                         print(
                             f"[SWCL] DP prep demo {demo_idx + 1}/{len(self.demos)}: "
-                            f"{demo_total}/{demo_total} local segments | "
-                            f"overall {overall_done}/{total_items} ({elapsed:.1f}s elapsed)"
+                            f"{demo_done}/{demo_total} local segments | "
+                            f"overall {overall_done}/{total_items} ({pct:.1f}%, {rate:.1f} seg/s, {elapsed:.1f}s elapsed)",
+                            flush=True,
                         )
         if self.verbose:
             elapsed = time.time() - start_time
             noun = "local segment summaries" if self.use_score_mode else "local segment costs"
-            print(f"[SWCL] DP {noun} ready ({elapsed:.1f}s)")
+            print(f"[SWCL] DP {noun} ready ({elapsed:.1f}s)", flush=True)
 
     def _broadcast_stage_value(self, value, default, dtype=float):
         if value is None:
@@ -691,6 +746,8 @@ class StageWiseConstraintLearningModel:
             return TruncatedStudentTLowerEmission()
         if kind in {"trunc_t_lower_z", "truncated_t_lower_z"}:
             return TruncatedStudentTLowerEmission()
+        if kind in {"trunc_t_auto_z", "truncated_t_auto_z"}:
+            return TruncatedStudentTUpperEmission()
         if kind in {"trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn", "soft_truncated_t_lower_hn"}:
             return SoftTruncatedStudentTLowerHNEmission()
         if kind in {"margin_exp_upper", "marginexp_upper", "margin_exp_upper"}:
@@ -740,8 +797,16 @@ class StageWiseConstraintLearningModel:
         if kind in {"trunc_t_lower_z", "truncated_t_lower_z"}:
             model = TruncatedStudentTLowerEmission()
             model.m_step_update([xs])
+            if self.truncated_z_optimize:
+                fast_z = self._truncated_z_score(kind, model.get_summary())
+                trigger = float(self.truncated_inequality_z_threshold) * float(self.truncated_z_optimize_trigger_scale)
+                if fast_z < trigger:
+                    model = TruncatedStudentTLowerEmission(optimize_m_step=True)
+                    model.m_step_update([xs])
             model._update_interval()
             return model
+        if kind in {"trunc_t_auto_z", "truncated_t_auto_z"}:
+            return self._fit_truncated_auto_z_model(xs)
         if kind in {"trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn", "soft_truncated_t_lower_hn"}:
             model = SoftTruncatedStudentTLowerHNEmission()
             model.m_step_update([xs])
@@ -765,6 +830,12 @@ class StageWiseConstraintLearningModel:
         if kind in {"trunc_t_upper_z", "truncated_t_upper_z"}:
             model = TruncatedStudentTUpperEmission()
             model.m_step_update([xs])
+            if self.truncated_z_optimize:
+                fast_z = self._truncated_z_score(kind, model.get_summary())
+                trigger = float(self.truncated_inequality_z_threshold) * float(self.truncated_z_optimize_trigger_scale)
+                if fast_z < trigger:
+                    model = TruncatedStudentTUpperEmission(optimize_m_step=True)
+                    model.m_step_update([xs])
             model._update_interval()
             return model
         if kind in {"trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn", "soft_truncated_t_upper_hn"}:
@@ -798,15 +869,64 @@ class StageWiseConstraintLearningModel:
         return kept if kept.size >= 3 else vals
 
     def _truncated_z_score(self, kind, summary) -> float:
-        sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
         mu = float(summary.get("mu", 0.0))
         b = float(summary["b"])
         kind_l = str(kind).lower()
         if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
-            return float((mu - b) / sigma)
-        if kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
-            return float((b - mu) / sigma)
-        raise ValueError(f"Unsupported truncated-z feature model type '{kind}'.")
+            slack = float(mu - b)
+        elif kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
+            slack = float(b - mu)
+        else:
+            raise ValueError(f"Unsupported truncated-z feature model type '{kind}'.")
+        if self.truncated_z_score_mode == "median_slack":
+            return float(slack)
+        sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
+        return float(slack / sigma)
+
+    def _fit_truncated_auto_z_model(self, xs):
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        q05, q50, q95 = np.quantile(xs, [0.05, 0.5, 0.95])
+        lower_quantile_slack = max(float(q50 - q05), 0.0)
+        upper_quantile_slack = max(float(q95 - q50), 0.0)
+        quantile_spread = lower_quantile_slack + upper_quantile_slack
+        direction_conf = abs(lower_quantile_slack - upper_quantile_slack) / max(quantile_spread, 1e-12)
+        lower_model = TruncatedStudentTLowerEmission()
+        lower_model.m_step_update([xs])
+        upper_model = TruncatedStudentTUpperEmission()
+        upper_model.m_step_update([xs])
+        if self.truncated_z_optimize:
+            lower_fast = self._truncated_z_score("trunc_t_lower_z", lower_model.get_summary())
+            upper_fast = self._truncated_z_score("trunc_t_upper_z", upper_model.get_summary())
+            trigger = float(self.truncated_inequality_z_threshold) * float(self.truncated_z_optimize_trigger_scale)
+            if lower_fast < trigger:
+                lower_model = TruncatedStudentTLowerEmission(optimize_m_step=True)
+                lower_model.m_step_update([xs])
+            if upper_fast < trigger:
+                upper_model = TruncatedStudentTUpperEmission(optimize_m_step=True)
+                upper_model.m_step_update([xs])
+        lower_score = self._truncated_z_score("trunc_t_lower_z", lower_model.get_summary())
+        upper_score = self._truncated_z_score("trunc_t_upper_z", upper_model.get_summary())
+        if float(lower_score) < float(upper_score):
+            return lower_model, "trunc_t_lower_z", float(lower_score), {
+                "lower_score": float(lower_score),
+                "upper_score": float(upper_score),
+                "q05": float(q05),
+                "q50": float(q50),
+                "q95": float(q95),
+                "lower_quantile_slack": float(lower_quantile_slack),
+                "upper_quantile_slack": float(upper_quantile_slack),
+                "direction_conf": float(direction_conf),
+            }
+        return upper_model, "trunc_t_upper_z", float(upper_score), {
+            "lower_score": float(lower_score),
+            "upper_score": float(upper_score),
+            "q05": float(q05),
+            "q50": float(q50),
+            "q95": float(q95),
+            "lower_quantile_slack": float(lower_quantile_slack),
+            "upper_quantile_slack": float(upper_quantile_slack),
+            "direction_conf": float(direction_conf),
+        }
 
     def _fit_auto_constraint_feature(self, feat_idx: int, values, F_demo, segment_median: float):
         values = np.asarray(values, dtype=float).reshape(-1)
@@ -990,6 +1110,40 @@ class StageWiseConstraintLearningModel:
                 active_mask[feat_idx] = int(auto_info["active"])
                 feature_constraint_costs[feat_idx] = float(auto_info["constraint_cost"])
                 continue
+            if self._kind_is_truncated_auto_z(kind):
+                values = self._trim_values_for_inequality_fit(raw_values)
+                segment_median = float(np.median(values))
+                model, selected_kind, score, candidates = self._fit_truncated_auto_z_model(values)
+                summary = dict(model.get_summary())
+                summary["segment_median"] = segment_median
+                summary["auto_selected_kind"] = str(selected_kind)
+                summary["auto_lower_score"] = float(candidates["lower_score"])
+                summary["auto_upper_score"] = float(candidates["upper_score"])
+                auto_score_gap = abs(float(candidates["lower_score"]) - float(candidates["upper_score"]))
+                auto_direction_conf = float(candidates["direction_conf"])
+                summary["auto_score_gap"] = float(auto_score_gap)
+                summary["auto_direction_conf"] = float(auto_direction_conf)
+                summary["auto_q05"] = float(candidates["q05"])
+                summary["auto_q50"] = float(candidates["q50"])
+                summary["auto_q95"] = float(candidates["q95"])
+                summary["auto_lower_quantile_slack"] = float(candidates["lower_quantile_slack"])
+                summary["auto_upper_quantile_slack"] = float(candidates["upper_quantile_slack"])
+                summary["auto_score_gap_threshold"] = float(self.truncated_auto_z_score_gap_threshold)
+                summaries.append(summary)
+                selected_feature_kinds.append(str(selected_kind))
+                param_vectors.append(self._summary_to_vector_or_none(str(selected_kind), summary))
+                feature_scores[feat_idx] = float(score)
+                is_active = (
+                    float(score) < float(self.truncated_inequality_z_threshold)
+                    and float(auto_direction_conf) > float(self.truncated_auto_z_score_gap_threshold)
+                )
+                active_mask[feat_idx] = int(is_active)
+                if is_active:
+                    avg_step_cost = min(float(score) - float(self.truncated_inequality_z_threshold), 0.0)
+                    feature_constraint_costs[feat_idx] = float(self.lambda_ineq_constraint * len(values) * avg_step_cost)
+                else:
+                    feature_constraint_costs[feat_idx] = 0.0
+                continue
             is_equality_feature = self._is_equality_feature(feat_idx)
             if not is_equality_feature:
                 values = self._trim_values_for_inequality_fit(raw_values)
@@ -1113,6 +1267,11 @@ class StageWiseConstraintLearningModel:
                     feature_scores[feat_idx] = -ll_gain
                     active_mask[feat_idx] = 1
                     active_fit_losses[feat_idx] = fitted_loss
+        if self.use_score_mode and self.force_inactive_feature_indices:
+            for feat_idx in self.force_inactive_feature_indices:
+                active_mask[feat_idx] = 0
+                feature_constraint_costs[feat_idx] = 0.0
+                active_fit_losses[feat_idx] = None
         if not self.use_score_mode:
             n_active = int(np.sum(active_mask))
             if n_active > 0:
@@ -1177,7 +1336,16 @@ class StageWiseConstraintLearningModel:
 
         scores = np.asarray(self.demo_feature_score_matrices_, dtype=float)
         thresholds = np.asarray(self.score_threshold_matrix, dtype=float)
-        activated = scores < thresholds[None, :, :]
+        if getattr(self, "demo_activation_matrices_", None):
+            activated = np.asarray(self.demo_activation_matrices_, dtype=float) > 0.5
+        else:
+            activated = scores < thresholds[None, :, :]
+        signatures = None
+        if getattr(self, "demo_activation_signature_matrices_", None):
+            try:
+                signatures = np.asarray(self.demo_activation_signature_matrices_, dtype=float)
+            except Exception:
+                signatures = None
         activation_rate = np.mean(activated.astype(float), axis=0)
         feature_names = []
         for local_idx in range(self.num_features):
@@ -1204,9 +1372,13 @@ class StageWiseConstraintLearningModel:
                                 self._equality_score_type()
                                 if self._is_equality_feature(feat_idx)
                                 else (
-                                    "truncated_z"
-                                    if self._kind_is_truncated_z(self.feature_model_types[feat_idx])
-                                    else "-ll_gain"
+                                    "truncated_auto_z"
+                                    if self._kind_is_truncated_auto_z(self.feature_model_types[feat_idx])
+                                    else (
+                                        "truncated_z"
+                                        if self._kind_is_truncated_z(self.feature_model_types[feat_idx])
+                                        else "-ll_gain"
+                                    )
                                 )
                             )
                         ),
@@ -1224,19 +1396,50 @@ class StageWiseConstraintLearningModel:
         return {
             "thresholds": thresholds.tolist(),
             "activation_rate_matrix": activation_rate.tolist(),
+            "activation_signature_mean": (
+                np.asarray(getattr(self, "shared_activation_signature_mean", []), dtype=float).tolist()
+                if getattr(self, "shared_activation_signature_mean", None) is not None
+                else []
+            ),
+            "activation_signature_per_demo": signatures.tolist() if signatures is not None else [],
             "activated_mask_per_demo": activated.astype(int).tolist(),
             "by_stage": by_stage,
         }
 
     def _compute_current_activation_rate_matrix(self):
-        if self.use_score_mode and self.demo_feature_score_matrices_:
-            scores = np.asarray(self.demo_feature_score_matrices_, dtype=float)
-            activated = scores < self.score_threshold_matrix[None, :, :]
+        if self.use_score_mode and self.demo_activation_matrices_:
+            activated = np.asarray(self.demo_activation_matrices_, dtype=float)
             return np.mean(activated.astype(float), axis=0)
         if self.demo_r_matrices_:
             masks = np.asarray(self.demo_r_matrices_, dtype=float)
             return np.mean(masks, axis=0)
         return np.zeros((self.num_stages, self.num_features), dtype=float)
+
+    def _stage_params_activation_signature(self, stage_params):
+        signature = np.zeros(self.num_features, dtype=float)
+        active_mask = getattr(stage_params, "active_mask", None)
+        if active_mask is None:
+            return signature
+        for feat_idx, base_kind in enumerate(self.feature_model_types):
+            if not int(np.asarray(active_mask, dtype=int)[feat_idx]):
+                continue
+            if self._kind_is_truncated_auto_z(base_kind):
+                selected_kind = self._stage_feature_kind(stage_params, feat_idx)
+                if self._kind_is_lower(selected_kind):
+                    signature[feat_idx] = -1.0
+                elif self._kind_is_upper(selected_kind):
+                    signature[feat_idx] = 1.0
+                else:
+                    signature[feat_idx] = 0.0
+            else:
+                signature[feat_idx] = 1.0
+        return signature
+
+    def _activation_signature_matrix_from_stage_params(self, stage_params_list):
+        return np.stack(
+            [self._stage_params_activation_signature(stage_params) for stage_params in stage_params_list],
+            axis=0,
+        )
 
     def _summary_to_vector(self, kind, summary):
         kind = str(kind).lower()
@@ -1438,18 +1641,6 @@ class StageWiseConstraintLearningModel:
         kind = self._stage_feature_kind(stage_params, feat_idx)
         return self._summary_to_vector_or_none(kind, stage_params.model_summaries[feat_idx])
 
-    def _subgoal_consensus_cost(self, candidate_stage_params, shared_stage_subgoals):
-        if shared_stage_subgoals is None:
-            return 0.0
-        total = 0.0
-        for stage_idx in range(self.num_stages):
-            shared_subgoal = shared_stage_subgoals[stage_idx]
-            if shared_subgoal is None:
-                continue
-            diff = np.asarray(candidate_stage_params[stage_idx].subgoal, dtype=float) - np.asarray(shared_subgoal, dtype=float)
-            total += float(np.dot(diff, diff))
-        return total
-
     def _param_consensus_cost(
         self,
         candidate_stage_params,
@@ -1502,11 +1693,17 @@ class StageWiseConstraintLearningModel:
     def _activation_consensus_cost(self, candidate_stage_params, shared_feature_score_mean):
         if not self.use_score_mode or shared_feature_score_mean is None:
             return 0.0
-        local_scores = np.stack(
-            [np.asarray(stage_params.feature_scores, dtype=float) for stage_params in candidate_stage_params],
+        shared_signature = getattr(self, "shared_activation_signature_mean", None)
+        if shared_signature is not None:
+            local_signature = self._activation_signature_matrix_from_stage_params(candidate_stage_params)
+            shared_signature = np.asarray(shared_signature, dtype=float)
+            if shared_signature.shape == local_signature.shape:
+                delta = local_signature - shared_signature
+                return float(np.sum(delta * delta))
+        local_activation = np.stack(
+            [np.asarray(stage_params.active_mask, dtype=float) for stage_params in candidate_stage_params],
             axis=0,
         )
-        local_activation = self._hard_activation_from_scores(local_scores)
         total = 0.0
         for stage_idx in range(self.num_stages):
             delta = np.asarray(local_activation[stage_idx], dtype=float) - np.asarray(shared_feature_score_mean[stage_idx], dtype=float)
@@ -1528,10 +1725,8 @@ class StageWiseConstraintLearningModel:
         stage_idx,
         s,
         e,
-        lam_subgoal_consensus,
         lam_param_consensus,
         lam_activation_consensus,
-        shared_stage_subgoals,
         shared_param_vectors,
         shared_r_mean,
         shared_feature_score_mean=None,
@@ -1543,11 +1738,6 @@ class StageWiseConstraintLearningModel:
         short_segment_penalty = 0.0
         if self.use_score_mode and self.has_equality_feature:
             short_segment_penalty = float(self.short_segment_penalty_c / np.sqrt(max(stage_len, 1)))
-        subgoal_consensus_cost = 0.0
-        shared_subgoal = None if shared_stage_subgoals is None else shared_stage_subgoals[stage_idx]
-        if lam_subgoal_consensus > 0.0 and shared_subgoal is not None:
-            diff = np.asarray(stage_params.subgoal, dtype=float) - np.asarray(shared_subgoal, dtype=float)
-            subgoal_consensus_cost = float(np.dot(diff, diff))
         param_consensus_cost = 0.0
         if lam_param_consensus > 0.0:
             for feat_idx, _ in enumerate(self.feature_model_types):
@@ -1578,11 +1768,9 @@ class StageWiseConstraintLearningModel:
                 param_consensus_cost += float(np.dot(delta, delta))
         activation_consensus_cost = 0.0
         if self.use_score_mode:
-            scores = stage_params.feature_scores
-            if scores is not None and shared_feature_score_mean is not None:
-                local_activation = self._hard_activation_from_scores(
-                    np.asarray(scores, dtype=float)[None, :]
-                )[0]
+            active_mask = stage_params.active_mask
+            if active_mask is not None and shared_feature_score_mean is not None:
+                local_activation = np.asarray(active_mask, dtype=float)
                 if self.use_joint_mask_search and not self._hard_activation_match(
                     local_activation,
                     shared_feature_score_mean,
@@ -1590,8 +1778,19 @@ class StageWiseConstraintLearningModel:
                 ):
                     return None
                 if lam_activation_consensus > 0.0:
-                    delta = np.asarray(local_activation, dtype=float) - np.asarray(shared_feature_score_mean[stage_idx], dtype=float)
-                    activation_consensus_cost = float(np.dot(delta, delta))
+                    shared_signature = getattr(self, "shared_activation_signature_mean", None)
+                    if shared_signature is not None:
+                        local_signature = self._stage_params_activation_signature(stage_params)
+                        shared_signature_arr = np.asarray(shared_signature, dtype=float)
+                        if shared_signature_arr.ndim == 2 and shared_signature_arr.shape[0] > stage_idx:
+                            delta = local_signature - shared_signature_arr[stage_idx]
+                            activation_consensus_cost = float(np.dot(delta, delta))
+                        else:
+                            delta = np.asarray(local_activation, dtype=float) - np.asarray(shared_feature_score_mean[stage_idx], dtype=float)
+                            activation_consensus_cost = float(np.dot(delta, delta))
+                    else:
+                        delta = np.asarray(local_activation, dtype=float) - np.asarray(shared_feature_score_mean[stage_idx], dtype=float)
+                        activation_consensus_cost = float(np.dot(delta, delta))
         elif lam_activation_consensus > 0.0:
             active_mask = stage_params.active_mask
             if active_mask is not None and shared_r_mean is not None:
@@ -1601,7 +1800,6 @@ class StageWiseConstraintLearningModel:
             float(constraint_cost)
             + float(short_segment_penalty)
             + self.lambda_progress * float(progress_cost)
-            + lam_subgoal_consensus * float(subgoal_consensus_cost)
             + lam_param_consensus * float(param_consensus_cost)
             + lam_activation_consensus * float(activation_consensus_cost)
         )
@@ -1613,7 +1811,6 @@ class StageWiseConstraintLearningModel:
             "constraint": float(constraint_cost),
             "short_segment_penalty": float(short_segment_penalty),
             "progress": float(progress_cost),
-            "subgoal_consensus": float(subgoal_consensus_cost),
             "param_consensus": float(param_consensus_cost),
             "activation_consensus": float(activation_consensus_cost),
             "weighted_total": float(weighted_total),
@@ -1622,10 +1819,8 @@ class StageWiseConstraintLearningModel:
     def _best_segmentation_info(
         self,
         demo_idx,
-        lam_subgoal_consensus,
         lam_param_consensus,
         lam_activation_consensus,
-        shared_stage_subgoals,
         shared_param_vectors,
         shared_r_mean,
         shared_feature_score_mean=None,
@@ -1659,10 +1854,8 @@ class StageWiseConstraintLearningModel:
                     stage_idx=stage_idx,
                     s=s,
                     e=e,
-                    lam_subgoal_consensus=lam_subgoal_consensus,
                     lam_param_consensus=lam_param_consensus,
                     lam_activation_consensus=lam_activation_consensus,
-                    shared_stage_subgoals=shared_stage_subgoals,
                     shared_param_vectors=shared_param_vectors,
                     shared_r_mean=shared_r_mean,
                     shared_feature_score_mean=shared_feature_score_mean,
@@ -1723,7 +1916,6 @@ class StageWiseConstraintLearningModel:
             "constraint": float(sum(info["constraint"] for info in stage_infos)),
             "short_segment_penalty": float(sum(info.get("short_segment_penalty", 0.0) for info in stage_infos)),
             "progress": float(sum(info["progress"] for info in stage_infos)),
-            "subgoal_consensus": float(sum(info["subgoal_consensus"] for info in stage_infos)),
             "param_consensus": float(sum(info["param_consensus"] for info in stage_infos)),
             "activation_consensus": float(sum(info["activation_consensus"] for info in stage_infos)),
             "total": float(best[self.num_stages - 1, final_end]),
@@ -1733,10 +1925,8 @@ class StageWiseConstraintLearningModel:
         self,
         demo_idx,
         stage_ends,
-        lam_subgoal_consensus,
         lam_param_consensus,
         lam_activation_consensus,
-        shared_stage_subgoals,
         shared_param_vectors,
         shared_r_mean,
         shared_feature_score_mean=None,
@@ -1756,9 +1946,6 @@ class StageWiseConstraintLearningModel:
             if self.use_score_mode and self.has_equality_feature:
                 short_segment_penalty += float(self.short_segment_penalty_c / np.sqrt(max(stage_len, 1)))
             progress_cost += p_cost
-        subgoal_consensus_cost = 0.0
-        if lam_subgoal_consensus > 0.0:
-            subgoal_consensus_cost = self._subgoal_consensus_cost(candidate_stage_params, shared_stage_subgoals)
         param_consensus_cost = 0.0
         if lam_param_consensus > 0.0:
             param_consensus_cost = self._param_consensus_cost(
@@ -1769,11 +1956,10 @@ class StageWiseConstraintLearningModel:
             )
         activation_consensus_cost = 0.0
         if self.use_score_mode and self.use_joint_mask_search and shared_feature_score_mean is not None:
-            local_scores = np.stack(
-                [np.asarray(stage_params.feature_scores, dtype=float) for stage_params in candidate_stage_params],
+            local_activation = np.stack(
+                [np.asarray(stage_params.active_mask, dtype=float) for stage_params in candidate_stage_params],
                 axis=0,
             )
-            local_activation = self._hard_activation_from_scores(local_scores)
             if not self._hard_activation_match(local_activation, shared_feature_score_mean):
                 return None
         if lam_activation_consensus > 0.0:
@@ -1785,7 +1971,6 @@ class StageWiseConstraintLearningModel:
             constraint_cost
             + short_segment_penalty
             + self.lambda_progress * progress_cost
-            + lam_subgoal_consensus * subgoal_consensus_cost
             + lam_param_consensus * param_consensus_cost
             + lam_activation_consensus * activation_consensus_cost
         )
@@ -1796,7 +1981,6 @@ class StageWiseConstraintLearningModel:
             "constraint": float(constraint_cost),
             "short_segment_penalty": float(short_segment_penalty),
             "progress": float(progress_cost),
-            "subgoal_consensus": float(subgoal_consensus_cost),
             "param_consensus": float(param_consensus_cost),
             "activation_consensus": float(activation_consensus_cost),
             "total": float(total),
@@ -1828,12 +2012,31 @@ class StageWiseConstraintLearningModel:
         ]
         return (np.mean(np.stack(activation_mats, axis=0), axis=0) > 0.5).astype(float)
 
+    def _majority_activation_signature_from_infos(self, selected_infos):
+        if not selected_infos:
+            return np.zeros((self.num_stages, self.num_features), dtype=float)
+        signature_mats = [
+            self._activation_signature_matrix_from_stage_params(info["stage_params"])
+            for info in selected_infos
+        ]
+        stacked = np.stack(signature_mats, axis=0)
+        out = np.zeros((self.num_stages, self.num_features), dtype=float)
+        for stage_idx in range(self.num_stages):
+            for feat_idx, base_kind in enumerate(self.feature_model_types):
+                vals = np.rint(stacked[:, stage_idx, feat_idx]).astype(int)
+                if self._kind_is_truncated_auto_z(base_kind):
+                    counts = {code: int(np.sum(vals == code)) for code in (-1, 0, 1)}
+                    best_count = max(counts.values())
+                    best_codes = [code for code, count in counts.items() if count == best_count]
+                    out[stage_idx, feat_idx] = 0.0 if 0 in best_codes else float(best_codes[0])
+                else:
+                    out[stage_idx, feat_idx] = float(np.mean(vals.astype(float)) > 0.5)
+        return out
+
     def _select_infos_with_shared_activation_mask(
         self,
-        lam_subgoal_consensus,
         lam_param_consensus,
         lam_activation_consensus,
-        shared_stage_subgoals,
         shared_param_vectors,
         shared_mask,
     ):
@@ -1844,10 +2047,8 @@ class StageWiseConstraintLearningModel:
             try:
                 info = self._best_segmentation_info(
                     demo_idx=demo_idx,
-                    lam_subgoal_consensus=lam_subgoal_consensus,
                     lam_param_consensus=lam_param_consensus,
                     lam_activation_consensus=lam_activation_consensus,
-                    shared_stage_subgoals=shared_stage_subgoals,
                     shared_param_vectors=shared_param_vectors,
                     shared_r_mean=None,
                     shared_feature_score_mean=shared_mask,
@@ -1861,18 +2062,14 @@ class StageWiseConstraintLearningModel:
 
     def _best_joint_activation_mask_selection(
         self,
-        lam_subgoal_consensus,
         lam_param_consensus,
         lam_activation_consensus,
-        shared_stage_subgoals,
         shared_param_vectors,
     ):
         if lam_activation_consensus <= 0.0 and self.fixed_feature_mask is None:
             selected_infos, _ = self._select_infos_with_shared_activation_mask(
-                lam_subgoal_consensus=lam_subgoal_consensus,
                 lam_param_consensus=lam_param_consensus,
                 lam_activation_consensus=lam_activation_consensus,
-                shared_stage_subgoals=shared_stage_subgoals,
                 shared_param_vectors=shared_param_vectors,
                 shared_mask=np.zeros((self.num_stages, self.num_features), dtype=float),
             )
@@ -1883,10 +2080,8 @@ class StageWiseConstraintLearningModel:
         best_mask = None
         for shared_mask in self._enumerate_shared_activation_masks():
             selected_infos, total = self._select_infos_with_shared_activation_mask(
-                lam_subgoal_consensus=lam_subgoal_consensus,
                 lam_param_consensus=lam_param_consensus,
                 lam_activation_consensus=lam_activation_consensus,
-                shared_stage_subgoals=shared_stage_subgoals,
                 shared_param_vectors=shared_param_vectors,
                 shared_mask=shared_mask,
             )
@@ -1910,10 +2105,8 @@ class StageWiseConstraintLearningModel:
                     fallback_infos.append(
                         self._best_segmentation_info(
                             demo_idx=demo_idx,
-                            lam_subgoal_consensus=lam_subgoal_consensus,
                             lam_param_consensus=lam_param_consensus,
                             lam_activation_consensus=0.0,
-                            shared_stage_subgoals=shared_stage_subgoals,
                             shared_param_vectors=shared_param_vectors,
                             shared_r_mean=None,
                             shared_feature_score_mean=None,
@@ -1949,7 +2142,7 @@ class StageWiseConstraintLearningModel:
                 ]
                 if not active_stage_params:
                     continue
-                if self._is_auto_constraint_feature(feat_idx):
+                if self._is_auto_constraint_feature(feat_idx) or self._kind_is_truncated_auto_z(self.feature_model_types[feat_idx]):
                     kind_counts = {}
                     for stage_params in active_stage_params:
                         kind = self._stage_feature_kind(stage_params, feat_idx)
@@ -2012,8 +2205,10 @@ class StageWiseConstraintLearningModel:
         self.stage_ends_ = []
         self.shared_r_mean = None
         self.shared_feature_score_mean = None
+        self.shared_activation_signature_mean = None
         self.shared_activation_proto = None
         self.demo_activation_matrices_ = []
+        self.demo_activation_signature_matrices_ = []
         self.demo_activation_history = []
         self.activation_proto_history = []
         self.stage_subgoals_hist = []
@@ -2026,25 +2221,20 @@ class StageWiseConstraintLearningModel:
         self._prepare_segment_stage_cache()
 
         for iteration in range(int(max_iter)):
-            lam_subgoal_consensus = self._current_scheduled_lambda(self.lambda_subgoal_consensus, iteration, int(max_iter))
             lam_param_consensus = self._current_scheduled_lambda(self.lambda_param_consensus, iteration, int(max_iter))
             lam_activation_consensus = self._current_scheduled_lambda(
                 self.lambda_activation_consensus,
                 iteration,
                 int(max_iter),
             )
-            self.subgoal_consensus_lambda_hist.append(float(lam_subgoal_consensus))
             self.param_consensus_lambda_hist.append(float(lam_param_consensus))
             self.activation_consensus_lambda_hist.append(float(lam_activation_consensus))
-            self.current_subgoal_consensus_lambda = float(lam_subgoal_consensus)
             self.current_param_consensus_lambda = float(lam_param_consensus)
             self.current_activation_consensus_lambda = float(lam_activation_consensus)
             if self.use_joint_mask_search:
                 selected_infos, shared_activation_mask = self._best_joint_activation_mask_selection(
-                    lam_subgoal_consensus=lam_subgoal_consensus,
                     lam_param_consensus=lam_param_consensus,
                     lam_activation_consensus=lam_activation_consensus,
-                    shared_stage_subgoals=shared_stage_subgoals,
                     shared_param_vectors=shared_param_vectors,
                 )
             else:
@@ -2054,10 +2244,8 @@ class StageWiseConstraintLearningModel:
                     selected_infos.append(
                         self._best_segmentation_info(
                             demo_idx=demo_idx,
-                            lam_subgoal_consensus=lam_subgoal_consensus,
                             lam_param_consensus=lam_param_consensus,
                             lam_activation_consensus=lam_activation_consensus,
-                            shared_stage_subgoals=shared_stage_subgoals,
                             shared_param_vectors=shared_param_vectors,
                             shared_r_mean=self.shared_r_mean,
                             shared_feature_score_mean=self.shared_feature_score_mean,
@@ -2072,7 +2260,6 @@ class StageWiseConstraintLearningModel:
                     "constraint": float(info["constraint"]),
                     "short_segment_penalty": float(info.get("short_segment_penalty", 0.0)),
                     "progress": self.lambda_progress * float(info["progress"]),
-                    "subgoal_consensus": lam_subgoal_consensus * float(info["subgoal_consensus"]),
                     "param_consensus": lam_param_consensus * float(info["param_consensus"]),
                     "activation_consensus": lam_activation_consensus * float(info.get("activation_consensus", 0.0)),
                     "total": float(info["total"]),
@@ -2093,7 +2280,12 @@ class StageWiseConstraintLearningModel:
             ]
             if self.use_score_mode and self.demo_feature_score_matrices_:
                 self.demo_activation_matrices_ = [
-                    self._hard_activation_from_scores(score_mat) for score_mat in self.demo_feature_score_matrices_
+                    np.stack([stage_params.active_mask for stage_params in info["stage_params"]], axis=0).astype(float)
+                    for info in selected_infos
+                ]
+                self.demo_activation_signature_matrices_ = [
+                    self._activation_signature_matrix_from_stage_params(info["stage_params"])
+                    for info in selected_infos
                 ]
                 activation_mats = np.stack(self.demo_activation_matrices_, axis=0)
                 if self.use_joint_mask_search:
@@ -2102,6 +2294,7 @@ class StageWiseConstraintLearningModel:
                     self.shared_feature_score_mean = np.asarray(shared_activation_mask, dtype=float).copy()
                 else:
                     self.shared_feature_score_mean = self._majority_activation_mask_from_infos(selected_infos)
+                self.shared_activation_signature_mean = self._majority_activation_signature_from_infos(selected_infos)
                 self.r = np.asarray(np.rint(self.shared_feature_score_mean), dtype=int)
                 self.shared_activation_proto = np.asarray(self.shared_feature_score_mean, dtype=float).copy()
                 self.demo_activation_history.append(np.asarray(activation_mats, dtype=float).copy())
@@ -2119,21 +2312,18 @@ class StageWiseConstraintLearningModel:
             total_constraint = float(np.sum([info["constraint"] for info in selected_infos]))
             total_short_segment_penalty = float(np.sum([info.get("short_segment_penalty", 0.0) for info in selected_infos]))
             total_progress = float(np.sum([info["progress"] for info in selected_infos]))
-            total_subgoal_consensus = float(np.sum([info["subgoal_consensus"] for info in selected_infos]))
             total_param_consensus = float(np.sum([info["param_consensus"] for info in selected_infos]))
             total_activation_consensus = float(np.sum([info.get("activation_consensus", 0.0) for info in selected_infos]))
             total_loss = float(
                 total_constraint
                 + total_short_segment_penalty
                 + self.lambda_progress * total_progress
-                + lam_subgoal_consensus * total_subgoal_consensus
                 + lam_param_consensus * total_param_consensus
                 + lam_activation_consensus * total_activation_consensus
             )
             self.loss_constraint.append(total_constraint)
             self.loss_short_segment_penalty.append(total_short_segment_penalty)
             self.loss_progress.append(total_progress)
-            self.loss_subgoal_consensus.append(total_subgoal_consensus)
             self.loss_param_consensus.append(total_param_consensus)
             self.loss_activation_consensus.append(total_activation_consensus)
             self.loss_total.append(total_loss)
@@ -2156,31 +2346,26 @@ class StageWiseConstraintLearningModel:
                             "constraint": total_constraint,
                             "short_segment_penalty": total_short_segment_penalty,
                             "progress": total_progress,
-                            "subgoal_consensus": total_subgoal_consensus,
                             "param_consensus": total_param_consensus,
                             "activation_consensus": total_activation_consensus,
                         },
                         metrics=metrics,
                         extras={
-                            "lam_subgoal_consensus": f"{lam_subgoal_consensus:.3f}",
                             "lam_param_consensus": f"{lam_param_consensus:.3f}",
                             "lam_activation_consensus": f"{lam_activation_consensus:.3f}",
                         },
                     )
                 )
         should_final_resegment = int(max_iter) > 0 and (
-            self.lambda_subgoal_consensus > 0.0
-            or self.lambda_param_consensus > 0.0
+            self.lambda_param_consensus > 0.0
             or (self.use_score_mode and self.lambda_activation_consensus > 0.0)
             or self.use_joint_mask_search
         )
         if should_final_resegment:
             if self.use_joint_mask_search:
                 final_selected_infos, shared_activation_mask = self._best_joint_activation_mask_selection(
-                    lam_subgoal_consensus=self.current_subgoal_consensus_lambda,
                     lam_param_consensus=self.current_param_consensus_lambda,
                     lam_activation_consensus=self.current_activation_consensus_lambda,
-                    shared_stage_subgoals=self.shared_stage_subgoals,
                     shared_param_vectors=self.shared_param_vectors,
                 )
             else:
@@ -2190,10 +2375,8 @@ class StageWiseConstraintLearningModel:
                     final_selected_infos.append(
                         self._best_segmentation_info(
                             demo_idx=demo_idx,
-                            lam_subgoal_consensus=self.current_subgoal_consensus_lambda,
                             lam_param_consensus=self.current_param_consensus_lambda,
                             lam_activation_consensus=self.current_activation_consensus_lambda,
-                            shared_stage_subgoals=self.shared_stage_subgoals,
                             shared_param_vectors=self.shared_param_vectors,
                             shared_r_mean=self.shared_r_mean,
                             shared_feature_score_mean=self.shared_feature_score_mean,
@@ -2208,7 +2391,6 @@ class StageWiseConstraintLearningModel:
                     "constraint": float(info["constraint"]),
                     "short_segment_penalty": float(info.get("short_segment_penalty", 0.0)),
                     "progress": self.lambda_progress * float(info["progress"]),
-                    "subgoal_consensus": self.current_subgoal_consensus_lambda * float(info["subgoal_consensus"]),
                     "param_consensus": self.current_param_consensus_lambda * float(info["param_consensus"]),
                     "activation_consensus": self.current_activation_consensus_lambda * float(info.get("activation_consensus", 0.0)),
                     "total": float(info["total"]),
@@ -2229,7 +2411,12 @@ class StageWiseConstraintLearningModel:
             ]
             if self.use_score_mode and self.demo_feature_score_matrices_:
                 self.demo_activation_matrices_ = [
-                    self._hard_activation_from_scores(score_mat) for score_mat in self.demo_feature_score_matrices_
+                    np.stack([stage_params.active_mask for stage_params in info["stage_params"]], axis=0).astype(float)
+                    for info in final_selected_infos
+                ]
+                self.demo_activation_signature_matrices_ = [
+                    self._activation_signature_matrix_from_stage_params(info["stage_params"])
+                    for info in final_selected_infos
                 ]
                 activation_mats = np.stack(self.demo_activation_matrices_, axis=0)
                 if self.use_joint_mask_search:
@@ -2238,6 +2425,7 @@ class StageWiseConstraintLearningModel:
                     self.shared_feature_score_mean = np.asarray(shared_activation_mask, dtype=float).copy()
                 else:
                     self.shared_feature_score_mean = self._majority_activation_mask_from_infos(final_selected_infos)
+                self.shared_activation_signature_mean = self._majority_activation_signature_from_infos(final_selected_infos)
                 self.r = np.asarray(np.rint(self.shared_feature_score_mean), dtype=int)
                 self.shared_activation_proto = np.asarray(self.shared_feature_score_mean, dtype=float).copy()
                 if self.demo_activation_history:
@@ -2263,21 +2451,18 @@ class StageWiseConstraintLearningModel:
             final_total_constraint = float(np.sum([info["constraint"] for info in final_selected_infos]))
             final_total_short_segment_penalty = float(np.sum([info.get("short_segment_penalty", 0.0) for info in final_selected_infos]))
             final_total_progress = float(np.sum([info["progress"] for info in final_selected_infos]))
-            final_total_subgoal_consensus = float(np.sum([info["subgoal_consensus"] for info in final_selected_infos]))
             final_total_param_consensus = float(np.sum([info["param_consensus"] for info in final_selected_infos]))
             final_total_activation_consensus = float(np.sum([info.get("activation_consensus", 0.0) for info in final_selected_infos]))
             final_total_loss = float(
                 final_total_constraint
                 + final_total_short_segment_penalty
                 + self.lambda_progress * final_total_progress
-                + self.current_subgoal_consensus_lambda * final_total_subgoal_consensus
                 + self.current_param_consensus_lambda * final_total_param_consensus
                 + self.current_activation_consensus_lambda * final_total_activation_consensus
             )
             self.loss_constraint[-1] = final_total_constraint
             self.loss_short_segment_penalty[-1] = final_total_short_segment_penalty
             self.loss_progress[-1] = final_total_progress
-            self.loss_subgoal_consensus[-1] = final_total_subgoal_consensus
             self.loss_param_consensus[-1] = final_total_param_consensus
             self.loss_activation_consensus[-1] = final_total_activation_consensus
             self.loss_total[-1] = final_total_loss

@@ -33,13 +33,10 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         selected_raw_feature_ids=kwargs.get("selected_raw_feature_ids"),
         feature_model_types=kwargs.get("feature_model_types"),
         fixed_feature_mask=kwargs.get("fixed_feature_mask"),
+        force_inactive_feature_ids=kwargs.get("force_inactive_feature_ids"),
         lambda_eq_constraint=kwargs.get("lambda_eq_constraint", kwargs.get("lambda_constraint", 1.0)),
         lambda_ineq_constraint=kwargs.get("lambda_ineq_constraint", kwargs.get("lambda_constraint", 1.0)),
         lambda_progress=kwargs.get("lambda_progress", 1.0),
-        lambda_subgoal_consensus=kwargs.get(
-            "lambda_subgoal_consensus",
-            kwargs.get("lambda_consensus", 1.0),
-        ),
         lambda_param_consensus=kwargs.get("lambda_param_consensus", 1.0),
         lambda_activation_consensus=kwargs.get(
             "lambda_activation_consensus",
@@ -64,6 +61,10 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         ),
         inequality_score_activation_threshold=kwargs.get("inequality_score_activation_threshold", -0.5),
         truncated_inequality_z_threshold=kwargs.get("truncated_inequality_z_threshold", 2.0),
+        truncated_auto_z_score_gap_threshold=kwargs.get("truncated_auto_z_score_gap_threshold", 0.05),
+        truncated_z_score_mode=kwargs.get("truncated_z_score_mode", "z"),
+        truncated_z_optimize=kwargs.get("truncated_z_optimize", False),
+        truncated_z_optimize_trigger_scale=kwargs.get("truncated_z_optimize_trigger_scale", 3.0),
         activation_proto_temperature=kwargs.get("activation_proto_temperature", 0.1),
         joint_mask_search_max_masks=kwargs.get("joint_mask_search_max_masks", 4096),
         fixed_true_cutpoint_prefix=kwargs.get("fixed_true_cutpoint_prefix", 0),
@@ -91,12 +92,6 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         if getattr(learner, "loss_progress", None)
         else 0.0
     )
-    subgoal_consensus_cost = (
-        float(getattr(learner, "current_subgoal_consensus_lambda", 0.0))
-        * float(learner.loss_subgoal_consensus[-1])
-        if getattr(learner, "loss_subgoal_consensus", None)
-        else 0.0
-    )
     param_consensus_cost = (
         float(getattr(learner, "current_param_consensus_lambda", 0.0))
         * float(learner.loss_param_consensus[-1])
@@ -115,7 +110,6 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         + progress_cost
         + (
             short_segment_penalty
-            + subgoal_consensus_cost
             + param_consensus_cost
             + activation_consensus_cost
         ) / max(n_stages, 1)
@@ -134,7 +128,6 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         "constraint_cost": constraint_cost,
         "short_segment_penalty": short_segment_penalty,
         "progress_cost": progress_cost,
-        "subgoal_consensus_cost": subgoal_consensus_cost,
         "param_consensus_cost": param_consensus_cost,
         "activation_consensus_cost": activation_consensus_cost,
         "stage_averaged_cost": float(stage_averaged_cost),
@@ -215,7 +208,6 @@ class JointSWCLMethod:
                     "constraint_cost": float(item["constraint_cost"]),
                     "progress_cost": float(item["progress_cost"]),
                     "short_segment_penalty": float(item["short_segment_penalty"]),
-                    "subgoal_consensus_cost": float(item["subgoal_consensus_cost"]),
                     "param_consensus_cost": float(item["param_consensus_cost"]),
                     "activation_consensus_cost": float(item["activation_consensus_cost"]),
                     "metrics": dict(item["metrics"]),

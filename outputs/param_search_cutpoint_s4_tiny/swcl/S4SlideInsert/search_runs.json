@@ -1,0 +1,148 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 12.366666666666665,
+        "MeanStageSubgoalError": 0.04239514800579197,
+        "MeanConstraintError": 0.015817333489578936,
+        "MeanConstraintErrorRaw": 0.0023335743113818076
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 17.233333333333334,
+        "MeanStageSubgoalError": 0.06404093829899474,
+        "MeanConstraintError": 0.059213579788216474,
+        "MeanConstraintErrorRaw": 0.02441372548744364
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 12.333333333333332,
+        "MeanStageSubgoalError": 0.041432025076163906,
+        "MeanConstraintError": 0.01586263977419017,
+        "MeanConstraintErrorRaw": 0.0023347342650421247
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 16.733333333333334,
+        "MeanStageSubgoalError": 0.06338700240708395,
+        "MeanConstraintError": 0.059095017729888545,
+        "MeanConstraintErrorRaw": 0.024408336970823032
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.133333333333335,
+        "MeanStageSubgoalError": 0.0389160109148329,
+        "MeanConstraintError": 0.014165082346929817,
+        "MeanConstraintErrorRaw": 0.00213348316905717
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 17.033333333333335,
+        "MeanStageSubgoalError": 0.06415986551134499,
+        "MeanConstraintError": 0.059083482806034336,
+        "MeanConstraintErrorRaw": 0.024408044841032567
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 11.266666666666667,
+        "MeanStageSubgoalError": 0.038813598949477134,
+        "MeanConstraintError": 0.014164943684816802,
+        "MeanConstraintErrorRaw": 0.0021341570273461594
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.1
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.666666666666666,
+        "MeanStageSubgoalError": 0.044852101367264016,
+        "MeanConstraintError": 0.013916118769916564,
+        "MeanConstraintErrorRaw": 0.002126570690283961
+      }
+    }
+  ]
+}

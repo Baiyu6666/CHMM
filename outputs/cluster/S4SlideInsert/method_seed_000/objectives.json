@@ -1,6 +1,6 @@
 {
-  "ModelObjectiveFinal": 1399.9972650623015,
-  "SegmentationObjectiveFinal": 1399.9972650623015,
-  "PosthocObjectiveFinal": -15499999986.427639,
-  "PosthocFeatureObjectiveFinal": -15499999986.427639
+  "ModelObjectiveFinal": 1079.7144856071595,
+  "SegmentationObjectiveFinal": 1079.7144856071595,
+  "PosthocObjectiveFinal": -44599999140.73824,
+  "PosthocFeatureObjectiveFinal": -44599999140.73824
 }

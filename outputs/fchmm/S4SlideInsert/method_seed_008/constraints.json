@@ -1,90 +1,105 @@
 {
   "true_constraints": {
     "surface_target": 0.0,
-    "v2_target": 0.007,
-    "v3_target": 0.045,
-    "v4_target": 0.018,
-    "f_contact_min": 0.4,
-    "f_slide_min": 0.72,
-    "f_insert_min": 1.0,
-    "orient_err_max_stage3": 0.06,
-    "orient_err_max_stage4": 0.04
+    "clearance_target": 0.0,
+    "clearance_align_max": 0.006,
+    "clearance_insert_max": 0.0035,
+    "normal_load_stage2_min": 0.4,
+    "normal_load_stage3_min": 0.72,
+    "normal_load_stage4_min": 1.0,
+    "v_align_max": 0.00112,
+    "v_insert_max": 0.0072,
+    "v_seat_max": 0.00288,
+    "orient_aligned_max": 0.06
   },
   "constraint_specs": [
     {
-      "feature_name": "surf dist",
+      "feature_name": "surf_dist",
       "stage": 1,
       "semantics": "target_value",
       "oracle_key": "surface_target"
     },
     {
-      "feature_name": "speed",
+      "feature_name": "centerline_dist",
       "stage": 1,
       "semantics": "target_value",
-      "oracle_key": "v2_target"
+      "oracle_key": "clearance_target"
     },
     {
-      "feature_name": "force",
+      "feature_name": "normal_load",
       "stage": 1,
       "semantics": "lower_bound",
-      "oracle_key": "f_contact_min"
+      "oracle_key": "normal_load_stage2_min"
     },
     {
-      "feature_name": "surf dist",
+      "feature_name": "surf_dist",
       "stage": 2,
       "semantics": "target_value",
       "oracle_key": "surface_target"
     },
     {
-      "feature_name": "speed",
+      "feature_name": "centerline_dist",
       "stage": 2,
       "semantics": "target_value",
-      "oracle_key": "v3_target"
+      "oracle_key": "clearance_target"
     },
     {
-      "feature_name": "force",
-      "stage": 2,
-      "semantics": "lower_bound",
-      "oracle_key": "f_slide_min"
-    },
-    {
-      "feature_name": "orient err",
+      "feature_name": "orient_err",
       "stage": 2,
       "semantics": "upper_bound",
-      "oracle_key": "orient_err_max_stage3"
+      "oracle_key": "orient_aligned_max"
     },
     {
-      "feature_name": "surf dist",
+      "feature_name": "normal_load",
+      "stage": 2,
+      "semantics": "lower_bound",
+      "oracle_key": "normal_load_stage3_min"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 2,
+      "semantics": "upper_bound",
+      "oracle_key": "v_insert_max"
+    },
+    {
+      "feature_name": "surf_dist",
       "stage": 3,
       "semantics": "target_value",
       "oracle_key": "surface_target"
     },
     {
-      "feature_name": "speed",
+      "feature_name": "centerline_dist",
       "stage": 3,
       "semantics": "target_value",
-      "oracle_key": "v4_target"
+      "oracle_key": "clearance_target"
     },
     {
-      "feature_name": "force",
-      "stage": 3,
-      "semantics": "lower_bound",
-      "oracle_key": "f_insert_min"
-    },
-    {
-      "feature_name": "orient err",
+      "feature_name": "orient_err",
       "stage": 3,
       "semantics": "upper_bound",
-      "oracle_key": "orient_err_max_stage4"
+      "oracle_key": "orient_aligned_max"
+    },
+    {
+      "feature_name": "normal_load",
+      "stage": 3,
+      "semantics": "lower_bound",
+      "oracle_key": "normal_load_stage4_min"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 3,
+      "semantics": "upper_bound",
+      "oracle_key": "v_seat_max"
     }
   ],
   "ConstraintFeatureNames": [
-    "surf dist",
-    "force",
-    "orient err",
+    "surf_dist",
+    "centerline_dist",
+    "orient_err",
     "speed",
-    "noise",
-    "start_dist"
+    "angular_speed",
+    "normal_load",
+    "noise"
   ],
   "ConstraintTrueActiveMask": [
     [
@@ -93,20 +108,14 @@
       0,
       0,
       0,
-      0
-    ],
-    [
-      1,
-      1,
-      0,
-      1,
       0,
       0
     ],
     [
       1,
       1,
-      1,
+      0,
+      0,
       1,
       0,
       0
@@ -116,8 +125,56 @@
       1,
       1,
       1,
+      1,
       0,
       0
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0
+    ]
+  ],
+  "ConstraintPredictedActiveMask": [
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
     ]
   ],
   "ConstraintTargetMatrix": [
@@ -127,65 +184,111 @@
       NaN,
       NaN,
       NaN,
+      NaN,
       NaN
     ],
     [
       0.0,
+      0.0,
+      NaN,
+      NaN,
       0.4,
       NaN,
-      0.007,
-      NaN,
       NaN
     ],
     [
       0.0,
-      0.72,
+      0.0,
       0.06,
-      0.045,
+      0.0072,
+      0.72,
       NaN,
       NaN
     ],
     [
       0.0,
+      0.0,
+      0.06,
+      0.00288,
       1.0,
-      0.04,
-      0.018,
       NaN,
       NaN
     ]
   ],
   "ConstraintLearnedValueMatrix": [
     [
-      0.18470862033280394,
-      0.006232524865319888,
-      0.30531621098662465,
-      0.07656764415502891,
-      0.9863552101822911,
-      2.2581444507409856
+      0.016784065437665672,
+      0.007043857138479628,
+      0.3928040078759056,
+      0.02869633857630236,
+      0.005270450213313627,
+      -0.0010471497678129216,
+      0.16868179980805922
     ],
     [
-      0.006947735828090454,
-      0.39963032294340367,
-      0.1260605388150779,
-      0.006878253624588958,
-      1.2772622057944958,
-      1.5148279535774938
+      0.0007168056122314392,
+      0.00042598330028672,
+      0.05699999999999994,
+      0.007303104498138045,
+      0.72,
+      0.15256968686050965,
+      0.02459062567391118
     ],
     [
-      0.016113864196079845,
-      0.7196303229434036,
-      0.05714743935007761,
-      0.045817394248025715,
-      2.1398360258638918,
-      1.1774037718105068
+      0.0005188485366923014,
+      5.2788763929617274e-05,
+      0.05699999999999994,
+      0.007302472521230586,
+      0.72,
+      0.3308512566633881,
+      0.011713430926868149
     ],
     [
-      0.010217568744123592,
-      0.9996303229434036,
-      0.03814743935007748,
-      0.01809535559028459,
-      2.4597175383749907,
-      0.09865825697517894
+      0.0003269070876007838,
+      0.00019999989174466354,
+      0.03799999999999982,
+      0.0027783706779025406,
+      1.0,
+      0.3520444331217513,
+      -3.9275061252702637e-05
+    ]
+  ],
+  "ConstraintLearnedRawValueMatrix": [
+    [
+      0.016784065437665672,
+      0.007043857138479628,
+      0.3928040078759056,
+      0.02869633857630236,
+      0.005270450213313627,
+      -0.0010471497678129216,
+      0.16868179980805922
+    ],
+    [
+      0.0007168056122314392,
+      0.00042598330028672,
+      0.05699999999999994,
+      0.007303104498138045,
+      0.72,
+      0.15256968686050965,
+      0.02459062567391118
+    ],
+    [
+      0.0005188485366923014,
+      5.2788763929617274e-05,
+      0.05699999999999994,
+      0.007302472521230586,
+      0.72,
+      0.3308512566633881,
+      0.011713430926868149
+    ],
+    [
+      0.0003269070876007838,
+      0.00019999989174466354,
+      0.03799999999999982,
+      0.0027783706779025406,
+      1.0,
+      0.3520444331217513,
+      -3.9275061252702637e-05
     ]
   ],
   "ConstraintLearnedValuePerDemo": [],
@@ -196,31 +299,120 @@
       NaN,
       NaN,
       NaN,
-      NaN
-    ],
-    [
-      0.023199610620479767,
-      0.0003723518571666115,
-      NaN,
-      0.0013528693599042278,
       NaN,
       NaN
     ],
     [
-      0.05380679176500716,
-      0.0003723518571666674,
-      0.011651478164489337,
-      0.00908304357630717,
+      0.015257333525597059,
+      0.015065900777364522,
+      NaN,
+      NaN,
+      0.3202927819184472,
       NaN,
       NaN
     ],
     [
-      0.034118110160904304,
-      0.0003723518571666674,
-      0.00756691008885357,
-      0.0010596098319646814,
+      0.011043782356752059,
+      0.001866998727386795,
+      0.011793433008098684,
+      0.008579210317533129,
+      0.0,
+      NaN,
+      NaN
+    ],
+    [
+      0.006958274854851884,
+      0.007073466313070589,
+      0.08648517539272271,
+      0.008508615951201687,
+      0.0,
       NaN,
       NaN
     ]
+  ],
+  "ConstraintErrorMatrixRaw": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.0007168056122314392,
+      0.00042598330028672,
+      NaN,
+      NaN,
+      0.31999999999999995,
+      NaN,
+      NaN
+    ],
+    [
+      0.0005188485366923014,
+      5.2788763929617274e-05,
+      0.003000000000000058,
+      0.00010247252123058662,
+      0.0,
+      NaN,
+      NaN
+    ],
+    [
+      0.0003269070876007838,
+      0.00019999989174466354,
+      0.02200000000000018,
+      0.0001016293220974596,
+      0.0,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintSemanticsMatrix": [
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "target_value",
+      "target_value",
+      "",
+      "",
+      "lower_bound",
+      "",
+      ""
+    ],
+    [
+      "target_value",
+      "target_value",
+      "upper_bound",
+      "upper_bound",
+      "lower_bound",
+      "",
+      ""
+    ],
+    [
+      "target_value",
+      "target_value",
+      "upper_bound",
+      "upper_bound",
+      "lower_bound",
+      "",
+      ""
+    ]
+  ],
+  "ConstraintFeatureScales": [
+    0.046981054129075855,
+    0.028274665191392375,
+    0.25437885626177925,
+    0.011944283615610398,
+    0.999085892861233,
+    0.35645552283983406,
+    0.18251968503937008
   ]
 }

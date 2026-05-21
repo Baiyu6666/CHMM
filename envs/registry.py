@@ -7,15 +7,12 @@ import numpy as np
 from .base import TaskBundle
 from .S3ObsAvoid import load_S3ObsAvoid
 from .S4SlideInsert import load_S4SlideInsert
-from .S4SlideInsertRealistic import load_S4SlideInsertRealistic
-from .S5SphereInspect import load_S5SphereInspect, load_S5SphereInspectRaw
+from .S5SphereInspect import load_S5SphereInspect
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
     "S3ObsAvoid": load_S3ObsAvoid,
     "S5SphereInspect": load_S5SphereInspect,
-    "S5SphereInspectRaw": load_S5SphereInspectRaw,
     "S4SlideInsert": load_S4SlideInsert,
-    "S4SlideInsertRealistic": load_S4SlideInsertRealistic,
 }
 
 

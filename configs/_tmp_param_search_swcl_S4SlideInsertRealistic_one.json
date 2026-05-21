@@ -1,5 +1,0 @@
-{
-  "lambda_ineq_constraint": [0.04],
-  "truncated_inequality_z_threshold": [0.7],
-  "inequality_trim_fraction": [0.1]
-}

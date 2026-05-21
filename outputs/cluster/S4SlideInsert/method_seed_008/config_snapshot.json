@@ -3,7 +3,26 @@
   "method_name": "cluster",
   "dataset_kwargs": {
     "n_demos": 10,
-    "seed": 12342
+    "seed": 12342,
+    "rollout_backend": "analytic",
+    "observation_backend": "analytic",
+    "dt": 0.4,
+    "seg_lengths": [
+      35,
+      14,
+      67,
+      21
+    ],
+    "seg_length_jitter": [
+      9,
+      3,
+      11,
+      7
+    ],
+    "slot_half_width": 0.032,
+    "clearance_align_max": 0.006,
+    "clearance_insert_max": 0.0035,
+    "normal_load_min": 0.4
   },
   "method_kwargs": {
     "segmenter": {
@@ -14,15 +33,15 @@
       "use_env_features": true,
       "state_distance_weight": 0.2,
       "velocity_distance_weight": 1.0,
-      "feature_distance_weight": 1.0,
+      "feature_distance_weight": 0.3,
       "selected_raw_feature_ids": [
-        "surf dist",
-        "force",
-        "orient err",
+        "surf_dist",
+        "centerline_dist",
+        "orient_err",
         "speed",
-        "noise",
+        "normal_load",
         "start_dist",
-        "slot_x_err"
+        "insertion_err"
       ],
       "standardize": true,
       "min_len": 3,
@@ -50,7 +69,7 @@
           1,
           0,
           0,
-          0,
+          1,
           0,
           0
         ],
@@ -59,7 +78,7 @@
           1,
           1,
           1,
-          0,
+          1,
           0,
           0
         ],
@@ -68,32 +87,32 @@
           1,
           1,
           1,
-          0,
+          1,
           0,
           0
         ]
       ],
       "selected_raw_feature_ids": [
-        "surf dist",
-        "force",
-        "orient err",
+        "surf_dist",
+        "centerline_dist",
+        "orient_err",
         "speed",
-        "noise",
+        "normal_load",
         "start_dist",
-        "slot_x_err"
+        "insertion_err"
       ],
       "feature_model_types": {
-        "surf dist": "student_t",
-        "force": "margin_exp_lower",
-        "orient err": "student_t",
-        "speed": "student_t",
-        "start_dist": "student_t",
-        "slot_x_err": "student_t",
+        "surf_dist": "student_t",
+        "centerline_dist": "student_t",
+        "orient_err": "trunc_t_upper_z",
+        "speed": "trunc_t_upper_z",
+        "normal_load": "trunc_t_lower_z",
+        "start_dist": "trunc_t_lower_z",
+        "insertion_err": "trunc_t_lower_z",
         "noise": "student_t"
       },
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S4SlideInsert/method_seed_008",
       "constraint_core_trim": 0
-    },
-    "feature_distance_weight": 0.3
+    }
   }
 }

@@ -1,0 +1,202 @@
+{
+  "results": [
+    {
+      "combo_id": 0,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.0,
+        "short_segment_penalty_c": 0.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.9,
+        "MeanStageSubgoalError": 0.03874224590440982,
+        "MeanConstraintError": 0.014153058780141932,
+        "MeanConstraintErrorRaw": 0.00213359065519273
+      }
+    },
+    {
+      "combo_id": 1,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.0,
+        "short_segment_penalty_c": 1.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.9,
+        "MeanStageSubgoalError": 0.03874224590440982,
+        "MeanConstraintError": 0.014153058780141932,
+        "MeanConstraintErrorRaw": 0.00213359065519273
+      }
+    },
+    {
+      "combo_id": 2,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.0,
+        "short_segment_penalty_c": 3.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.133333333333335,
+        "MeanStageSubgoalError": 0.0389160109148329,
+        "MeanConstraintError": 0.014165082346929817,
+        "MeanConstraintErrorRaw": 0.00213348316905717
+      }
+    },
+    {
+      "combo_id": 3,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.1,
+        "short_segment_penalty_c": 0.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.9,
+        "MeanStageSubgoalError": 0.03874224590440982,
+        "MeanConstraintError": 0.014153058780141932,
+        "MeanConstraintErrorRaw": 0.00213359065519273
+      }
+    },
+    {
+      "combo_id": 4,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.1,
+        "short_segment_penalty_c": 1.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.9,
+        "MeanStageSubgoalError": 0.03874224590440982,
+        "MeanConstraintError": 0.014153058780141932,
+        "MeanConstraintErrorRaw": 0.00213359065519273
+      }
+    },
+    {
+      "combo_id": 5,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.1,
+        "short_segment_penalty_c": 3.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.133333333333335,
+        "MeanStageSubgoalError": 0.0389160109148329,
+        "MeanConstraintError": 0.014165082346929817,
+        "MeanConstraintErrorRaw": 0.00213348316905717
+      }
+    },
+    {
+      "combo_id": 6,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.5,
+        "short_segment_penalty_c": 0.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.9,
+        "MeanStageSubgoalError": 0.03874224590440982,
+        "MeanConstraintError": 0.014153058780141932,
+        "MeanConstraintErrorRaw": 0.00213359065519273
+      }
+    },
+    {
+      "combo_id": 7,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.5,
+        "short_segment_penalty_c": 1.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 9.9,
+        "MeanStageSubgoalError": 0.03874224590440982,
+        "MeanConstraintError": 0.014153058780141932,
+        "MeanConstraintErrorRaw": 0.00213359065519273
+      }
+    },
+    {
+      "combo_id": 8,
+      "dataset": "S4SlideInsert",
+      "method": "swcl",
+      "dataset_seed": 12342,
+      "method_seed": 0,
+      "params": {
+        "lambda_progress": 0.5,
+        "short_segment_penalty_c": 3.0,
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "metrics": {
+        "MeanAbsCutpointError": 10.133333333333335,
+        "MeanStageSubgoalError": 0.0389160109148329,
+        "MeanConstraintError": 0.014165082346929817,
+        "MeanConstraintErrorRaw": 0.00213348316905717
+      }
+    }
+  ]
+}

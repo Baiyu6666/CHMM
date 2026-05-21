@@ -1,0 +1,208 @@
+{
+  "dataset": "S4SlideInsert",
+  "method": "swcl",
+  "dataset_seed": 12342,
+  "method_seeds": [
+    0
+  ],
+  "grid": {
+    "max_iter": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "lambda_activation_consensus": [
+      0,
+      1
+    ],
+    "lambda_ineq_constraint": [
+      0.06
+    ],
+    "truncated_inequality_z_threshold": [
+      0.4
+    ],
+    "inequality_trim_fraction": [
+      0.05
+    ]
+  },
+  "metric_keys": [
+    "MeanAbsCutpointError",
+    "MeanConstraintError",
+    "MeanConstraintErrorRaw",
+    "MeanStageSubgoalError"
+  ],
+  "best": {
+    "num_runs": 1,
+    "params": {
+      "max_iter": 1,
+      "lambda_activation_consensus": 0,
+      "lambda_ineq_constraint": 0.06,
+      "truncated_inequality_z_threshold": 0.4,
+      "inequality_trim_fraction": 0.05
+    },
+    "combo_id": 0,
+    "MeanAbsCutpointError_mean": 14.966666666666665,
+    "MeanAbsCutpointError_std": 0.0,
+    "MeanConstraintError_mean": 0.013187168085135547,
+    "MeanConstraintError_std": 0.0,
+    "MeanConstraintErrorRaw_mean": 0.0021103917000866623,
+    "MeanConstraintErrorRaw_std": 0.0,
+    "MeanStageSubgoalError_mean": 0.04044653572351063,
+    "MeanStageSubgoalError_std": 0.0
+  },
+  "results": [
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 1,
+        "lambda_activation_consensus": 0,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 0,
+      "MeanAbsCutpointError_mean": 14.966666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.013187168085135547,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0021103917000866623,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.04044653572351063,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 1,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 1,
+      "MeanAbsCutpointError_mean": 14.966666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.013187168085135547,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0021103917000866623,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.04044653572351063,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 2,
+        "lambda_activation_consensus": 0,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 2,
+      "MeanAbsCutpointError_mean": 14.966666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.013187168085135547,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0021103917000866623,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.04044653572351063,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 3,
+        "lambda_activation_consensus": 0,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 4,
+      "MeanAbsCutpointError_mean": 14.966666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.013187168085135547,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0021103917000866623,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.04044653572351063,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 5,
+        "lambda_activation_consensus": 0,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 6,
+      "MeanAbsCutpointError_mean": 14.966666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.013187168085135547,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0021103917000866623,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.04044653572351063,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 2,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 3,
+      "MeanAbsCutpointError_mean": 10.133333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.014165082346929817,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.00213348316905717,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.0389160109148329,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 3,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 5,
+      "MeanAbsCutpointError_mean": 10.133333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.014165082346929817,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.00213348316905717,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.0389160109148329,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "max_iter": 5,
+        "lambda_activation_consensus": 1,
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 7,
+      "MeanAbsCutpointError_mean": 10.133333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.014165082346929817,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.00213348316905717,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.0389160109148329,
+      "MeanStageSubgoalError_std": 0.0
+    }
+  ]
+}

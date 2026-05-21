@@ -1,0 +1,167 @@
+{
+  "task": "s4_realistic_demonstration_render",
+  "gui": 0,
+  "constraint_violation": {
+    "average_violation_rate": 0.24806201550387597,
+    "total_timesteps": 129,
+    "violating_timesteps": 32,
+    "feature_stage_violation_rate_matrix": [
+      [
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.25,
+        0.0,
+        NaN,
+        NaN,
+        NaN,
+        0.0,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.20588235294117646,
+        0.07352941176470588,
+        0.0,
+        0.0,
+        NaN,
+        0.058823529411764705,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        NaN,
+        0.2631578947368421,
+        NaN,
+        NaN,
+        NaN
+      ]
+    ],
+    "feature_names": [
+      "surf_dist",
+      "centerline_dist",
+      "orient_err",
+      "speed",
+      "angular_speed",
+      "normal_load",
+      "noise",
+      "start_dist",
+      "insertion_err"
+    ],
+    "stage_names": [
+      "stage1",
+      "stage2",
+      "stage3",
+      "stage4"
+    ]
+  },
+  "demos": [
+    {
+      "demo_index": 0,
+      "seed": 7,
+      "points": 129,
+      "video": null,
+      "saved_frames": [
+        "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demo_00_frame_000000.png",
+        "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demo_00_frame_000050.png",
+        "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demo_00_frame_000100.png"
+      ],
+      "features": "outputs/swcl/videos/s4_demonstrations/demo_00_features.png",
+      "rollout": "outputs/swcl/videos/s4_demonstrations/demo_00_rollout.npz",
+      "gui": 0,
+      "fps": 20.0,
+      "render_frame_stride": 1,
+      "video_end_hold_seconds": 2.0,
+      "renderer_reused": false,
+      "visualize_normal_load": false,
+      "feature_overlay": false,
+      "execution_normal_load_noise_std": 0.025,
+      "execution_normal_load_noise_smooth": 0.85,
+      "execution_normal_load_noise_seed": null,
+      "ik_position_error_mean": 5.5044907976016e-05,
+      "ik_position_error_max": 0.00015170951377293097,
+      "constraint_violation": {
+        "average_violation_rate": 0.24806201550387597,
+        "total_timesteps": 129,
+        "violating_timesteps": 32,
+        "feature_stage_violation_rate_matrix": [
+          [
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.25,
+            0.0,
+            NaN,
+            NaN,
+            NaN,
+            0.0,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.20588235294117646,
+            0.07352941176470588,
+            0.0,
+            0.0,
+            NaN,
+            0.058823529411764705,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            NaN,
+            0.2631578947368421,
+            NaN,
+            NaN,
+            NaN
+          ]
+        ],
+        "feature_names": [
+          "surf_dist",
+          "centerline_dist",
+          "orient_err",
+          "speed",
+          "angular_speed",
+          "normal_load",
+          "noise",
+          "start_dist",
+          "insertion_err"
+        ],
+        "stage_names": [
+          "stage1",
+          "stage2",
+          "stage3",
+          "stage4"
+        ]
+      }
+    }
+  ]
+}

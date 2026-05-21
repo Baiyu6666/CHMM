@@ -17,6 +17,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from envs.S5SphereInspect import S5SphereInspectEnv, _apply_default_s5_loader_config
+from experiments.render_metrics import (
+    apply_inequality_constraint_clearance,
+    concat_mp4_files,
+    constraint_violation_stats,
+    parse_int_list,
+    plan_seed_list,
+)
 
 
 def _load_json(path: str | Path) -> dict:
@@ -164,6 +171,16 @@ def _parse_vec3(text: str | None) -> tuple[float, float, float]:
     if len(vals) != 3:
         raise ValueError(f"Expected a comma-separated 3-vector, got {text!r}.")
     return float(vals[0]), float(vals[1]), float(vals[2])
+
+
+def _parse_optional_vec3(text: str | None) -> tuple[float, float, float] | None:
+    if text is None or not str(text).strip():
+        return None
+    return _parse_vec3(text)
+
+
+def _parse_frame_indices(text: str | None) -> list[int]:
+    return parse_int_list(text)
 
 
 def _constraint_value(constraint_values: dict, key: str, default: float) -> float:
@@ -618,6 +635,15 @@ def _resolve_optimizer_endpoints(env: S5SphereInspectEnv, seed: int) -> tuple[np
     return demo_traj[0].copy(), demo_traj[-1].copy()
 
 
+def _horizontal_camera_direction(camera_yaw: float) -> np.ndarray:
+    yaw = np.deg2rad(float(camera_yaw))
+    direction = np.asarray([np.sin(yaw), -np.cos(yaw), 0.0], dtype=float)
+    norm = float(np.linalg.norm(direction))
+    if norm <= 1e-12:
+        return np.asarray([1.0, 0.0, 0.0], dtype=float)
+    return direction / norm
+
+
 def _initial_axis_trace_from_endpoints(start: np.ndarray, goal: np.ndarray, T: int) -> np.ndarray:
     start = np.asarray(start, dtype=float).reshape(3)
     goal = np.asarray(goal, dtype=float).reshape(3)
@@ -644,9 +670,18 @@ def _plan_s5_stage_constraint_optimizer(
     objective_step: float,
     global_speed_max: float | None,
     stage_length_scale: float,
+    start_xyz: tuple[float, float, float] | None = None,
+    goal_xyz: tuple[float, float, float] | None = None,
 ) -> dict:
     """Direct S5 optimizer using endpoints, stage schedule, features, and constraints."""
     start, goal = _resolve_optimizer_endpoints(env, seed)
+    endpoint_source = "seeded_demo_endpoints_only"
+    if start_xyz is not None:
+        start = np.asarray(start_xyz, dtype=float).reshape(3)
+        endpoint_source = "explicit_start_seeded_goal"
+    if goal_xyz is not None:
+        goal = np.asarray(goal_xyz, dtype=float).reshape(3)
+        endpoint_source = "explicit_goal" if start_xyz is None else "explicit_start_goal"
     lengths, length_info = _auto_stage_lengths(
         env,
         constraint_values,
@@ -839,7 +874,9 @@ def _plan_s5_stage_constraint_optimizer(
         "stage_length_info": dict(length_info),
         "scene": dict(scene or {}),
         "seed": int(seed),
-        "endpoint_source": "seeded_demo_endpoints_only",
+        "start": start.tolist(),
+        "goal": goal.tolist(),
+        "endpoint_source": endpoint_source,
     }
 
 
@@ -999,11 +1036,18 @@ def render_s5_planned_trajectory(
     stage_length_source: str,
     global_speed_max: float | None,
     stage_length_scale: float,
+    save_frame_indices: list[int],
+    start_xyz: tuple[float, float, float] | None,
+    goal_xyz: tuple[float, float, float] | None,
+    goal_camera_offset: float,
+    output_prefix: str = "s5_planned",
+    video_path_override: str | Path | None = None,
 ) -> dict:
     out_dir = Path(outdir)
     if not out_dir.is_absolute():
         out_dir = PROJECT_ROOT / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+    output_prefix = str(output_prefix or "s5_planned")
 
     cfg = _apply_default_s5_loader_config({})
     cfg["rollout_backend"] = "pybullet"
@@ -1029,9 +1073,22 @@ def render_s5_planned_trajectory(
         dataset=benchmark_dataset,
         method_seed=benchmark_method_seed,
     )
-    constraint_values = _constraint_values_from_payload(payload, env, constraint_source=str(constraint_source))
+    raw_constraint_values = _constraint_values_from_payload(payload, env, constraint_source=str(constraint_source))
+    constraint_values = apply_inequality_constraint_clearance(
+        raw_constraint_values,
+        env.get_constraint_specs(),
+        upper_scale=0.96,
+        lower_scale=1.04,
+    )
 
     scene = env.sample_scene()
+    resolved_start_xyz = None if start_xyz is None else tuple(float(v) for v in start_xyz)
+    resolved_goal_xyz = None if goal_xyz is None else tuple(float(v) for v in goal_xyz)
+    goal_offset_vec = np.zeros(3, dtype=float)
+    if resolved_goal_xyz is None and float(goal_camera_offset) != 0.0:
+        default_start, default_goal = _resolve_optimizer_endpoints(env, seed)
+        goal_offset_vec = _horizontal_camera_direction(camera_yaw) * float(goal_camera_offset)
+        resolved_goal_xyz = tuple((np.asarray(default_goal, dtype=float) + goal_offset_vec).tolist())
     if str(planner).lower() == "optimizer":
         planned = _plan_s5_stage_constraint_optimizer(
             env,
@@ -1048,8 +1105,12 @@ def render_s5_planned_trajectory(
             objective_step=float(optimizer_objective_step),
             global_speed_max=global_speed_max,
             stage_length_scale=float(stage_length_scale),
+            start_xyz=resolved_start_xyz,
+            goal_xyz=resolved_goal_xyz,
         )
     else:
+        if resolved_start_xyz is not None or resolved_goal_xyz is not None:
+            raise ValueError("S5 endpoint overrides are currently supported only with --planner optimizer.")
         planned = env.plan_episode_from_constraints(
             scene,
             constraint_values,
@@ -1060,6 +1121,8 @@ def render_s5_planned_trajectory(
     print(f"[plan] points={len(planned['trajectory'])}, cutpoints={planned['true_cutpoints'].tolist()}")
     print(f"[plan] planner={planned.get('planner', planner)}")
     print(f"[plan] constraints={planned['constraint_values']}")
+    print(f"[plan] inequality_clearance={{'upper_scale': 0.96, 'lower_scale': 1.04}}")
+    print(f"[plan] endpoints start={planned.get('start')} goal={planned.get('goal')} source={planned.get('endpoint_source')}")
 
     strict_execution_checks = bool(strict_ik_filter) or str(planner).lower() != "optimizer"
     latent = env.execute_plan_pybullet(
@@ -1089,12 +1152,12 @@ def render_s5_planned_trajectory(
             constraint_payload=payload,
             constraint_values=dict(planned["constraint_values"]),
             env=env,
-            output_path=out_dir / "s5_planned_features.png",
+            output_path=out_dir / f"{output_prefix}_features.png",
             title="S5 planned trajectory all-feature profiles",
         )
 
     np.savez_compressed(
-        out_dir / "s5_planned_rollout.npz",
+        out_dir / f"{output_prefix}_rollout.npz",
         planned_trajectory=np.asarray(planned["trajectory"], dtype=float),
         planned_tool_axis=np.asarray(planned["tool_axis"], dtype=float),
         executed_trajectory=np.asarray(obs["trajectory"], dtype=float),
@@ -1111,7 +1174,7 @@ def render_s5_planned_trajectory(
 
     output_path = None
     if int(gui) == 1:
-        output_path = out_dir / "s5_planned_pybullet.mp4"
+        output_path = Path(video_path_override) if video_path_override is not None else out_dir / f"{output_prefix}_pybullet.mp4"
     effective_realtime = bool(realtime) or int(gui) == 2
     effective_hold_seconds = (-1.0 if int(gui) == 2 else 2.0) if gui_hold_seconds is None else float(gui_hold_seconds)
     render_summary = env.render_episode(
@@ -1155,6 +1218,26 @@ def render_s5_planned_trajectory(
             if str(constraint_source).lower() == "learned"
             else "Executed trajectory feature profile (planned with GT constraints)"
         ),
+        save_frame_indices=save_frame_indices,
+        save_frame_dir=out_dir,
+        save_frame_prefix=output_prefix,
+    )
+
+    violation_stats = constraint_violation_stats(
+        features_list=[np.asarray(planned_features, dtype=float)],
+        cutpoints_list=[cutpoints],
+        feature_schema=env.get_feature_schema(),
+        constraint_specs=env.get_constraint_specs(),
+        true_constraints=env.get_true_constraints(),
+        equality_tolerance=1e-4,
+    )
+    executed_violation_stats = constraint_violation_stats(
+        features_list=[np.asarray(obs["features"], dtype=float)],
+        cutpoints_list=[cutpoints],
+        feature_schema=env.get_feature_schema(),
+        constraint_specs=env.get_constraint_specs(),
+        true_constraints=env.get_true_constraints(),
+        equality_tolerance=1e-4,
     )
 
     summary = {
@@ -1165,16 +1248,24 @@ def render_s5_planned_trajectory(
         "plan_dt": float(env.dt),
         "seed": int(seed),
         "gui": int(gui),
+        "raw_constraint_values": dict(raw_constraint_values),
         "constraint_values": dict(planned["constraint_values"]),
+        "inequality_clearance": {"upper_scale": 0.96, "lower_scale": 1.04},
         "global_speed_max": None if planned.get("global_speed_max") is None else float(planned.get("global_speed_max")),
         "planner": str(planned.get("planner", planner)),
         "stage_lengths": dict(planned["stage_lengths"]),
         "stage_length_info": dict(planned.get("stage_length_info", {})),
+        "start": list(planned.get("start", [])),
+        "goal": list(planned.get("goal", [])),
+        "endpoint_source": str(planned.get("endpoint_source", "")),
+        "goal_camera_offset": float(goal_camera_offset),
+        "goal_camera_offset_vector": goal_offset_vec.tolist(),
         "cutpoints": cutpoints,
         "trajectory_points": int(len(planned["trajectory"])),
         "feature_plot": None if feature_plot_path is None else str(Path(feature_plot_path).resolve()),
-        "rollout_npz": str((out_dir / "s5_planned_rollout.npz").resolve()),
+        "rollout_npz": str((out_dir / f"{output_prefix}_rollout.npz").resolve()),
         "video": render_summary,
+        "saved_frames": list(render_summary.get("saved_frames", [])),
         "ik_filter": dict(latent.get("ik_filter", {})),
         "feature_overlay": bool(feature_overlay),
         "execution_joint_noise_std": float(execution_joint_noise_std),
@@ -1185,8 +1276,11 @@ def render_s5_planned_trajectory(
         "ik_position_error_max": None if "ik_position_error_world" not in obs else float(np.max(obs["ik_position_error_world"])),
         "ik_axis_error_mean": None if "ik_axis_error" not in obs else float(np.mean(obs["ik_axis_error"])),
         "ik_axis_error_max": None if "ik_axis_error" not in obs else float(np.max(obs["ik_axis_error"])),
+        "planned_constraint_violation": violation_stats,
+        "constraint_violation": violation_stats,
+        "executed_constraint_violation": executed_violation_stats,
     }
-    summary_path = out_dir / "s5_planned_render_summary.json"
+    summary_path = out_dir / f"{output_prefix}_render_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[saved] {summary_path}")
     print(f"[saved] features={feature_plot_path}, video={render_summary.get('video_path')}")
@@ -1201,6 +1295,11 @@ def main() -> None:
     parser.add_argument("--benchmark-method-seed", type=int, default=None, help="Method seed row to select from benchmark_results.json.")
     parser.add_argument("--outdir", default="outputs/s5_planned_render")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--plan-seeds", default=None, help="Comma-separated seeds for rendering multiple planned trajectories.")
+    parser.add_argument("--n-plans", type=int, default=1, help="Number of planned trajectories to render, starting from --seed, when --plan-seeds is not set.")
+    parser.add_argument("--start-xyz", default=None, help="Optional S5-space start point override as x,y,z. Defaults to the current seeded start.")
+    parser.add_argument("--goal-xyz", default=None, help="Optional S5-space goal point override as x,y,z.")
+    parser.add_argument("--goal-camera-offset", type=float, default=0.04, help="If --goal-xyz is omitted, move the seeded goal this far horizontally toward the camera.")
     parser.add_argument("--gui", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("--fps", type=float, default=15.0)
     parser.add_argument("--width", type=int, default=1280)
@@ -1209,17 +1308,17 @@ def main() -> None:
     parser.add_argument("--realtime", type=int, default=0)
     parser.add_argument("--gui-hold-seconds", type=float, default=None)
     parser.add_argument("--camera-yaw", type=float, default=90.0)
-    parser.add_argument("--camera-pitch", type=float, default=-8.0)
+    parser.add_argument("--camera-pitch", type=float, default=-16.0)
     parser.add_argument("--camera-distance", type=float, default=1.45)
     parser.add_argument("--camera-fov", type=float, default=38.0)
     parser.add_argument(
         "--camera-target-offset",
-        default="0.00,0.24,0.07",
+        default="0.00,0.24,0.20",
         help="World-frame camera target offset from pybullet_world_center, e.g. '0.10,0,0.04'.",
     )
     parser.add_argument("--hide-gripper", type=int, default=1)
-    parser.add_argument("--draw-tool-bar", type=int, default=0)
-    parser.add_argument("--tool-bar-length", type=float, default=0.165)
+    parser.add_argument("--draw-tool-bar", type=int, default=1)
+    parser.add_argument("--tool-bar-length", type=float, default=0.205)
     parser.add_argument("--tool-bar-radius", type=float, default=0.005)
     parser.add_argument("--draw-stage-trace", type=int, default=0)
     parser.add_argument("--draw-executed-trace", type=int, default=1)
@@ -1228,6 +1327,7 @@ def main() -> None:
     parser.add_argument("--draw-current-marker", type=int, default=0)
     parser.add_argument("--plot-features", type=int, default=1)
     parser.add_argument("--feature-overlay", type=int, default=1)
+    parser.add_argument("--save-frame-indices", default=None, help="Comma-separated source frame indices to save as PNGs in --outdir, e.g. 0,80,157.")
     parser.add_argument("--no-precheck", action="store_true")
     parser.add_argument("--no-filter", action="store_true")
     parser.add_argument("--constraint-source", choices=["learned", "target"], default="learned")
@@ -1244,13 +1344,13 @@ def main() -> None:
     parser.add_argument(
         "--stage-length-scale",
         type=float,
-        default=0.65,
+        default=0.64,
         help="Scale applied to learned-ratio total length before speed-feasibility correction.",
     )
     parser.add_argument("--execution-joint-noise-std", type=float, default=0.002)
     parser.add_argument("--execution-joint-noise-smooth", type=float, default=0.90)
     parser.add_argument("--execution-noise-seed", type=int, default=None)
-    parser.add_argument("--planner", choices=["waypoint", "optimizer"], default="waypoint")
+    parser.add_argument("--planner", choices=["waypoint", "optimizer"], default="optimizer")
     parser.add_argument("--optimizer-iters", type=int, default=500)
     parser.add_argument("--optimizer-smooth-step", type=float, default=0.18)
     parser.add_argument("--optimizer-constraint-step", type=float, default=0.45)
@@ -1272,55 +1372,124 @@ def main() -> None:
     if args.fallback_target is not None and int(args.fallback_target):
         constraint_source = "target"
 
-    render_s5_planned_trajectory(
-        constraints_json=args.constraints_json,
-        outdir=args.outdir,
-        seed=int(args.seed),
-        gui=int(args.gui),
-        fps=float(args.fps),
-        width=int(args.width),
-        height=int(args.height),
-        render_frame_stride=int(args.render_frame_stride),
-        realtime=bool(args.realtime),
-        gui_hold_seconds=args.gui_hold_seconds,
-        camera_yaw=float(args.camera_yaw),
-        camera_pitch=float(args.camera_pitch),
-        camera_distance=float(args.camera_distance),
-        camera_fov=float(args.camera_fov),
-        camera_target_offset=_parse_vec3(args.camera_target_offset),
-        hide_gripper=bool(args.hide_gripper),
-        draw_tool_bar=bool(args.draw_tool_bar),
-        tool_bar_length=float(args.tool_bar_length),
-        tool_bar_radius=float(args.tool_bar_radius),
-        draw_stage_trace=bool(args.draw_stage_trace),
-        draw_executed_trace=bool(args.draw_executed_trace),
-        trace_stride=int(args.trace_stride),
-        trace_width=float(args.trace_width),
-        draw_current_marker=bool(args.draw_current_marker),
-        plot_features=bool(args.plot_features),
-        feature_overlay=bool(args.feature_overlay),
-        no_precheck=bool(args.no_precheck),
-        no_filter=bool(args.no_filter),
-        constraint_source=constraint_source,
-        plan_dt=float(args.plan_dt),
-        speed_safety=float(args.speed_safety),
-        stage_lengths=_parse_stage_lengths(args.stage_lengths),
-        benchmark_method=args.benchmark_method,
-        benchmark_dataset=args.benchmark_dataset,
-        benchmark_method_seed=args.benchmark_method_seed,
-        execution_joint_noise_std=float(args.execution_joint_noise_std),
-        execution_joint_noise_smooth=float(args.execution_joint_noise_smooth),
-        execution_noise_seed=args.execution_noise_seed,
-        planner=str(args.planner),
-        optimizer_iters=int(args.optimizer_iters),
-        optimizer_smooth_step=float(args.optimizer_smooth_step),
-        optimizer_constraint_step=float(args.optimizer_constraint_step),
-        optimizer_objective_step=float(args.optimizer_objective_step),
-        strict_ik_filter=bool(args.strict_ik_filter),
-        stage_length_source=str(args.stage_length_source),
-        global_speed_max=(None if float(args.global_speed_max) <= 0.0 else float(args.global_speed_max)),
-        stage_length_scale=float(args.stage_length_scale),
-    )
+    seeds = plan_seed_list(int(args.seed), args.plan_seeds, int(args.n_plans))
+    out_dir = Path(args.outdir)
+    if not out_dir.is_absolute():
+        out_dir = PROJECT_ROOT / out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summaries = []
+    temp_videos = []
+    multi = len(seeds) > 1
+    for plan_idx, plan_seed in enumerate(seeds):
+        prefix = "s5_planned" if not multi else f"s5_planned_seed_{int(plan_seed):03d}"
+        video_override = None
+        if multi and int(args.gui) == 1:
+            video_override = out_dir / f"._tmp_{prefix}_pybullet.mp4"
+        summary = render_s5_planned_trajectory(
+            constraints_json=args.constraints_json,
+            outdir=args.outdir,
+            seed=int(plan_seed),
+            gui=int(args.gui),
+            fps=float(args.fps),
+            width=int(args.width),
+            height=int(args.height),
+            render_frame_stride=int(args.render_frame_stride),
+            realtime=bool(args.realtime),
+            gui_hold_seconds=args.gui_hold_seconds,
+            camera_yaw=float(args.camera_yaw),
+            camera_pitch=float(args.camera_pitch),
+            camera_distance=float(args.camera_distance),
+            camera_fov=float(args.camera_fov),
+            camera_target_offset=_parse_vec3(args.camera_target_offset),
+            hide_gripper=bool(args.hide_gripper),
+            draw_tool_bar=bool(args.draw_tool_bar),
+            tool_bar_length=float(args.tool_bar_length),
+            tool_bar_radius=float(args.tool_bar_radius),
+            draw_stage_trace=bool(args.draw_stage_trace),
+            draw_executed_trace=bool(args.draw_executed_trace),
+            trace_stride=int(args.trace_stride),
+            trace_width=float(args.trace_width),
+            draw_current_marker=bool(args.draw_current_marker),
+            plot_features=bool(args.plot_features),
+            feature_overlay=bool(args.feature_overlay),
+            no_precheck=bool(args.no_precheck),
+            no_filter=bool(args.no_filter),
+            constraint_source=constraint_source,
+            plan_dt=float(args.plan_dt),
+            speed_safety=float(args.speed_safety),
+            stage_lengths=_parse_stage_lengths(args.stage_lengths),
+            benchmark_method=args.benchmark_method,
+            benchmark_dataset=args.benchmark_dataset,
+            benchmark_method_seed=args.benchmark_method_seed,
+            execution_joint_noise_std=float(args.execution_joint_noise_std),
+            execution_joint_noise_smooth=float(args.execution_joint_noise_smooth),
+            execution_noise_seed=(None if args.execution_noise_seed is None else int(args.execution_noise_seed) + int(plan_idx)),
+            planner=str(args.planner),
+            optimizer_iters=int(args.optimizer_iters),
+            optimizer_smooth_step=float(args.optimizer_smooth_step),
+            optimizer_constraint_step=float(args.optimizer_constraint_step),
+            optimizer_objective_step=float(args.optimizer_objective_step),
+            strict_ik_filter=bool(args.strict_ik_filter),
+            stage_length_source=str(args.stage_length_source),
+            global_speed_max=(None if float(args.global_speed_max) <= 0.0 else float(args.global_speed_max)),
+            stage_length_scale=float(args.stage_length_scale),
+            save_frame_indices=_parse_frame_indices(args.save_frame_indices),
+            start_xyz=_parse_optional_vec3(args.start_xyz),
+            goal_xyz=_parse_optional_vec3(args.goal_xyz),
+            goal_camera_offset=float(args.goal_camera_offset),
+            output_prefix=prefix,
+            video_path_override=video_override,
+        )
+        summaries.append(summary)
+        if video_override is not None:
+            temp_videos.append(Path(video_override))
+
+    if multi:
+        final_video = None
+        if int(args.gui) == 1 and temp_videos:
+            final_video = concat_mp4_files(temp_videos, out_dir / "s5_planned_pybullet.mp4")
+            for path in temp_videos:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+        features_list = []
+        executed_features_list = []
+        cutpoints_list = []
+        for item in summaries:
+            rollout_path = item.get("rollout_npz")
+            if rollout_path and Path(rollout_path).exists():
+                z = np.load(rollout_path)
+                features_list.append(np.asarray(z["planned_features"], dtype=float))
+                executed_features_list.append(np.asarray(z["executed_features"], dtype=float))
+                cutpoints_list.append(np.asarray(z["cutpoints"], dtype=int))
+        env_for_stats = S5SphereInspectEnv(**_apply_default_s5_loader_config({}))
+        aggregate = {
+            "task": "s5_planned_trajectory_render_multi",
+            "seeds": [int(v) for v in seeds],
+            "num_plans": int(len(seeds)),
+            "video": None if final_video is None else str(Path(final_video).resolve()),
+            "plans": summaries,
+            "planned_constraint_violation": constraint_violation_stats(
+                features_list=features_list,
+                cutpoints_list=cutpoints_list,
+                feature_schema=env_for_stats.get_feature_schema(),
+                constraint_specs=env_for_stats.get_constraint_specs(),
+                true_constraints=env_for_stats.get_true_constraints(),
+                equality_tolerance=1e-4,
+            ),
+            "executed_constraint_violation": constraint_violation_stats(
+                features_list=executed_features_list,
+                cutpoints_list=cutpoints_list,
+                feature_schema=env_for_stats.get_feature_schema(),
+                constraint_specs=env_for_stats.get_constraint_specs(),
+                true_constraints=env_for_stats.get_true_constraints(),
+                equality_tolerance=1e-4,
+            ),
+        }
+        aggregate["constraint_violation"] = aggregate["planned_constraint_violation"]
+        (out_dir / "s5_planned_render_summary.json").write_text(json.dumps(aggregate, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"[saved] {out_dir / 's5_planned_render_summary.json'}")
 
 
 if __name__ == "__main__":

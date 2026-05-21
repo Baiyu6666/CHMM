@@ -7,7 +7,7 @@
       "n_stages": 3,
       "selected_raw_feature_ids": ["obs_dist", "speed", "arc_dist", "heading", "line_dist", "noise"],
       "feature_model_types": {
-        "obs_dist": "trunc_t_lower_z",
+        "obs_dist": "trunc_t_auto_z",
         "speed": "student_t",
         "arc_dist": "student_t",
         "heading": "student_t",
@@ -15,12 +15,14 @@
         "noise": "student_t"
       },
       "max_iter": 10,
-      "truncated_inequality_z_threshold": 0.5,
-      "lambda_subgoal_consensus": 0,
-      "lambda_activation_consensus": 0.25,
-      "lambda_param_consensus": 50,
-      "inequality_score_activation_threshold": -0.4,
-      "equality_dispersion_ratio_threshold": 0.05
+      "truncated_inequality_z_threshold": 0.4,
+      "lambda_ineq_constraint": 0.015,
+      "fixed_true_cutpoint_indices": [],
+      "lambda_activation_consensus": 0.75,
+      "lambda_param_consensus": 20,
+      "short_segment_penalty_c": 0,
+      "equality_dispersion_ratio_threshold": 0.03,
+      "truncated_z_score_mode": "median_slack"
     },
     "fchmm": {
       "n_stages": 3,

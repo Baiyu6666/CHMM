@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,13 +18,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from envs.S5SphereInspect import S5SphereInspectEnv, _apply_default_s5_loader_config
+from envs.S5SphereInspect import _apply_default_s5_loader_config, load_S5SphereInspect
+from experiments.render_metrics import constraint_violation_stats, parse_int_list
 
 
 def _parse_csv_ints(text: str | None) -> list[int] | None:
     if text is None or not str(text).strip():
         return None
     return [int(item.strip()) for item in str(text).split(",") if item.strip()]
+
+
+def _parse_frame_indices(text: str | None) -> list[int]:
+    return parse_int_list(text)
 
 
 def _parse_vec3(text: str) -> tuple[float, float, float]:
@@ -32,10 +39,70 @@ def _parse_vec3(text: str) -> tuple[float, float, float]:
     return float(parts[0]), float(parts[1]), float(parts[2])
 
 
+def _concat_mp4_segments(segment_paths: list[Path], output_path: Path) -> Path | None:
+    if not segment_paths:
+        return None
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg is required to concatenate multi-demo S5 videos.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    concat_list_path = output_path.with_suffix(".concat.txt")
+
+    def _quote_concat_path(path: Path) -> str:
+        return "'" + str(path.resolve()).replace("'", "'\\''") + "'"
+
+    concat_list_path.write_text(
+        "".join(f"file {_quote_concat_path(path)}\n" for path in segment_paths),
+        encoding="utf-8",
+    )
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(concat_list_path),
+        "-c",
+        "copy",
+        str(output_path),
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    finally:
+        try:
+            concat_list_path.unlink()
+        except OSError:
+            pass
+    return output_path
+
+
 def _demo_indices(n_demos: int, explicit: list[int] | None) -> list[int]:
     if explicit:
-        return [int(np.clip(v, 0, max(0, int(n_demos) - 1))) for v in explicit]
+        indices = [int(v) for v in explicit]
+        if any(v < 0 for v in indices):
+            raise ValueError(f"demo indices must be non-negative: {indices}")
+        return indices
     return list(range(int(n_demos)))
+
+
+def _bundle_scene(bundle, demo_idx: int) -> dict:
+    scene_specs = list(bundle.meta.get("scene_specs", [])) if getattr(bundle, "meta", None) else []
+    if 0 <= int(demo_idx) < len(scene_specs):
+        return dict(scene_specs[int(demo_idx)])
+    scene = bundle.env.sample_scene()
+    scene["demo_index"] = int(demo_idx)
+    return scene
+
+
+def _bundle_tool_axis(env, trajectory: np.ndarray):
+    lookup = getattr(env, "_lookup_cached_tool_axis_trace", None)
+    if callable(lookup):
+        axis = lookup(np.asarray(trajectory, dtype=float))
+        if axis is not None:
+            return np.asarray(axis, dtype=float)
+    return None
 
 
 def _plot_feature_traces(
@@ -139,28 +206,56 @@ def render_s5_demonstrations(
     draw_current_marker: bool,
     plot_features: bool,
     feature_overlay: bool,
+    playback_speed: float,
+    playback_label: str | None,
     rollout_backend: str,
     no_precheck: bool,
     no_filter: bool,
     no_ik_checks: bool,
+    save_frame_indices: list[int],
 ) -> dict:
     out_dir = Path(outdir)
     if not out_dir.is_absolute():
         out_dir = PROJECT_ROOT / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+    playback_speed = float(max(float(playback_speed), 1e-6))
+    if playback_label is None and abs(playback_speed - 1.0) > 1e-8:
+        playback_label = f"\u00d7{playback_speed:g}"
 
     cfg = _apply_default_s5_loader_config({})
     cfg["rollout_backend"] = str(rollout_backend)
     cfg["observation_backend"] = "pybullet" if str(rollout_backend).lower() == "pybullet" else "analytic_raw"
-    cfg["eval_tag"] = "S5SphereInspectDemoRender"
+    cfg["eval_tag"] = "S5SphereInspect"
+    cfg["cache_demos"] = True
     if bool(no_ik_checks) or bool(no_precheck):
         cfg["pybullet_precheck_ik_waypoints"] = False
     if bool(no_ik_checks) or bool(no_filter):
         cfg["pybullet_filter_ik_valid"] = False
-    env = S5SphereInspectEnv(**cfg)
 
     selected = _demo_indices(int(n_demos), demo_indices)
+    bundle_n_demos = max(int(n_demos), max(selected) + 1 if selected else 0)
+    bundle = load_S5SphereInspect(
+        n_demos=int(bundle_n_demos),
+        seed=int(seed),
+        env_kwargs=cfg,
+        demo_kwargs={},
+    )
+    env = bundle.env
+    cache_meta = None if not getattr(bundle, "meta", None) else bundle.meta.get("demo_cache")
+    if cache_meta:
+        status = "hit" if bool(cache_meta.get("hit", False)) else "miss"
+        print(f"[S5 demo cache] {status}: {cache_meta.get('path')}", flush=True)
+
     summaries: list[dict] = []
+    violation_features: list[np.ndarray] = []
+    violation_cutpoints: list[list[int]] = []
+    combine_video = int(gui) == 1 and len(selected) > 1
+    segment_paths: list[Path] = []
+    segment_dir = out_dir / "_s5_demo_segments"
+    if combine_video:
+        if segment_dir.exists():
+            shutil.rmtree(segment_dir)
+        segment_dir.mkdir(parents=True, exist_ok=True)
     pybullet_client = None
     pybullet_module = None
     if int(gui) == 2:
@@ -172,43 +267,41 @@ def render_s5_demonstrations(
 
     try:
         for local_idx, demo_idx in enumerate(selected, start=1):
-            scene = env.sample_scene()
-            scene["demo_index"] = int(demo_idx)
-            demo_seed = env.demo_seed_for_index(int(seed), int(demo_idx))
+            scene = _bundle_scene(bundle, int(demo_idx))
+            trajectory = np.asarray(bundle.demos[int(demo_idx)], dtype=float)
+            cutpoints = [int(v) for v in np.asarray(bundle.true_cutpoints[int(demo_idx)], dtype=int).reshape(-1).tolist()]
+            tool_axis = _bundle_tool_axis(env, trajectory)
+            latent = {
+                "trajectory": trajectory,
+                "true_cutpoints": np.asarray(cutpoints, dtype=int),
+                "tool_axis": tool_axis,
+                "rollout_backend": str(rollout_backend),
+                "observation_backend": cfg["observation_backend"],
+            }
+            obs = env.compute_observation(latent, scene)
+            if (
+                str(rollout_backend).lower() == "pybullet"
+                and obs.get("joint_positions") is None
+                and obs.get("tool_axis") is not None
+            ):
+                replay_latent = env.execute_plan_pybullet(
+                    scene,
+                    {
+                        "trajectory": np.asarray(obs["trajectory"], dtype=float),
+                        "tool_axis": np.asarray(obs["tool_axis"], dtype=float),
+                        "true_cutpoints": np.asarray(obs["true_cutpoints"], dtype=int),
+                        "planner": "s5_demo_pybullet_replay",
+                    },
+                    precheck=False,
+                    filter_valid=False,
+                    execution_joint_noise_std=0.0,
+                )
+                obs = env.compute_observation(replay_latent, scene)
             print(
                 f"[demo {local_idx:02d}/{len(selected):02d}] "
-                f"sampling idx={demo_idx}, base_seed={demo_seed}",
+                f"loaded idx={demo_idx} from training demo bundle",
                 flush=True,
             )
-
-            def _print_attempt_progress(*, attempt: int, max_attempts: int, attempt_seed, report: dict):
-                status = "accepted" if bool(report.get("valid", False)) else str(report.get("reason", "rejected"))
-                prefix = (
-                    f"  [attempt {attempt + 1:02d}/{int(max_attempts):02d}] "
-                    f"seed={attempt_seed} {status} "
-                    f"pos={_format_float(report.get('max_position_error'))} "
-                    f"axis={_format_float(report.get('max_axis_error'))}"
-                )
-                if "waypoint_indices" in report:
-                    print(
-                        f"{prefix} "
-                        f"c_axis={_format_float(report.get('constrained_max_axis_error'))} "
-                        f"worst_t={report.get('worst_index', 'n/a')}",
-                        flush=True,
-                    )
-                else:
-                    print(
-                        f"{prefix} "
-                        f"c_axis={_format_float(report.get('constrained_max_axis_error'))} "
-                        f"speed_ratio={_format_float(report.get('max_speed_ratio'))}",
-                        flush=True,
-                    )
-
-            rollout_kwargs = {}
-            if str(rollout_backend).lower() == "pybullet":
-                rollout_kwargs["progress_callback"] = _print_attempt_progress
-            latent = env.rollout_demo(scene, seed=demo_seed, **rollout_kwargs)
-            obs = env.compute_observation(latent, scene)
 
             trajectory = np.asarray(obs["trajectory"], dtype=float)
             tool_axis = obs.get("tool_axis")
@@ -237,13 +330,20 @@ def render_s5_demonstrations(
 
             output_path = None
             if int(gui) == 1:
-                output_path = out_dir / f"s5_demo_{int(demo_idx):02d}.mp4"
+                if combine_video:
+                    output_path = segment_dir / f"s5_demo_{int(demo_idx):02d}.mp4"
+                else:
+                    output_path = out_dir / f"s5_demo_{int(demo_idx):02d}.mp4"
             effective_realtime = bool(realtime) or int(gui) == 2
-            effective_hold_seconds = (
-                (-1.0 if int(gui) == 2 else 2.0)
-                if gui_hold_seconds is None
-                else float(gui_hold_seconds)
-            )
+            if combine_video:
+                pause_seconds = 1.5 if gui_hold_seconds is None else float(gui_hold_seconds)
+                effective_hold_seconds = 0.0 if int(local_idx) == len(selected) else float(max(0.0, pause_seconds))
+            else:
+                effective_hold_seconds = (
+                    (-1.0 if int(gui) == 2 else 2.0)
+                    if gui_hold_seconds is None
+                    else float(gui_hold_seconds)
+                )
             feature_matrix = np.asarray(obs["features"], dtype=float)
             render_summary = env.render_episode(
                 scene,
@@ -283,12 +383,29 @@ def render_s5_demonstrations(
                 feature_overlay_specs=list(env.get_constraint_specs()),
                 feature_overlay_true_constraints=dict(env.true_constraints),
                 feature_overlay_title="Executed demonstration feature profile",
+                playback_speed=float(playback_speed),
+                playback_label=playback_label,
                 connect_client=pybullet_client is None,
+                save_frame_indices=save_frame_indices,
+                save_frame_dir=out_dir,
+                save_frame_prefix=f"s5_demo_{int(demo_idx):02d}",
             )
+            if combine_video and output_path is not None:
+                segment_paths.append(Path(output_path))
+            violation_stats = constraint_violation_stats(
+                features_list=[feature_matrix],
+                cutpoints_list=[cutpoints],
+                feature_schema=env.get_feature_schema(),
+                constraint_specs=env.get_constraint_specs(),
+                true_constraints=env.get_true_constraints(),
+                equality_tolerance=1e-4,
+            )
+            violation_features.append(feature_matrix)
+            violation_cutpoints.append(cutpoints)
             summary = {
                 "demo_local_index": int(local_idx),
                 "demo_index": int(demo_idx),
-                "seed": int(demo_seed),
+                "seed": int(seed),
                 "rollout_backend": str(latent.get("rollout_backend", env.rollout_backend)),
                 "observation_backend": str(obs["observation_spec"]["default_observation_backend"]),
                 "trajectory_points": int(len(trajectory)),
@@ -296,7 +413,11 @@ def render_s5_demonstrations(
                 "feature_plot": None if feature_plot_path is None else str(Path(feature_plot_path).resolve()),
                 "feature_plot_series": feature_plot_series,
                 "feature_overlay": bool(feature_overlay),
+                "playback_speed": float(playback_speed),
+                "playback_label": playback_label,
                 "video": render_summary,
+                "saved_frames": list(render_summary.get("saved_frames", [])),
+                "constraint_violation": violation_stats,
             }
             if "ik_position_error_world" in obs:
                 ik_pos = np.asarray(obs["ik_position_error_world"], dtype=float)
@@ -333,6 +454,12 @@ def render_s5_demonstrations(
         if pybullet_client is not None and pybullet_module is not None:
             pybullet_module.disconnect(pybullet_client)
 
+    combined_video_path = None
+    if combine_video:
+        combined_video_path = _concat_mp4_segments(segment_paths, out_dir / "s5_demonstrations.mp4")
+        if combined_video_path is not None:
+            print(f"[saved] {combined_video_path}", flush=True)
+
     out = {
         "task": "s5_demonstration_render",
         "gui": int(gui),
@@ -342,6 +469,22 @@ def render_s5_demonstrations(
         "seed": int(seed),
         "n_requested_demos": int(n_demos),
         "demo_indices": selected,
+        "demo_cache": cache_meta,
+        "combined_video": None if combined_video_path is None else str(Path(combined_video_path).resolve()),
+        "combined_video_segments": [str(path.resolve()) for path in segment_paths],
+        "inter_demo_pause_seconds": (
+            None if not combine_video else float(1.5 if gui_hold_seconds is None else gui_hold_seconds)
+        ),
+        "playback_speed": float(playback_speed),
+        "playback_label": playback_label,
+        "constraint_violation": constraint_violation_stats(
+            features_list=violation_features,
+            cutpoints_list=violation_cutpoints,
+            feature_schema=env.get_feature_schema(),
+            constraint_specs=env.get_constraint_specs(),
+            true_constraints=env.get_true_constraints(),
+            equality_tolerance=1e-4,
+        ),
         "demos": summaries,
     }
     summary_path = out_dir / "s5_demonstration_render_summary.json"
@@ -376,17 +519,17 @@ def main() -> None:
         help="Extra hold time after GUI playback. Defaults to waiting for SPACE for gui=2 and 2 seconds otherwise.",
     )
     parser.add_argument("--camera-yaw", type=float, default=90.0)
-    parser.add_argument("--camera-pitch", type=float, default=-8.0)
+    parser.add_argument("--camera-pitch", type=float, default=-16.0)
     parser.add_argument("--camera-distance", type=float, default=1.45)
     parser.add_argument("--camera-fov", type=float, default=38.0)
     parser.add_argument(
         "--camera-target-offset",
-        default="0.00,0.24,0.07",
+        default="0.00,0.24,0.20",
         help="World-frame camera target offset from pybullet_world_center, e.g. '0,0.26,0.04'.",
     )
-    parser.add_argument("--hide-gripper", type=int, default=1, help="1 to hide Robotiq gripper links and keep the URDF task tool visible.")
-    parser.add_argument("--draw-tool-bar", type=int, default=0, help="1 to draw a detached debug bar instead of the URDF task tool.")
-    parser.add_argument("--tool-bar-length", type=float, default=0.165)
+    parser.add_argument("--hide-gripper", type=int, default=1, help="1 to hide Robotiq gripper links.")
+    parser.add_argument("--draw-tool-bar", type=int, default=1, help="1 to draw a detached debug bar instead of the URDF task tool.")
+    parser.add_argument("--tool-bar-length", type=float, default=0.205)
     parser.add_argument("--tool-bar-radius", type=float, default=0.005)
     parser.add_argument("--draw-stage-trace", type=int, default=0)
     parser.add_argument("--draw-executed-trace", type=int, default=1)
@@ -395,6 +538,9 @@ def main() -> None:
     parser.add_argument("--draw-current-marker", type=int, default=0)
     parser.add_argument("--plot-features", type=int, default=1, help="1 to save per-demo S5 feature trace PNGs.")
     parser.add_argument("--feature-overlay", type=int, default=1, help="1 to overlay feature traces on rendered videos.")
+    parser.add_argument("--playback-speed", type=float, default=1.0, help="MP4 playback speed multiplier; 1.5 writes the same frames at 1.5x FPS.")
+    parser.add_argument("--playback-label", default=None, help="Optional lower-right video label. Defaults to '\u00d7SPEED' when speed != 1.")
+    parser.add_argument("--save-frame-indices", default=None, help="Comma-separated source frame indices to save as PNGs in --outdir, e.g. 0,80,157.")
     parser.add_argument("--no-precheck", action="store_true", help="Disable waypoint IK precheck before full PyBullet rollout.")
     parser.add_argument("--no-filter", action="store_true", help="Disable final IK/rollout rejection filter.")
     parser.add_argument("--no-ik-checks", action="store_true", help="Disable both waypoint precheck and final IK/rollout filter.")
@@ -428,10 +574,13 @@ def main() -> None:
         draw_current_marker=bool(args.draw_current_marker),
         plot_features=bool(args.plot_features),
         feature_overlay=bool(args.feature_overlay),
+        playback_speed=float(args.playback_speed),
+        playback_label=args.playback_label,
         rollout_backend=str(args.rollout_backend),
         no_precheck=bool(args.no_precheck),
         no_filter=bool(args.no_filter),
         no_ik_checks=bool(args.no_ik_checks),
+        save_frame_indices=_parse_frame_indices(args.save_frame_indices),
     )
 
 

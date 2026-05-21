@@ -20,7 +20,7 @@ except ModuleNotFoundError:
     Axes3D = None
 
 from .io import learner_plot_dir, save_figure
-from utils.models import GaussianModel
+from utils.models import GaussianModel, TruncatedStudentTLowerEmission, TruncatedStudentTUpperEmission
 
 PAPER_FIGSIZE = (8.4, 6.0)
 PAPER_TITLE_SIZE = 9
@@ -114,7 +114,35 @@ def _kind_is_truncated_z_display(kind: str) -> bool:
     return str(kind).lower() in {
         "trunc_t_lower_z", "truncated_t_lower_z",
         "trunc_t_upper_z", "truncated_t_upper_z",
+        "trunc_t_auto_z", "truncated_t_auto_z",
     }
+
+
+def _kind_is_truncated_auto_z_display(kind: str) -> bool:
+    return str(kind).lower() in {"trunc_t_auto_z", "truncated_t_auto_z"}
+
+
+def _fit_optimized_truncated_z_display_model(kind: str, vals):
+    vals = np.asarray(vals, dtype=float).reshape(-1)
+    if vals.size == 0:
+        return None, None, np.nan
+    kind_l = str(kind).lower()
+    if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
+        model = TruncatedStudentTLowerEmission(optimize_m_step=True)
+    elif kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
+        model = TruncatedStudentTUpperEmission(optimize_m_step=True)
+    else:
+        return None, None, np.nan
+    model.m_step_update([vals])
+    summary = dict(model.get_summary())
+    sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
+    mu = float(summary.get("mu", 0.0))
+    b = float(summary.get("b", 0.0))
+    if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
+        z = float((mu - b) / sigma)
+    else:
+        z = float((b - mu) / sigma)
+    return model, summary, z
 
 
 def _summary_center_z(summary: dict, kind: str):
@@ -211,6 +239,11 @@ def _stage_feature_kind_for_display(learner, local_stage_params, stage_idx, feat
             if kind:
                 if kind == "unconstrained":
                     return "student_t"
+                if _kind_is_truncated_auto_z_display(kind):
+                    summary = stage_params.model_summaries[int(feat_idx)]
+                    selected = summary.get("auto_selected_kind")
+                    if selected:
+                        return str(selected).lower()
                 return kind
     except Exception:
         pass
@@ -475,7 +508,7 @@ def _score_threshold(learner, feat_idx, stage_idx=None):
             return float(learner._equality_score_threshold())
         return float(getattr(learner, "equality_dispersion_ratio_threshold", 0.1))
     kind = _feature_kind(learner, feat_idx)
-    if _kind_is_truncated_z_display(kind):
+    if _kind_is_truncated_z_display(kind) or _kind_is_truncated_auto_z_display(kind):
         return float(getattr(learner, "truncated_inequality_z_threshold", 2.0))
     return float(getattr(learner, "inequality_score_activation_threshold", -0.5))
 
@@ -489,6 +522,12 @@ def _matrix_text_color(value, vmax):
 
 def _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
     if getattr(learner, "feature_activation_mode", "fixed_mask") in {"score", "joint_mask_search"}:
+        try:
+            active_mask = getattr(local_stage_params[stage_idx], "active_mask", None)
+            if active_mask is not None:
+                return int(np.asarray(active_mask, dtype=int)[feat_idx]) == 1
+        except Exception:
+            pass
         try:
             score = float(local_stage_params[stage_idx].feature_scores[feat_idx])
         except Exception:
@@ -1311,10 +1350,6 @@ def _draw_learning_curves(ax, learner):
     weighted_constraint = np.asarray(learner.loss_constraint, dtype=float)
     weighted_short_segment_penalty = np.asarray(getattr(learner, "loss_short_segment_penalty", []), dtype=float)
     weighted_progress = learner.lambda_progress * np.asarray(learner.loss_progress, dtype=float)
-    weighted_subgoal_consensus = (
-        np.asarray(learner.subgoal_consensus_lambda_hist[: len(learner.loss_subgoal_consensus)], dtype=float)
-        * np.asarray(learner.loss_subgoal_consensus, dtype=float)
-    )
     weighted_param_consensus = (
         np.asarray(learner.param_consensus_lambda_hist[: len(learner.loss_param_consensus)], dtype=float)
         * np.asarray(learner.loss_param_consensus, dtype=float)
@@ -1328,7 +1363,6 @@ def _draw_learning_curves(ax, learner):
     if weighted_short_segment_penalty.size == iters.size:
         ax.plot(iters, weighted_short_segment_penalty, color="tab:olive", lw=1.0, label="short_segment_penalty")
     ax.plot(iters, weighted_progress, color="tab:orange", lw=1.0, label="progress")
-    ax.plot(iters, weighted_subgoal_consensus, color="tab:purple", lw=1.0, label="subgoal_consensus")
     ax.plot(iters, weighted_param_consensus, color="tab:cyan", lw=1.0, label="param_consensus")
     ax.plot(iters, weighted_activation_consensus, color="tab:brown", lw=1.0, label="activation_consensus")
     ax.set_title("SWCL learning curves", fontsize=PAPER_TITLE_SIZE, pad=4)
@@ -1389,15 +1423,13 @@ def plot_swcl_constraint_margin_paper(learner, demo_idx=0, save_path=None):
     if raw_score_matrix.size == 0:
         return None
     threshold_mat = np.zeros_like(raw_score_matrix, dtype=float)
-    learned_active = np.zeros_like(raw_score_matrix, dtype=bool)
+    true_active = np.zeros_like(raw_score_matrix, dtype=bool)
     for feat_idx in range(raw_score_matrix.shape[0]):
+        feature_name = _feature_name(learner, feat_idx)
         for stage_idx in range(raw_score_matrix.shape[1]):
             threshold_mat[feat_idx, stage_idx] = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
-            learned_active[feat_idx, stage_idx] = _feature_stage_is_active_for_display(
-                learner,
-                learner.current_stage_params_per_demo[demo_idx],
-                stage_idx,
-                feat_idx,
+            true_active[feat_idx, stage_idx] = (
+                _reference_constraint_value(learner.env, feature_name, stage_idx) is not None
             )
     score_margin_matrix = threshold_mat - raw_score_matrix
     vmax = float(np.nanmax(np.abs(score_margin_matrix))) if score_margin_matrix.size > 0 else 1.0
@@ -1412,7 +1444,7 @@ def plot_swcl_constraint_margin_paper(learner, demo_idx=0, save_path=None):
         vmin=-vmax,
         vmax=vmax,
         figsize=(3.35, 1.58),
-        hatch_mask=learned_active,
+        hatch_mask=true_active,
         text_matrix=score_margin_matrix,
         title_fontsize=PAPER_TITLE_SIZE - 1,
     )
@@ -1694,9 +1726,9 @@ def _plot_paper_matrix_common(
                         (j - 0.5, i - 0.5),
                         1.0,
                         1.0,
-                        facecolor=(1.0, 1.0, 1.0, 0.06),
-                        edgecolor=(0.2, 0.2, 0.2, 0.20),
-                        linewidth=0.4,
+                        facecolor=(1.0, 1.0, 1.0, 0.12),
+                        edgecolor=(0.2, 0.2, 0.2, 0.38),
+                        linewidth=0.45,
                         hatch="////",
                         zorder=2,
                     )
@@ -1787,6 +1819,13 @@ def plot_swcl_activation_rate_paper(learner, save_path=None):
         return None
 
     matrix = matrix.T
+    true_active = np.zeros_like(matrix, dtype=bool)
+    for feat_idx in range(true_active.shape[0]):
+        feature_name = _feature_name(learner, feat_idx)
+        for stage_idx in range(true_active.shape[1]):
+            true_active[feat_idx, stage_idx] = (
+                _reference_constraint_value(learner.env, feature_name, stage_idx) is not None
+            )
     fig = _plot_paper_matrix_common(
         learner,
         matrix,
@@ -1795,7 +1834,7 @@ def plot_swcl_activation_rate_paper(learner, save_path=None):
         vmin=0.0,
         vmax=1.0,
         figsize=(3.35, 1.58),
-        hatch_mask=(matrix > 0.5),
+        hatch_mask=true_active,
         text_matrix=matrix,
         title_fontsize=PAPER_TITLE_SIZE - 1,
     )
@@ -1806,6 +1845,28 @@ def plot_swcl_activation_rate_paper(learner, save_path=None):
 
 
 def _draw_final_activation_proto_matrix(ax, learner):
+    signature = getattr(learner, "shared_activation_signature_mean", None)
+    if signature is not None:
+        matrix = np.asarray(signature, dtype=float)
+        if matrix.ndim == 2 and matrix.size > 0:
+            _draw_summary_heatmap(
+                ax,
+                matrix.T,
+                "signed activation",
+                feature_names=_summary_feature_names(learner),
+                stage_labels=_summary_stage_labels(learner),
+                cmap="coolwarm",
+                fmt=".0f",
+                vmin=-1.0,
+                vmax=1.0,
+            )
+            for text in ax.texts:
+                try:
+                    value = int(round(float(text.get_text())))
+                except ValueError:
+                    continue
+                text.set_text("L" if value < 0 else ("U" if value > 0 else "."))
+            return
     matrix = np.asarray(getattr(learner, "shared_activation_proto", []), dtype=float)
     if matrix.ndim != 2 or matrix.size == 0:
         ax.axis("off")
@@ -1909,10 +1970,8 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
                 stage_idx=stage_idx,
                 s=s,
                 e=e,
-                lam_subgoal_consensus=0.0,
                 lam_param_consensus=0.0,
                 lam_activation_consensus=0.0,
-                shared_stage_subgoals=[np.zeros_like(np.asarray(learner.stage_subgoals[k], dtype=float)) for k in range(learner.num_stages)],
                 shared_param_vectors=[[None for _ in range(learner.num_features)] for _ in range(learner.num_stages)],
                 shared_r_mean=None,
                 shared_feature_score_mean=None,
@@ -1950,11 +2009,9 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
     constraint = []
     short_segment_penalty = []
     progress = []
-    subgoal_consensus = []
     param_consensus = []
     activation_consensus = []
     for tau in candidate_taus:
-        lam_subgoal_consensus = float(getattr(learner, "current_subgoal_consensus_lambda", 0.0))
         lam_param_consensus = float(getattr(learner, "current_param_consensus_lambda", 0.0))
         lam_activation_consensus = float(
             getattr(learner, "current_activation_consensus_lambda", 0.0)
@@ -1962,10 +2019,8 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
         info = learner._candidate_cost(
             demo_idx=demo_idx,
             stage_ends=[int(tau), int(T - 1)],
-            lam_subgoal_consensus=lam_subgoal_consensus,
             lam_param_consensus=lam_param_consensus,
             lam_activation_consensus=lam_activation_consensus,
-            shared_stage_subgoals=learner.shared_stage_subgoals,
             shared_param_vectors=learner.shared_param_vectors,
             shared_r_mean=getattr(learner, "shared_r_mean", None),
             shared_feature_score_mean=getattr(learner, "shared_feature_score_mean", None),
@@ -1975,14 +2030,12 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
             constraint.append(np.nan)
             short_segment_penalty.append(np.nan)
             progress.append(np.nan)
-            subgoal_consensus.append(np.nan)
             param_consensus.append(np.nan)
             activation_consensus.append(np.nan)
             continue
         constraint.append(float(info["constraint"]))
         short_segment_penalty.append(float(info.get("short_segment_penalty", 0.0)))
         progress.append(learner.lambda_progress * float(info["progress"]))
-        subgoal_consensus.append(lam_subgoal_consensus * float(info["subgoal_consensus"]))
         param_consensus.append(lam_param_consensus * float(info["param_consensus"]))
         activation_consensus.append(lam_activation_consensus * float(info.get("activation_consensus", 0.0)))
         total.append(float(info["total"]))
@@ -1992,8 +2045,6 @@ def _draw_cost_profile(ax, learner, demo_idx=0):
     if np.any(np.isfinite(np.asarray(short_segment_penalty, dtype=float))):
         ax.plot(candidate_taus, short_segment_penalty, color="tab:olive", lw=1.0, label="short_segment_penalty")
     ax.plot(candidate_taus, progress, color="tab:orange", lw=1.0, label="progress")
-    if np.any(np.isfinite(np.asarray(subgoal_consensus, dtype=float))):
-        ax.plot(candidate_taus, subgoal_consensus, color="tab:purple", lw=1.0, label="subgoal_consensus")
     if np.any(np.isfinite(np.asarray(param_consensus, dtype=float))):
         ax.plot(candidate_taus, param_consensus, color="tab:cyan", lw=1.0, label="param_consensus")
     if np.any(np.isfinite(np.asarray(activation_consensus, dtype=float))):
@@ -2081,7 +2132,6 @@ def _draw_cutpoint_evolution(ax, learner):
 
 def _current_consensus_lambdas(learner):
     return (
-        float(getattr(learner, "current_subgoal_consensus_lambda", 0.0)),
         float(getattr(learner, "current_param_consensus_lambda", 0.0)),
         float(getattr(learner, "current_activation_consensus_lambda", 0.0)),
     )
@@ -2286,6 +2336,9 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 )
                 fitted_model = None
                 baseline_model = None
+                optimized_trunc_model = None
+                optimized_trunc_summary = None
+                optimized_trunc_z = np.nan
                 if not is_dispersion_equality:
                     summary = stage_params.model_summaries[feat_idx]
                     fitted_model = learner._vector_to_model(kind, learner._summary_to_vector(kind, summary))
@@ -2296,6 +2349,10 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                         )
                     elif is_truncated_z_feature:
                         baseline_model = None
+                        optimized_trunc_model, optimized_trunc_summary, optimized_trunc_z = _fit_optimized_truncated_z_display_model(
+                            kind,
+                            plot_vals,
+                        )
                     else:
                         baseline_model = learner._fit_student_t_baseline(plot_vals)
 
@@ -2308,6 +2365,9 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     if baseline_model is not None:
                         lo_candidates.append(getattr(baseline_model, "L", np.min(plot_vals)))
                         hi_candidates.append(getattr(baseline_model, "U", np.max(plot_vals)))
+                    if optimized_trunc_model is not None:
+                        lo_candidates.append(getattr(optimized_trunc_model, "L", np.min(plot_vals)))
+                        hi_candidates.append(getattr(optimized_trunc_model, "U", np.max(plot_vals)))
                     lo = float(min(lo_candidates))
                     hi = float(max(hi_candidates))
                     pad = max(0.15 * (hi - lo + 1e-6), 0.2)
@@ -2355,7 +2415,17 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     )
                     ax.set_ylim(ymin, ymax)
                 if fitted_model is not None:
-                    ax.plot(xs, np.exp(fitted_model.logpdf(xs)), color="tab:red", lw=2.0, label="fitted")
+                    fitted_label = "fast fitted" if is_truncated_z_feature else "fitted"
+                    ax.plot(xs, np.exp(fitted_model.logpdf(xs)), color="tab:red", lw=2.0, label=fitted_label)
+                if optimized_trunc_model is not None:
+                    ax.plot(
+                        xs,
+                        np.exp(optimized_trunc_model.logpdf(xs)),
+                        color="tab:purple",
+                        lw=2.0,
+                        linestyle="--",
+                        label="optimized ref",
+                    )
                 if baseline_model is not None:
                     ax.plot(
                         xs,
@@ -2373,7 +2443,12 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 threshold = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
                 score_margin = threshold - raw_score
                 weighted_cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
-                score_label = "z score" if is_truncated_z_feature else "raw score"
+                trunc_score_mode = str(getattr(learner, "truncated_z_score_mode", "z")).lower()
+                score_label = (
+                    "median slack"
+                    if is_truncated_z_feature and trunc_score_mode == "median_slack"
+                    else ("z score" if is_truncated_z_feature else "raw score")
+                )
                 info_lines = [
                     f"core steps = {len(vals)}",
                     f"segment = [{s},{e}]",
@@ -2414,9 +2489,23 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 else:
                     if is_truncated_z_feature:
                         summary = stage_params.model_summaries[feat_idx]
-                        info_lines.append(f"b = {float(summary.get('b', np.nan)):.3f}")
-                        info_lines.append(f"mu = {float(summary.get('mu', np.nan)):.3f}")
-                        info_lines.append(f"sigma = {float(summary.get('sigma', np.nan)):.3f}")
+                        info_lines.append(f"fast b = {float(summary.get('b', np.nan)):.3f}")
+                        info_lines.append(f"fast mu = {float(summary.get('mu', np.nan)):.3f}")
+                        info_lines.append(f"fast sigma = {float(summary.get('sigma', np.nan)):.3f}")
+                        fast_score_label = "fast slack" if trunc_score_mode == "median_slack" else "fast z"
+                        info_lines.append(f"{fast_score_label} = {raw_score:.3f}")
+                        if "auto_lower_score" in summary or "auto_upper_score" in summary:
+                            info_lines.append(f"auto lower = {float(summary.get('auto_lower_score', np.nan)):.3f}")
+                            info_lines.append(f"auto upper = {float(summary.get('auto_upper_score', np.nan)):.3f}")
+                            if "auto_direction_conf" in summary:
+                                info_lines.append(f"auto dir conf = {float(summary.get('auto_direction_conf', np.nan)):.3f}")
+                            if "auto_score_gap" in summary:
+                                info_lines.append(f"auto raw gap = {float(summary.get('auto_score_gap', np.nan)):.3f}")
+                        if optimized_trunc_summary is not None:
+                            info_lines.append(f"opt b = {float(optimized_trunc_summary.get('b', np.nan)):.3f}")
+                            info_lines.append(f"opt mu = {float(optimized_trunc_summary.get('mu', np.nan)):.3f}")
+                            info_lines.append(f"opt sigma = {float(optimized_trunc_summary.get('sigma', np.nan)):.3f}")
+                            info_lines.append(f"opt z = {float(optimized_trunc_z):.3f}")
                     info_lines.append(f"threshold = {threshold:.3f}")
 
                 ax.set_title(f"{scenario_label} | stage {stage_idx + 1} | {feature_names[feat_idx]}", fontsize=PAPER_TITLE_SIZE, pad=4)
@@ -2458,12 +2547,11 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
         ax.axis("off")
         return
 
-    lam_subgoal_consensus, lam_param_consensus, lam_activation_consensus = _current_consensus_lambdas(learner)
+    lam_param_consensus, lam_activation_consensus = _current_consensus_lambdas(learner)
     total = []
     constraint = []
     short_segment_penalty = []
     progress = []
-    subgoal_consensus = []
     param_consensus = []
     activation_consensus = []
     feature_constraint_by_feat = [[] for _ in range(learner.num_features)]
@@ -2476,7 +2564,6 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
             constraint.append(np.nan)
             short_segment_penalty.append(np.nan)
             progress.append(np.nan)
-            subgoal_consensus.append(np.nan)
             param_consensus.append(np.nan)
             activation_consensus.append(np.nan)
             for feat_values in feature_constraint_by_feat:
@@ -2486,10 +2573,8 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
         info = learner._candidate_cost(
             demo_idx=demo_idx,
             stage_ends=[int(x) for x in candidate_cutpoints] + [int(T - 1)],
-            lam_subgoal_consensus=lam_subgoal_consensus,
             lam_param_consensus=lam_param_consensus,
             lam_activation_consensus=lam_activation_consensus,
-            shared_stage_subgoals=learner.shared_stage_subgoals,
             shared_param_vectors=learner.shared_param_vectors,
             shared_r_mean=getattr(learner, "shared_r_mean", None),
             shared_feature_score_mean=getattr(learner, "shared_feature_score_mean", None),
@@ -2499,7 +2584,6 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
             constraint.append(np.nan)
             short_segment_penalty.append(np.nan)
             progress.append(np.nan)
-            subgoal_consensus.append(np.nan)
             param_consensus.append(np.nan)
             activation_consensus.append(np.nan)
             for feat_values in feature_constraint_by_feat:
@@ -2510,7 +2594,6 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
         constraint.append(float(info["constraint"]))
         short_segment_penalty.append(float(info.get("short_segment_penalty", 0.0)))
         progress.append(learner.lambda_progress * float(info["progress"]))
-        subgoal_consensus.append(lam_subgoal_consensus * float(info["subgoal_consensus"]))
         param_consensus.append(lam_param_consensus * float(info["param_consensus"]))
         activation_consensus.append(lam_activation_consensus * float(info.get("activation_consensus", 0.0)))
         feat_costs = np.zeros(learner.num_features, dtype=float)
@@ -2541,8 +2624,6 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, show_components
                     label=f"{_feature_name(learner, feat_idx)} constraint",
                 )
         ax.plot(candidate_values, progress, color="tab:cyan", lw=1.0, label="progress")
-        if np.any(np.isfinite(np.asarray(subgoal_consensus, dtype=float))):
-            ax.plot(candidate_values, subgoal_consensus, color="tab:purple", lw=1.0, label="subgoal_consensus")
         if np.any(np.isfinite(np.asarray(param_consensus, dtype=float))):
             ax.plot(candidate_values, param_consensus, color="tab:pink", lw=1.0, label="param_consensus")
         if np.any(np.isfinite(np.asarray(activation_consensus, dtype=float))):

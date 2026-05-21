@@ -4,70 +4,10 @@
   "dataset_kwargs": {
     "n_demos": 10,
     "seed": 127,
-    "shell_thickness": 0.24,
-    "surface_near_target_ratio": 0.75,
-    "stage2_speed_max": 0.047,
-    "stage3_speed_max": 0.06,
-    "stage2_trace_angle_range": [
-      1.48,
-      1.72
-    ],
-    "contact_theta_range": [
-      -0.37699111843077515,
-      0.5026548245743669
-    ],
-    "contact_phi_range": [
-      0.6911503837897545,
-      1.0053096491487339
-    ],
-    "repos_angle_range": [
-      0.95,
-      1.18
-    ],
-    "stage3_shell_blend_range": [
-      0.44,
-      0.58
-    ],
-    "stage2_surface_detour_angle": 0.0,
-    "stage4_shell_detour_angle": 0.1,
-    "stage2_length_scale_range": [
-      1.0,
-      1.0
-    ],
-    "stage4_length_scale_range": [
-      1.0,
-      1.0
-    ],
-    "stage2_target_speed_ratio": 0.9,
-    "stage3_target_speed_ratio": 0.75,
-    "stage4_target_speed_ratio": 0.9,
-    "stage2_speed_valley_depths": [
-      0.07,
-      0.18,
-      0.07
-    ],
-    "stage2_speed_valley_centers": [
-      0.3,
-      0.58,
-      0.8
-    ],
-    "stage2_speed_valley_widths": [
-      0.03,
-      0.042,
-      0.03
-    ],
-    "stage4_speed_valley_depth": 0.08,
-    "stage4_speed_valley_center": 0.54,
-    "stage4_speed_valley_width": 0.049,
-    "stage2_noise_scale": 0.28,
-    "stage4_noise_scale": 0.24,
-    "trajectory_noise_kernel": 9,
-    "seg_lengths": [
-      18,
-      61,
-      24,
-      18
-    ]
+    "rollout_backend": "pybullet",
+    "observation_backend": "pybullet",
+    "cache_demos": true,
+    "eval_tag": "S5SphereInspect"
   },
   "method_kwargs": {
     "max_iter": 10,
@@ -84,20 +24,18 @@
     ],
     "feature_model_types": {
       "surf_dist": "student_t",
-      "normal_err": "margin_exp_upper",
-      "speed": "margin_exp_upper",
-      "ang_speed": "margin_exp_upper",
-      "start_dist": "margin_exp_lower",
-      "goal_dist": "margin_exp_upper",
-      "noise": "student_t"
+      "speed": "trunc_t_auto_z",
+      "ang_speed": "trunc_t_auto_z",
+      "normal_err": "trunc_t_auto_z",
+      "start_dist": "trunc_t_auto_z",
+      "goal_dist": "trunc_t_lower_z"
     },
     "fixed_feature_mask": null,
     "lambda_eq_constraint": 1,
-    "lambda_ineq_constraint": 0.05,
+    "lambda_ineq_constraint": 0.5,
     "lambda_progress": 0.5,
-    "lambda_subgoal_consensus": 0.0,
     "lambda_param_consensus": 0.2,
-    "lambda_activation_consensus": 0.75,
+    "lambda_activation_consensus": 1,
     "consensus_schedule": "linear",
     "progress_delta_scale": 20.0,
     "duration_min": 3,
@@ -108,10 +46,14 @@
     "constraint_core_trim": 0,
     "short_segment_penalty_c": 3,
     "stage_count_penalty": 12.0,
-    "inequality_score_activation_threshold": -0.4,
+    "inequality_score_activation_threshold": -0.5,
+    "truncated_inequality_z_threshold": 0.1,
+    "truncated_z_optimize": false,
+    "truncated_z_optimize_trigger_scale": 3.0,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": null,
-    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspect/method_seed_000"
+    "plot_every": 10,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspect/method_seed_000",
+    "truncated_z_score_mode": "median_slack"
   }
 }

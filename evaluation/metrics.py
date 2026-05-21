@@ -22,6 +22,8 @@ _BOUNDARY_MODEL_TYPES = {
     "truncated_t_lower",
     "trunc_t_lower_z",
     "truncated_t_lower_z",
+    "trunc_t_auto_z",
+    "truncated_t_auto_z",
     "trunc_t_lower_hn",
     "truncated_t_lower_hn",
     "soft_trunc_t_lower_hn",
@@ -306,13 +308,18 @@ def _compute_shared_constraint_value_matrix(learner):
 def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
     shared_param_vectors = getattr(learner, "shared_param_vectors", None)
     feature_model_types = getattr(learner, "feature_model_types", None)
+    shared_param_kinds = getattr(learner, "shared_param_kinds", None)
     shared_vec = None
     model_type = ""
     try:
         if shared_param_vectors is not None:
             shared_vec = shared_param_vectors[stage_idx][local_feature_idx]
+        if shared_param_kinds is not None:
+            shared_kind = shared_param_kinds[stage_idx][local_feature_idx]
+            if shared_kind is not None:
+                model_type = str(shared_kind).lower()
         if feature_model_types is not None and local_feature_idx < len(feature_model_types):
-            model_type = str(feature_model_types[local_feature_idx]).lower()
+            model_type = model_type or str(feature_model_types[local_feature_idx]).lower()
     except Exception:
         shared_vec = None
 

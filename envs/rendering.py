@@ -43,6 +43,83 @@ def _save_figure(fig, path: str | Path, *, dpi: int = 220) -> Path:
     return out_path
 
 
+def _center_crop_to_aspect(arr: np.ndarray, aspect: float | None) -> np.ndarray:
+    if aspect is None or float(aspect) <= 0.0:
+        return arr
+    h, w = int(arr.shape[0]), int(arr.shape[1])
+    current = float(w) / max(float(h), 1e-12)
+    target = float(aspect)
+    if abs(current - target) <= 1e-6:
+        return arr
+    if current > target:
+        new_w = max(1, int(round(float(h) * target)))
+        left = max(0, (w - new_w) // 2)
+        return arr[:, left:left + new_w]
+    new_h = max(1, int(round(float(w) / target)))
+    top = max(0, (h - new_h) // 2)
+    return arr[top:top + new_h, :]
+
+
+def _center_crop_scale(
+    arr: np.ndarray,
+    scale: float | None,
+    *,
+    offset_x: float = 0.0,
+    offset_y: float = 0.0,
+) -> np.ndarray:
+    if scale is None:
+        return arr
+    scale = float(scale)
+    if scale <= 0.0 or scale >= 1.0:
+        return arr
+    h, w = int(arr.shape[0]), int(arr.shape[1])
+    new_w = max(1, int(round(float(w) * scale)))
+    new_h = max(1, int(round(float(h) * scale)))
+    max_left = max(0, w - new_w)
+    max_top = max(0, h - new_h)
+    left = int(round(0.5 * max_left + float(offset_x) * max_left))
+    top = int(round(0.5 * max_top + float(offset_y) * max_top))
+    left = int(np.clip(left, 0, max_left))
+    top = int(np.clip(top, 0, max_top))
+    return arr[top:top + new_h, left:left + new_w]
+
+
+def _crop_bottom(arr: np.ndarray, fraction: float | None) -> np.ndarray:
+    if fraction is None:
+        return arr
+    fraction = float(fraction)
+    if fraction <= 0.0 or fraction >= 1.0:
+        return arr
+    h = int(arr.shape[0])
+    new_h = max(1, int(round(float(h) * (1.0 - fraction))))
+    return arr[:new_h, :]
+
+
+def _save_rgb_frame(
+    frame: np.ndarray,
+    path: str | Path,
+    *,
+    crop_aspect: float | None = None,
+    crop_scale: float | None = None,
+    crop_offset_x: float = 0.0,
+    crop_offset_y: float = 0.0,
+    crop_bottom_fraction: float | None = None,
+) -> Path:
+    if Image is None:
+        raise RuntimeError("Pillow is required to save rendered frame PNGs.")
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    arr = np.asarray(frame)
+    if arr.ndim != 3 or arr.shape[2] < 3:
+        raise ValueError("frame must have shape (H, W, 3+) to save as an RGB image.")
+    arr = np.clip(arr[:, :, :3], 0, 255).astype(np.uint8)
+    arr = _center_crop_to_aspect(arr, crop_aspect)
+    arr = _center_crop_scale(arr, crop_scale, offset_x=float(crop_offset_x), offset_y=float(crop_offset_y))
+    arr = _crop_bottom(arr, crop_bottom_fraction)
+    Image.fromarray(arr, mode="RGB").save(out_path)
+    return out_path
+
+
 def stage_segments(length: int, cutpoints: Sequence[int] | None = None) -> list[tuple[int, int]]:
     T = max(int(length), 0)
     if T <= 0:
@@ -113,6 +190,7 @@ def _overlay_feature_panel(
     if not shown:
         return frame
 
+    spans = stage_segments(F_all.shape[0], cutpoints=cutpoints)
     height, width = int(frame.shape[0]), int(frame.shape[1])
     rows = len(shown)
     panel_w = int(min(max(445, 0.40 * width), max(width - 28, 1), 610))
@@ -122,12 +200,13 @@ def _overlay_feature_panel(
         title_lines = [first, "(planned with " + rest]
     else:
         title_lines = [title_text]
-    header_h = 66 + 15 * max(0, len(title_lines) - 1)
+    stage_header_h = 19 if len(spans) > 1 else 0
+    header_h = 66 + 15 * max(0, len(title_lines) - 1) + stage_header_h
     pad = 10
     row_h = int(np.clip((max(1, height - 2 * 14 - pad) - header_h) / max(rows, 1), 34, 54))
     panel_h = header_h + rows * row_h + pad
     x0 = max(8, width - panel_w - 14)
-    y0 = 14
+    y0 = int(max(8, round(0.5 * (height - panel_h))))
     image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -156,12 +235,29 @@ def _overlay_feature_panel(
     _dash_line(draw, (legend_x, legend_y2 + 6, legend_x + 28, legend_y2 + 6), fill=constraint_orange, width=2, dash=6, gap=4)
     draw.text((legend_x + 34, legend_y2), "GT inequality constraint bound and feasible region", fill=constraint_orange_text, font=font)
 
-    spans = stage_segments(F_all.shape[0], cutpoints=cutpoints)
     true_constraints = dict(true_constraints or {})
     plot_x0 = x0 + 120
     plot_x1 = x0 + panel_w - 12
     plot_w = max(1, plot_x1 - plot_x0)
     total_den = max(F_all.shape[0] - 1, 1)
+    if stage_header_h > 0:
+        stage_y0 = y0 + header_h - stage_header_h + 2
+        for stage_idx, (start, end) in enumerate(spans):
+            xa = plot_x0 + float(start) / float(total_den) * float(plot_w)
+            xb = plot_x0 + float(end) / float(total_den) * float(plot_w)
+            rgba = _hex_to_rgba(STAGE_COLORS[stage_idx % len(STAGE_COLORS)], alpha=1.0)
+            fill = tuple(int(np.clip(v * 255.0, 0, 255)) for v in (*rgba[:3], 0.18))
+            stroke = tuple(int(np.clip(v * 255.0, 0, 255)) for v in (*rgba[:3], 0.90))
+            draw.rectangle((xa, stage_y0, xb, stage_y0 + 13), fill=fill, outline=stroke, width=1)
+            label = f"Stage {stage_idx + 1}" if xb - xa >= 54 else f"S{stage_idx + 1}"
+            try:
+                bbox = draw.textbbox((0, 0), label, font=font_bold)
+                tw = float(bbox[2] - bbox[0])
+                th = float(bbox[3] - bbox[1])
+            except Exception:
+                tw, th = 34.0, 9.0
+            tx = min(max(xa + 2.0, 0.5 * (xa + xb) - 0.5 * tw), max(xa + 2.0, xb - tw - 2.0))
+            draw.text((tx, stage_y0 + max(0.0, 0.5 * (13.0 - th)) - 1.0), label, fill=(18, 24, 38, 245), font=font_bold)
     for row, name in enumerate(shown):
         feat_idx = int(name_to_idx[name])
         ry0 = y0 + header_h + row * row_h + 5
@@ -234,6 +330,210 @@ def _overlay_feature_panel(
                 draw.line(pts, fill=(37, 99, 235, 255), width=2)
         cx = x_at(idx)
         draw.line((cx, py0, cx, py1), fill=(99, 102, 241, 210), width=1)
+    return np.asarray(Image.alpha_composite(image, overlay).convert("RGB"), dtype=np.uint8)
+
+
+def _overlay_corner_label(frame: np.ndarray, text: str | None) -> np.ndarray:
+    label = "" if text is None else str(text).strip()
+    if not label or Image is None or ImageDraw is None:
+        return frame
+    height, width = int(frame.shape[0]), int(frame.shape[1])
+    image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", int(np.clip(round(height * 0.026), 18, 30)))
+    except Exception:
+        font = ImageFont.load_default() if ImageFont is not None else None
+    try:
+        bbox = draw.textbbox((0, 0), label, font=font)
+        text_w = int(bbox[2] - bbox[0])
+        text_h = int(bbox[3] - bbox[1])
+    except Exception:
+        text_w, text_h = draw.textsize(label, font=font)
+    pad_x = int(max(12, round(width * 0.012)))
+    pad_y = int(max(8, round(height * 0.010)))
+    margin = int(max(16, round(min(width, height) * 0.022)))
+    box_w = text_w + 2 * pad_x
+    box_h = text_h + 2 * pad_y
+    x1 = width - margin
+    y1 = height - margin
+    x0 = max(0, x1 - box_w)
+    y0 = max(0, y1 - box_h)
+    draw.rounded_rectangle(
+        (x0, y0, x1, y1),
+        radius=max(5, int(round(box_h * 0.18))),
+        fill=(18, 24, 38, 185),
+        outline=(255, 255, 255, 130),
+        width=1,
+    )
+    draw.text((x0 + pad_x, y0 + pad_y - 1), label, fill=(255, 255, 255, 245), font=font)
+    return np.asarray(Image.alpha_composite(image, overlay).convert("RGB"), dtype=np.uint8)
+
+
+def _camera_matrices(
+    *,
+    yaw_deg: float,
+    target: np.ndarray,
+    distance: float,
+    width: int,
+    height: int,
+    pitch_deg: float,
+    fov: float,
+) -> tuple[list[float], list[float]]:
+    view = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=np.asarray(target, dtype=float).tolist(),
+        distance=float(distance),
+        yaw=float(yaw_deg),
+        pitch=float(pitch_deg),
+        roll=0.0,
+        upAxisIndex=2,
+    )
+    proj = p.computeProjectionMatrixFOV(
+        fov=float(fov),
+        aspect=float(width) / float(height),
+        nearVal=0.05,
+        farVal=8.0,
+    )
+    return view, proj
+
+
+def _project_world_to_pixel(
+    world_pos: np.ndarray,
+    *,
+    view_matrix: Sequence[float],
+    projection_matrix: Sequence[float],
+    width: int,
+    height: int,
+) -> tuple[float, float, bool]:
+    pos = np.ones(4, dtype=float)
+    pos[:3] = np.asarray(world_pos, dtype=float).reshape(3)
+    view = np.asarray(view_matrix, dtype=float).reshape(4, 4, order="F")
+    proj = np.asarray(projection_matrix, dtype=float).reshape(4, 4, order="F")
+    clip = proj @ (view @ pos)
+    if abs(float(clip[3])) < 1e-9:
+        return 0.0, 0.0, False
+    ndc = clip[:3] / float(clip[3])
+    visible = bool(-1.15 <= ndc[0] <= 1.15 and -1.15 <= ndc[1] <= 1.15 and -1.15 <= ndc[2] <= 1.15)
+    x = (float(ndc[0]) + 1.0) * 0.5 * float(width)
+    y = (1.0 - float(ndc[1])) * 0.5 * float(height)
+    return x, y, visible
+
+
+def _overlay_trajectory_stage_labels(
+    frame: np.ndarray,
+    *,
+    labels: Sequence[dict],
+    view_matrix: Sequence[float],
+    projection_matrix: Sequence[float],
+) -> np.ndarray:
+    if Image is None or ImageDraw is None or not labels:
+        return frame
+    height, width = int(frame.shape[0]), int(frame.shape[1])
+    image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", int(np.clip(round(height * 0.018), 14, 22)))
+    except Exception:
+        font = ImageFont.load_default() if ImageFont is not None else None
+    used_boxes: list[tuple[float, float, float, float]] = []
+    for item in labels:
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        anchor_x, anchor_y, visible = _project_world_to_pixel(
+            np.asarray(item.get("pos"), dtype=float),
+            view_matrix=view_matrix,
+            projection_matrix=projection_matrix,
+            width=width,
+            height=height,
+        )
+        if not visible:
+            continue
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_w = float(bbox[2] - bbox[0])
+            text_h = float(bbox[3] - bbox[1])
+        except Exception:
+            text_w, text_h = draw.textsize(text, font=font)
+        pad_x = 7.0
+        pad_y = 4.0
+        box_w = text_w + 2.0 * pad_x
+        box_h = text_h + 2.0 * pad_y
+        center_pos = item.get("center_pos")
+        if center_pos is not None:
+            center_x, center_y, center_visible = _project_world_to_pixel(
+                np.asarray(center_pos, dtype=float),
+                view_matrix=view_matrix,
+                projection_matrix=projection_matrix,
+                width=width,
+                height=height,
+            )
+        else:
+            center_x, center_y, center_visible = 0.5 * float(width), 0.5 * float(height), False
+        direction = np.asarray([anchor_x - center_x, anchor_y - center_y], dtype=float)
+        norm = float(np.linalg.norm(direction))
+        if not center_visible or norm < 1e-6:
+            angle = 2.0 * np.pi * float(len(used_boxes)) / max(float(len(labels)), 1.0)
+            direction = np.asarray([np.cos(angle), np.sin(angle)], dtype=float)
+        else:
+            direction = direction / norm
+        tangent = np.asarray([-direction[1], direction[0]], dtype=float)
+        best_box = None
+        best_score = float("inf")
+
+        def _overlap_area(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+            ax0, ay0, ax1, ay1 = a
+            bx0, by0, bx1, by1 = b
+            pad = 5.0
+            ax0 -= pad
+            ay0 -= pad
+            ax1 += pad
+            ay1 += pad
+            bx0 -= pad
+            by0 -= pad
+            bx1 += pad
+            by1 += pad
+            ow = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+            oh = max(0.0, min(ay1, by1) - max(ay0, by0))
+            return float(ow * oh)
+
+        for radial_dist in (76.0, 102.0, 130.0, 158.0):
+            for tangent_dist in (0.0, -34.0, 34.0, -68.0, 68.0, -102.0, 102.0):
+                label_center_x = anchor_x + radial_dist * float(direction[0]) + tangent_dist * float(tangent[0])
+                label_center_y = anchor_y + radial_dist * float(direction[1]) + tangent_dist * float(tangent[1])
+                x0_c = float(np.clip(label_center_x - 0.5 * box_w, 4.0, max(4.0, width - box_w - 4.0)))
+                y0_c = float(np.clip(label_center_y - 0.5 * box_h, 4.0, max(4.0, height - box_h - 4.0)))
+                box = (x0_c, y0_c, x0_c + box_w, y0_c + box_h)
+                overlap = sum(_overlap_area(box, prev) for prev in used_boxes)
+                clipped = abs(x0_c - (label_center_x - 0.5 * box_w)) + abs(y0_c - (label_center_y - 0.5 * box_h))
+                score = 10000.0 * overlap + 4.0 * clipped + 0.55 * abs(tangent_dist) + 0.18 * radial_dist
+                if score < best_score:
+                    best_score = float(score)
+                    best_box = box
+        if best_box is None:
+            best_box = (
+                float(np.clip(anchor_x + 12.0, 4.0, max(4.0, width - box_w - 4.0))),
+                float(np.clip(anchor_y - 0.5 * box_h, 4.0, max(4.0, height - box_h - 4.0))),
+                0.0,
+                0.0,
+            )
+            best_box = (best_box[0], best_box[1], best_box[0] + box_w, best_box[1] + box_h)
+        x0, y0, x1, y1 = best_box
+        used_boxes.append((x0, y0, x1, y1))
+        color = tuple(int(v) for v in item.get("color", (31, 41, 55, 255)))
+        outline = color[:3] + (230,)
+        fill = (255, 255, 255, 220)
+        if x0 > anchor_x:
+            line_end = (x0, 0.5 * (y0 + y1))
+        else:
+            line_end = (x1, 0.5 * (y0 + y1))
+        draw.line((anchor_x, anchor_y, line_end[0], line_end[1]), fill=outline, width=2)
+        r = 3.0
+        draw.ellipse((anchor_x - r, anchor_y - r, anchor_x + r, anchor_y + r), fill=outline)
+        draw.rounded_rectangle((x0, y0, x1, y1), radius=5, fill=fill, outline=outline, width=2)
+        draw.text((x0 + pad_x, y0 + pad_y - 1.0), text, fill=(15, 23, 42, 255), font=font)
     return np.asarray(Image.alpha_composite(image, overlay).convert("RGB"), dtype=np.uint8)
 
 
@@ -560,6 +860,18 @@ def _spawn_table(
             )
 
 
+def _spawn_ground_grid(
+    *,
+    center_xy: Sequence[float] = (0.0, 0.0),
+    half_extents_xy: Sequence[float] = (1.25, 1.00),
+    spacing: float = 0.10,
+    z: float = 0.0,
+    z_lift: float = 0.003,
+) -> None:
+    floor_id = int(p.loadURDF("plane.urdf", basePosition=[0.0, 0.0, float(z) - 0.02], useFixedBase=True))
+    p.changeVisualShape(floor_id, -1, rgbaColor=[0.96, 0.97, 0.99, 1.0])
+
+
 def _spawn_sphere(
     center_world: np.ndarray,
     radius_world: float,
@@ -660,18 +972,18 @@ def _spawn_sphere(
     )
 
 
-def _spawn_marker(pos_world: np.ndarray, radius: float, color: tuple[float, float, float, float]) -> None:
+def _spawn_marker(pos_world: np.ndarray, radius: float, color: tuple[float, float, float, float]) -> int:
     vis_id = p.createVisualShape(
         p.GEOM_SPHERE,
         radius=radius,
         rgbaColor=list(color),
         specularColor=[0.2, 0.2, 0.2],
     )
-    p.createMultiBody(
+    return int(p.createMultiBody(
         baseMass=0.0,
         baseVisualShapeIndex=vis_id,
         basePosition=np.asarray(pos_world, dtype=float).tolist(),
-    )
+    ))
 
 
 def _spawn_oriented_cylinder(
@@ -769,19 +1081,14 @@ def _render_rgb(
     height: int,
     pitch_deg: float = -23.0,
 ) -> np.ndarray:
-    view = p.computeViewMatrixFromYawPitchRoll(
-        cameraTargetPosition=np.asarray(target, dtype=float).tolist(),
+    view, proj = _camera_matrices(
+        yaw_deg=float(yaw_deg),
+        target=np.asarray(target, dtype=float),
         distance=float(distance),
-        yaw=float(yaw_deg),
-        pitch=float(pitch_deg),
-        roll=0.0,
-        upAxisIndex=2,
-    )
-    proj = p.computeProjectionMatrixFOV(
+        width=int(width),
+        height=int(height),
+        pitch_deg=float(pitch_deg),
         fov=37.0,
-        aspect=float(width) / float(height),
-        nearVal=0.05,
-        farVal=8.0,
     )
     _, _, rgba, _, _ = p.getCameraImage(
         width=width,
@@ -804,7 +1111,7 @@ def _load_ur5_render_robot(
     hide_link_geometry_patterns: Sequence[str] | None = None,
     suppress_urdf_warnings: bool = True,
 ) -> tuple[int, list[int], str | None]:
-    from .s5_pybullet_backend import _DEFAULT_UR5_URDF, _make_pybullet_friendly_urdf, _suppress_native_output
+    from .S5SphereInspect import _DEFAULT_UR5_URDF, _make_pybullet_friendly_urdf, _suppress_native_output
 
     path = str(urdf_path or _DEFAULT_UR5_URDF)
     if not os.path.exists(path):
@@ -912,6 +1219,7 @@ def _spawn_tool_bar(length: float, radius: float, color: tuple[float, float, flo
 
 def _set_tool_bar_pose(body_id: int, tip_pos_world: np.ndarray, axis_world: np.ndarray, length: float) -> None:
     axis = _normalize3(axis_world)
+    # Keep the probe tip fixed and extend the visible shaft toward the wrist.
     center = np.asarray(tip_pos_world, dtype=float).reshape(3) + 0.5 * float(length) * axis
     p.resetBasePositionAndOrientation(
         int(body_id),
@@ -963,7 +1271,7 @@ def render_s5_pybullet_demo_video(
     draw_current_marker: bool = False,
     hide_gripper: bool = True,
     draw_tool_bar: bool = False,
-    tool_bar_length: float = 0.105,
+    tool_bar_length: float = 0.205,
     tool_bar_radius: float = 0.005,
     suppress_urdf_warnings: bool = True,
     connect_client: bool = True,
@@ -973,6 +1281,11 @@ def render_s5_pybullet_demo_video(
     feature_overlay_specs: Sequence[dict] | None = None,
     feature_overlay_true_constraints: dict | None = None,
     feature_overlay_title: str | None = None,
+    playback_speed: float = 1.0,
+    playback_label: str | None = None,
+    save_frame_indices: Sequence[int] | None = None,
+    save_frame_dir: str | Path | None = None,
+    save_frame_prefix: str = "s5_frame",
 ) -> dict:
     _require_pybullet()
     pts = np.asarray(trajectory, dtype=float)
@@ -1000,6 +1313,8 @@ def render_s5_pybullet_demo_video(
     use_gui = gui_mode == 2
     if gui_mode == 1 and output_path is None:
         raise ValueError("output_path is required when gui=1.")
+    playback_speed = float(max(float(playback_speed), 1e-6))
+    output_fps = float(fps) * playback_speed
 
     center_world = np.asarray(center_world, dtype=float).reshape(3)
     sphere_center = np.asarray(sphere_center, dtype=float).reshape(3)
@@ -1017,7 +1332,7 @@ def render_s5_pybullet_demo_video(
     bounds = stage_segments(len(pts), cutpoints=cutpoints)
     trace_stride = int(max(1, trace_stride))
     trace_width = float(max(0.5, trace_width))
-    trace_radius = float(max(0.0012, 0.0008 * trace_width))
+    trace_radius = float(max(0.0009, 0.00055 * trace_width))
     exec_trace_palette = [
         (0.28, 0.14, 0.46, 0.94),
         (0.21, 0.36, 0.55, 0.94),
@@ -1026,6 +1341,13 @@ def render_s5_pybullet_demo_video(
         (0.90, 0.85, 0.22, 0.94),
     ]
     render_frame_stride = int(max(1, render_frame_stride))
+    frame_indices_to_save = {
+        int(v)
+        for v in ([] if save_frame_indices is None else save_frame_indices)
+        if 0 <= int(v) < len(pts)
+    }
+    frame_save_dir = None if save_frame_dir is None else Path(save_frame_dir)
+    saved_frame_paths: list[str] = []
 
     def _stage_index_at(frame_idx: int) -> int:
         for stage_idx, (start, end) in enumerate(bounds):
@@ -1046,6 +1368,12 @@ def render_s5_pybullet_demo_video(
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
         p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)
 
+        _spawn_ground_grid(
+            center_xy=(0.48 * float(center_world[0]), 0.40 * float(center_world[1])),
+            half_extents_xy=(1.18, 0.92),
+            spacing=0.10,
+            z=0.0,
+        )
         _spawn_table(
             table_top_z=table_top_z,
             center_xy=table_center_xy,
@@ -1070,12 +1398,14 @@ def render_s5_pybullet_demo_video(
                 for a, b in zip(seg[:-1], seg[1:]):
                     _spawn_capsule_segment(a, b, radius=float(tube_radius), color=color)
 
-        _spawn_marker(traj_world[0], radius=0.0045, color=(0.10, 0.65, 0.25, 1.0))
-        _spawn_marker(traj_world[-1], radius=0.0045, color=(0.86, 0.18, 0.18, 1.0))
-        if cutpoints is not None:
-            for cp in np.asarray(cutpoints, dtype=int).reshape(-1):
-                if 0 <= int(cp) < len(traj_world):
-                    _spawn_marker(traj_world[int(cp)], radius=0.0022, color=(0.08, 0.08, 0.08, 0.72))
+        _spawn_marker(traj_world[0], radius=0.0058, color=(0.10, 0.65, 0.25, 1.0))
+        _spawn_marker(traj_world[-1], radius=0.0058, color=(0.86, 0.18, 0.18, 1.0))
+        pending_cutpoints = [
+            int(cp)
+            for cp in np.asarray(cutpoints if cutpoints is not None else [], dtype=int).reshape(-1)
+            if 0 <= int(cp) < len(traj_world)
+        ]
+        spawned_cutpoints: set[int] = set()
 
         robot_id = None
         joint_indices: list[int] = []
@@ -1110,6 +1440,24 @@ def render_s5_pybullet_demo_video(
         elif q_path is None:
             _spawn_probe_pose(traj_world[0], axis[0], shaft_len=0.080, shaft_radius=0.0045)
 
+        stage_label_items: list[dict] = []
+        for stage_idx, (start, end) in enumerate(bounds):
+            start_i = int(start)
+            end_i = int(end)
+            anchor_i = int(round(float(start_i) + 0.25 * float(max(0, end_i - start_i))))
+            anchor_i = int(np.clip(anchor_i, 0, len(traj_world) - 1))
+            rgba = _hex_to_rgba(STAGE_COLORS[stage_idx % len(STAGE_COLORS)], alpha=1.0)
+            stage_label_items.append(
+                {
+                    "start": start_i,
+                    "pos": np.asarray(traj_world[anchor_i], dtype=float),
+                    "center_pos": np.asarray(center_world, dtype=float),
+                    "stage_index": int(stage_idx),
+                    "text": f"Stage {stage_idx + 1}",
+                    "color": tuple(int(np.clip(v * 255.0, 0, 255)) for v in rgba),
+                }
+            )
+
         target = (
             np.asarray(camera_target, dtype=float).reshape(3)
             if camera_target is not None
@@ -1122,7 +1470,7 @@ def render_s5_pybullet_demo_video(
             cameraTargetPosition=target.tolist(),
         )
         if save_video:
-            writer = _FFmpegVideoWriter(out_path=Path(output_path), width=int(width), height=int(height), fps=float(fps))
+            writer = _FFmpegVideoWriter(out_path=Path(output_path), width=int(width), height=int(height), fps=float(output_fps))
 
         pause_text_id = None
         if use_gui:
@@ -1159,6 +1507,10 @@ def render_s5_pybullet_demo_video(
                 p.resetBasePositionAndOrientation(current_marker_id, traj_world[i].tolist(), [0.0, 0.0, 0.0, 1.0])
             if tool_bar_id is not None:
                 _set_tool_bar_pose(tool_bar_id, traj_world[i], axis[i], float(tool_bar_length))
+            for cp in pending_cutpoints:
+                if int(i) >= int(cp) and int(cp) not in spawned_cutpoints:
+                    _spawn_marker(traj_world[int(cp)], radius=0.0058, color=(0.04, 0.04, 0.04, 0.92))
+                    spawned_cutpoints.add(int(cp))
             if bool(draw_executed_trace) and (i % trace_stride == 0 or i == len(pts) - 1):
                 radial = _normalize3(traj_world[i] - center_world)
                 lift = radial * max(0.006, 2.8 * trace_radius)
@@ -1169,7 +1521,8 @@ def render_s5_pybullet_demo_video(
                 prev_trace_pos = cur_trace_pos
             p.stepSimulation()
             write_frame = (i % render_frame_stride == 0) or (i == len(pts) - 1)
-            if save_video and writer is not None and write_frame:
+            save_still = int(i) in frame_indices_to_save and frame_save_dir is not None
+            if (save_video and writer is not None and write_frame) or save_still:
                 frame = _render_rgb(
                     yaw_deg=float(camera_yaw),
                     target=target,
@@ -1178,21 +1531,16 @@ def render_s5_pybullet_demo_video(
                     height=int(height),
                     pitch_deg=float(camera_pitch),
                 )
+                view, proj = _camera_matrices(
+                    yaw_deg=float(camera_yaw),
+                    target=target,
+                    distance=float(camera_distance),
+                    width=int(width),
+                    height=int(height),
+                    pitch_deg=float(camera_pitch),
+                    fov=float(camera_fov),
+                )
                 if abs(float(camera_fov) - 37.0) > 1e-8:
-                    view = p.computeViewMatrixFromYawPitchRoll(
-                        cameraTargetPosition=target.tolist(),
-                        distance=float(camera_distance),
-                        yaw=float(camera_yaw),
-                        pitch=float(camera_pitch),
-                        roll=0.0,
-                        upAxisIndex=2,
-                    )
-                    proj = p.computeProjectionMatrixFOV(
-                        fov=float(camera_fov),
-                        aspect=float(width) / float(height),
-                        nearVal=0.05,
-                        farVal=8.0,
-                    )
                     _, _, rgba, _, _ = p.getCameraImage(
                         width=int(width),
                         height=int(height),
@@ -1203,6 +1551,7 @@ def render_s5_pybullet_demo_video(
                         shadow=1,
                     )
                     frame = np.asarray(rgba, dtype=np.uint8).reshape(int(height), int(width), 4)[:, :, :3]
+                visible_stage_labels = [item for item in stage_label_items if int(i) >= int(item.get("start", 0))]
                 if bool(feature_overlay) and feature_overlay_features is not None:
                     frame = _overlay_feature_panel(
                         frame,
@@ -1214,13 +1563,32 @@ def render_s5_pybullet_demo_video(
                         true_constraints=dict(feature_overlay_true_constraints or {}),
                         title=str(feature_overlay_title or "Executed trajectory feature profile"),
                     )
-                writer.append_data(frame)
-                frames_written += 1
+                frame = _overlay_corner_label(frame, playback_label)
+                if save_still:
+                    frame_path = _save_rgb_frame(
+                        frame,
+                        frame_save_dir / f"{str(save_frame_prefix)}_frame_{int(i):06d}.png",
+                        crop_aspect=0.9,
+                        crop_scale=0.6,
+                        crop_offset_x=-0.70,
+                        crop_offset_y=0.30,
+                        crop_bottom_fraction=0.2,
+                    )
+                    saved_frame_paths.append(str(frame_path.resolve()))
+                if save_video and writer is not None and write_frame:
+                    frame = _overlay_trajectory_stage_labels(
+                        frame,
+                        labels=visible_stage_labels,
+                        view_matrix=view,
+                        projection_matrix=proj,
+                    )
+                    writer.append_data(frame)
+                    frames_written += 1
             i += 1
             if use_gui and bool(realtime):
-                time.sleep(1.0 / max(float(fps), 1e-6))
+                time.sleep(1.0 / max(float(output_fps), 1e-6))
         if save_video and writer is not None and float(gui_hold_seconds) > 0.0:
-            hold_frames = int(round(float(gui_hold_seconds) * float(fps)))
+            hold_frames = int(round(float(gui_hold_seconds) * float(output_fps)))
             if hold_frames > 0:
                 frame = _render_rgb(
                     yaw_deg=float(camera_yaw),
@@ -1230,21 +1598,16 @@ def render_s5_pybullet_demo_video(
                     height=int(height),
                     pitch_deg=float(camera_pitch),
                 )
+                view, proj = _camera_matrices(
+                    yaw_deg=float(camera_yaw),
+                    target=target,
+                    distance=float(camera_distance),
+                    width=int(width),
+                    height=int(height),
+                    pitch_deg=float(camera_pitch),
+                    fov=float(camera_fov),
+                )
                 if abs(float(camera_fov) - 37.0) > 1e-8:
-                    view = p.computeViewMatrixFromYawPitchRoll(
-                        cameraTargetPosition=target.tolist(),
-                        distance=float(camera_distance),
-                        yaw=float(camera_yaw),
-                        pitch=float(camera_pitch),
-                        roll=0.0,
-                        upAxisIndex=2,
-                    )
-                    proj = p.computeProjectionMatrixFOV(
-                        fov=float(camera_fov),
-                        aspect=float(width) / float(height),
-                        nearVal=0.05,
-                        farVal=8.0,
-                    )
                     _, _, rgba, _, _ = p.getCameraImage(
                         width=int(width),
                         height=int(height),
@@ -1255,6 +1618,12 @@ def render_s5_pybullet_demo_video(
                         shadow=1,
                     )
                     frame = np.asarray(rgba, dtype=np.uint8).reshape(int(height), int(width), 4)[:, :, :3]
+                frame = _overlay_trajectory_stage_labels(
+                    frame,
+                    labels=stage_label_items,
+                    view_matrix=view,
+                    projection_matrix=proj,
+                )
                 if bool(feature_overlay) and feature_overlay_features is not None:
                     frame = _overlay_feature_panel(
                         frame,
@@ -1266,6 +1635,7 @@ def render_s5_pybullet_demo_video(
                         true_constraints=dict(feature_overlay_true_constraints or {}),
                         title=str(feature_overlay_title or "Executed trajectory feature profile"),
                     )
+                frame = _overlay_corner_label(frame, playback_label)
                 for _ in range(hold_frames):
                     writer.append_data(frame)
                 frames_written += int(hold_frames)
@@ -1306,6 +1676,9 @@ def render_s5_pybullet_demo_video(
         "frames_written": int(frames_written),
         "source_frames": int(len(pts)),
         "fps": float(fps),
+        "output_fps": float(output_fps),
+        "playback_speed": float(playback_speed),
+        "playback_label": None if playback_label is None else str(playback_label),
         "gui": int(gui_mode),
         "wall_seconds": float(time.time() - t0),
         "has_robot_joint_playback": bool(q_path is not None),
@@ -1314,6 +1687,7 @@ def render_s5_pybullet_demo_video(
         "draw_stage_trace": bool(draw_stage_trace),
         "draw_executed_trace": bool(draw_executed_trace),
         "trace_stride": int(trace_stride),
+        "saved_frames": saved_frame_paths,
         "trace_width": float(trace_width),
         "draw_current_marker": bool(draw_current_marker),
         "stage4_shell_offset": None if stage4_shell_offset is None else float(stage4_shell_offset),
@@ -1394,6 +1768,7 @@ def render_s5_pybullet_episode(
             cameraTargetPosition=[0.0, 0.0, 1.0],
         )
 
+        _spawn_ground_grid(center_xy=(0.0, 0.0), half_extents_xy=(1.12, 0.92), spacing=0.10, z=0.0)
         _spawn_table(table_top_z=table_top_z)
         _spawn_sphere(center_world=center_world, radius_world=radius_world)
 

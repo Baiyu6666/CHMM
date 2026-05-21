@@ -132,6 +132,38 @@ def _extract_metrics(method_name: str, result: dict[str, Any]) -> dict[str, Any]
     return dict(result["constraints"]["metrics"])
 
 
+def _metric_text(metrics: dict[str, Any], key: str) -> str:
+    value = metrics.get(key, None)
+    if value is None:
+        return "n/a"
+    try:
+        value_f = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not np.isfinite(value_f):
+        return "nan"
+    return f"{value_f:.4f}"
+
+
+def _print_completed_run_metrics(
+    *,
+    method_name: str,
+    dataset_name: str,
+    dataset_seed: int,
+    method_seed: int,
+    metrics: dict[str, Any],
+) -> None:
+    print(
+        "[benchmark] completed "
+        f"method={method_name} dataset={dataset_name} "
+        f"dataset_seed={int(dataset_seed)} method_seed={int(method_seed)} | "
+        f"segmentation_error={_metric_text(metrics, 'MeanAbsCutpointError')} | "
+        f"constraint_error={_metric_text(metrics, 'MeanConstraintError')} | "
+        f"constraint_error_raw={_metric_text(metrics, 'MeanConstraintErrorRaw')}",
+        flush=True,
+    )
+
+
 def _extract_plot_record(method_name: str, result: dict[str, Any], method_seed: int) -> dict[str, Any]:
     if method_name == "swcl":
         learner = result["joint_result"]["model"]
@@ -399,13 +431,21 @@ def run_benchmark(
                     env_config_path=config_root / "envs" / f"{dataset_name}.json",
                     method_config_path=config_root / "methods" / f"{_method_config_name(method_name)}.json",
                 )
+                metrics = _extract_metrics(method_name, result)
+                _print_completed_run_metrics(
+                    method_name=method_name,
+                    dataset_name=dataset_name,
+                    dataset_seed=int(dataset_cfg.get("seed", dataset_seed)),
+                    method_seed=int(method_seed),
+                    metrics=metrics,
+                )
                 rows.append(
                     {
                         "method": method_name,
                         "dataset": dataset_name,
                         "dataset_seed": int(dataset_seed),
                         "method_seed": int(method_seed),
-                        "metrics": _extract_metrics(method_name, result),
+                        "metrics": metrics,
                         "objectives": _extract_objectives(method_name, result),
                     }
                 )

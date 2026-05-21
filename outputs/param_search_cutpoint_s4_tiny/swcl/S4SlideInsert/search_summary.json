@@ -1,0 +1,183 @@
+{
+  "dataset": "S4SlideInsert",
+  "method": "swcl",
+  "dataset_seed": 12342,
+  "method_seeds": [
+    0
+  ],
+  "grid": {
+    "lambda_ineq_constraint": [
+      0.04,
+      0.06
+    ],
+    "truncated_inequality_z_threshold": [
+      0.4,
+      0.5
+    ],
+    "inequality_trim_fraction": [
+      0.05,
+      0.1
+    ]
+  },
+  "metric_keys": [
+    "MeanAbsCutpointError",
+    "MeanConstraintError",
+    "MeanConstraintErrorRaw",
+    "MeanStageSubgoalError"
+  ],
+  "best": {
+    "num_runs": 1,
+    "params": {
+      "lambda_ineq_constraint": 0.06,
+      "truncated_inequality_z_threshold": 0.5,
+      "inequality_trim_fraction": 0.1
+    },
+    "combo_id": 7,
+    "MeanAbsCutpointError_mean": 10.666666666666666,
+    "MeanAbsCutpointError_std": 0.0,
+    "MeanConstraintError_mean": 0.013916118769916564,
+    "MeanConstraintError_std": 0.0,
+    "MeanConstraintErrorRaw_mean": 0.002126570690283961,
+    "MeanConstraintErrorRaw_std": 0.0,
+    "MeanStageSubgoalError_mean": 0.044852101367264016,
+    "MeanStageSubgoalError_std": 0.0
+  },
+  "results": [
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.1
+      },
+      "combo_id": 7,
+      "MeanAbsCutpointError_mean": 10.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.013916118769916564,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.002126570690283961,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.044852101367264016,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 6,
+      "MeanAbsCutpointError_mean": 11.266666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.014164943684816802,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0021341570273461594,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.038813598949477134,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 4,
+      "MeanAbsCutpointError_mean": 10.133333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.014165082346929817,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.00213348316905717,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.0389160109148329,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 0,
+      "MeanAbsCutpointError_mean": 12.366666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.015817333489578936,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0023335743113818076,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.04239514800579197,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.05
+      },
+      "combo_id": 2,
+      "MeanAbsCutpointError_mean": 12.333333333333332,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.01586263977419017,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0023347342650421247,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.041432025076163906,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.06,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.1
+      },
+      "combo_id": 5,
+      "MeanAbsCutpointError_mean": 17.033333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.059083482806034336,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.024408044841032567,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.06415986551134499,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.5,
+        "inequality_trim_fraction": 0.1
+      },
+      "combo_id": 3,
+      "MeanAbsCutpointError_mean": 16.733333333333334,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.059095017729888545,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.024408336970823032,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.06338700240708395,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "lambda_ineq_constraint": 0.04,
+        "truncated_inequality_z_threshold": 0.4,
+        "inequality_trim_fraction": 0.1
+      },
+      "combo_id": 1,
+      "MeanAbsCutpointError_mean": 17.233333333333334,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.059213579788216474,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.02441372548744364,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.06404093829899474,
+      "MeanStageSubgoalError_std": 0.0
+    }
+  ]
+}

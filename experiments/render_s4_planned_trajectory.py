@@ -16,7 +16,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from envs.S4SlideInsertRealistic import S4SlideInsertRealisticEnv
+from envs.S4SlideInsert import S4SlideInsertEnv
+from experiments.render_metrics import (
+    apply_inequality_constraint_clearance,
+    concat_mp4_files,
+    constraint_violation_stats,
+    parse_int_list,
+    plan_seed_list,
+)
 
 
 def _load_json(path: str | Path) -> dict:
@@ -151,7 +158,7 @@ def _validate_learned_active_matches_gt(payload: dict, learned_matrix, feature_n
 
 def _constraint_values_from_payload(
     payload: dict,
-    env: S4SlideInsertRealisticEnv,
+    env: S4SlideInsertEnv,
     *,
     constraint_source: str = "learned",
 ) -> dict:
@@ -209,6 +216,10 @@ def _parse_stage_lengths(text: str | None) -> dict | None:
     return out
 
 
+def _parse_frame_indices(text: str | None) -> list[int]:
+    return parse_int_list(text)
+
+
 def _parse_rail_polyline(text: str | None):
     if text is None or not str(text).strip():
         return None
@@ -242,7 +253,7 @@ def _stage_spans(cutpoints: list[int], length: int) -> list[tuple[int, int]]:
 
 def _plot_feature_profiles(
     *,
-    env: S4SlideInsertRealisticEnv,
+    env: S4SlideInsertEnv,
     planned_features: np.ndarray,
     executed_features: np.ndarray,
     cutpoints: list[int],
@@ -322,7 +333,7 @@ def _plot_feature_profiles(
 
 
 def _load_env_config() -> dict:
-    cfg = _load_json(PROJECT_ROOT / "configs/envs/S4SlideInsertRealistic.json")
+    cfg = _load_json(PROJECT_ROOT / "configs/envs/S4SlideInsert.json")
     cfg.pop("name", None)
     cfg.pop("n_demos", None)
     cfg.pop("seed", None)
@@ -330,7 +341,7 @@ def _load_env_config() -> dict:
     return cfg
 
 
-def _stage_lengths(env: S4SlideInsertRealisticEnv, overrides: dict | None) -> list[int]:
+def _stage_lengths(env: S4SlideInsertEnv, overrides: dict | None) -> list[int]:
     lengths = [int(x) for x in env.seg_lengths]
     for key, value in dict(overrides or {}).items():
         text = str(key).strip().lower()
@@ -346,7 +357,7 @@ def _stage_lengths(env: S4SlideInsertRealisticEnv, overrides: dict | None) -> li
 
 
 def _auto_stage_lengths_for_rail(
-    env: S4SlideInsertRealisticEnv,
+    env: S4SlideInsertEnv,
     constraint_values: dict,
     overrides: dict | None,
 ) -> list[int]:
@@ -377,6 +388,31 @@ def _auto_stage_lengths_for_rail(
     lengths[2] = max(int(np.ceil(d3 / max(v3 * dt, 1e-8))), 8)
     lengths[3] = max(int(np.ceil(d4 / max(v4 * dt, 1e-8))) + 1, 6)
     return lengths
+
+
+def _scale_total_stage_lengths(lengths: list[int], scale: float) -> list[int]:
+    vals = np.asarray([max(int(v), 1) for v in lengths], dtype=float)
+    scale = float(scale)
+    if not np.isfinite(scale) or scale <= 0.0:
+        scale = 1.0
+    target_total = max(int(round(float(np.sum(vals)) * scale)), len(vals))
+    raw = vals / max(float(np.sum(vals)), 1e-12) * float(target_total)
+    out = np.floor(raw).astype(int)
+    out = np.maximum(out, 1)
+    while int(np.sum(out)) < target_total:
+        order = np.argsort(-(raw - np.floor(raw)))
+        for idx in order:
+            if int(np.sum(out)) >= target_total:
+                break
+            out[int(idx)] += 1
+    while int(np.sum(out)) > target_total:
+        order = np.argsort(-(out - 1))
+        for idx in order:
+            if int(np.sum(out)) <= target_total:
+                break
+            if out[int(idx)] > 1:
+                out[int(idx)] -= 1
+    return [int(v) for v in out.tolist()]
 
 
 def _constraint_value(constraint_values: dict, key: str, default: float) -> float:
@@ -439,7 +475,7 @@ def _limit_edge_speeds(
 
 
 def _plan_s4_stage_constraint_optimizer(
-    env: S4SlideInsertRealisticEnv,
+    env: S4SlideInsertEnv,
     scene: dict,
     constraint_values: dict,
     *,
@@ -635,6 +671,7 @@ def render_s4_planned_trajectory(
     speed_safety: float,
     global_speed_max: float | None,
     stage_lengths: dict | None,
+    stage_length_scale: float,
     benchmark_method: str | None,
     benchmark_dataset: str | None,
     benchmark_method_seed: int | None,
@@ -646,6 +683,7 @@ def render_s4_planned_trajectory(
     execution_normal_load_noise_std: float,
     execution_normal_load_noise_smooth: float,
     execution_normal_load_noise_seed: int | None,
+    save_frame_indices: list[int],
     planner: str,
     optimizer_iters: int,
     optimizer_smooth_step: float,
@@ -656,6 +694,8 @@ def render_s4_planned_trajectory(
     rail_polyline,
     surface_tilt_x: float,
     surface_tilt_y: float,
+    output_prefix: str = "s4_planned",
+    video_path_override: str | Path | None = None,
 ) -> dict:
     out_dir = Path(outdir)
     if not out_dir.is_absolute():
@@ -680,7 +720,7 @@ def render_s4_planned_trajectory(
             "surface_tilt_y": float(surface_tilt_y),
         }
     )
-    env = S4SlideInsertRealisticEnv(**env_cfg)
+    env = S4SlideInsertEnv(**env_cfg)
 
     raw_payload, resolved_constraints_path = _load_constraint_payload(constraints_json)
     payload = _select_constraint_payload(
@@ -689,12 +729,20 @@ def render_s4_planned_trajectory(
         dataset=benchmark_dataset,
         method_seed=benchmark_method_seed,
     )
-    constraint_values = _constraint_values_from_payload(
+    raw_constraint_values = _constraint_values_from_payload(
         payload,
         env,
         constraint_source=str(constraint_source),
     )
-    resolved_stage_lengths = {f"stage{i + 1}": int(n) for i, n in enumerate(_auto_stage_lengths_for_rail(env, constraint_values, stage_lengths))}
+    constraint_values = apply_inequality_constraint_clearance(
+        raw_constraint_values,
+        env.get_constraint_specs(),
+        upper_scale=0.96,
+        lower_scale=1.04,
+    )
+    base_stage_lengths = _auto_stage_lengths_for_rail(env, constraint_values, stage_lengths)
+    scaled_stage_lengths = _scale_total_stage_lengths(base_stage_lengths, stage_length_scale)
+    resolved_stage_lengths = {f"stage{i + 1}": int(n) for i, n in enumerate(scaled_stage_lengths)}
     scene = env.sample_scene(seed=int(seed))
     if str(planner).lower() == "optimizer":
         planned = _plan_s4_stage_constraint_optimizer(
@@ -721,8 +769,10 @@ def render_s4_planned_trajectory(
     print(f"[plan] points={len(planned['trajectory'])}, cutpoints={planned['true_cutpoints'].tolist()}")
     print(f"[plan] planner={planned.get('planner', planner)}")
     print(f"[plan] constraints={planned['constraint_values']}")
+    print(f"[plan] inequality_clearance={{'upper_scale': 0.96, 'lower_scale': 1.04}}")
 
-    video_path = out_dir / "s4_planned_pybullet.mp4" if int(gui) == 1 else None
+    output_prefix = str(output_prefix or "s4_planned")
+    video_path = (Path(video_path_override) if video_path_override is not None else out_dir / f"{output_prefix}_pybullet.mp4") if int(gui) == 1 else None
     effective_realtime = bool(realtime) or int(gui) == 2
     effective_hold_seconds = (-1.0 if int(gui) == 2 else 0.0) if gui_hold_seconds is None else float(gui_hold_seconds)
     latent = env.execute_plan_pybullet(
@@ -750,6 +800,9 @@ def render_s4_planned_trajectory(
         execution_normal_load_noise_std=float(execution_normal_load_noise_std),
         execution_normal_load_noise_smooth=float(execution_normal_load_noise_smooth),
         execution_normal_load_noise_seed=execution_normal_load_noise_seed,
+        save_frame_indices=save_frame_indices,
+        save_frame_dir=out_dir,
+        save_frame_prefix=output_prefix,
     )
     obs = env.compute_observation(latent, scene)
 
@@ -774,12 +827,12 @@ def render_s4_planned_trajectory(
             cutpoints=cutpoints,
             constraint_payload=payload,
             constraint_values=dict(planned["constraint_values"]),
-            output_path=out_dir / "s4_planned_features.png",
+            output_path=out_dir / f"{output_prefix}_features.png",
             use_env_true_constraints=str(constraint_source).lower() == "target",
         )
 
     np.savez_compressed(
-        out_dir / "s4_planned_rollout.npz",
+        out_dir / f"{output_prefix}_rollout.npz",
         planned_trajectory=planned_traj,
         executed_trajectory=executed_traj,
         planned_features=planned_features,
@@ -795,6 +848,23 @@ def render_s4_planned_trajectory(
         ik_position_error_world=np.asarray(obs.get("ik_position_error_world", []), dtype=float),
     )
 
+    violation_stats = constraint_violation_stats(
+        features_list=[planned_features],
+        cutpoints_list=[cutpoints],
+        feature_schema=env.get_feature_schema(),
+        constraint_specs=env.get_constraint_specs(),
+        true_constraints=env.get_true_constraints(),
+        equality_tolerance=1e-3,
+    )
+    executed_violation_stats = constraint_violation_stats(
+        features_list=[executed_features],
+        cutpoints_list=[cutpoints],
+        feature_schema=env.get_feature_schema(),
+        constraint_specs=env.get_constraint_specs(),
+        true_constraints=env.get_true_constraints(),
+        equality_tolerance=1e-3,
+    )
+
     summary = {
         "task": "s4_planned_trajectory_render",
         "constraints_json": str(Path(constraints_json)),
@@ -803,7 +873,9 @@ def render_s4_planned_trajectory(
         "planner": str(planned.get("planner", planner)),
         "seed": int(seed),
         "gui": int(gui),
+        "raw_constraint_values": dict(raw_constraint_values),
         "constraint_values": dict(planned["constraint_values"]),
+        "inequality_clearance": {"upper_scale": 0.96, "lower_scale": 1.04},
         "stage_lengths": dict(planned["stage_lengths"]),
         "global_speed_max": planned.get("global_speed_max"),
         "rail_shape": str(getattr(env, "rail_shape", "straight")),
@@ -812,9 +884,10 @@ def render_s4_planned_trajectory(
         "cutpoints": cutpoints,
         "trajectory_points": int(len(planned_traj)),
         "feature_plot": None if feature_plot_path is None else str(Path(feature_plot_path).resolve()),
-        "rollout_npz": str((out_dir / "s4_planned_rollout.npz").resolve()),
+        "rollout_npz": str((out_dir / f"{output_prefix}_rollout.npz").resolve()),
         "video": None if video_path is None else str(video_path.resolve()),
         "frames": int(latent.get("frames", 0)),
+        "saved_frames": list(latent.get("saved_frames", [])),
         "feature_overlay": bool(feature_overlay),
         "execution_joint_noise_std": float(execution_joint_noise_std),
         "execution_joint_noise_smooth": float(execution_joint_noise_smooth),
@@ -826,8 +899,11 @@ def render_s4_planned_trajectory(
         "ik_position_error_max": None if "ik_position_error_world" not in obs else float(np.max(obs["ik_position_error_world"])),
         "surface_tilt_x": float(getattr(env, "surface_tilt_x", 0.0)),
         "surface_tilt_y": float(getattr(env, "surface_tilt_y", 0.0)),
+        "planned_constraint_violation": violation_stats,
+        "constraint_violation": violation_stats,
+        "executed_constraint_violation": executed_violation_stats,
     }
-    summary_path = out_dir / "s4_planned_render_summary.json"
+    summary_path = out_dir / f"{output_prefix}_render_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"[saved] {summary_path}")
     print(f"[saved] features={feature_plot_path}, video={video_path}")
@@ -842,6 +918,8 @@ def main() -> None:
     parser.add_argument("--benchmark-method-seed", type=int, default=None)
     parser.add_argument("--outdir", default="outputs/s4_planned_render")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--plan-seeds", default=None, help="Comma-separated seeds for rendering multiple planned trajectories.")
+    parser.add_argument("--n-plans", type=int, default=1, help="Number of planned trajectories to render, starting from --seed, when --plan-seeds is not set.")
     parser.add_argument("--gui", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("--fps", type=float, default=15.0)
     parser.add_argument("--width", type=int, default=1280)
@@ -849,24 +927,26 @@ def main() -> None:
     parser.add_argument("--render-frame-stride", type=int, default=1)
     parser.add_argument("--realtime", type=int, default=0)
     parser.add_argument("--gui-hold-seconds", type=float, default=None)
-    parser.add_argument("--camera-yaw", type=float, default=128.0)
-    parser.add_argument("--camera-pitch", type=float, default=-29.0)
-    parser.add_argument("--camera-distance", type=float, default=0.84)
+    parser.add_argument("--camera-yaw", type=float, default=38.0)
+    parser.add_argument("--camera-pitch", type=float, default=-33.0)
+    parser.add_argument("--camera-distance", type=float, default=0.90)
     parser.add_argument("--camera-fov", type=float, default=42.0)
     parser.add_argument("--plot-features", type=int, default=1)
     parser.add_argument("--constraint-source", choices=["learned", "target"], default="learned")
     parser.add_argument("--speed-safety", type=float, default=1.0)
     parser.add_argument("--global-speed-max", type=float, default=0.012)
     parser.add_argument("--stage-lengths", default=None, help="Optional comma list, e.g. stage3:67,stage4:21.")
+    parser.add_argument("--stage-length-scale", type=float, default=1.20, help="Scale the total planned trajectory length while preserving stage ratios.")
     parser.add_argument("--visualize-normal-load", type=int, default=0)
     parser.add_argument("--feature-overlay", type=int, default=1)
+    parser.add_argument("--save-frame-indices", default=None, help="Comma-separated source frame indices to save as PNGs in --outdir, e.g. 0,80,157.")
     parser.add_argument("--execution-joint-noise-std", type=float, default=0.002)
     parser.add_argument("--execution-joint-noise-smooth", type=float, default=0.90)
     parser.add_argument("--execution-noise-seed", type=int, default=None)
     parser.add_argument("--execution-normal-load-noise-std", type=float, default=0.025)
     parser.add_argument("--execution-normal-load-noise-smooth", type=float, default=0.85)
     parser.add_argument("--execution-normal-load-noise-seed", type=int, default=None)
-    parser.add_argument("--planner", choices=["waypoint", "optimizer"], default="waypoint")
+    parser.add_argument("--planner", choices=["waypoint", "optimizer"], default="optimizer")
     parser.add_argument("--optimizer-iters", type=int, default=500)
     parser.add_argument("--optimizer-smooth-step", type=float, default=0.18)
     parser.add_argument("--optimizer-constraint-step", type=float, default=0.45)
@@ -878,48 +958,115 @@ def main() -> None:
     parser.add_argument("--surface-tilt-y", type=float, default=0.0, help="Surface height slope dz/dy in S4 coordinates.")
     args = parser.parse_args()
 
-    render_s4_planned_trajectory(
-        constraints_json=args.constraints_json,
-        outdir=args.outdir,
-        seed=int(args.seed),
-        gui=int(args.gui),
-        fps=float(args.fps),
-        width=int(args.width),
-        height=int(args.height),
-        render_frame_stride=int(args.render_frame_stride),
-        realtime=bool(args.realtime),
-        gui_hold_seconds=args.gui_hold_seconds,
-        camera_yaw=float(args.camera_yaw),
-        camera_pitch=float(args.camera_pitch),
-        camera_distance=float(args.camera_distance),
-        camera_fov=float(args.camera_fov),
-        plot_features=bool(args.plot_features),
-        constraint_source=str(args.constraint_source),
-        speed_safety=float(args.speed_safety),
-        global_speed_max=None if float(args.global_speed_max) <= 0.0 else float(args.global_speed_max),
-        stage_lengths=_parse_stage_lengths(args.stage_lengths),
-        benchmark_method=args.benchmark_method,
-        benchmark_dataset=args.benchmark_dataset,
-        benchmark_method_seed=args.benchmark_method_seed,
-        visualize_normal_load=bool(args.visualize_normal_load),
-        feature_overlay=bool(args.feature_overlay),
-        execution_joint_noise_std=float(args.execution_joint_noise_std),
-        execution_joint_noise_smooth=float(args.execution_joint_noise_smooth),
-        execution_noise_seed=args.execution_noise_seed,
-        execution_normal_load_noise_std=float(args.execution_normal_load_noise_std),
-        execution_normal_load_noise_smooth=float(args.execution_normal_load_noise_smooth),
-        execution_normal_load_noise_seed=args.execution_normal_load_noise_seed,
-        planner=str(args.planner),
-        optimizer_iters=int(args.optimizer_iters),
-        optimizer_smooth_step=float(args.optimizer_smooth_step),
-        optimizer_constraint_step=float(args.optimizer_constraint_step),
-        optimizer_objective_step=float(args.optimizer_objective_step),
-        rail_shape=str(args.rail_shape),
-        rail_bend_amp=float(args.rail_bend_amp),
-        rail_polyline=_parse_rail_polyline(args.rail_polyline),
-        surface_tilt_x=float(args.surface_tilt_x),
-        surface_tilt_y=float(args.surface_tilt_y),
-    )
+    seeds = plan_seed_list(int(args.seed), args.plan_seeds, int(args.n_plans))
+    out_dir = Path(args.outdir)
+    if not out_dir.is_absolute():
+        out_dir = PROJECT_ROOT / out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summaries = []
+    temp_videos = []
+    multi = len(seeds) > 1
+    for plan_idx, plan_seed in enumerate(seeds):
+        prefix = "s4_planned" if not multi else f"s4_planned_seed_{int(plan_seed):03d}"
+        video_override = None
+        if multi and int(args.gui) == 1:
+            video_override = out_dir / f"._tmp_{prefix}_pybullet.mp4"
+        summary = render_s4_planned_trajectory(
+            constraints_json=args.constraints_json,
+            outdir=args.outdir,
+            seed=int(plan_seed),
+            gui=int(args.gui),
+            fps=float(args.fps),
+            width=int(args.width),
+            height=int(args.height),
+            render_frame_stride=int(args.render_frame_stride),
+            realtime=bool(args.realtime),
+            gui_hold_seconds=args.gui_hold_seconds,
+            camera_yaw=float(args.camera_yaw),
+            camera_pitch=float(args.camera_pitch),
+            camera_distance=float(args.camera_distance),
+            camera_fov=float(args.camera_fov),
+            plot_features=bool(args.plot_features),
+            constraint_source=str(args.constraint_source),
+            speed_safety=float(args.speed_safety),
+            global_speed_max=None if float(args.global_speed_max) <= 0.0 else float(args.global_speed_max),
+            stage_lengths=_parse_stage_lengths(args.stage_lengths),
+            stage_length_scale=float(args.stage_length_scale),
+            benchmark_method=args.benchmark_method,
+            benchmark_dataset=args.benchmark_dataset,
+            benchmark_method_seed=args.benchmark_method_seed,
+            visualize_normal_load=bool(args.visualize_normal_load),
+            feature_overlay=bool(args.feature_overlay),
+            execution_joint_noise_std=float(args.execution_joint_noise_std),
+            execution_joint_noise_smooth=float(args.execution_joint_noise_smooth),
+            execution_noise_seed=(None if args.execution_noise_seed is None else int(args.execution_noise_seed) + int(plan_idx)),
+            execution_normal_load_noise_std=float(args.execution_normal_load_noise_std),
+            execution_normal_load_noise_smooth=float(args.execution_normal_load_noise_smooth),
+            execution_normal_load_noise_seed=(None if args.execution_normal_load_noise_seed is None else int(args.execution_normal_load_noise_seed) + int(plan_idx)),
+            save_frame_indices=_parse_frame_indices(args.save_frame_indices),
+            planner=str(args.planner),
+            optimizer_iters=int(args.optimizer_iters),
+            optimizer_smooth_step=float(args.optimizer_smooth_step),
+            optimizer_constraint_step=float(args.optimizer_constraint_step),
+            optimizer_objective_step=float(args.optimizer_objective_step),
+            rail_shape=str(args.rail_shape),
+            rail_bend_amp=float(args.rail_bend_amp),
+            rail_polyline=_parse_rail_polyline(args.rail_polyline),
+            surface_tilt_x=float(args.surface_tilt_x),
+            surface_tilt_y=float(args.surface_tilt_y),
+            output_prefix=prefix,
+            video_path_override=video_override,
+        )
+        summaries.append(summary)
+        if video_override is not None:
+            temp_videos.append(Path(video_override))
+
+    if multi:
+        final_video = None
+        if int(args.gui) == 1 and temp_videos:
+            final_video = concat_mp4_files(temp_videos, out_dir / "s4_planned_pybullet.mp4")
+            for path in temp_videos:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+        aggregate = {
+            "task": "s4_planned_trajectory_render_multi",
+            "seeds": [int(v) for v in seeds],
+            "num_plans": int(len(seeds)),
+            "video": None if final_video is None else str(Path(final_video).resolve()),
+            "plans": summaries,
+        }
+        features_list = []
+        executed_features_list = []
+        cutpoints_list = []
+        for item in summaries:
+            rollout_path = item.get("rollout_npz")
+            if rollout_path and Path(rollout_path).exists():
+                z = np.load(rollout_path)
+                features_list.append(np.asarray(z["planned_features"], dtype=float))
+                executed_features_list.append(np.asarray(z["executed_features"], dtype=float))
+                cutpoints_list.append(np.asarray(z["cutpoints"], dtype=int))
+        env_for_stats = S4SlideInsertEnv(**_load_env_config())
+        aggregate["planned_constraint_violation"] = constraint_violation_stats(
+            features_list=features_list,
+            cutpoints_list=cutpoints_list,
+            feature_schema=env_for_stats.get_feature_schema(),
+            constraint_specs=env_for_stats.get_constraint_specs(),
+            true_constraints=env_for_stats.get_true_constraints(),
+            equality_tolerance=1e-3,
+        )
+        aggregate["constraint_violation"] = aggregate["planned_constraint_violation"]
+        aggregate["executed_constraint_violation"] = constraint_violation_stats(
+            features_list=executed_features_list,
+            cutpoints_list=cutpoints_list,
+            feature_schema=env_for_stats.get_feature_schema(),
+            constraint_specs=env_for_stats.get_constraint_specs(),
+            true_constraints=env_for_stats.get_true_constraints(),
+            equality_tolerance=1e-3,
+        )
+        (out_dir / "s4_planned_render_summary.json").write_text(json.dumps(aggregate, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"[saved] {out_dir / 's4_planned_render_summary.json'}")
 
 
 if __name__ == "__main__":

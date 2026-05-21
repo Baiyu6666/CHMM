@@ -27,6 +27,11 @@ def _feature_names(learner):
 
 
 def _score_thresholds(learner):
+    matrix = getattr(learner, "score_threshold_matrix", None)
+    if matrix is not None:
+        arr = np.asarray(matrix, dtype=float)
+        if arr.ndim == 2 and arr.shape[1] == int(learner.num_features):
+            return arr
     if hasattr(learner, "_equality_score_threshold"):
         eq_thr = float(learner._equality_score_threshold())
     else:
@@ -36,6 +41,15 @@ def _score_thresholds(learner):
         [eq_thr if hasattr(learner, "_is_equality_feature") and learner._is_equality_feature(i) else ineq_thr for i in range(learner.num_features)],
         dtype=float,
     )
+
+
+def _format_signature_value(value):
+    value_i = int(round(float(value)))
+    if value_i < 0:
+        return "L"
+    if value_i > 0:
+        return "U"
+    return "."
 
 
 def _matrix_text_color(value, vmax):
@@ -171,7 +185,10 @@ def plot_swcl_activation_masks(learner, it):
     if is_score_mode:
         raw_matrices = [np.asarray(m, dtype=float) for m in getattr(learner, "demo_feature_score_matrices_", [])]
         thresholds = _score_thresholds(learner)
-        matrices = [thresholds[None, :] - m for m in raw_matrices]
+        if thresholds.ndim == 1:
+            matrices = [thresholds[None, :] - m for m in raw_matrices]
+        else:
+            matrices = [thresholds - m for m in raw_matrices]
         title = "SWCL constraint margins"
         cmap = "RdBu_r"
         value_formatter = lambda x: f"{float(x):.2f}"
@@ -189,11 +206,14 @@ def plot_swcl_activation_masks(learner, it):
     show_rate_panel = is_score_mode and getattr(learner, "posthoc_activation_summary_", None) is not None
     show_std_panel = is_score_mode and bool(getattr(learner, "demo_feature_score_matrices_", []))
     show_proto_panel = is_score_mode and getattr(learner, "shared_activation_proto", None) is not None
+    signature_matrix = getattr(learner, "shared_activation_signature_mean", None)
+    show_signature_panel = is_score_mode and signature_matrix is not None
     total_panels = (
         len(matrices)
         + (1 if show_rate_panel else 0)
         + (1 if show_std_panel else 0)
         + (1 if show_proto_panel else 0)
+        + (1 if show_signature_panel else 0)
         + (1 if show_truth_panel else 0)
     )
     ncols = min(4, max(1, total_panels))
@@ -208,11 +228,20 @@ def plot_swcl_activation_masks(learner, it):
         rate_panel_idx = len(matrices) if show_rate_panel else None
         std_panel_idx = len(matrices) + (1 if show_rate_panel else 0) if show_std_panel else None
         proto_panel_idx = len(matrices) + (1 if show_rate_panel else 0) + (1 if show_std_panel else 0) if show_proto_panel else None
+        signature_panel_idx = (
+            len(matrices)
+            + (1 if show_rate_panel else 0)
+            + (1 if show_std_panel else 0)
+            + (1 if show_proto_panel else 0)
+            if show_signature_panel
+            else None
+        )
         truth_panel_idx = (
             len(matrices)
             + (1 if show_rate_panel else 0)
             + (1 if show_std_panel else 0)
             + (1 if show_proto_panel else 0)
+            + (1 if show_signature_panel else 0)
             if show_truth_panel
             else None
         )
@@ -235,6 +264,12 @@ def plot_swcl_activation_masks(learner, it):
             vmin, vmax = 0.0, 1.0
             panel_cmap = "Greys"
             panel_formatter = (lambda x: str(int(round(float(x))))) if is_joint_mask_search else (lambda x: f"{float(x):.2f}")
+        elif show_signature_panel and panel_idx == signature_panel_idx:
+            matrix = np.asarray(signature_matrix, dtype=float).T
+            ax.set_title("signed activation")
+            vmin, vmax = -1.0, 1.0
+            panel_cmap = "coolwarm"
+            panel_formatter = _format_signature_value
         elif show_truth_panel and panel_idx == truth_panel_idx:
             matrix = true_matrix
             ax.set_title("ground truth")

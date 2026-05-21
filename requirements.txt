@@ -1,0 +1,5 @@
+matplotlib==3.10.6
+numpy==2.2.6
+Pillow==11.3.0
+pybullet==3.2.7
+scipy==1.15.3
