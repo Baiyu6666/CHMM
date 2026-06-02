@@ -193,51 +193,89 @@ def _overlay_feature_panel(
     spans = stage_segments(F_all.shape[0], cutpoints=cutpoints)
     height, width = int(frame.shape[0]), int(frame.shape[1])
     rows = len(shown)
-    panel_w = int(min(max(445, 0.40 * width), max(width - 28, 1), 610))
+    y_margin = int(max(10, round(0.018 * height)))
+    panel_w = int(min(max(520, 0.36 * width), max(width - 2 * y_margin, 1), 620))
     title_text = str(title or "Executed trajectory feature profile")
     if " (planned with " in title_text:
         first, rest = title_text.split(" (planned with ", 1)
         title_lines = [first, "(planned with " + rest]
     else:
         title_lines = [title_text]
-    stage_header_h = 19 if len(spans) > 1 else 0
-    header_h = 66 + 15 * max(0, len(title_lines) - 1) + stage_header_h
-    pad = 10
-    row_h = int(np.clip((max(1, height - 2 * 14 - pad) - header_h) / max(rows, 1), 34, 54))
-    panel_h = header_h + rows * row_h + pad
-    x0 = max(8, width - panel_w - 14)
-    y0 = int(max(8, round(0.5 * (height - panel_h))))
+    legend_rows = 3
+    target_panel_h = int(max(240, height - 2 * y_margin))
+    estimated_header_h = (
+        88
+        + 19 * max(0, len(title_lines) - 1)
+        + 19 * max(0, legend_rows - 2)
+        + (28 if len(spans) > 1 else 0)
+    )
+    row_h = int(np.clip((target_panel_h - estimated_header_h - 14) / max(rows, 1), 56, 112))
+    panel_scale = float(np.clip(row_h / 72.0, 1.15, 1.55))
+    font_size = int(max(14, round(12 * panel_scale)))
+    title_font_size = int(max(15, round(13 * panel_scale)))
+    title_line_h = int(round(title_font_size + 5))
+    legend_line_h = int(round(font_size + 7))
+    pad = int(max(12, round(9 * panel_scale)))
+    bottom_pad = int(max(12, round(8 * panel_scale)))
+    stage_header_h = int(max(22, round(19 * panel_scale))) if len(spans) > 1 else 0
+    header_h = (
+        pad
+        + len(title_lines) * title_line_h
+        + 5
+        + legend_rows * legend_line_h
+        + (stage_header_h + 8 if stage_header_h > 0 else 4)
+    )
+    row_h = int(np.clip((target_panel_h - header_h - bottom_pad) / max(rows, 1), 56, 112))
+    panel_h = int(min(target_panel_h, header_h + rows * row_h + bottom_pad))
+    x0 = max(8, width - panel_w - y_margin)
+    y0 = y_margin
     image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 12)
-        font_bold = ImageFont.truetype("DejaVuSans-Bold.ttf", 12)
-        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 13)
+        font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+        font_bold = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", title_font_size)
     except Exception:
         font = ImageFont.load_default() if ImageFont is not None else None
         font_bold = font
         font_title = font
 
-    draw.rounded_rectangle((x0, y0, x0 + panel_w, y0 + panel_h), radius=7, fill=(255, 255, 255, 218), outline=(36, 42, 50, 185), width=1)
+    line_w_thin = int(max(1, round(1 * panel_scale)))
+    line_w_mid = int(max(3, round(2 * panel_scale)))
+    line_w_heavy = int(max(4, round(3 * panel_scale)))
+    dash_len = int(max(7, round(6 * panel_scale)))
+    dash_gap = int(max(4, round(4 * panel_scale)))
+    stage_band_h = int(max(16, round(13 * panel_scale)))
+
+    draw.rounded_rectangle((x0, y0, x0 + panel_w, y0 + panel_h), radius=int(round(7 * panel_scale)), fill=(255, 255, 255, 218), outline=(36, 42, 50, 185), width=line_w_thin)
     for line_idx, line in enumerate(title_lines):
-        draw.text((x0 + 9, y0 + 5 + 15 * line_idx), line, fill=(20, 24, 30, 255), font=font_title)
+        draw.text((x0 + pad, y0 + max(6, pad // 2) + title_line_h * line_idx), line, fill=(20, 24, 30, 255), font=font_title)
     constraint_orange = (234, 88, 12, 245)
     constraint_orange_text = (194, 65, 12, 255)
     feasible_yellow = (254, 240, 138, 145)
     equality_band = (253, 186, 116, 92)
-    legend_y = y0 + 27 + 15 * max(0, len(title_lines) - 1)
-    legend_x = x0 + 10
-    draw.line((legend_x, legend_y + 6, legend_x + 26, legend_y + 6), fill=constraint_orange, width=3)
-    draw.text((legend_x + 32, legend_y), "GT equality constraint target", fill=constraint_orange_text, font=font)
-    legend_y2 = legend_y + 16
-    draw.rectangle((legend_x, legend_y2 + 2, legend_x + 28, legend_y2 + 12), fill=feasible_yellow)
-    _dash_line(draw, (legend_x, legend_y2 + 6, legend_x + 28, legend_y2 + 6), fill=constraint_orange, width=2, dash=6, gap=4)
-    draw.text((legend_x + 34, legend_y2), "GT inequality constraint bound and feasible region", fill=constraint_orange_text, font=font)
+    legend_y = y0 + max(6, pad // 2) + len(title_lines) * title_line_h + 4
+    legend_x = x0 + pad
+    legend_sample_w = int(round(28 * panel_scale))
+    legend_mid_y = legend_y + int(round(0.52 * font_size))
+    draw.line((legend_x, legend_mid_y, legend_x + legend_sample_w, legend_mid_y), fill=constraint_orange, width=line_w_heavy)
+    draw.text((legend_x + legend_sample_w + int(round(8 * panel_scale)), legend_y), "Ground truth equality constraint target", fill=constraint_orange_text, font=font)
+    legend_y2 = legend_y + legend_line_h
+    legend_mid_y2 = legend_y2 + int(round(0.52 * font_size))
+    draw.rectangle((legend_x, legend_y2 + int(round(2 * panel_scale)), legend_x + legend_sample_w, legend_y2 + int(round(12 * panel_scale))), fill=feasible_yellow)
+    _dash_line(draw, (legend_x, legend_mid_y2, legend_x + legend_sample_w, legend_mid_y2), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
+    legend_text_x = legend_x + legend_sample_w + int(round(8 * panel_scale))
+    draw.text((legend_text_x, legend_y2), "Ground truth inequality constraint bound", fill=constraint_orange_text, font=font)
+    draw.text((legend_text_x, legend_y2 + legend_line_h), "and feasible region", fill=constraint_orange_text, font=font)
 
     true_constraints = dict(true_constraints or {})
-    plot_x0 = x0 + 120
-    plot_x1 = x0 + panel_w - 12
+    try:
+        max_label_w = max(draw.textbbox((0, 0), name, font=font_bold)[2] for name in shown)
+    except Exception:
+        max_label_w = int(round(108 * panel_scale))
+    plot_x0 = x0 + int(min(max(max_label_w + 24, 120 * panel_scale), 0.38 * panel_w))
+    plot_x1 = x0 + panel_w - pad
     plot_w = max(1, plot_x1 - plot_x0)
     total_den = max(F_all.shape[0] - 1, 1)
     if stage_header_h > 0:
@@ -248,8 +286,8 @@ def _overlay_feature_panel(
             rgba = _hex_to_rgba(STAGE_COLORS[stage_idx % len(STAGE_COLORS)], alpha=1.0)
             fill = tuple(int(np.clip(v * 255.0, 0, 255)) for v in (*rgba[:3], 0.18))
             stroke = tuple(int(np.clip(v * 255.0, 0, 255)) for v in (*rgba[:3], 0.90))
-            draw.rectangle((xa, stage_y0, xb, stage_y0 + 13), fill=fill, outline=stroke, width=1)
-            label = f"Stage {stage_idx + 1}" if xb - xa >= 54 else f"S{stage_idx + 1}"
+            draw.rectangle((xa, stage_y0, xb, stage_y0 + stage_band_h), fill=fill, outline=stroke, width=line_w_thin)
+            label = f"s{stage_idx + 1}"
             try:
                 bbox = draw.textbbox((0, 0), label, font=font_bold)
                 tw = float(bbox[2] - bbox[0])
@@ -257,13 +295,13 @@ def _overlay_feature_panel(
             except Exception:
                 tw, th = 34.0, 9.0
             tx = min(max(xa + 2.0, 0.5 * (xa + xb) - 0.5 * tw), max(xa + 2.0, xb - tw - 2.0))
-            draw.text((tx, stage_y0 + max(0.0, 0.5 * (13.0 - th)) - 1.0), label, fill=(18, 24, 38, 245), font=font_bold)
+            draw.text((tx, stage_y0 + max(0.0, 0.5 * (float(stage_band_h) - th)) - 1.0), label, fill=(18, 24, 38, 245), font=font_bold)
     for row, name in enumerate(shown):
         feat_idx = int(name_to_idx[name])
-        ry0 = y0 + header_h + row * row_h + 5
-        ry1 = ry0 + row_h - 12
-        py0 = ry0 + 4
-        py1 = ry1
+        ry0 = y0 + header_h + row * row_h
+        ry1 = ry0 + row_h
+        py0 = ry0 + int(round(6 * panel_scale))
+        py1 = ry1 - int(round(8 * panel_scale))
         full = np.asarray(F_all[:, feat_idx], dtype=float)
         trace = np.asarray(F[:, feat_idx], dtype=float)
         finite_vals = full[np.isfinite(full)]
@@ -292,12 +330,14 @@ def _overlay_feature_panel(
         def y_at(v: float) -> float:
             return float(py1) - (float(v) - vmin) / max(vmax - vmin, 1e-12) * float(py1 - py0)
 
-        draw.text((x0 + 9, ry0 + 4), name, fill=(18, 24, 38, 255), font=font_bold)
-        draw.text((x0 + 9, ry0 + 21), f"{trace[-1]:.3g}", fill=(37, 99, 235, 255), font=font)
-        draw.rectangle((plot_x0, py0, plot_x1, py1), outline=(188, 196, 206, 220), fill=(248, 250, 252, 205), width=1)
+        label_x = x0 + pad
+        label_y = ry0 + int(round(8 * panel_scale))
+        draw.text((label_x, label_y), name, fill=(18, 24, 38, 255), font=font_bold)
+        draw.text((label_x, label_y + font_size + int(round(4 * panel_scale))), f"{trace[-1]:.3g}", fill=(37, 99, 235, 255), font=font)
+        draw.rectangle((plot_x0, py0, plot_x1, py1), outline=(188, 196, 206, 220), fill=(248, 250, 252, 205), width=line_w_thin)
         for cp in np.asarray(cutpoints if cutpoints is not None else [], dtype=int).reshape(-1):
             x = x_at(int(cp))
-            draw.line((x, py0, x, py1), fill=(150, 158, 170, 150), width=1)
+            draw.line((x, py0, x, py1), fill=(150, 158, 170, 150), width=line_w_thin)
         for spec in specs:
             if str(spec.get("feature_name", "")) != name:
                 continue
@@ -317,19 +357,19 @@ def _overlay_feature_panel(
             if kind == "target":
                 band = max(1.5, 0.05 * float(py1 - py0))
                 draw.rectangle((xa, max(py0, y - band), xb, min(py1, y + band)), fill=equality_band)
-                draw.line((xa, y, xb, y), fill=constraint_orange, width=3)
+                draw.line((xa, y, xb, y), fill=constraint_orange, width=line_w_heavy)
             elif kind == "upper":
                 draw.rectangle((xa, max(py0, min(py1, y)), xb, py1), fill=feasible_yellow)
-                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
             elif kind == "lower":
                 draw.rectangle((xa, py0, xb, max(py0, min(py1, y))), fill=feasible_yellow)
-                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
         if trace.size >= 2:
             pts = [(x_at(i), y_at(float(v))) for i, v in enumerate(trace) if np.isfinite(float(v))]
             if len(pts) >= 2:
-                draw.line(pts, fill=(37, 99, 235, 255), width=2)
+                draw.line(pts, fill=(37, 99, 235, 255), width=line_w_mid)
         cx = x_at(idx)
-        draw.line((cx, py0, cx, py1), fill=(99, 102, 241, 210), width=1)
+        draw.line((cx, py0, cx, py1), fill=(99, 102, 241, 210), width=line_w_thin)
     return np.asarray(Image.alpha_composite(image, overlay).convert("RGB"), dtype=np.uint8)
 
 
@@ -1111,7 +1151,7 @@ def _load_ur5_render_robot(
     hide_link_geometry_patterns: Sequence[str] | None = None,
     suppress_urdf_warnings: bool = True,
 ) -> tuple[int, list[int], str | None]:
-    from .S5SphereInspect import _DEFAULT_UR5_URDF, _make_pybullet_friendly_urdf, _suppress_native_output
+    from .pybullet_ur5 import _DEFAULT_UR5_URDF, _make_pybullet_friendly_urdf, _suppress_native_output
 
     path = str(urdf_path or _DEFAULT_UR5_URDF)
     if not os.path.exists(path):
@@ -1258,7 +1298,7 @@ def render_s5_pybullet_demo_video(
     gui_hold_seconds: float = 0.0,
     camera_yaw: float = 90.0,
     camera_pitch: float = -34.0,
-    camera_distance: float = 1.62,
+    camera_distance: float = 1.45,
     camera_target: Sequence[float] | None = None,
     camera_fov: float = 42.0,
     tube_radius: float = 0.0055,
@@ -1732,8 +1772,8 @@ def render_s5_pybullet_episode(
     inset_yaw: float = 205.0,
     main_pitch: float = -18.0,
     inset_pitch: float = -16.0,
-    main_distance: float = 1.42,
-    inset_distance: float = 1.46,
+    main_distance: float = 1.32,
+    inset_distance: float = 1.36,
     tube_radius: float = 0.0065,
 ) -> Path:
     _require_pybullet()

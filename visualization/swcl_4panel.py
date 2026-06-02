@@ -7,9 +7,10 @@ try:
 except ModuleNotFoundError:
     plt = None
 try:
-    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 except ModuleNotFoundError:
     LinearSegmentedColormap = None
+    ListedColormap = None
 try:
     from matplotlib.patches import Rectangle
 except ModuleNotFoundError:
@@ -120,6 +121,30 @@ def _kind_is_truncated_z_display(kind: str) -> bool:
 
 def _kind_is_truncated_auto_z_display(kind: str) -> bool:
     return str(kind).lower() in {"trunc_t_auto_z", "truncated_t_auto_z"}
+
+
+def _kind_is_lower_display(kind: str) -> bool:
+    kind_l = str(kind).lower()
+    return kind_l in {
+        "margin_exp_lower", "marginexp", "margin_exp",
+        "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
+        "trunc_t_lower", "truncated_t_lower",
+        "trunc_t_lower_z", "truncated_t_lower_z",
+        "trunc_t_lower_hn", "truncated_t_lower_hn", "soft_trunc_t_lower_hn",
+        "soft_truncated_t_lower_hn",
+    }
+
+
+def _kind_is_upper_display(kind: str) -> bool:
+    kind_l = str(kind).lower()
+    return kind_l in {
+        "margin_exp_upper", "marginexp_upper", "margin_exp_upper",
+        "margin_exp_upper_right_hn", "marginexp_upper_right_hn", "margin_exp_upper_right_hn",
+        "trunc_t_upper", "truncated_t_upper",
+        "trunc_t_upper_z", "truncated_t_upper_z",
+        "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
+        "soft_truncated_t_upper_hn",
+    }
 
 
 def _fit_optimized_truncated_z_display_model(kind: str, vals):
@@ -651,6 +676,33 @@ def _draw_true_cutpoint_markers(ax, X, cutpoints, colors, *, label, size, zorder
         )
 
 
+def _compact_trajectory_legend(ax):
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = {}
+    for h, l in zip(handles, labels):
+        if l is None:
+            continue
+        text = str(l).strip()
+        if text and not text.startswith("_") and text not in by_label:
+            by_label[text] = h
+    if not by_label:
+        return
+    ax.legend(
+        by_label.values(),
+        by_label.keys(),
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.015),
+        fontsize=6.4,
+        frameon=False,
+        ncol=min(4, len(by_label)),
+        handlelength=1.05,
+        handletextpad=0.34,
+        columnspacing=0.62,
+        labelspacing=0.16,
+        borderaxespad=0.0,
+    )
+
+
 def _set_axes_equal_3d_from_xyz(ax, xyz):
     pts = np.asarray(xyz, dtype=float)
     if pts.ndim != 2 or pts.shape[1] != 3 or pts.size == 0:
@@ -730,7 +782,7 @@ def _draw_planar_obstacles(ax, env):
                     float(radius),
                     color="gray",
                     fill=False,
-                    linestyle=(0, (3, 2)),
+                    linestyle="-",
                     alpha=0.95,
                     label="obstacle" if idx == 0 and not ax.patches else None,
                 )
@@ -1064,26 +1116,26 @@ def _draw_true_cutpoint_trajectory_panel(ax, learner, demo_idx: int):
         label="end",
     )
 
-    learned_cutpoints = [int(cp) for cp in np.asarray(learner.stage_ends_[demo_idx], dtype=int)[:-1]]
-    for cp in learned_cutpoints:
+    true_cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
+    for cp_idx, cp in enumerate(true_cutpoints):
         cp_pt = X[int(cp)]
         ax.scatter(
             cp_pt[0],
             cp_pt[1],
             color="black",
             marker="x",
-            s=32,
-            linewidths=1.45,
+            s=34,
+            linewidths=1.35,
             zorder=12,
-            label="learned cutpoints" if cp == learned_cutpoints[0] else "",
+            label="true cutpoints" if cp_idx == 0 else "",
         )
 
     _configure_2d_trajectory_axes(ax, learner.env, X[:, :2])
-    ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE, labelpad=1)
-    ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE)
-    ax.tick_params(labelsize=PAPER_TICK_SIZE, pad=1.0)
+    ax.set_xlabel("x", fontsize=7.0, labelpad=0.6)
+    ax.set_ylabel("y", fontsize=7.0, labelpad=0.6)
+    ax.tick_params(labelsize=6.2, pad=1.0)
     _style_paper_axis(ax)
-    _legend(ax)
+    _compact_trajectory_legend(ax)
 
 
 def _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx: int):
@@ -1137,8 +1189,8 @@ def _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx: int):
         label="end",
     )
 
-    learned_cutpoints = [int(cp) for cp in np.asarray(learner.stage_ends_[demo_idx], dtype=int)[:-1]]
-    for cp_idx, cp in enumerate(learned_cutpoints):
+    true_cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
+    for cp_idx, cp in enumerate(true_cutpoints):
         cp_pt = X[int(cp)]
         ax.scatter(
             cp_pt[0],
@@ -1150,7 +1202,7 @@ def _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx: int):
             linewidths=1.45,
             depthshade=False,
             zorder=10,
-            label="learned cutpoints" if cp_idx == 0 else "",
+            label="true cutpoints" if cp_idx == 0 else "",
         )
 
     center = np.asarray(getattr(learner.env, "sphere_center", np.zeros(3)), dtype=float).reshape(-1)
@@ -1170,7 +1222,7 @@ def _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx: int):
     ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE, labelpad=1)
     ax.set_zlabel("z", fontsize=PAPER_LABEL_SIZE, labelpad=1)
     ax.tick_params(labelsize=PAPER_TICK_SIZE, pad=0.5)
-    _legend(ax)
+    _compact_trajectory_legend(ax)
 
 
 def plot_swcl_true_cutpoint_trajectory_paper(learner, demo_idx=0, save_path=None):
@@ -1186,14 +1238,14 @@ def plot_swcl_true_cutpoint_trajectory_paper(learner, demo_idx=0, save_path=None
         ax = fig.add_subplot(1, 1, 1, projection="3d")
         _draw_true_cutpoint_trajectory_panel_3d(ax, learner, demo_idx)
     else:
-        fig, ax = plt.subplots(1, 1, figsize=(3.35, 2.05), squeeze=False, constrained_layout=False)
+        fig, ax = plt.subplots(1, 1, figsize=(3.05, 1.62), squeeze=False, constrained_layout=False)
         ax = ax[0, 0]
         _draw_true_cutpoint_trajectory_panel(ax, learner, demo_idx)
 
     if is_sphere:
         fig.subplots_adjust(left=0.02, right=0.98, top=0.96, bottom=0.04)
     else:
-        fig.subplots_adjust(left=0.16, right=0.99, top=0.95, bottom=0.14)
+        fig.subplots_adjust(left=0.13, right=0.995, top=0.82, bottom=0.20)
     save_path = learner_plot_dir(learner) / f"paper_true_cutpoint_trajectory_demo_{demo_idx:02d}.png" if save_path is None else save_path
     return save_figure(fig, save_path, dpi=300)
 
@@ -1447,6 +1499,7 @@ def plot_swcl_constraint_margin_paper(learner, demo_idx=0, save_path=None):
         hatch_mask=true_active,
         text_matrix=score_margin_matrix,
         title_fontsize=PAPER_TITLE_SIZE - 1,
+        matrix_cell_width=0.43,
     )
     if fig is None:
         return None
@@ -1683,6 +1736,180 @@ def _paper_activation_cmap():
     )
 
 
+MODE_LABELS = ["None", "Lower", "Upper", "Eq"]
+MODE_COLORS = ["#f0f0f0", "#4C78A8", "#E45756", "#54A24B"]
+
+
+def _mode_cmap():
+    if ListedColormap is None:
+        return "tab10"
+    return ListedColormap(MODE_COLORS, name="swcl_constraint_modes")
+
+
+def _mode_code_from_kind(kind: str) -> int:
+    if _kind_is_lower_display(kind):
+        return 1
+    if _kind_is_upper_display(kind):
+        return 2
+    if _kind_is_equality_display(kind):
+        return 3
+    return 3
+
+
+def _mode_code_for_demo_stage_feature(learner, stage_params, stage_idx: int, feat_idx: int) -> int:
+    active_mask = getattr(stage_params, "active_mask", None)
+    if active_mask is not None:
+        try:
+            if not int(np.asarray(active_mask, dtype=int)[int(feat_idx)]):
+                return 0
+        except Exception:
+            return 0
+    kind = _stage_feature_kind_for_display(learner, [stage_params], 0, int(feat_idx))
+    return _mode_code_from_kind(kind)
+
+
+def _fallback_mode_code_from_signature(learner, signature_value: float, feat_idx: int) -> int:
+    value = float(signature_value)
+    if value < -0.5:
+        return 1
+    if value > 0.5:
+        kind = _feature_kind(learner, feat_idx)
+        if _kind_is_upper_display(kind) or _kind_is_truncated_auto_z_display(kind):
+            return 2
+        if _kind_is_equality_display(kind):
+            return 3
+        return 2
+    return 0
+
+
+def _dominant_constraint_mode_matrix(learner):
+    mode_stack = []
+    for stage_params_per_demo in getattr(learner, "current_stage_params_per_demo", []) or []:
+        try:
+            per_demo = np.zeros((int(getattr(learner, "num_stages", len(stage_params_per_demo))), int(getattr(learner, "num_features", 0))), dtype=int)
+            for stage_idx, stage_params in enumerate(stage_params_per_demo):
+                for feat_idx in range(per_demo.shape[1]):
+                    per_demo[stage_idx, feat_idx] = _mode_code_for_demo_stage_feature(
+                        learner, stage_params, stage_idx, feat_idx
+                    )
+            mode_stack.append(per_demo)
+        except Exception:
+            continue
+
+    if not mode_stack:
+        summary = getattr(learner, "posthoc_activation_summary_", None) or {}
+        signatures = np.asarray(summary.get("activation_signature_per_demo", []), dtype=float)
+        if signatures.ndim == 3 and signatures.size > 0:
+            modes = np.zeros(signatures.shape, dtype=int)
+            for feat_idx in range(signatures.shape[2]):
+                for demo_idx in range(signatures.shape[0]):
+                    for stage_idx in range(signatures.shape[1]):
+                        modes[demo_idx, stage_idx, feat_idx] = _fallback_mode_code_from_signature(
+                            learner, signatures[demo_idx, stage_idx, feat_idx], feat_idx
+                        )
+            mode_stack = [modes[i] for i in range(modes.shape[0])]
+        else:
+            activated = np.asarray(summary.get("activated_mask_per_demo", []), dtype=int)
+            if activated.ndim == 3 and activated.size > 0:
+                modes = np.zeros(activated.shape, dtype=int)
+                for feat_idx in range(activated.shape[2]):
+                    base_mode = _mode_code_from_kind(_feature_kind(learner, feat_idx))
+                    modes[:, :, feat_idx] = np.where(activated[:, :, feat_idx] > 0, base_mode, 0)
+                mode_stack = [modes[i] for i in range(modes.shape[0])]
+
+    if not mode_stack:
+        return None, None
+
+    modes = np.asarray(mode_stack, dtype=int)
+    if modes.ndim != 3 or modes.size == 0:
+        return None, None
+    dominant = np.zeros(modes.shape[1:], dtype=int)
+    rates = np.zeros(modes.shape[1:], dtype=float)
+    for stage_idx in range(modes.shape[1]):
+        for feat_idx in range(modes.shape[2]):
+            counts = np.bincount(np.clip(modes[:, stage_idx, feat_idx], 0, 3), minlength=4)
+            mode = int(np.argmax(counts))
+            dominant[stage_idx, feat_idx] = mode
+            rates[stage_idx, feat_idx] = float(counts[mode]) / max(float(np.sum(counts)), 1.0)
+    return dominant, rates
+
+
+def _dynamic_matrix_layout(figsize, feature_labels, n_stages: int, *, show_title: bool, matrix_cell_width: float | None):
+    if matrix_cell_width is None:
+        return figsize, None
+    fig_height = float(figsize[1])
+    max_feature_chars = max((len(str(label)) for label in feature_labels), default=1)
+    left_margin_in = min(max(0.58, 0.16 + 0.055 * max_feature_chars), 1.00)
+    right_margin_in = 0.03
+    bottom_margin_in = 0.26
+    top_margin_in = 0.25 if show_title else 0.05
+    axes_width_in = max(float(matrix_cell_width) * float(n_stages), 0.35)
+    axes_height_in = max(fig_height - bottom_margin_in - top_margin_in, 0.20)
+    fig_width = left_margin_in + axes_width_in + right_margin_in
+    axes_position = [
+        left_margin_in / fig_width,
+        bottom_margin_in / fig_height,
+        axes_width_in / fig_width,
+        axes_height_in / fig_height,
+    ]
+    return (fig_width, fig_height), axes_position
+
+
+def _draw_constraint_mode_matrix_on_axis(ax, learner, dominant_modes, rates, *, title=None):
+    modes = np.asarray(dominant_modes, dtype=int)
+    rate_arr = np.asarray(rates, dtype=float)
+    if modes.ndim != 2 or modes.size == 0 or rate_arr.shape != modes.shape:
+        ax.axis("off")
+        return
+    ax.imshow(np.clip(modes, 0, 3), cmap=_mode_cmap(), vmin=-0.5, vmax=3.5, aspect="auto")
+    stage_labels = [f"stage {i + 1}" for i in range(modes.shape[1])]
+    feature_labels = [_feature_name(learner, i) for i in range(modes.shape[0])]
+    if title:
+        ax.set_title(title, fontsize=PAPER_TITLE_SIZE - 1, pad=2)
+    ax.set_xticks(range(modes.shape[1]))
+    ax.set_xticklabels(stage_labels)
+    ax.set_yticks(range(modes.shape[0]))
+    ax.set_yticklabels(feature_labels)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _style_paper_axis(ax)
+    for i in range(modes.shape[0]):
+        for j in range(modes.shape[1]):
+            mode = int(np.clip(modes[i, j], 0, 3))
+            text_color = "black" if mode == 0 else "white"
+            ax.text(
+                j,
+                i,
+                f"{MODE_LABELS[mode]}\n{float(rate_arr[i, j]):.2f}",
+                ha="center",
+                va="center",
+                color=text_color,
+                fontsize=6.2,
+                linespacing=0.9,
+            )
+
+
+def _plot_paper_mode_matrix_common(learner, dominant_modes, rates, *, figsize, show_title=True, matrix_cell_width=None):
+    modes = np.asarray(dominant_modes, dtype=int)
+    rate_arr = np.asarray(rates, dtype=float)
+    if modes.ndim != 2 or modes.size == 0 or rate_arr.shape != modes.shape:
+        return None
+    feature_labels = [_feature_name(learner, i) for i in range(modes.shape[0])]
+    figsize, axes_position = _dynamic_matrix_layout(
+        figsize,
+        feature_labels,
+        modes.shape[1],
+        show_title=show_title,
+        matrix_cell_width=matrix_cell_width,
+    )
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=False)
+    title = _paper_env_title(learner) if show_title else None
+    _draw_constraint_mode_matrix_on_axis(ax, learner, modes, rate_arr, title=title)
+    fig.tight_layout(pad=0.10)
+    if axes_position is not None:
+        ax.set_position(axes_position)
+    return fig
+
+
 def _plot_paper_matrix_common(
     learner,
     matrix,
@@ -1695,6 +1922,11 @@ def _plot_paper_matrix_common(
     hatch_mask=None,
     text_matrix=None,
     title_fontsize=None,
+    show_title=True,
+    axes_position=None,
+    image_aspect="auto",
+    xtick_rotation=0.0,
+    matrix_cell_width=None,
 ):
     arr = np.asarray(matrix, dtype=float)
     if arr.ndim != 2 or arr.size == 0:
@@ -1702,15 +1934,41 @@ def _plot_paper_matrix_common(
     text_arr = arr if text_matrix is None else np.asarray(text_matrix, dtype=float)
     if text_arr.shape != arr.shape:
         raise ValueError("text_matrix must have the same shape as matrix.")
-    fig, ax = plt.subplots(figsize=figsize, constrained_layout=False)
-    ax.imshow(arr, cmap=cmap, aspect="auto", vmin=vmin, vmax=vmax)
     stage_labels = [f"stage {i + 1}" for i in range(arr.shape[1])]
     feature_labels = [_feature_name(learner, i) for i in range(arr.shape[0])]
+
+    if matrix_cell_width is not None and axes_position is None:
+        fig_height = float(figsize[1])
+        max_feature_chars = max((len(str(label)) for label in feature_labels), default=1)
+        left_margin_in = min(max(0.58, 0.16 + 0.055 * max_feature_chars), 1.00)
+        right_margin_in = 0.03
+        bottom_margin_in = 0.26
+        top_margin_in = 0.25 if show_title else 0.05
+        axes_width_in = max(float(matrix_cell_width) * float(arr.shape[1]), 0.35)
+        axes_height_in = max(fig_height - bottom_margin_in - top_margin_in, 0.20)
+        fig_width = left_margin_in + axes_width_in + right_margin_in
+        figsize = (fig_width, fig_height)
+        axes_position = [
+            left_margin_in / fig_width,
+            bottom_margin_in / fig_height,
+            axes_width_in / fig_width,
+            axes_height_in / fig_height,
+        ]
+
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=False)
+    ax.imshow(arr, cmap=cmap, aspect=image_aspect, vmin=vmin, vmax=vmax)
+    if image_aspect != "auto":
+        ax.set_anchor("W")
     env_title = _paper_env_title(learner)
-    if env_title:
+    if show_title and env_title:
         ax.set_title(env_title, fontsize=(PAPER_TITLE_SIZE - 1 if title_fontsize is None else title_fontsize), pad=2)
     ax.set_xticks(range(arr.shape[1]))
-    ax.set_xticklabels(stage_labels)
+    ax.set_xticklabels(
+        stage_labels,
+        rotation=float(xtick_rotation),
+        ha="right" if float(xtick_rotation) else "center",
+        rotation_mode="anchor" if float(xtick_rotation) else None,
+    )
     ax.set_yticks(range(arr.shape[0]))
     ax.set_yticklabels(feature_labels)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
@@ -1746,7 +2004,9 @@ def _plot_paper_matrix_common(
     # Keep the heatmap body at a fixed size across environments, regardless of
     # feature-name length, while still compacting surrounding whitespace.
     fig.tight_layout(pad=0.10)
-    ax.set_position([0.26, 0.16, 0.70, 0.72])
+    if axes_position is None:
+        axes_position = [0.26, 0.16, 0.70, 0.72]
+    ax.set_position(axes_position)
     return fig
 
 
@@ -1792,51 +2052,27 @@ def _draw_summary_heatmap(ax, matrix, title, *, feature_names, stage_labels, cma
 
 
 def _draw_final_activation_rate_matrix(ax, learner):
-    summary = getattr(learner, "posthoc_activation_summary_", None) or {}
-    matrix = np.asarray(summary.get("activation_rate_matrix", []), dtype=float)
-    if matrix.ndim != 2 or matrix.size == 0:
+    dominant, rates = _dominant_constraint_mode_matrix(learner)
+    if dominant is None or rates is None:
         ax.axis("off")
         return
-    _draw_summary_heatmap(
-        ax,
-        matrix.T,
-        "activation rate",
-        feature_names=_summary_feature_names(learner),
-        stage_labels=_summary_stage_labels(learner),
-        cmap="Blues",
-        fmt=".2f",
-        vmin=0.0,
-        vmax=1.0,
-    )
+    _draw_constraint_mode_matrix_on_axis(ax, learner, np.asarray(dominant, dtype=int).T, np.asarray(rates, dtype=float).T, title="constraint mode")
 
 
 def plot_swcl_activation_rate_paper(learner, save_path=None):
     if plt is None:
         return None
-    summary = getattr(learner, "posthoc_activation_summary_", None) or {}
-    matrix = np.asarray(summary.get("activation_rate_matrix", []), dtype=float)
-    if matrix.ndim != 2 or matrix.size == 0:
+    dominant, rates = _dominant_constraint_mode_matrix(learner)
+    if dominant is None or rates is None:
         return None
 
-    matrix = matrix.T
-    true_active = np.zeros_like(matrix, dtype=bool)
-    for feat_idx in range(true_active.shape[0]):
-        feature_name = _feature_name(learner, feat_idx)
-        for stage_idx in range(true_active.shape[1]):
-            true_active[feat_idx, stage_idx] = (
-                _reference_constraint_value(learner.env, feature_name, stage_idx) is not None
-            )
-    fig = _plot_paper_matrix_common(
+    fig = _plot_paper_mode_matrix_common(
         learner,
-        matrix,
-        cmap=_paper_activation_cmap(),
-        fmt=".2f",
-        vmin=0.0,
-        vmax=1.0,
+        np.asarray(dominant, dtype=int).T,
+        np.asarray(rates, dtype=float).T,
         figsize=(3.35, 1.58),
-        hatch_mask=true_active,
-        text_matrix=matrix,
-        title_fontsize=PAPER_TITLE_SIZE - 1,
+        show_title=False,
+        matrix_cell_width=0.43,
     )
     if fig is None:
         return None

@@ -115,6 +115,29 @@ def apply_inequality_constraint_clearance(
     return out
 
 
+def _format_rate(value) -> str:
+    if value is None:
+        return "None"
+    try:
+        value_f = float(value)
+    except (TypeError, ValueError):
+        return "None"
+    if not np.isfinite(value_f):
+        return "None"
+    return f"{value_f:.6f}"
+
+
+def print_render_violation_rates(summary: dict, *, prefix: str = "[violation]") -> None:
+    constraint_stats = dict((summary or {}).get("constraint_violation") or {})
+    planned_stats = dict((summary or {}).get("planned_constraint_violation") or {})
+    average_rate = constraint_stats.get("average_violation_rate")
+    planned_rate = planned_stats.get("average_violation_rate")
+    print(
+        f"{prefix} average_violation_rate={_format_rate(average_rate)}, "
+        f"planned_constraint_violation_rate={_format_rate(planned_rate)}"
+    )
+
+
 def _feature_name_to_idx(feature_schema: Sequence[dict], n_features: int) -> tuple[list[str], dict[str, int]]:
     names = [f"feature_{i}" for i in range(int(n_features))]
     mapping = {name: i for i, name in enumerate(names)}

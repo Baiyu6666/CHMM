@@ -66,7 +66,6 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
         truncated_z_optimize=kwargs.get("truncated_z_optimize", False),
         truncated_z_optimize_trigger_scale=kwargs.get("truncated_z_optimize_trigger_scale", 3.0),
         activation_proto_temperature=kwargs.get("activation_proto_temperature", 0.1),
-        joint_mask_search_max_masks=kwargs.get("joint_mask_search_max_masks", 4096),
         fixed_true_cutpoint_prefix=kwargs.get("fixed_true_cutpoint_prefix", 0),
         fixed_true_cutpoint_indices=kwargs.get("fixed_true_cutpoint_indices"),
         plot_every=kwargs.get("plot_every"),

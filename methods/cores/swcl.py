@@ -25,6 +25,7 @@ from utils.models import (
     ZeroMeanGaussianModel,
 )
 from visualization.io import learner_plot_dir
+from visualization.learned_constraints_matrix import plot_learned_constraints_matrix_paper
 from visualization.swcl_4panel import (
     plt as swcl_plot_plt,
     plot_swcl_activation_rate_paper,
@@ -103,6 +104,20 @@ def _hard_gammas_from_stage_ends(lengths: Sequence[int], stage_ends_per_demo: Se
 
 def _plot_swcl_final_outputs(model, it: int) -> None:
     out_dir = learner_plot_dir(model)
+    try:
+        final_gammas = _hard_gammas_from_stage_ends(
+            [len(X) for X in model.demos],
+            model.stage_ends_,
+            model.num_stages,
+        )
+        constraint_metrics = evaluate_model_metrics(model, final_gammas, None)
+        plot_learned_constraints_matrix_paper(
+            constraint_metrics,
+            save_path=out_dir / f"paper_learned_constraints_iter_{int(it):04d}.png",
+        )
+    except Exception as exc:
+        if getattr(model, "verbose", False):
+            print(f"[SWCL] learned constraint matrix plot skipped: {exc}")
     if model.use_score_mode:
         plot_swcl_activation_dynamics(model, it)
         plot_swcl_activation_masks(model, it)
@@ -249,7 +264,6 @@ class StageWiseConstraintLearningModel:
         truncated_z_optimize=False,
         truncated_z_optimize_trigger_scale=3.0,
         activation_proto_temperature=0.1,
-        joint_mask_search_max_masks=4096,
         fixed_true_cutpoint_prefix=0,
         fixed_true_cutpoint_indices=None,
         precompute_num_workers=None,
@@ -285,11 +299,10 @@ class StageWiseConstraintLearningModel:
         self.consensus_schedule = str(consensus_schedule)
         self.progress_delta_scale = max(float(progress_delta_scale), 1e-6)
         feature_activation_mode = str(feature_activation_mode).lower()
-        if feature_activation_mode not in {"fixed_mask", "score", "joint_mask_search"}:
-            raise ValueError("feature_activation_mode must be one of {'fixed_mask', 'score', 'joint_mask_search'}.")
+        if feature_activation_mode not in {"fixed_mask", "score"}:
+            raise ValueError("feature_activation_mode must be one of {'fixed_mask', 'score'}.")
         self.feature_activation_mode = feature_activation_mode
-        self.use_joint_mask_search = self.feature_activation_mode == "joint_mask_search"
-        self.use_score_mode = self.feature_activation_mode in {"score", "joint_mask_search"}
+        self.use_score_mode = self.feature_activation_mode == "score"
         self.equality_score_mode = str(equality_score_mode).lower()
         if self.equality_score_mode not in {"dispersion", "gaussian_ll_gain"}:
             raise ValueError("equality_score_mode must be one of {'dispersion', 'gaussian_ll_gain'}.")
@@ -307,7 +320,6 @@ class StageWiseConstraintLearningModel:
         self.truncated_z_optimize = bool(truncated_z_optimize)
         self.truncated_z_optimize_trigger_scale = max(float(truncated_z_optimize_trigger_scale), 1.0)
         self.activation_proto_temperature = max(float(activation_proto_temperature), 1e-6)
-        self.joint_mask_search_max_masks = max(int(joint_mask_search_max_masks), 1)
         self.fixed_true_cutpoint_prefix = max(int(fixed_true_cutpoint_prefix), 0)
         if fixed_true_cutpoint_indices is None:
             self.fixed_true_cutpoint_indices = []
@@ -335,7 +347,7 @@ class StageWiseConstraintLearningModel:
         self.force_inactive_feature_indices = self._resolve_force_inactive_feature_indices(self.force_inactive_feature_ids)
         self.feature_model_types = self._normalize_feature_model_types(self.num_features)
         if any(self._is_auto_constraint_feature(feat_idx) for feat_idx in range(self.num_features)) and not self.use_score_mode:
-            raise ValueError("auto constraint type selection currently requires feature_activation_mode in {'score', 'joint_mask_search'}.")
+            raise ValueError("auto constraint type selection currently requires feature_activation_mode='score'.")
         self.r = np.ones((self.num_stages, self.num_features), dtype=int)
         self.has_equality_feature = any(self._feature_supports_equality(feat_idx) for feat_idx in range(self.num_features))
         self.score_threshold_matrix = self._build_score_threshold_matrix()
@@ -387,7 +399,6 @@ class StageWiseConstraintLearningModel:
         self.demo_activation_matrices_: List[np.ndarray] = []
         self.demo_activation_signature_matrices_: List[np.ndarray] = []
         self.posthoc_activation_summary_: Dict[str, object] | None = None
-        self._joint_mask_fallback_warned = False
         self.demo_activation_history: List[np.ndarray] = []
         self.activation_proto_history: List[np.ndarray] = []
         self._segment_stage_cache: Dict[tuple[int, int, int, int], tuple[_StageParams, float, float]] = {}
@@ -931,7 +942,7 @@ class StageWiseConstraintLearningModel:
     def _fit_auto_constraint_feature(self, feat_idx: int, values, F_demo, segment_median: float):
         values = np.asarray(values, dtype=float).reshape(-1)
         F_demo = np.asarray(F_demo, dtype=float).reshape(-1)
-        candidate_kinds = ["student_t", "margin_exp_lower", "margin_exp_upper"]
+        candidate_kinds = ["student_t", "trunc_t_lower_z", "trunc_t_upper_z"]
         candidate_records = []
         for kind in candidate_kinds:
             model = self._fit_local_model(kind, values)
@@ -956,6 +967,10 @@ class StageWiseConstraintLearningModel:
                 score = float(np.mean(local_loss) - np.mean(global_loss))
                 threshold = float(self._equality_score_threshold())
                 weight = float(self.lambda_eq_constraint)
+            elif self._kind_is_truncated_z(kind_l):
+                score = float(self._truncated_z_score(kind_l, summary))
+                threshold = float(self.truncated_inequality_z_threshold)
+                weight = float(self.lambda_ineq_constraint)
             else:
                 baseline_model = self._fit_student_t_baseline(values)
                 fitted_loss = -np.asarray(model.logpdf(values), dtype=float)
@@ -1710,15 +1725,6 @@ class StageWiseConstraintLearningModel:
             total += float(np.dot(delta, delta))
         return total
 
-    def _hard_activation_match(self, local_activation, shared_feature_score_mean, stage_idx=None):
-        if shared_feature_score_mean is None:
-            return True
-        local_arr = np.asarray(local_activation, dtype=float)
-        shared_arr = np.asarray(shared_feature_score_mean, dtype=float)
-        if stage_idx is not None:
-            return bool(np.array_equal(np.rint(local_arr).astype(int), np.rint(shared_arr[int(stage_idx)]).astype(int)))
-        return bool(np.array_equal(np.rint(local_arr).astype(int), np.rint(shared_arr).astype(int)))
-
     def _segment_stage_cost_info(
         self,
         demo_idx,
@@ -1771,12 +1777,6 @@ class StageWiseConstraintLearningModel:
             active_mask = stage_params.active_mask
             if active_mask is not None and shared_feature_score_mean is not None:
                 local_activation = np.asarray(active_mask, dtype=float)
-                if self.use_joint_mask_search and not self._hard_activation_match(
-                    local_activation,
-                    shared_feature_score_mean,
-                    stage_idx=stage_idx,
-                ):
-                    return None
                 if lam_activation_consensus > 0.0:
                     shared_signature = getattr(self, "shared_activation_signature_mean", None)
                     if shared_signature is not None:
@@ -1955,13 +1955,6 @@ class StageWiseConstraintLearningModel:
                 shared_r_mean=shared_r_mean,
             )
         activation_consensus_cost = 0.0
-        if self.use_score_mode and self.use_joint_mask_search and shared_feature_score_mean is not None:
-            local_activation = np.stack(
-                [np.asarray(stage_params.active_mask, dtype=float) for stage_params in candidate_stage_params],
-                axis=0,
-            )
-            if not self._hard_activation_match(local_activation, shared_feature_score_mean):
-                return None
         if lam_activation_consensus > 0.0:
             if self.use_score_mode:
                 activation_consensus_cost = self._activation_consensus_cost(candidate_stage_params, shared_feature_score_mean)
@@ -1985,23 +1978,6 @@ class StageWiseConstraintLearningModel:
             "activation_consensus": float(activation_consensus_cost),
             "total": float(total),
         }
-
-    def _enumerate_shared_activation_masks(self):
-        if self.fixed_feature_mask is not None:
-            yield np.asarray(self.r, dtype=float).copy()
-            return
-        n_bits = int(self.num_stages * self.num_features)
-        total_masks = 1 << n_bits
-        if total_masks > int(self.joint_mask_search_max_masks):
-            raise ValueError(
-                "joint_mask_search would enumerate "
-                f"{total_masks} shared masks for shape {(self.num_stages, self.num_features)}, "
-                f"which exceeds joint_mask_search_max_masks={self.joint_mask_search_max_masks}."
-            )
-        bit_ids = np.arange(n_bits, dtype=np.uint64)
-        for mask_id in range(total_masks):
-            bits = ((np.uint64(mask_id) >> bit_ids) & np.uint64(1)).astype(float)
-            yield bits.reshape(self.num_stages, self.num_features)
 
     def _majority_activation_mask_from_infos(self, selected_infos):
         if not selected_infos:
@@ -2032,90 +2008,6 @@ class StageWiseConstraintLearningModel:
                 else:
                     out[stage_idx, feat_idx] = float(np.mean(vals.astype(float)) > 0.5)
         return out
-
-    def _select_infos_with_shared_activation_mask(
-        self,
-        lam_param_consensus,
-        lam_activation_consensus,
-        shared_param_vectors,
-        shared_mask,
-    ):
-        selected_infos = []
-        total = 0.0
-        for demo_idx in range(len(self.demos)):
-            fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(demo_idx)
-            try:
-                info = self._best_segmentation_info(
-                    demo_idx=demo_idx,
-                    lam_param_consensus=lam_param_consensus,
-                    lam_activation_consensus=lam_activation_consensus,
-                    shared_param_vectors=shared_param_vectors,
-                    shared_r_mean=None,
-                    shared_feature_score_mean=shared_mask,
-                    fixed_cutpoints_by_stage=fixed_cutpoints_by_stage,
-                )
-            except RuntimeError:
-                return None, np.inf
-            selected_infos.append(info)
-            total += float(info["total"])
-        return selected_infos, float(total)
-
-    def _best_joint_activation_mask_selection(
-        self,
-        lam_param_consensus,
-        lam_activation_consensus,
-        shared_param_vectors,
-    ):
-        if lam_activation_consensus <= 0.0 and self.fixed_feature_mask is None:
-            selected_infos, _ = self._select_infos_with_shared_activation_mask(
-                lam_param_consensus=lam_param_consensus,
-                lam_activation_consensus=lam_activation_consensus,
-                shared_param_vectors=shared_param_vectors,
-                shared_mask=np.zeros((self.num_stages, self.num_features), dtype=float),
-            )
-            return selected_infos, self._majority_activation_mask_from_infos(selected_infos)
-
-        best_total = np.inf
-        best_infos = None
-        best_mask = None
-        for shared_mask in self._enumerate_shared_activation_masks():
-            selected_infos, total = self._select_infos_with_shared_activation_mask(
-                lam_param_consensus=lam_param_consensus,
-                lam_activation_consensus=lam_activation_consensus,
-                shared_param_vectors=shared_param_vectors,
-                shared_mask=shared_mask,
-            )
-            if selected_infos is None:
-                continue
-            if float(total) < float(best_total):
-                best_total = float(total)
-                best_infos = selected_infos
-                best_mask = np.asarray(shared_mask, dtype=float).copy()
-        if best_infos is None or best_mask is None:
-            if self.fixed_feature_mask is not None:
-                if not self._joint_mask_fallback_warned:
-                    print(
-                        "[SWCL] warning: fixed_feature_mask is infeasible under hard joint activation matching; "
-                        "falling back to the minimum-cost segmentation without activation matching."
-                    )
-                    self._joint_mask_fallback_warned = True
-                fallback_infos = []
-                for demo_idx in range(len(self.demos)):
-                    fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(demo_idx)
-                    fallback_infos.append(
-                        self._best_segmentation_info(
-                            demo_idx=demo_idx,
-                            lam_param_consensus=lam_param_consensus,
-                            lam_activation_consensus=0.0,
-                            shared_param_vectors=shared_param_vectors,
-                            shared_r_mean=None,
-                            shared_feature_score_mean=None,
-                            fixed_cutpoints_by_stage=fixed_cutpoints_by_stage,
-                        )
-                    )
-                return fallback_infos, np.asarray(self.r, dtype=float).copy()
-            raise RuntimeError("joint_mask_search failed to find a feasible shared activation mask.")
-        return best_infos, best_mask
 
     def _shared_from_selected(self, selected_infos, shared_activation_mask=None):
         shared_stage_subgoals = []
@@ -2217,7 +2109,6 @@ class StageWiseConstraintLearningModel:
         shared_stage_subgoals = [None for _ in range(self.num_stages)]
         shared_param_vectors = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
         shared_param_kinds = [[None for _ in range(self.num_features)] for _ in range(self.num_stages)]
-        shared_activation_mask = None
         self._prepare_segment_stage_cache()
 
         for iteration in range(int(max_iter)):
@@ -2231,27 +2122,20 @@ class StageWiseConstraintLearningModel:
             self.activation_consensus_lambda_hist.append(float(lam_activation_consensus))
             self.current_param_consensus_lambda = float(lam_param_consensus)
             self.current_activation_consensus_lambda = float(lam_activation_consensus)
-            if self.use_joint_mask_search:
-                selected_infos, shared_activation_mask = self._best_joint_activation_mask_selection(
-                    lam_param_consensus=lam_param_consensus,
-                    lam_activation_consensus=lam_activation_consensus,
-                    shared_param_vectors=shared_param_vectors,
-                )
-            else:
-                selected_infos = []
-                for demo_idx in range(len(self.demos)):
-                    fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(demo_idx)
-                    selected_infos.append(
-                        self._best_segmentation_info(
-                            demo_idx=demo_idx,
-                            lam_param_consensus=lam_param_consensus,
-                            lam_activation_consensus=lam_activation_consensus,
-                            shared_param_vectors=shared_param_vectors,
-                            shared_r_mean=self.shared_r_mean,
-                            shared_feature_score_mean=self.shared_feature_score_mean,
-                            fixed_cutpoints_by_stage=fixed_cutpoints_by_stage,
-                        )
+            selected_infos = []
+            for demo_idx in range(len(self.demos)):
+                fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(demo_idx)
+                selected_infos.append(
+                    self._best_segmentation_info(
+                        demo_idx=demo_idx,
+                        lam_param_consensus=lam_param_consensus,
+                        lam_activation_consensus=lam_activation_consensus,
+                        shared_param_vectors=shared_param_vectors,
+                        shared_r_mean=self.shared_r_mean,
+                        shared_feature_score_mean=self.shared_feature_score_mean,
+                        fixed_cutpoints_by_stage=fixed_cutpoints_by_stage,
                     )
+                )
 
             self.stage_ends_ = [list(info["stage_ends"]) for info in selected_infos]
             self.current_stage_params_per_demo = [list(info["stage_params"]) for info in selected_infos]
@@ -2288,12 +2172,7 @@ class StageWiseConstraintLearningModel:
                     for info in selected_infos
                 ]
                 activation_mats = np.stack(self.demo_activation_matrices_, axis=0)
-                if self.use_joint_mask_search:
-                    if shared_activation_mask is None:
-                        shared_activation_mask = self._majority_activation_mask_from_infos(selected_infos)
-                    self.shared_feature_score_mean = np.asarray(shared_activation_mask, dtype=float).copy()
-                else:
-                    self.shared_feature_score_mean = self._majority_activation_mask_from_infos(selected_infos)
+                self.shared_feature_score_mean = self._majority_activation_mask_from_infos(selected_infos)
                 self.shared_activation_signature_mean = self._majority_activation_signature_from_infos(selected_infos)
                 self.r = np.asarray(np.rint(self.shared_feature_score_mean), dtype=int)
                 self.shared_activation_proto = np.asarray(self.shared_feature_score_mean, dtype=float).copy()
@@ -2329,7 +2208,7 @@ class StageWiseConstraintLearningModel:
             self.loss_total.append(total_loss)
 
             gammas = _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_stages)
-            metrics = self.eval_fn(self, gammas, None) if self.eval_fn is not None and self.num_stages == 2 else {}
+            metrics = self.eval_fn(self, gammas, None) if self.eval_fn is not None else {}
             for name, value in metrics.items():
                 if np.isscalar(value):
                     value_f = float(value)
@@ -2359,30 +2238,22 @@ class StageWiseConstraintLearningModel:
         should_final_resegment = int(max_iter) > 0 and (
             self.lambda_param_consensus > 0.0
             or (self.use_score_mode and self.lambda_activation_consensus > 0.0)
-            or self.use_joint_mask_search
         )
         if should_final_resegment:
-            if self.use_joint_mask_search:
-                final_selected_infos, shared_activation_mask = self._best_joint_activation_mask_selection(
-                    lam_param_consensus=self.current_param_consensus_lambda,
-                    lam_activation_consensus=self.current_activation_consensus_lambda,
-                    shared_param_vectors=self.shared_param_vectors,
-                )
-            else:
-                final_selected_infos = []
-                for demo_idx in range(len(self.demos)):
-                    fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(demo_idx)
-                    final_selected_infos.append(
-                        self._best_segmentation_info(
-                            demo_idx=demo_idx,
-                            lam_param_consensus=self.current_param_consensus_lambda,
-                            lam_activation_consensus=self.current_activation_consensus_lambda,
-                            shared_param_vectors=self.shared_param_vectors,
-                            shared_r_mean=self.shared_r_mean,
-                            shared_feature_score_mean=self.shared_feature_score_mean,
-                            fixed_cutpoints_by_stage=fixed_cutpoints_by_stage,
-                        )
+            final_selected_infos = []
+            for demo_idx in range(len(self.demos)):
+                fixed_cutpoints_by_stage = self._fixed_cutpoint_map_for_demo(demo_idx)
+                final_selected_infos.append(
+                    self._best_segmentation_info(
+                        demo_idx=demo_idx,
+                        lam_param_consensus=self.current_param_consensus_lambda,
+                        lam_activation_consensus=self.current_activation_consensus_lambda,
+                        shared_param_vectors=self.shared_param_vectors,
+                        shared_r_mean=self.shared_r_mean,
+                        shared_feature_score_mean=self.shared_feature_score_mean,
+                        fixed_cutpoints_by_stage=fixed_cutpoints_by_stage,
                     )
+                )
 
             self.stage_ends_ = [list(info["stage_ends"]) for info in final_selected_infos]
             self.current_stage_params_per_demo = [list(info["stage_params"]) for info in final_selected_infos]
@@ -2419,12 +2290,7 @@ class StageWiseConstraintLearningModel:
                     for info in final_selected_infos
                 ]
                 activation_mats = np.stack(self.demo_activation_matrices_, axis=0)
-                if self.use_joint_mask_search:
-                    if shared_activation_mask is None:
-                        shared_activation_mask = self._majority_activation_mask_from_infos(final_selected_infos)
-                    self.shared_feature_score_mean = np.asarray(shared_activation_mask, dtype=float).copy()
-                else:
-                    self.shared_feature_score_mean = self._majority_activation_mask_from_infos(final_selected_infos)
+                self.shared_feature_score_mean = self._majority_activation_mask_from_infos(final_selected_infos)
                 self.shared_activation_signature_mean = self._majority_activation_signature_from_infos(final_selected_infos)
                 self.r = np.asarray(np.rint(self.shared_feature_score_mean), dtype=int)
                 self.shared_activation_proto = np.asarray(self.shared_feature_score_mean, dtype=float).copy()
@@ -2466,7 +2332,7 @@ class StageWiseConstraintLearningModel:
             self.loss_param_consensus[-1] = final_total_param_consensus
             self.loss_activation_consensus[-1] = final_total_activation_consensus
             self.loss_total[-1] = final_total_loss
-            if self.num_stages == 2 and self.eval_fn is not None:
+            if self.eval_fn is not None:
                 final_gammas = _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_stages)
                 final_metrics = self.eval_fn(self, final_gammas, None)
                 for name, value in final_metrics.items():

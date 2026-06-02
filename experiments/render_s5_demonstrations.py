@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from envs.S5SphereInspect import _apply_default_s5_loader_config, load_S5SphereInspect
-from experiments.render_metrics import constraint_violation_stats, parse_int_list
+from experiments.render_metrics import constraint_violation_stats, parse_int_list, print_render_violation_rates
 
 
 def _parse_csv_ints(text: str | None) -> list[int] | None:
@@ -490,6 +490,7 @@ def render_s5_demonstrations(
     summary_path = out_dir / "s5_demonstration_render_summary.json"
     summary_path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[saved] {summary_path}")
+    print_render_violation_rates(out)
     return out
 
 
@@ -508,7 +509,7 @@ def main() -> None:
     )
     parser.add_argument("--rollout-backend", choices=["pybullet", "analytic"], default="pybullet")
     parser.add_argument("--fps", type=float, default=15.0)
-    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--width", type=int, default=1360)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--render-frame-stride", type=int, default=1)
     parser.add_argument("--realtime", type=int, default=0)
@@ -520,7 +521,7 @@ def main() -> None:
     )
     parser.add_argument("--camera-yaw", type=float, default=90.0)
     parser.add_argument("--camera-pitch", type=float, default=-16.0)
-    parser.add_argument("--camera-distance", type=float, default=1.45)
+    parser.add_argument("--camera-distance", type=float, default=1.35)
     parser.add_argument("--camera-fov", type=float, default=38.0)
     parser.add_argument(
         "--camera-target-offset",

@@ -1,10 +1,12 @@
 {
   "task": "s4_realistic_demonstration_render",
-  "gui": 0,
+  "gui": 1,
+  "combined_video": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demonstrations.mp4",
+  "combined_video_segments": [],
   "constraint_violation": {
-    "average_violation_rate": 0.24806201550387597,
-    "total_timesteps": 129,
-    "violating_timesteps": 32,
+    "average_violation_rate": 0.31724137931034485,
+    "total_timesteps": 290,
+    "violating_timesteps": 92,
     "feature_stage_violation_rate_matrix": [
       [
         NaN,
@@ -18,7 +20,7 @@
         NaN
       ],
       [
-        0.25,
+        0.5333333333333333,
         0.0,
         NaN,
         NaN,
@@ -29,23 +31,23 @@
         NaN
       ],
       [
-        0.20588235294117646,
-        0.07352941176470588,
+        0.2,
+        0.034482758620689655,
         0.0,
         0.0,
         NaN,
-        0.058823529411764705,
+        0.19310344827586207,
         NaN,
         NaN,
         NaN
       ],
       [
-        0.0,
+        0.3877551020408163,
         0.0,
         0.0,
         0.0,
         NaN,
-        0.2631578947368421,
+        0.14285714285714285,
         NaN,
         NaN,
         NaN
@@ -53,14 +55,14 @@
     ],
     "feature_names": [
       "surf_dist",
-      "centerline_dist",
+      "center_dist",
       "orient_err",
       "speed",
       "angular_speed",
-      "normal_load",
+      "normal_force",
       "noise",
       "start_dist",
-      "insertion_err"
+      "insert_err"
     ],
     "stage_names": [
       "stage1",
@@ -75,29 +77,34 @@
       "seed": 7,
       "points": 129,
       "video": null,
-      "saved_frames": [
-        "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demo_00_frame_000000.png",
-        "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demo_00_frame_000050.png",
-        "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s4_demonstrations/s4_demo_00_frame_000100.png"
-      ],
+      "saved_frames": [],
       "features": "outputs/swcl/videos/s4_demonstrations/demo_00_features.png",
       "rollout": "outputs/swcl/videos/s4_demonstrations/demo_00_rollout.npz",
-      "gui": 0,
+      "gui": 1,
       "fps": 20.0,
+      "camera_target": [
+        0.72,
+        0.14,
+        0.54
+      ],
       "render_frame_stride": 1,
       "video_end_hold_seconds": 2.0,
-      "renderer_reused": false,
+      "renderer_reused": true,
+      "visualize_normal_force": false,
       "visualize_normal_load": false,
-      "feature_overlay": false,
+      "feature_overlay": true,
+      "execution_normal_force_noise_std": 0.025,
+      "execution_normal_force_noise_smooth": 0.85,
+      "execution_normal_force_noise_seed": null,
       "execution_normal_load_noise_std": 0.025,
       "execution_normal_load_noise_smooth": 0.85,
       "execution_normal_load_noise_seed": null,
-      "ik_position_error_mean": 5.5044907976016e-05,
+      "ik_position_error_mean": 5.504521237951831e-05,
       "ik_position_error_max": 0.00015170951377293097,
       "constraint_violation": {
-        "average_violation_rate": 0.24806201550387597,
+        "average_violation_rate": 0.24031007751937986,
         "total_timesteps": 129,
-        "violating_timesteps": 32,
+        "violating_timesteps": 31,
         "feature_stage_violation_rate_matrix": [
           [
             NaN,
@@ -138,7 +145,7 @@
             0.0,
             0.0,
             NaN,
-            0.2631578947368421,
+            0.21052631578947367,
             NaN,
             NaN,
             NaN
@@ -146,14 +153,112 @@
         ],
         "feature_names": [
           "surf_dist",
-          "centerline_dist",
+          "center_dist",
           "orient_err",
           "speed",
           "angular_speed",
-          "normal_load",
+          "normal_force",
           "noise",
           "start_dist",
-          "insertion_err"
+          "insert_err"
+        ],
+        "stage_names": [
+          "stage1",
+          "stage2",
+          "stage3",
+          "stage4"
+        ]
+      }
+    },
+    {
+      "demo_index": 1,
+      "seed": 8,
+      "points": 161,
+      "video": null,
+      "saved_frames": [],
+      "features": "outputs/swcl/videos/s4_demonstrations/demo_01_features.png",
+      "rollout": "outputs/swcl/videos/s4_demonstrations/demo_01_rollout.npz",
+      "gui": 1,
+      "fps": 20.0,
+      "camera_target": [
+        0.72,
+        0.14,
+        0.54
+      ],
+      "render_frame_stride": 1,
+      "video_end_hold_seconds": 2.0,
+      "renderer_reused": true,
+      "visualize_normal_force": false,
+      "visualize_normal_load": false,
+      "feature_overlay": true,
+      "execution_normal_force_noise_std": 0.025,
+      "execution_normal_force_noise_smooth": 0.85,
+      "execution_normal_force_noise_seed": null,
+      "execution_normal_load_noise_std": 0.025,
+      "execution_normal_load_noise_smooth": 0.85,
+      "execution_normal_load_noise_seed": null,
+      "ik_position_error_mean": 4.615661145074386e-05,
+      "ik_position_error_max": 8.595895490494725e-05,
+      "constraint_violation": {
+        "average_violation_rate": 0.37888198757763975,
+        "total_timesteps": 161,
+        "violating_timesteps": 61,
+        "feature_stage_violation_rate_matrix": [
+          [
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.8571428571428571,
+            0.0,
+            NaN,
+            NaN,
+            NaN,
+            0.0,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.19480519480519481,
+            0.0,
+            0.0,
+            0.0,
+            NaN,
+            0.3116883116883117,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.6333333333333333,
+            0.0,
+            0.0,
+            0.0,
+            NaN,
+            0.1,
+            NaN,
+            NaN,
+            NaN
+          ]
+        ],
+        "feature_names": [
+          "surf_dist",
+          "center_dist",
+          "orient_err",
+          "speed",
+          "angular_speed",
+          "normal_force",
+          "noise",
+          "start_dist",
+          "insert_err"
         ],
         "stage_names": [
           "stage1",

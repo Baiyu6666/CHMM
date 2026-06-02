@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 
 from .rendering import _FFmpegVideoWriter, _save_rgb_frame, _space_was_triggered
-from .S5SphereInspect import _UR5PoseTracker, _quat_from_matrix, _require_pybullet
+from .pybullet_ur5 import _UR5PoseTracker, _quat_from_matrix, _require_pybullet
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -70,7 +70,7 @@ def _overlay_s4_stage_label(
     height, width = int(frame.shape[0]), int(frame.shape[1])
     stage_idx = _stage_index_at_frame(true_cutpoints, int(current_index), int(total_length))
     semantic = _S4_STAGE_SEMANTICS[min(stage_idx, len(_S4_STAGE_SEMANTICS) - 1)]
-    title = f"Stage {stage_idx + 1}"
+    title = f"stage {stage_idx + 1}"
     subtitle = str(semantic)
     image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -186,19 +186,21 @@ def _frame_index_set(save_frame_indices, length: int) -> set[int]:
     }
 
 
-def _spawn_box(client_id: int, *, half_extents, rgba, position, orientation=None, collision: bool = True, specular=(0.25, 0.25, 0.25)) -> int:
+def _spawn_box(client_id: int, *, half_extents, rgba=None, position, orientation=None, collision: bool = True, visual: bool = True, specular=(0.25, 0.25, 0.25), mass: float = 0.0) -> int:
     col = p.createCollisionShape(p.GEOM_BOX, halfExtents=list(half_extents), physicsClientId=client_id) if collision else -1
-    vis = p.createVisualShape(
-        p.GEOM_BOX,
-        halfExtents=list(half_extents),
-        rgbaColor=list(rgba),
-        specularColor=list(specular),
-        physicsClientId=client_id,
-    )
+    vis = -1
+    if bool(visual):
+        vis = p.createVisualShape(
+            p.GEOM_BOX,
+            halfExtents=list(half_extents),
+            rgbaColor=list((0.7, 0.7, 0.7, 1.0) if rgba is None else rgba),
+            specularColor=list(specular),
+            physicsClientId=client_id,
+        )
     quat = [0.0, 0.0, 0.0, 1.0] if orientation is None else list(orientation)
     return int(
         p.createMultiBody(
-            baseMass=0.0,
+            baseMass=float(mass),
             baseCollisionShapeIndex=col,
             baseVisualShapeIndex=vis,
             basePosition=list(position),
@@ -514,20 +516,6 @@ def _spawn_s4_scene(env, tracker: _UR5PoseTracker) -> dict[str, object]:
             )
     slider_half = np.asarray(getattr(env, 'slider_half_extents', (0.080, 0.030, 0.018)), dtype=float)
     slider_parts = []
-    tongue_width = max(0.010, min(0.014, 0.45 * float(slot_half_width)))
-    slider_parts.append(
-        {
-            'body': _spawn_box(
-                client_id,
-                half_extents=(0.016, 0.060, tongue_width),
-                rgba=(0.74, 0.76, 0.76, 1.0),
-                specular=(1.0, 1.0, 1.0),
-                position=tracker.s5_to_world(np.asarray([0.0, 0.0, slider_half[0]])),
-                collision=False,
-            ),
-            'offset': np.asarray([-slider_half[0] + 0.016, -0.006, 0.0], dtype=float),
-        }
-    )
     slider_parts.append(
         {
             'body': _spawn_box(
@@ -578,21 +566,6 @@ def _spawn_s4_scene(env, tracker: _UR5PoseTracker) -> dict[str, object]:
                 collision=False,
             ),
             'offset': np.asarray([0.030, -0.006, 0.023], dtype=float),
-        }
-    )
-    slider_parts.append(
-        {
-            'body': _spawn_box(
-                client_id,
-                half_extents=(0.014, 0.016, tongue_width),
-                rgba=(0.78, 0.80, 0.80, 1.0),
-                specular=(1.0, 1.0, 1.0),
-                position=tracker.s5_to_world(np.asarray([0.0, 0.0, slider_half[0]])),
-                orientation=_yaw_quat(0.24),
-                collision=False,
-            ),
-            'offset': np.asarray([-slider_half[0] + 0.016, -0.058, 0.0], dtype=float),
-            'local_quat': _yaw_quat(0.24),
         }
     )
     hidden = origin + np.asarray([0.0, 0.0, -0.8], dtype=float)
@@ -677,6 +650,302 @@ def _set_slider_pose(env, tracker: _UR5PoseTracker, slider_ids, state: np.ndarra
         [float(v) for v in _quat_for_slider_theta(env, float(st[3]))],
         physicsClientId=tracker.client_id,
     )
+
+
+def _slider_state_from_body_pose(env, tracker: _UR5PoseTracker, body_id: int, fallback_theta: float) -> np.ndarray:
+    pos_w, quat = p.getBasePositionAndOrientation(int(body_id), physicsClientId=tracker.client_id)
+    center = np.asarray(tracker.world_to_s5(np.asarray(pos_w, dtype=float)), dtype=float).reshape(3)
+    slider_half = np.asarray(getattr(env, 'slider_half_extents', (0.080, 0.026, 0.018)), dtype=float)
+    normal = _surface_normal(env)
+    rot = np.asarray(p.getMatrixFromQuaternion(quat), dtype=float).reshape(3, 3)
+    heading = np.asarray(rot[:, 1], dtype=float)
+    heading[2] = 0.0
+    theta = float(fallback_theta)
+    if float(np.linalg.norm(heading[:2])) > 1e-8:
+        theta = float(math.atan2(float(heading[1]), float(heading[0])))
+    state = np.zeros(4, dtype=float)
+    state[:3] = center - normal * float(slider_half[0])
+    state[3] = theta
+    return state
+
+
+def _contact_proxy_state(env, state: np.ndarray, indent: float = 0.0) -> np.ndarray:
+    st = np.asarray(state, dtype=float).reshape(-1).copy()
+    proxy_clearance = float(getattr(env, "pybullet_torque_contact_proxy_clearance", 0.0))
+    surface_z = float(_surface_height(env, st[:2][None, :])[0])
+    st[2] = surface_z + proxy_clearance - max(float(indent), 0.0)
+    return st
+
+
+def _spawn_slider_contact_proxy(
+    env,
+    tracker: _UR5PoseTracker,
+    initial_state: np.ndarray,
+    scene_ids: dict[str, object],
+    *,
+    initial_indent: float = 0.0,
+) -> tuple[int, int]:
+    slider_half = np.asarray(getattr(env, 'slider_half_extents', (0.080, 0.026, 0.018)), dtype=float)
+    use_contact_proxy = bool(getattr(env, "pybullet_torque_use_contact_proxy", True))
+    spawn_state = _contact_proxy_state(env, initial_state, initial_indent) if use_contact_proxy else np.asarray(initial_state, dtype=float)
+    st = _slider_center_state(env, spawn_state)
+    slider_id = _spawn_box(
+        tracker.client_id,
+        half_extents=slider_half.tolist(),
+        rgba=(0.74, 0.31, 0.18, 0.18),
+        specular=(0.45, 0.30, 0.20),
+        position=tracker.s5_to_world(st[:3]),
+        orientation=_quat_for_slider_theta(env, float(st[3])),
+        collision=True,
+        visual=not use_contact_proxy,
+        mass=float(getattr(env, "pybullet_torque_slider_mass", 0.20)),
+    )
+    slider_dynamics = {
+        "lateralFriction": float(getattr(env, "pybullet_torque_slider_lateral_friction", 0.65)),
+        "spinningFriction": float(getattr(env, "pybullet_torque_slider_spinning_friction", 0.02)),
+        "rollingFriction": float(getattr(env, "pybullet_torque_slider_rolling_friction", 0.01)),
+    }
+    contact_stiffness = float(getattr(env, "pybullet_torque_contact_stiffness", 0.0))
+    contact_damping = float(getattr(env, "pybullet_torque_contact_damping", 0.0))
+    if contact_stiffness > 0.0:
+        slider_dynamics["contactStiffness"] = contact_stiffness
+    if contact_damping > 0.0:
+        slider_dynamics["contactDamping"] = contact_damping
+    p.changeDynamics(slider_id, -1, **slider_dynamics, physicsClientId=tracker.client_id)
+    table_id = scene_ids.get("table")
+    if table_id is not None and (contact_stiffness > 0.0 or contact_damping > 0.0):
+        table_dynamics = {}
+        if contact_stiffness > 0.0:
+            table_dynamics["contactStiffness"] = contact_stiffness
+        if contact_damping > 0.0:
+            table_dynamics["contactDamping"] = contact_damping
+        p.changeDynamics(int(table_id), -1, **table_dynamics, physicsClientId=tracker.client_id)
+    for body in [*scene_ids.get("walls", []), *scene_ids.get("fixture", []), *scene_ids.get("ground_grid", [])]:
+        try:
+            p.setCollisionFilterPair(slider_id, int(body), -1, -1, enableCollision=0, physicsClientId=tracker.client_id)
+        except Exception:
+            pass
+    for link_idx in range(-1, p.getNumJoints(tracker.robot_id, physicsClientId=tracker.client_id)):
+        try:
+            p.setCollisionFilterPair(slider_id, tracker.robot_id, -1, int(link_idx), enableCollision=0, physicsClientId=tracker.client_id)
+        except Exception:
+            pass
+
+    constraint_id = -1
+    if not use_contact_proxy:
+        parent_pos, parent_quat = tracker.get_ee_pose()
+        child_pos, child_quat = p.getBasePositionAndOrientation(slider_id, physicsClientId=tracker.client_id)
+        inv_parent_pos, inv_parent_quat = p.invertTransform(parent_pos.tolist(), parent_quat.tolist())
+        rel_pos, rel_quat = p.multiplyTransforms(inv_parent_pos, inv_parent_quat, child_pos, child_quat)
+        constraint_id = p.createConstraint(
+            parentBodyUniqueId=tracker.robot_id,
+            parentLinkIndex=tracker.ee_link_index,
+            childBodyUniqueId=slider_id,
+            childLinkIndex=-1,
+            jointType=p.JOINT_FIXED,
+            jointAxis=[0.0, 0.0, 0.0],
+            parentFramePosition=list(rel_pos),
+            parentFrameOrientation=list(rel_quat),
+            childFramePosition=[0.0, 0.0, 0.0],
+            childFrameOrientation=[0.0, 0.0, 0.0, 1.0],
+            physicsClientId=tracker.client_id,
+        )
+        p.changeConstraint(
+            constraint_id,
+            maxForce=float(getattr(env, "pybullet_torque_slider_constraint_force", 2500.0)),
+            erp=float(getattr(env, "pybullet_torque_slider_constraint_erp", 0.9)),
+            physicsClientId=tracker.client_id,
+        )
+    return int(slider_id), int(constraint_id)
+
+
+def _set_proxy_table_collision(tracker: _UR5PoseTracker, slider_id: int, table_id: int, enabled: bool) -> None:
+    p.setCollisionFilterPair(
+        int(slider_id),
+        int(table_id),
+        -1,
+        -1,
+        enableCollision=1 if bool(enabled) else 0,
+        physicsClientId=tracker.client_id,
+    )
+
+
+def _torque_proxy_constraint_force(env, preload: float) -> float:
+    preload = max(float(preload), 0.0)
+    if preload <= 1e-8:
+        return float(max(0.0, getattr(env, "pybullet_torque_slider_constraint_force", 1000000.0)))
+    cap = float(max(0.0, getattr(env, "pybullet_torque_slider_constraint_force", 1000000.0)))
+    min_force = float(max(0.0, getattr(env, "pybullet_torque_slider_constraint_force_min", 2.5)))
+    threshold = float(max(0.0, getattr(env, "pybullet_torque_slider_constraint_force_threshold", 5.0)))
+    scale = float(max(0.0, getattr(env, "pybullet_torque_slider_constraint_force_per_newton", 5.0)))
+    return float(min(cap, min_force + scale * max(preload - threshold, 0.0)))
+
+
+def _set_proxy_constraint_limit(env, tracker: _UR5PoseTracker, constraint_id: int, preload: float) -> None:
+    if int(constraint_id) < 0:
+        return
+    p.changeConstraint(
+        int(constraint_id),
+        maxForce=_torque_proxy_constraint_force(env, preload),
+        erp=float(getattr(env, "pybullet_torque_slider_constraint_erp", 0.0)),
+        physicsClientId=tracker.client_id,
+    )
+
+
+def _read_table_normal_load(tracker: _UR5PoseTracker, slider_id: int, table_id: int) -> float:
+    load, _surf_dist = _read_table_contact_metrics(tracker, slider_id, table_id)
+    return load
+
+
+def _read_table_contact_metrics(tracker: _UR5PoseTracker, slider_id: int, table_id: int) -> tuple[float, float | None]:
+    contacts = p.getContactPoints(
+        bodyA=int(slider_id),
+        bodyB=int(table_id),
+        physicsClientId=tracker.client_id,
+    )
+    distance_tol = float(getattr(tracker.env, "pybullet_torque_contact_distance_tol", 1e-5))
+    active = [c for c in contacts if float(c[8]) <= distance_tol]
+    load = float(sum(float(c[9]) for c in active))
+    if not active:
+        return load, None
+    contact_dist = min(float(c[8]) for c in active)
+    return load, max(0.0, contact_dist)
+
+
+def _arm_preload_torque(env, tracker: _UR5PoseTracker, force_world: np.ndarray) -> np.ndarray:
+    try:
+        q_full = np.asarray([s[0] for s in p.getJointStates(tracker.robot_id, tracker.ik_joint_indices, physicsClientId=tracker.client_id)], dtype=float)
+        z_full = [0.0] * len(q_full)
+        jac_t, _jac_r = p.calculateJacobian(
+            tracker.robot_id,
+            tracker.ee_link_index,
+            [0.0, 0.0, 0.0],
+            q_full.tolist(),
+            z_full,
+            z_full,
+            physicsClientId=tracker.client_id,
+        )
+        jac = np.asarray(jac_t, dtype=float)[:, tracker.arm_ik_positions]
+        tau = jac.T @ np.asarray(force_world, dtype=float).reshape(3)
+        return np.asarray(tau, dtype=float).reshape(6)
+    except Exception:
+        return np.zeros(6, dtype=float)
+
+
+def _torque_preload_tracking_commands(
+    env,
+    tracker: _UR5PoseTracker,
+    q_nominal_cmd: np.ndarray,
+    q_noise: np.ndarray,
+    target_tip_world: np.ndarray,
+    target_quat: np.ndarray,
+    preload_command: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    q_nominal = np.asarray(q_nominal_cmd, dtype=float)
+    q_noise = np.asarray(q_noise, dtype=float)
+    target_tip_world = np.asarray(target_tip_world, dtype=float)
+    target_quat = np.asarray(target_quat, dtype=float)
+    preload_command = np.asarray(preload_command, dtype=float).reshape(-1)
+    n = int(q_nominal.shape[0])
+    q_track_nominal = q_nominal.copy()
+    indent_trace = np.zeros(n, dtype=float)
+    max_indent = float(max(0.0, getattr(env, "pybullet_torque_preload_indent_max", 0.0020)))
+    min_indent = float(max(0.0, getattr(env, "pybullet_torque_preload_indent_min", 0.0006)))
+    if max_indent <= 0.0 or n <= 0:
+        return q_track_nominal, np.clip(q_track_nominal + q_noise, tracker.q_lo[None, :], tracker.q_hi[None, :]), indent_trace
+
+    positive = preload_command > 1e-8
+    if np.any(positive):
+        denom = max(float(np.max(preload_command[positive])), 1e-8)
+        frac = np.clip(preload_command / denom, 0.0, 1.0)
+        indent_trace = np.where(positive, min_indent + (max_indent - min_indent) * frac, 0.0)
+
+    normal_world = _surface_normal(env)
+    q_prev = q_track_nominal[0].copy()
+    for i in range(n):
+        if indent_trace[i] <= 0.0:
+            q_prev = q_track_nominal[i].copy()
+            continue
+        target = target_tip_world[i] - normal_world * float(indent_trace[i])
+        try:
+            q_prev = tracker._run_pybullet_ik(target, target_quat=target_quat[i], rest_q=q_prev)
+            q_track_nominal[i] = q_prev
+        except Exception:
+            q_track_nominal[i] = q_nominal[i]
+            q_prev = q_track_nominal[i].copy()
+    q_track = np.clip(q_track_nominal + q_noise, tracker.q_lo[None, :], tracker.q_hi[None, :])
+    return q_track_nominal, q_track, indent_trace
+
+
+def _preload_proxy_indent_trace(env, preload_command: np.ndarray) -> np.ndarray:
+    preload_command = np.asarray(preload_command, dtype=float).reshape(-1)
+    if preload_command.size <= 0:
+        return np.zeros(preload_command.shape, dtype=float)
+    min_indent = float(max(0.0, getattr(env, "pybullet_torque_preload_indent_min", 0.0)))
+    max_indent = float(max(0.0, getattr(env, "pybullet_torque_preload_indent_max", 0.014)))
+    indent_per_newton = float(max(0.0, getattr(env, "pybullet_torque_preload_indent_per_newton", 0.0009)))
+    if max_indent <= 0.0 or indent_per_newton <= 0.0:
+        return np.zeros(preload_command.shape, dtype=float)
+    positive = preload_command > 1e-8
+    return np.where(
+        positive,
+        np.clip(min_indent + indent_per_newton * preload_command, 0.0, max_indent),
+        0.0,
+    )
+
+
+def _arm_inverse_dynamics(tracker: _UR5PoseTracker, q: np.ndarray, qd: np.ndarray, qdd: np.ndarray) -> np.ndarray:
+    q = np.asarray(q, dtype=float).reshape(6)
+    qd = np.asarray(qd, dtype=float).reshape(6)
+    qdd = np.asarray(qdd, dtype=float).reshape(6)
+    try:
+        tau = p.calculateInverseDynamics(
+            tracker.robot_id,
+            q.tolist(),
+            qd.tolist(),
+            qdd.tolist(),
+            physicsClientId=tracker.client_id,
+        )
+        tau = np.asarray(tau, dtype=float).reshape(-1)
+        if tau.size >= 6:
+            return tau[:6]
+    except Exception:
+        pass
+    try:
+        sts = p.getJointStates(tracker.robot_id, tracker.ik_joint_indices, physicsClientId=tracker.client_id)
+        q_full = np.asarray([float(s[0]) for s in sts], dtype=float)
+        qd_full = np.asarray([float(s[1]) for s in sts], dtype=float)
+        qdd_full = np.zeros_like(q_full)
+        for arm_col, full_col in enumerate(tracker.arm_ik_positions):
+            q_full[int(full_col)] = q[arm_col]
+            qd_full[int(full_col)] = qd[arm_col]
+            qdd_full[int(full_col)] = qdd[arm_col]
+        tau_full = np.asarray(
+            p.calculateInverseDynamics(
+                tracker.robot_id,
+                q_full.tolist(),
+                qd_full.tolist(),
+                qdd_full.tolist(),
+                physicsClientId=tracker.client_id,
+            ),
+            dtype=float,
+        ).reshape(-1)
+        return np.asarray([tau_full[int(idx)] for idx in tracker.arm_ik_positions], dtype=float)
+    except Exception:
+        return qdd.copy()
+
+
+def _command_arm_torque(env, tracker: _UR5PoseTracker, tau: np.ndarray) -> np.ndarray:
+    limit = float(getattr(env, "pybullet_torque_limit", 500.0))
+    tau = np.clip(np.asarray(tau, dtype=float).reshape(6), -limit, limit)
+    p.setJointMotorControlArray(
+        tracker.robot_id,
+        tracker.arm_joint_indices,
+        controlMode=p.TORQUE_CONTROL,
+        forces=[float(v) for v in tau],
+        physicsClientId=tracker.client_id,
+    )
+    return tau
 
 
 def _camera_frame(env, tracker: _UR5PoseTracker, *, width: int, height: int) -> np.ndarray:
@@ -863,22 +1132,52 @@ def _dash_line(draw, xy, *, fill, width=1, dash=4, gap=3) -> None:
         s += float(dash + gap)
 
 
+def _canonical_feature_name(name: str) -> str:
+    return str(name)
+
+
+def _canonical_constraint_key(key: str) -> str:
+    return str(key)
+
+
+def _constraint_key_aliases(key: str) -> tuple[str, ...]:
+    return (str(key),)
+
+
+def _canonical_constraint_spec(spec: dict) -> dict:
+    out = dict(spec)
+    if "feature_name" in out:
+        out["feature_name"] = _canonical_feature_name(str(out.get("feature_name", "")))
+    if "oracle_key" in out:
+        out["oracle_key"] = _canonical_constraint_key(str(out.get("oracle_key", "")))
+    return out
+
+
 def _constraint_feature_specs(env) -> tuple[list[dict[str, object]], list[str], dict[str, int]]:
     schema = list(env.get_feature_schema()) if hasattr(env, "get_feature_schema") else list(getattr(env, "feature_schema", []))
     name_to_idx = {}
     schema_names = []
     for idx, spec in enumerate(schema):
-        name = str(spec.get("name", f"feature_{idx}"))
+        name = _canonical_feature_name(str(spec.get("name", f"feature_{idx}")))
         col = int(spec.get("column_idx", spec.get("id", idx)))
         name_to_idx[name] = col
         schema_names.append(name)
     if hasattr(env, "get_overlay_feature_names"):
-        feature_names = [str(name) for name in env.get_overlay_feature_names() if str(name) in name_to_idx]
+        feature_names = [
+            _canonical_feature_name(str(name))
+            for name in env.get_overlay_feature_names()
+            if _canonical_feature_name(str(name)) in name_to_idx
+        ]
     else:
         feature_names = []
     seen = set(feature_names)
-    for spec in list(env.get_constraint_specs()) if hasattr(env, "get_constraint_specs") else list(getattr(env, "constraint_specs", [])):
-        name = str(spec.get("feature_name", ""))
+    specs = (
+        [_canonical_constraint_spec(spec) for spec in list(env.get_constraint_specs())]
+        if hasattr(env, "get_constraint_specs")
+        else [_canonical_constraint_spec(spec) for spec in list(getattr(env, "constraint_specs", []))]
+    )
+    for spec in specs:
+        name = _canonical_feature_name(str(spec.get("feature_name", "")))
         if name not in name_to_idx:
             continue
         if name not in seen:
@@ -886,7 +1185,7 @@ def _constraint_feature_specs(env) -> tuple[list[dict[str, object]], list[str], 
             seen.add(name)
     if not feature_names:
         feature_names = [name for name in schema_names if name in name_to_idx]
-    return list(getattr(env, "constraint_specs", env.get_constraint_specs() if hasattr(env, "get_constraint_specs") else [])), feature_names, name_to_idx
+    return specs, feature_names, name_to_idx
 
 
 def _constraint_semantics_kind(spec: dict[str, object]) -> str:
@@ -900,6 +1199,24 @@ def _constraint_semantics_kind(spec: dict[str, object]) -> str:
     return text
 
 
+_S4_FEATURE_UNITS = {
+    "surf_dist": "m",
+    "center_dist": "m",
+    "orient_err": "rad",
+    "speed": "m/s",
+    "angular_speed": "rad/s",
+    "normal_force": "N",
+    "start_dist": "m",
+    "insert_err": "m",
+}
+
+
+def _feature_label_with_unit(name: str) -> str:
+    name = _canonical_feature_name(str(name))
+    unit = _S4_FEATURE_UNITS.get(name)
+    return name if not unit else f"{name} [{unit}]"
+
+
 def _overlay_constraint_feature_panel(
     frame: np.ndarray,
     env,
@@ -909,6 +1226,7 @@ def _overlay_constraint_feature_panel(
     total_length: int,
     true_cutpoints: np.ndarray | None,
     normal_load_trace: np.ndarray | None = None,
+    surf_dist_trace: np.ndarray | None = None,
     ylim_trajectory: np.ndarray | None = None,
     title: str = "Executed features",
 ) -> np.ndarray:
@@ -937,55 +1255,92 @@ def _overlay_constraint_feature_panel(
         F_ylim = None if ylim_traj is None or ylim_traj.ndim != 2 or ylim_traj.shape[0] <= 0 else np.asarray(env.compute_all_features_matrix(ylim_traj[:, :4]), dtype=float)
     except Exception:
         return frame
+    if surf_dist_trace is not None and "surf_dist" in name_to_idx:
+        surf_idx = int(name_to_idx["surf_dist"])
+        surf_vals = np.asarray(surf_dist_trace, dtype=float).reshape(-1)
+        if surf_vals.size >= len(prefix) and surf_idx < F.shape[1]:
+            F[:, surf_idx] = surf_vals[: len(prefix)]
     true_constraints = dict(getattr(env, "true_constraints", {}) or {})
     spans = _stage_spans(true_cutpoints, int(total_length))
     height, width = int(frame.shape[0]), int(frame.shape[1])
     rows = len(feature_names)
-    panel_w = int(min(max(445, 0.40 * width), max(width - 28, 1), 610))
+    y_margin = int(max(10, round(0.018 * height)))
+    panel_w = int(min(max(520, 0.36 * width), max(width - 2 * y_margin, 1), 620))
     title_text = str(title or "Executed features")
     if " (planned with " in title_text:
         first, rest = title_text.split(" (planned with ", 1)
         title_lines = [first, "(planned with " + rest]
     else:
         title_lines = [title_text]
-    stage_header_h = 19 if len(spans) > 1 else 0
-    header_h = 66 + 15 * max(0, len(title_lines) - 1) + stage_header_h
-    pad = 10
-    available_h = max(1, height - 2 * 14 - pad)
-    row_h = int(np.clip((available_h - header_h) / max(rows, 1), 34, 54))
-    panel_h = header_h + rows * row_h + pad
-    x0 = max(8, width - panel_w - 14)
-    y0 = 14
+    legend_rows = 3
+    target_panel_h = int(max(240, height - 2 * y_margin))
+    estimated_header_h = 108 + 19 * max(0, len(title_lines) - 1) + (28 if len(spans) > 1 else 0)
+    row_h = int(np.clip((target_panel_h - estimated_header_h - 14) / max(rows, 1), 56, 112))
+    panel_scale = float(np.clip(row_h / 72.0, 1.15, 1.55))
+    font_size = int(max(14, round(12 * panel_scale)))
+    title_font_size = int(max(15, round(13 * panel_scale)))
+    title_line_h = int(round(title_font_size + 5))
+    legend_line_h = int(round(font_size + 7))
+    pad = int(max(12, round(9 * panel_scale)))
+    bottom_pad = int(max(12, round(8 * panel_scale)))
+    stage_header_h = int(max(22, round(19 * panel_scale))) if len(spans) > 1 else 0
+    header_h = (
+        pad
+        + len(title_lines) * title_line_h
+        + 5
+        + legend_rows * legend_line_h
+        + (stage_header_h + 8 if stage_header_h > 0 else 4)
+    )
+    row_h = int(np.clip((target_panel_h - header_h - bottom_pad) / max(rows, 1), 56, 112))
+    panel_h = int(min(target_panel_h, header_h + rows * row_h + bottom_pad))
+    x0 = max(8, width - panel_w - y_margin)
+    y0 = y_margin
     image = Image.fromarray(np.asarray(frame, dtype=np.uint8), mode="RGB").convert("RGBA")
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 12)
-        font_bold = ImageFont.truetype("DejaVuSans-Bold.ttf", 12)
-        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 13)
+        font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+        font_bold = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", title_font_size)
     except Exception:
         font = ImageFont.load_default() if ImageFont is not None else None
         font_bold = font
         font_title = font
 
-    draw.rounded_rectangle((x0, y0, x0 + panel_w, y0 + panel_h), radius=7, fill=(255, 255, 255, 218), outline=(36, 42, 50, 185), width=1)
+    line_w_thin = int(max(1, round(1 * panel_scale)))
+    line_w_mid = int(max(3, round(2 * panel_scale)))
+    line_w_heavy = int(max(4, round(3 * panel_scale)))
+    dash_len = int(max(7, round(6 * panel_scale)))
+    dash_gap = int(max(4, round(4 * panel_scale)))
+    stage_band_h = int(max(16, round(13 * panel_scale)))
+
+    draw.rounded_rectangle((x0, y0, x0 + panel_w, y0 + panel_h), radius=int(round(7 * panel_scale)), fill=(255, 255, 255, 218), outline=(36, 42, 50, 185), width=line_w_thin)
     for line_idx, line in enumerate(title_lines):
-        draw.text((x0 + 9, y0 + 5 + 15 * line_idx), line, fill=(20, 24, 30, 255), font=font_title)
+        draw.text((x0 + pad, y0 + max(6, pad // 2) + title_line_h * line_idx), line, fill=(20, 24, 30, 255), font=font_title)
     constraint_orange = (234, 88, 12, 245)
     constraint_orange_text = (194, 65, 12, 255)
     feasible_yellow = (254, 240, 138, 145)
     equality_band = (253, 186, 116, 92)
-    legend_y = y0 + 27 + 15 * max(0, len(title_lines) - 1)
-    legend_x0 = x0 + 10
-    draw.line((legend_x0, legend_y + 6, legend_x0 + 26, legend_y + 6), fill=constraint_orange, width=3)
-    draw.text((legend_x0 + 32, legend_y), "GT equality constraint target", fill=constraint_orange_text, font=font)
-    legend_y2 = legend_y + 16
+    legend_y = y0 + max(6, pad // 2) + len(title_lines) * title_line_h + 4
+    legend_x0 = x0 + pad
+    legend_sample_w = int(round(28 * panel_scale))
+    legend_mid_y = legend_y + int(round(0.52 * font_size))
+    draw.line((legend_x0, legend_mid_y, legend_x0 + legend_sample_w, legend_mid_y), fill=constraint_orange, width=line_w_heavy)
+    draw.text((legend_x0 + legend_sample_w + int(round(8 * panel_scale)), legend_y), "Ground truth equality constraint target", fill=constraint_orange_text, font=font)
+    legend_y2 = legend_y + legend_line_h
     legend_x1 = legend_x0
-    draw.rectangle((legend_x1, legend_y2 + 2, legend_x1 + 28, legend_y2 + 12), fill=feasible_yellow)
-    _dash_line(draw, (legend_x1, legend_y2 + 6, legend_x1 + 28, legend_y2 + 6), fill=constraint_orange, width=2, dash=6, gap=4)
-    draw.text((legend_x1 + 34, legend_y2), "GT inequality constraint bound and feasible region", fill=constraint_orange_text, font=font)
-    plot_x0 = x0 + 120
-    plot_x1 = x0 + panel_w - 12
+    legend_mid_y2 = legend_y2 + int(round(0.52 * font_size))
+    draw.rectangle((legend_x1, legend_y2 + int(round(2 * panel_scale)), legend_x1 + legend_sample_w, legend_y2 + int(round(12 * panel_scale))), fill=feasible_yellow)
+    _dash_line(draw, (legend_x1, legend_mid_y2, legend_x1 + legend_sample_w, legend_mid_y2), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
+    legend_text_x = legend_x1 + legend_sample_w + int(round(8 * panel_scale))
+    draw.text((legend_text_x, legend_y2), "Ground truth inequality constraint bound", fill=constraint_orange_text, font=font)
+    draw.text((legend_text_x, legend_y2 + legend_line_h), "and feasible region", fill=constraint_orange_text, font=font)
+    try:
+        max_label_w = max(draw.textbbox((0, 0), _feature_label_with_unit(name), font=font_bold)[2] for name in feature_names)
+    except Exception:
+        max_label_w = int(round(136 * panel_scale))
+    plot_x0 = x0 + int(min(max(max_label_w + 24, 148 * panel_scale), 0.42 * panel_w))
+    plot_x1 = x0 + panel_w - pad
     plot_w = max(1, plot_x1 - plot_x0)
     total_den = max(int(total_length) - 1, 1)
     if stage_header_h > 0:
@@ -995,12 +1350,12 @@ def _overlay_constraint_feature_panel(
             xb = plot_x0 + float(end) / float(total_den) * float(plot_w)
             color = _S4_STAGE_COLORS[stage_idx % len(_S4_STAGE_COLORS)]
             draw.rectangle(
-                (xa, stage_y0, xb, stage_y0 + 13),
+                (xa, stage_y0, xb, stage_y0 + stage_band_h),
                 fill=_rgba255_from_hex(color, 0.18),
                 outline=_rgba255_from_hex(color, 0.90),
-                width=1,
+                width=line_w_thin,
             )
-            label = f"Stage {stage_idx + 1}" if xb - xa >= 54 else f"S{stage_idx + 1}"
+            label = f"s{stage_idx + 1}"
             try:
                 bbox = draw.textbbox((0, 0), label, font=font_bold)
                 tw = float(bbox[2] - bbox[0])
@@ -1008,16 +1363,16 @@ def _overlay_constraint_feature_panel(
             except Exception:
                 tw, th = 34.0, 9.0
             tx = min(max(xa + 2.0, 0.5 * (xa + xb) - 0.5 * tw), max(xa + 2.0, xb - tw - 2.0))
-            draw.text((tx, stage_y0 + max(0.0, 0.5 * (13.0 - th)) - 1.0), label, fill=(18, 24, 38, 245), font=font_bold)
+            draw.text((tx, stage_y0 + max(0.0, 0.5 * (float(stage_band_h) - th)) - 1.0), label, fill=(18, 24, 38, 245), font=font_bold)
 
     for row, name in enumerate(feature_names):
         feat_idx = int(name_to_idx[name])
         if feat_idx >= F.shape[1]:
             continue
-        ry0 = y0 + header_h + row * row_h + 5
-        ry1 = ry0 + row_h - 12
-        py0 = ry0 + 4
-        py1 = ry1
+        ry0 = y0 + header_h + row * row_h
+        ry1 = ry0 + row_h
+        py0 = ry0 + int(round(6 * panel_scale))
+        py1 = ry1 - int(round(8 * panel_scale))
         trace = np.asarray(F[:, feat_idx], dtype=float)
         finite_vals = trace[np.isfinite(trace)]
         if F_ylim is not None and feat_idx < F_ylim.shape[1]:
@@ -1027,11 +1382,12 @@ def _overlay_constraint_feature_panel(
                 finite_vals = np.concatenate([finite_vals, finite_ylim]) if finite_vals.size else finite_ylim
         spec_vals = []
         for spec in specs:
-            if str(spec.get("feature_name", "")) != name:
+            if _canonical_feature_name(str(spec.get("feature_name", ""))) != name:
                 continue
             key = str(spec.get("oracle_key", ""))
-            if key in true_constraints and np.isfinite(float(true_constraints[key])):
-                spec_vals.append(float(true_constraints[key]))
+            true_key = next((alias for alias in _constraint_key_aliases(key) if alias in true_constraints), None)
+            if true_key is not None and np.isfinite(float(true_constraints[true_key])):
+                spec_vals.append(float(true_constraints[true_key]))
         all_vals = np.concatenate([finite_vals, np.asarray(spec_vals, dtype=float)]) if spec_vals else finite_vals
         if all_vals.size == 0:
             continue
@@ -1052,23 +1408,26 @@ def _overlay_constraint_feature_panel(
         def y_at(v: float) -> float:
             return float(py1) - (float(v) - vmin) / max(vmax - vmin, 1e-12) * float(py1 - py0)
 
-        draw.text((x0 + 9, ry0 + 4), name, fill=(18, 24, 38, 255), font=font_bold)
+        label_x = x0 + pad
+        label_y = ry0 + int(round(8 * panel_scale))
+        draw.text((label_x, label_y), _feature_label_with_unit(name), fill=(18, 24, 38, 255), font=font_bold)
         if trace.size:
-            draw.text((x0 + 9, ry0 + 21), f"{trace[-1]:.3g}", fill=(37, 99, 235, 255), font=font)
-        draw.rectangle((plot_x0, py0, plot_x1, py1), outline=(188, 196, 206, 220), fill=(248, 250, 252, 205), width=1)
+            draw.text((label_x, label_y + font_size + int(round(4 * panel_scale))), f"{trace[-1]:.3g}", fill=(37, 99, 235, 255), font=font)
+        draw.rectangle((plot_x0, py0, plot_x1, py1), outline=(188, 196, 206, 220), fill=(248, 250, 252, 205), width=line_w_thin)
         for cp in np.asarray(true_cutpoints if true_cutpoints is not None else [], dtype=int).reshape(-1):
             x = x_at(int(cp))
-            draw.line((x, py0, x, py1), fill=(150, 158, 170, 150), width=1)
+            draw.line((x, py0, x, py1), fill=(150, 158, 170, 150), width=line_w_thin)
         for spec in specs:
-            if str(spec.get("feature_name", "")) != name:
+            if _canonical_feature_name(str(spec.get("feature_name", ""))) != name:
                 continue
             stage_idx = int(spec.get("stage", -1))
             if stage_idx < 0 or stage_idx >= len(spans):
                 continue
             key = str(spec.get("oracle_key", ""))
-            if key not in true_constraints:
+            true_key = next((alias for alias in _constraint_key_aliases(key) if alias in true_constraints), None)
+            if true_key is None:
                 continue
-            value = float(true_constraints[key])
+            value = float(true_constraints[true_key])
             if not np.isfinite(value):
                 continue
             a, b = spans[stage_idx]
@@ -1078,25 +1437,26 @@ def _overlay_constraint_feature_panel(
             if kind == "target":
                 band = max(1.5, 0.05 * float(py1 - py0))
                 draw.rectangle((xa, max(py0, y - band), xb, min(py1, y + band)), fill=equality_band)
-                draw.line((xa, y, xb, y), fill=constraint_orange, width=3)
+                draw.line((xa, y, xb, y), fill=constraint_orange, width=line_w_heavy)
             elif kind == "upper":
                 draw.rectangle((xa, max(py0, min(py1, y)), xb, py1), fill=feasible_yellow)
-                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
             elif kind == "lower":
                 draw.rectangle((xa, py0, xb, max(py0, min(py1, y))), fill=feasible_yellow)
-                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
             else:
-                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=2, dash=6, gap=4)
+                _dash_line(draw, (xa, y, xb, y), fill=constraint_orange, width=line_w_mid, dash=dash_len, gap=dash_gap)
         if trace.size >= 2:
             pts = [(x_at(i), y_at(float(v))) for i, v in enumerate(trace) if np.isfinite(float(v))]
             if len(pts) >= 2:
-                draw.line(pts, fill=(37, 99, 235, 255), width=2)
+                draw.line(pts, fill=(37, 99, 235, 255), width=line_w_mid)
         elif trace.size == 1 and np.isfinite(float(trace[0])):
             x = x_at(0)
             y = y_at(float(trace[0]))
-            draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=(37, 99, 235, 255))
+            dot_r = float(max(2, round(2 * panel_scale)))
+            draw.ellipse((x - dot_r, y - dot_r, x + dot_r, y + dot_r), fill=(37, 99, 235, 255))
         cx = x_at(int(current_index))
-        draw.line((cx, py0, cx, py1), fill=(99, 102, 241, 210), width=1)
+        draw.line((cx, py0, cx, py1), fill=(99, 102, 241, 210), width=line_w_thin)
 
     composed = Image.alpha_composite(image, overlay).convert("RGB")
     return np.asarray(composed, dtype=np.uint8)
@@ -1220,6 +1580,7 @@ def _play_s4_reference(
     execution_joint_noise_std: float = 0.0,
     execution_joint_noise_smooth: float = 0.90,
     execution_noise_seed: int | None = None,
+    execution_control: str = "position",
     save_frame_indices=None,
     save_frame_dir: str | Path | None = None,
     save_frame_prefix: str = "s4_frame",
@@ -1461,6 +1822,345 @@ class S4PyBulletPlaybackSession:
         self.tracker.close()
 
 
+def _run_s4_torque_preload_execution(
+    env,
+    tracker: _UR5PoseTracker,
+    scene_ids: dict[str, object],
+    ref: np.ndarray,
+    *,
+    true_cutpoints: np.ndarray,
+    q_nominal_cmd: np.ndarray,
+    q_cmd: np.ndarray,
+    q_noise: np.ndarray,
+    target_tip_world: np.ndarray,
+    target_quat: np.ndarray,
+    steps_per_sample: int,
+    writer,
+    width: int,
+    height: int,
+    fps: float,
+    render_frame_stride: int,
+    video_end_hold_seconds: float,
+    realtime: bool,
+    use_gui: bool,
+    gui_hold_seconds: float,
+    normal_load_trace: np.ndarray | None,
+    visualize_normal_load: bool,
+    feature_overlay: bool,
+    feature_overlay_title: str | None,
+    frame_indices_to_save: set[int],
+    frame_save_dir: Path | None,
+    save_frame_prefix: str,
+) -> dict[str, Any]:
+    n = len(ref)
+    executed = np.zeros((n, 4), dtype=float)
+    contact_slider = np.zeros((n, 4), dtype=float)
+    realized_ee_world = np.zeros((n, 3), dtype=float)
+    realized_ee_quat = np.zeros((n, 4), dtype=float)
+    measured_load = np.zeros(n, dtype=float)
+    feature_surf_dist = np.zeros(n, dtype=float)
+    preload_force_cmd = np.zeros(n, dtype=float)
+    nominal_load = np.zeros(n, dtype=float) if normal_load_trace is None else np.asarray(normal_load_trace, dtype=float).reshape(-1)[:n].copy()
+    if nominal_load.size < n:
+        nominal_load = np.pad(nominal_load, (0, n - nominal_load.size), mode="constant")
+    preload_scale = float(getattr(env, "pybullet_torque_preload_scale", 1.0))
+    preload_max = float(getattr(env, "pybullet_torque_preload_max", 30.0))
+    preload_command = np.clip(preload_scale * np.maximum(nominal_load, 0.0), 0.0, preload_max)
+    use_contact_proxy = bool(getattr(env, "pybullet_torque_use_contact_proxy", True))
+    if use_contact_proxy:
+        q_track_nominal = np.asarray(q_nominal_cmd, dtype=float).copy()
+        q_track_cmd = np.clip(q_track_nominal + q_noise, tracker.q_lo[None, :], tracker.q_hi[None, :])
+        preload_base_indent = _preload_proxy_indent_trace(env, preload_command)
+    else:
+        q_track_nominal, q_track_cmd, preload_base_indent = _torque_preload_tracking_commands(
+            env,
+            tracker,
+            q_nominal_cmd,
+            q_noise,
+            target_tip_world,
+            target_quat,
+            preload_command,
+        )
+    preload_indent = np.asarray(preload_base_indent, dtype=float).copy()
+    q_meas = np.zeros_like(q_track_cmd)
+    qd_meas = np.zeros_like(q_track_cmd)
+    torque_cmd = np.zeros_like(q_track_cmd)
+    overlay_load = nominal_load.copy()
+    load_max = float(max(np.max(nominal_load) if nominal_load.size else 0.0, getattr(env, "normal_load_min", 1.0)))
+    load_visual_ids: list[int] = []
+    saved_frame_paths: list[str] = []
+    frame_count = 0
+
+    kp = float(getattr(env, "pybullet_torque_kp", 450.0))
+    kd = float(getattr(env, "pybullet_torque_kd", 70.0))
+    normal_world = _surface_normal(env)
+    arm_preload_scale = float(getattr(env, "pybullet_torque_arm_preload_scale", 0.0))
+    pin_slider_body = bool(getattr(env, "pybullet_torque_pin_slider_body_to_ee", True))
+    apply_external_preload = bool(getattr(env, "pybullet_torque_apply_external_preload", not use_contact_proxy))
+    interpolate_targets = bool(getattr(env, "pybullet_torque_substep_target_interp", True))
+    adaptive_gain = float(max(0.0, getattr(env, "pybullet_torque_preload_adaptive_indent_gain", 0.0)))
+    adaptive_max = float(max(0.0, getattr(env, "pybullet_torque_preload_adaptive_indent_max", 0.0)))
+    force_feedback_gain = float(max(0.0, getattr(env, "pybullet_torque_force_feedback_gain", 28.0)))
+    force_cmd_min = -float(max(0.0, getattr(env, "pybullet_torque_force_relief_max", 80.0)))
+    force_cmd_max = float(max(0.0, getattr(env, "pybullet_torque_force_command_max", 260.0)))
+    adaptive_indent = 0.0
+    load_feedback = 0.0
+    q_des_prev = q_track_cmd[0].copy()
+
+    tracker.reset_joint_state(q_track_cmd[0])
+    tracker.disable_default_motors()
+    _close_gripper_for_visual(tracker)
+    ee_pos, ee_quat = tracker.get_ee_pose()
+    slider_body, slider_constraint = _spawn_slider_contact_proxy(env, tracker, ref[0], scene_ids, initial_indent=0.0)
+    table_id = int(scene_ids["table"])
+    proxy_collision_enabled = False
+    if use_contact_proxy:
+        _set_proxy_table_collision(tracker, slider_body, table_id, enabled=False)
+    contact_slider[0] = _slider_state_from_body_pose(env, tracker, slider_body, float(ref[0, 3]))
+    executed[0] = _executed_slider_state_from_ee(env, tracker, ee_pos, ee_quat, float(ref[0, 3]))
+    feature_surf_dist[0] = abs(float(executed[0, 2]) - float(_surface_height(env, executed[0, :2][None, :])[0]))
+    realized_ee_world[0] = ee_pos
+    realized_ee_quat[0] = ee_quat
+    _set_slider_pose(env, tracker, scene_ids.get("slider_parts", scene_ids["slider"]), executed[0])
+
+    if use_gui:
+        p.resetDebugVisualizerCamera(
+            cameraDistance=float(getattr(env, 'pybullet_camera_distance', 0.78)),
+            cameraYaw=float(getattr(env, 'pybullet_camera_yaw', 78.0)),
+            cameraPitch=float(getattr(env, 'pybullet_camera_pitch', -34.0)),
+            cameraTargetPosition=list(getattr(env, 'pybullet_camera_target', (0.55, 0.0, 0.54))),
+            physicsClientId=tracker.client_id,
+        )
+
+    paused = False
+    for i in range(n):
+        while use_gui and paused:
+            if _space_was_triggered():
+                paused = False
+                break
+            time.sleep(0.05)
+        if use_gui and _space_was_triggered():
+            paused = True
+            continue
+
+        substep_loads = []
+        substep_force_cmds = []
+        q_last = q_track_cmd[i]
+        qd_last = np.zeros(6, dtype=float)
+        tau_last = np.zeros(6, dtype=float)
+        preload = float(preload_command[i])
+        force_cmd_last = 0.0
+        desired_indent = float(preload_base_indent[i]) + float(adaptive_indent if preload > 1e-8 and not use_contact_proxy else 0.0)
+        preload_indent[i] = desired_indent
+        if use_contact_proxy:
+            should_collide = bool(preload > 1e-8)
+            if should_collide:
+                _set_proxy_constraint_limit(env, tracker, slider_constraint, preload)
+            if should_collide != proxy_collision_enabled:
+                _set_proxy_table_collision(tracker, slider_body, table_id, enabled=should_collide)
+                proxy_collision_enabled = should_collide
+        if desired_indent > 0.0 and not use_contact_proxy:
+            try:
+                q_nom_i = tracker._run_pybullet_ik(
+                    target_tip_world[i] - normal_world * desired_indent,
+                    target_quat=target_quat[i],
+                    rest_q=q_des_prev,
+                )
+                q_track_nominal[i] = q_nom_i
+                q_track_cmd[i] = np.clip(q_nom_i + q_noise[i], tracker.q_lo, tracker.q_hi)
+            except Exception:
+                pass
+        q_des_start = q_des_prev.copy()
+        q_des_end = q_track_cmd[i].copy()
+        qd_des_i = (q_des_end - q_des_start) / max(float(env.dt), 1e-12) if i > 0 else np.zeros(6, dtype=float)
+        n_substeps = max(1, int(steps_per_sample))
+        for substep_idx in range(n_substeps):
+            if interpolate_targets and i > 0:
+                alpha_sub = float(substep_idx + 1) / float(n_substeps)
+                q_des_sub = (1.0 - alpha_sub) * q_des_start + alpha_sub * q_des_end
+            else:
+                q_des_sub = q_des_end
+            q_now, qd_now = tracker.get_joint_state()
+            qdd_cmd = kp * (q_des_sub - q_now) + kd * (qd_des_i - qd_now)
+            tau_track = _arm_inverse_dynamics(tracker, q_now, qd_now, qdd_cmd)
+            load_error_sub = float(preload) - float(load_feedback)
+            if use_contact_proxy:
+                force_cmd_last = 0.0
+            else:
+                force_cmd_last = float(
+                    np.clip(
+                        float(arm_preload_scale) * float(preload) + float(force_feedback_gain) * load_error_sub,
+                        force_cmd_min,
+                        force_cmd_max,
+                    )
+                )
+            force_world = -force_cmd_last * normal_world
+            substep_force_cmds.append(force_cmd_last)
+            tau_preload = _arm_preload_torque(env, tracker, force_world) if abs(force_cmd_last) > 1e-12 else np.zeros(6, dtype=float)
+            tau_last = _command_arm_torque(env, tracker, tau_track + tau_preload)
+            if pin_slider_body and int(slider_constraint) < 0:
+                ee_now_pos, ee_now_quat = tracker.get_ee_pose()
+                pinned_state = _executed_slider_state_from_ee(env, tracker, ee_now_pos, ee_now_quat, float(ref[i, 3]))
+                proxy_state = _contact_proxy_state(env, pinned_state, desired_indent) if use_contact_proxy and preload > 1e-8 else pinned_state
+                _set_slider_pose(env, tracker, slider_body, proxy_state)
+                p.resetBaseVelocity(
+                    int(slider_body),
+                    linearVelocity=[0.0, 0.0, 0.0],
+                    angularVelocity=[0.0, 0.0, 0.0],
+                    physicsClientId=tracker.client_id,
+                )
+            if preload > 1e-8 and apply_external_preload:
+                body_pos, _body_quat = p.getBasePositionAndOrientation(slider_body, physicsClientId=tracker.client_id)
+                p.applyExternalForce(
+                    int(slider_body),
+                    -1,
+                    [float(v) for v in force_world],
+                    [float(v) for v in body_pos],
+                    flags=p.WORLD_FRAME,
+                    physicsClientId=tracker.client_id,
+                )
+            p.stepSimulation(physicsClientId=tracker.client_id)
+            load_feedback, _contact_surf_dist = _read_table_contact_metrics(tracker, slider_body, table_id)
+            substep_loads.append(load_feedback)
+            q_last, qd_last = tracker.get_joint_state()
+        q_des_prev = q_des_end.copy()
+
+        q_meas[i] = q_last
+        qd_meas[i] = qd_last
+        torque_cmd[i] = tau_last
+        preload_force_cmd[i] = float(np.mean(substep_force_cmds)) if substep_force_cmds else 0.0
+        ee_pos, ee_quat = tracker.get_ee_pose()
+        realized_ee_world[i] = ee_pos
+        realized_ee_quat[i] = ee_quat
+        contact_slider[i] = _slider_state_from_body_pose(env, tracker, slider_body, float(ref[i, 3]))
+        measured_load[i] = float(np.mean(substep_loads)) if substep_loads else 0.0
+        executed[i] = _executed_slider_state_from_ee(env, tracker, ee_pos, ee_quat, float(ref[i, 3]))
+        feature_surf_dist[i] = abs(float(executed[i, 2]) - float(_surface_height(env, executed[i, :2][None, :])[0]))
+        _set_slider_pose(env, tracker, scene_ids.get("slider_parts", scene_ids["slider"]), executed[i])
+        if preload > 1e-8 and adaptive_gain > 0.0 and adaptive_max > 0.0:
+            load_error = float(preload) - float(measured_load[i])
+            adaptive_indent = float(np.clip(adaptive_indent + adaptive_gain * load_error, 0.0, adaptive_max))
+        else:
+            adaptive_indent = 0.0
+        overlay_load[: i + 1] = measured_load[: i + 1]
+        load_max = max(load_max, float(np.max(measured_load[: i + 1])) if i >= 0 else 0.0)
+
+        if bool(visualize_normal_load):
+            load_visual_ids = _draw_normal_load_arrow(
+                env,
+                tracker,
+                executed[i],
+                load_value=float(measured_load[i]),
+                load_max=max(load_max, 1e-6),
+                old_item_ids=load_visual_ids,
+                visual_bodies=scene_ids.get("normal_load_arrow"),
+            )
+
+        write_frame = writer is not None and i % max(int(render_frame_stride), 1) == 0
+        save_still = int(i) in frame_indices_to_save and frame_save_dir is not None
+        if write_frame or save_still:
+            frame = _camera_frame(env, tracker, width=width, height=height)
+            if bool(visualize_normal_load):
+                frame = _overlay_normal_force_label(frame, env, tracker, executed[i], load_value=float(measured_load[i]), load_max=max(load_max, 1e-6))
+            frame = _overlay_s4_stage_label(frame, current_index=i, total_length=n, true_cutpoints=true_cutpoints)
+            if bool(feature_overlay):
+                frame = _overlay_constraint_feature_panel(
+                    frame,
+                    env,
+                    executed[: i + 1],
+                    current_index=i,
+                    total_length=n,
+                    true_cutpoints=true_cutpoints,
+                    normal_load_trace=overlay_load,
+                    surf_dist_trace=feature_surf_dist,
+                    ylim_trajectory=ref,
+                    title=str(feature_overlay_title or "Executed features"),
+                )
+            if save_still:
+                frame_path = _save_rgb_frame(
+                    frame,
+                    frame_save_dir / f"{str(save_frame_prefix)}_frame_{int(i):06d}.png",
+                    crop_aspect=4.0 / 3.0,
+                )
+                saved_frame_paths.append(str(frame_path.resolve()))
+            if write_frame:
+                writer.append_data(frame)
+                frame_count += 1
+        if use_gui and bool(realtime):
+            time.sleep(1.0 / max(float(fps), 1e-6))
+
+    if use_gui:
+        hold_seconds = float(gui_hold_seconds)
+        if hold_seconds < 0.0:
+            while True:
+                if _space_was_triggered():
+                    break
+                time.sleep(0.1)
+        elif hold_seconds > 0.0:
+            time.sleep(hold_seconds)
+    if writer is not None and float(video_end_hold_seconds) > 0.0 and n > 0:
+        last_idx = n - 1
+        hold_frames = int(round(float(video_end_hold_seconds) * float(fps)))
+        for _ in range(max(0, hold_frames)):
+            frame = _camera_frame(env, tracker, width=width, height=height)
+            if bool(visualize_normal_load):
+                frame = _overlay_normal_force_label(frame, env, tracker, executed[last_idx], load_value=float(measured_load[last_idx]), load_max=max(load_max, 1e-6))
+            frame = _overlay_s4_stage_label(frame, current_index=last_idx, total_length=n, true_cutpoints=true_cutpoints)
+            if bool(feature_overlay):
+                frame = _overlay_constraint_feature_panel(
+                    frame,
+                    env,
+                    executed,
+                    current_index=last_idx,
+                    total_length=n,
+                    true_cutpoints=true_cutpoints,
+                    normal_load_trace=measured_load,
+                    surf_dist_trace=feature_surf_dist,
+                    ylim_trajectory=ref,
+                    title=str(feature_overlay_title or "Executed features"),
+                )
+            writer.append_data(frame)
+            frame_count += 1
+
+    _remove_debug_items(tracker, load_visual_ids)
+    return {
+        'trajectory': np.asarray(executed, dtype=float),
+        'contact_slider_trajectory': np.asarray(contact_slider, dtype=float),
+        'executed_surf_dist_trace': np.asarray(feature_surf_dist, dtype=float),
+        'linear_velocity': _finite_difference(executed[:, :3], float(env.dt)),
+        'angular_velocity': _finite_difference(executed[:, 3], float(env.dt)),
+        'joint_positions': np.asarray(q_meas, dtype=float),
+        'joint_velocities': np.asarray(qd_meas, dtype=float),
+        'joint_position_commands': np.asarray(q_track_cmd, dtype=float),
+        'joint_position_commands_nominal': np.asarray(q_track_nominal, dtype=float),
+        'joint_position_commands_planned': np.asarray(q_cmd, dtype=float),
+        'joint_position_commands_planned_nominal': np.asarray(q_nominal_cmd, dtype=float),
+        'joint_torque_commands': np.asarray(torque_cmd, dtype=float),
+        'execution_joint_noise': np.asarray(q_noise, dtype=float),
+        'true_cutpoints': np.asarray(true_cutpoints, dtype=int),
+        'reference_trajectory': np.asarray(ref[:, :4], dtype=float),
+        'reference_trajectory_world': np.asarray(target_tip_world, dtype=float),
+        'target_quaternions': np.asarray(target_quat, dtype=float),
+        'realized_ee_trajectory_world': np.asarray(realized_ee_world, dtype=float),
+        'realized_ee_quaternions': np.asarray(realized_ee_quat, dtype=float),
+        'normal_force_trace': np.asarray(measured_load, dtype=float),
+        'normal_load_trace': np.asarray(measured_load, dtype=float),
+        'measured_normal_force_trace': np.asarray(measured_load, dtype=float),
+        'measured_normal_load_trace': np.asarray(measured_load, dtype=float),
+        'preload_command_trace': np.asarray(preload_command, dtype=float),
+        'preload_force_command_trace': np.asarray(preload_force_cmd, dtype=float),
+        'preload_indent_trace': np.asarray(preload_indent, dtype=float),
+        'planned_normal_force_trace': np.asarray(nominal_load, dtype=float),
+        'planned_normal_load_trace': np.asarray(nominal_load, dtype=float),
+        'ik_position_error_world': np.linalg.norm(tracker.s5_to_world([_grasp_state(env, st)[:3] for st in executed]) - target_tip_world, axis=1),
+        'sim_dt': float(getattr(env, 'pybullet_sim_dt', 1.0 / 120.0)),
+        'steps_per_sample': int(steps_per_sample),
+        'robot_backend': 'ur5_pybullet_joint_torque_control_with_attached_contact_proxy',
+        'frames': int(frame_count),
+        'saved_frames': saved_frame_paths,
+    }
+
+
 def simulate_s4_demo_from_reference(
     env,
     *,
@@ -1483,6 +2183,7 @@ def simulate_s4_demo_from_reference(
     execution_joint_noise_std: float = 0.0,
     execution_joint_noise_smooth: float = 0.90,
     execution_noise_seed: int | None = None,
+    execution_control: str = "position",
     save_frame_indices=None,
     save_frame_dir: str | Path | None = None,
     save_frame_prefix: str = "s4_frame",
@@ -1530,6 +2231,36 @@ def simulate_s4_demo_from_reference(
         load_trace = None if normal_load_trace is None else np.asarray(normal_load_trace, dtype=float).reshape(-1)
         load_max = float(np.max(load_trace)) if load_trace is not None and load_trace.size > 0 else float(getattr(env, 'normal_load_min', 1.0))
         load_visual_ids: list[int] = []
+        if str(execution_control).strip().lower() in {"torque", "torque_preload"}:
+            return _run_s4_torque_preload_execution(
+                env,
+                tracker,
+                scene_ids,
+                ref,
+                true_cutpoints=true_cutpoints,
+                q_nominal_cmd=q_nominal_cmd,
+                q_cmd=q_cmd,
+                q_noise=q_noise,
+                target_tip_world=target_tip_world,
+                target_quat=target_quat,
+                steps_per_sample=int(steps_per_sample),
+                writer=writer,
+                width=int(width),
+                height=int(height),
+                fps=float(fps),
+                render_frame_stride=int(render_frame_stride),
+                video_end_hold_seconds=float(video_end_hold_seconds),
+                realtime=bool(realtime),
+                use_gui=bool(use_gui),
+                gui_hold_seconds=float(gui_hold_seconds),
+                normal_load_trace=load_trace,
+                visualize_normal_load=bool(visualize_normal_load),
+                feature_overlay=bool(feature_overlay),
+                feature_overlay_title=feature_overlay_title,
+                frame_indices_to_save=frame_indices_to_save,
+                frame_save_dir=frame_save_dir,
+                save_frame_prefix=str(save_frame_prefix),
+            )
         tracker.reset_joint_state(q_cmd[0])
         _close_gripper_for_visual(tracker)
         tracker.command_joint_target(q_cmd[0])
@@ -1785,7 +2516,7 @@ class _S4SlideInsertBase:
             {"id": 3, "name": "speed", "description": "Planar speed magnitude"},
             {"id": 4, "name": "noise", "description": "Auxiliary irrelevant feature"},
             {"id": 5, "name": "start_dist", "description": "Distance to the demo start pose in the x-z plane"},
-            {"id": 6, "name": "insertion_err", "description": "Remaining x-direction distance to the slot target"},
+            {"id": 6, "name": "insert_err", "description": "Remaining x-direction distance to the slot target"},
         ]
 
     def get_true_constraints(self):
@@ -2738,9 +3469,9 @@ class _S4SlideInsertBase:
                 force = self._estimate_force_from_state(traj)
         start_xy = np.asarray(traj[0, :2], dtype=float)
         start_dist = np.linalg.norm(np.asarray(traj[:, :2], dtype=float) - start_xy[None, :], axis=1)
-        insertion_err = float(self.slot_x) - np.asarray(traj[:, 0], dtype=float)
+        insert_err = float(self.slot_x) - np.asarray(traj[:, 0], dtype=float)
         noise = 0.35 * np.sin(0.19 * np.arange(T)) + 0.15 * np.cos(0.07 * np.arange(T))
-        F = np.c_[surf_dist, force, orient_err, speed, noise, start_dist, insertion_err]
+        F = np.c_[surf_dist, force, orient_err, speed, noise, start_dist, insert_err]
         return F if feat_ids is None else F[:, feat_ids]
 
 
@@ -2760,7 +3491,8 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         clearance_target: float = 0.0,
         clearance_align_max: float = 0.006,
         clearance_insert_max: float = 0.0035,
-        normal_load_min: float = 0.40,
+        normal_load_min: float = 4.0,
+        normal_load_scale: float = 10.0,
         rollout_backend: str = "analytic",
         observation_backend: str | None = None,
         pybullet_world_center=(0.55, 0.0, 0.52),
@@ -2780,6 +3512,37 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         pybullet_ur5_position_gain: float = 0.08,
         pybullet_ur5_velocity_gain: float = 1.0,
         pybullet_ur5_max_force: float = 500.0,
+        pybullet_torque_kp: float = 450.0,
+        pybullet_torque_kd: float = 70.0,
+        pybullet_torque_limit: float = 500.0,
+        pybullet_torque_substep_target_interp: bool = True,
+        pybullet_torque_arm_preload_scale: float = 1.0,
+        pybullet_torque_preload_scale: float = 1.0,
+        pybullet_torque_preload_max: float = 30.0,
+        pybullet_torque_preload_indent_min: float = 0.0,
+        pybullet_torque_preload_indent_max: float = 0.014,
+        pybullet_torque_preload_indent_per_newton: float = 0.0009,
+        pybullet_torque_preload_adaptive_indent_gain: float = 0.0,
+        pybullet_torque_preload_adaptive_indent_max: float = 0.014,
+        pybullet_torque_force_feedback_gain: float = 28.0,
+        pybullet_torque_force_relief_max: float = 80.0,
+        pybullet_torque_force_command_max: float = 260.0,
+        pybullet_torque_use_contact_proxy: bool = True,
+        pybullet_torque_contact_proxy_clearance: float = 0.0,
+        pybullet_torque_apply_external_preload: bool = False,
+        pybullet_torque_slider_mass: float = 0.20,
+        pybullet_torque_slider_lateral_friction: float = 0.65,
+        pybullet_torque_slider_spinning_friction: float = 0.02,
+        pybullet_torque_slider_rolling_friction: float = 0.01,
+        pybullet_torque_contact_stiffness: float = 7000.0,
+        pybullet_torque_contact_damping: float = 30.0,
+        pybullet_torque_slider_constraint_force: float = 1000000.0,
+        pybullet_torque_slider_constraint_erp: float = 0.0,
+        pybullet_torque_slider_constraint_force_min: float = 2.5,
+        pybullet_torque_slider_constraint_force_threshold: float = 5.0,
+        pybullet_torque_slider_constraint_force_per_newton: float = 5.0,
+        pybullet_torque_pin_slider_body_to_ee: bool = True,
+        pybullet_torque_contact_distance_tol: float = 1e-5,
         pybullet_s4_track_orientation: bool = True,
         pybullet_visualize_normal_load: bool = False,
         pybullet_normal_load_arrow_scale: float = 0.055,
@@ -2834,6 +3597,7 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         }
         base_kwargs = dict(realistic_defaults)
         base_kwargs.update(kwargs)
+        self.normal_load_scale = float(normal_load_scale)
         self.slot_half_width = float(slot_half_width)
         self.clearance_target = float(clearance_target)
         self.clearance_align_max = float(clearance_align_max)
@@ -2870,6 +3634,37 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         self.pybullet_ur5_position_gain = float(pybullet_ur5_position_gain)
         self.pybullet_ur5_velocity_gain = float(pybullet_ur5_velocity_gain)
         self.pybullet_ur5_max_force = float(pybullet_ur5_max_force)
+        self.pybullet_torque_kp = float(pybullet_torque_kp)
+        self.pybullet_torque_kd = float(pybullet_torque_kd)
+        self.pybullet_torque_limit = float(pybullet_torque_limit)
+        self.pybullet_torque_substep_target_interp = bool(pybullet_torque_substep_target_interp)
+        self.pybullet_torque_arm_preload_scale = float(pybullet_torque_arm_preload_scale)
+        self.pybullet_torque_preload_scale = float(pybullet_torque_preload_scale)
+        self.pybullet_torque_preload_max = float(pybullet_torque_preload_max)
+        self.pybullet_torque_preload_indent_min = float(pybullet_torque_preload_indent_min)
+        self.pybullet_torque_preload_indent_max = float(pybullet_torque_preload_indent_max)
+        self.pybullet_torque_preload_indent_per_newton = float(pybullet_torque_preload_indent_per_newton)
+        self.pybullet_torque_preload_adaptive_indent_gain = float(pybullet_torque_preload_adaptive_indent_gain)
+        self.pybullet_torque_preload_adaptive_indent_max = float(pybullet_torque_preload_adaptive_indent_max)
+        self.pybullet_torque_force_feedback_gain = float(pybullet_torque_force_feedback_gain)
+        self.pybullet_torque_force_relief_max = float(pybullet_torque_force_relief_max)
+        self.pybullet_torque_force_command_max = float(pybullet_torque_force_command_max)
+        self.pybullet_torque_use_contact_proxy = bool(pybullet_torque_use_contact_proxy)
+        self.pybullet_torque_contact_proxy_clearance = float(pybullet_torque_contact_proxy_clearance)
+        self.pybullet_torque_apply_external_preload = bool(pybullet_torque_apply_external_preload)
+        self.pybullet_torque_slider_mass = float(pybullet_torque_slider_mass)
+        self.pybullet_torque_slider_lateral_friction = float(pybullet_torque_slider_lateral_friction)
+        self.pybullet_torque_slider_spinning_friction = float(pybullet_torque_slider_spinning_friction)
+        self.pybullet_torque_slider_rolling_friction = float(pybullet_torque_slider_rolling_friction)
+        self.pybullet_torque_contact_stiffness = float(pybullet_torque_contact_stiffness)
+        self.pybullet_torque_contact_damping = float(pybullet_torque_contact_damping)
+        self.pybullet_torque_slider_constraint_force = float(pybullet_torque_slider_constraint_force)
+        self.pybullet_torque_slider_constraint_erp = float(pybullet_torque_slider_constraint_erp)
+        self.pybullet_torque_slider_constraint_force_min = float(pybullet_torque_slider_constraint_force_min)
+        self.pybullet_torque_slider_constraint_force_threshold = float(pybullet_torque_slider_constraint_force_threshold)
+        self.pybullet_torque_slider_constraint_force_per_newton = float(pybullet_torque_slider_constraint_force_per_newton)
+        self.pybullet_torque_pin_slider_body_to_ee = bool(pybullet_torque_pin_slider_body_to_ee)
+        self.pybullet_torque_contact_distance_tol = float(pybullet_torque_contact_distance_tol)
         self.pybullet_s4_track_orientation = bool(pybullet_s4_track_orientation)
         self.pybullet_visualize_normal_load = bool(pybullet_visualize_normal_load)
         self.pybullet_normal_load_arrow_scale = float(pybullet_normal_load_arrow_scale)
@@ -2906,56 +3701,62 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
     def get_feature_schema(self):
         return [
             {"id": 0, "name": "surf_dist", "description": "Distance to the table/guide surface"},
-            {"id": 1, "name": "centerline_dist", "description": "Absolute lateral distance from the slot centerline"},
+            {"id": 1, "name": "center_dist", "description": "Absolute lateral distance from the slot centerline"},
             {"id": 2, "name": "orient_err", "description": "Absolute angle error relative to the slot"},
             {"id": 3, "name": "speed", "description": "3D translational speed"},
             {"id": 4, "name": "angular_speed", "description": "Absolute angular speed"},
-            {"id": 5, "name": "normal_load", "description": "Normal preload applied against the guide"},
+            {"id": 5, "name": "normal_force", "description": "Measured normal contact force against the guide"},
             {"id": 6, "name": "noise", "description": "Auxiliary irrelevant feature"},
             {"id": 7, "name": "start_dist", "description": "Distance to the demo start pose"},
-            {"id": 8, "name": "insertion_err", "description": "Remaining x-direction distance to the slot target"},
+            {"id": 8, "name": "insert_err", "description": "Remaining x-direction distance to the slot target"},
         ]
 
     def get_overlay_feature_names(self):
         return [
             "surf_dist",
-            "centerline_dist",
+            "center_dist",
             "orient_err",
             "speed",
-            "normal_load",
+            "normal_force",
             "start_dist",
-            "insertion_err",
+            "insert_err",
         ]
 
     def get_true_constraints(self):
+        load_scale = float(getattr(self, "normal_load_scale", 1.0))
+        normal_force_stage2 = load_scale * float(self.f_contact_min)
+        normal_force_stage3 = load_scale * float(self.f_slide_min)
+        normal_force_stage4 = load_scale * float(self.f_insert_min)
         return {
             "surface_target": 0.0,
             "clearance_target": float(self.clearance_target),
             "clearance_align_max": float(self.clearance_align_max),
             "clearance_insert_max": float(self.clearance_insert_max),
-            "normal_load_stage2_min": float(self.f_contact_min),
-            "normal_load_stage3_min": float(self.f_slide_min),
-            "normal_load_stage4_min": float(self.f_insert_min),
+            "normal_force_stage2_min": normal_force_stage2,
+            "normal_force_stage3_min": normal_force_stage3,
+            "normal_force_stage4_min": normal_force_stage4,
             "v_align_max": float(self.v_align_max),
             "v_insert_max": float(self.v_insert_max),
             "v_seat_max": float(self.v_seat_max),
+            "orient_err_max_stage3": float(self.orient_err_max_stage3),
+            "orient_err_max_stage4": float(self.orient_err_max_stage4),
             "orient_aligned_max": float(self.orient_err_max_stage3),
         }
 
     def get_constraint_specs(self):
         return [
             {"feature_name": "surf_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_target"},
-            {"feature_name": "centerline_dist", "stage": 1, "semantics": "target_value", "oracle_key": "clearance_target"},
-            {"feature_name": "normal_load", "stage": 1, "semantics": "lower_bound", "oracle_key": "normal_load_stage2_min"},
+            {"feature_name": "center_dist", "stage": 1, "semantics": "target_value", "oracle_key": "clearance_target"},
+            {"feature_name": "normal_force", "stage": 1, "semantics": "lower_bound", "oracle_key": "normal_force_stage2_min"},
             {"feature_name": "surf_dist", "stage": 2, "semantics": "target_value", "oracle_key": "surface_target"},
-            {"feature_name": "centerline_dist", "stage": 2, "semantics": "target_value", "oracle_key": "clearance_target"},
-            {"feature_name": "orient_err", "stage": 2, "semantics": "upper_bound", "oracle_key": "orient_aligned_max"},
-            {"feature_name": "normal_load", "stage": 2, "semantics": "lower_bound", "oracle_key": "normal_load_stage3_min"},
+            {"feature_name": "center_dist", "stage": 2, "semantics": "target_value", "oracle_key": "clearance_target"},
+            {"feature_name": "orient_err", "stage": 2, "semantics": "upper_bound", "oracle_key": "orient_err_max_stage3"},
+            {"feature_name": "normal_force", "stage": 2, "semantics": "lower_bound", "oracle_key": "normal_force_stage3_min"},
             {"feature_name": "speed", "stage": 2, "semantics": "upper_bound", "oracle_key": "v_insert_max"},
             {"feature_name": "surf_dist", "stage": 3, "semantics": "target_value", "oracle_key": "surface_target"},
-            {"feature_name": "centerline_dist", "stage": 3, "semantics": "target_value", "oracle_key": "clearance_target"},
-            {"feature_name": "orient_err", "stage": 3, "semantics": "upper_bound", "oracle_key": "orient_aligned_max"},
-            {"feature_name": "normal_load", "stage": 3, "semantics": "lower_bound", "oracle_key": "normal_load_stage4_min"},
+            {"feature_name": "center_dist", "stage": 3, "semantics": "target_value", "oracle_key": "clearance_target"},
+            {"feature_name": "orient_err", "stage": 3, "semantics": "upper_bound", "oracle_key": "orient_err_max_stage4"},
+            {"feature_name": "normal_force", "stage": 3, "semantics": "lower_bound", "oracle_key": "normal_force_stage4_min"},
             {"feature_name": "speed", "stage": 3, "semantics": "upper_bound", "oracle_key": "v_seat_max"},
         ]
 
@@ -2965,7 +3766,7 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
             "default_rollout_backend": self.rollout_backend,
             "default_observation_backend": self.observation_backend,
             "state_schema": ["x", "y", "z", "theta"],
-            "normal_load_semantics": "contact preload; controller/debug signal, not insertion push effort",
+            "normal_force_semantics": "measured normal contact force; controller/debug signal, not insertion push effort",
         }
 
     def sample_scene(self, seed=None, rng=None):
@@ -3123,7 +3924,13 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
     def _normal_load_profile(self, labels: np.ndarray, rng: np.random.RandomState | None = None):
         labels = np.asarray(labels, dtype=int)
         load = np.zeros(len(labels), dtype=float)
-        for stage_idx, base in [(1, self.normal_load_min), (2, 1.08 * self.normal_load_min), (3, 1.05 * self.normal_load_min)]:
+        true = self.get_true_constraints()
+        stage_bases = [
+            (1, float(true.get("normal_force_stage2_min", self.normal_load_min))),
+            (2, float(true.get("normal_force_stage3_min", self.normal_load_min))),
+            (3, float(true.get("normal_force_stage4_min", self.normal_load_min))),
+        ]
+        for stage_idx, base in stage_bases:
             mask = labels == stage_idx
             if not np.any(mask):
                 continue
@@ -3134,6 +3941,9 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
                 profile += self._smooth_noise(rng, n, 0.025 * base, kernel_size=5)
             load[mask] = np.maximum(0.92 * base, profile)
         return load
+
+    def _scale_normal_load_trace(self, normal_load: np.ndarray) -> np.ndarray:
+        return np.asarray(normal_load, dtype=float) * float(getattr(self, "normal_load_scale", 1.0))
 
     def apply_execution_normal_load_noise(self, normal_load: np.ndarray, *, noise_std: float = 0.0, noise_smooth: float = 0.85, seed=None):
         load = np.asarray(normal_load, dtype=float).reshape(-1)
@@ -3392,7 +4202,9 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
             0.98 * self.orient_err_max_stage4,
         )
 
-        normal_load = self._compute_force_signal(pos, theta, stage3_end_local[0], labels, rng, latents)
+        normal_load = self._scale_normal_load_trace(
+            self._compute_force_signal(pos, theta, stage3_end_local[0], labels, rng, latents)
+        )
         rng = np.random.RandomState(int(seed) + 100003)
         traj4 = self._lift_planar_demo_to_4d(pos, theta, labels, rng)
         return traj4, np.asarray(labels, dtype=int), normal_load
@@ -3432,8 +4244,11 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
                 save_frame_prefix=str(kwargs.get("save_frame_prefix", "s4_demo")),
             )
             sim["planned_trajectory"] = traj4
+            sim["normal_force_trace"] = execution_normal_load
             sim["normal_load_trace"] = execution_normal_load
+            sim["planned_normal_force_trace"] = normal_load
             sim["planned_normal_load_trace"] = normal_load
+            sim["execution_normal_force_noise"] = load_noise
             sim["execution_normal_load_noise"] = load_noise
             sim["true_labels"] = labels
             return sim
@@ -3442,6 +4257,7 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
             "planned_trajectory": traj4,
             "true_cutpoints": cutpoints,
             "true_labels": labels,
+            "normal_force_trace": normal_load,
             "normal_load_trace": normal_load,
         }
 
@@ -3460,7 +4276,12 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         l1, l2, l3, l4 = lengths
 
         def cv(key: str, default: float) -> float:
-            value = dict(constraint_values or {}).get(key)
+            values = dict(constraint_values or {})
+            value = None
+            for alias in _constraint_key_aliases(key):
+                if alias in values:
+                    value = values[alias]
+                    break
             if value is None or not np.isfinite(float(value)):
                 return float(default)
             return float(value)
@@ -3468,9 +4289,9 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         surf2 = cv("s2:surf_dist", float(self.true_constraints.get("surface_target", 0.0)))
         surf3 = cv("s3:surf_dist", surf2)
         surf4 = cv("s4:surf_dist", surf3)
-        center2 = cv("s2:centerline_dist", float(self.clearance_target))
-        center3 = cv("s3:centerline_dist", center2)
-        center4 = cv("s4:centerline_dist", center3)
+        center2 = cv("s2:center_dist", float(self.clearance_target))
+        center3 = cv("s3:center_dist", center2)
+        center4 = cv("s4:center_dist", center3)
         theta2 = cv("s2:orient_err", float(self.theta_stage2_end))
         theta3 = cv("s3:orient_err", theta2)
         theta4 = cv("s4:orient_err", theta3)
@@ -3508,16 +4329,17 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         labels = np.repeat(np.arange(4), [l1, l2, l3, l4])
         cutpoints = np.where(np.diff(labels) != 0)[0].astype(int)
 
-        normal_load = np.zeros(len(traj), dtype=float)
-        for stage_idx, key in [(1, "s2:normal_load"), (2, "s3:normal_load"), (3, "s4:normal_load")]:
-            normal_load[labels == int(stage_idx)] = max(cv(key, float(self.normal_load_min)), 0.0)
+        normal_force = np.zeros(len(traj), dtype=float)
+        for stage_idx, key in [(1, "s2:normal_force"), (2, "s3:normal_force"), (3, "s4:normal_force")]:
+            normal_force[labels == int(stage_idx)] = max(cv(key, float(self.normal_load_min)), 0.0)
 
         return {
             "trajectory": traj,
             "planned_trajectory": traj,
             "true_cutpoints": cutpoints,
             "true_labels": labels,
-            "normal_load_trace": normal_load,
+            "normal_force_trace": normal_force,
+            "normal_load_trace": normal_force,
             "constraint_values": dict(constraint_values or {}),
             "stage_lengths": {"stage1": int(l1), "stage2": int(l2), "stage3": int(l3), "stage4": int(l4)},
             "planner": "s4_clean_geometric_insert_planner",
@@ -3528,7 +4350,7 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
     def execute_plan_pybullet(self, scene, planned_episode, **kwargs):
         traj = np.asarray(planned_episode["trajectory"], dtype=float)
         cutpoints = np.asarray(planned_episode.get("true_cutpoints", []), dtype=int)
-        normal_load = np.asarray(planned_episode.get("normal_load_trace", np.zeros(len(traj))), dtype=float)
+        normal_load = np.asarray(planned_episode.get("normal_force_trace", planned_episode.get("normal_load_trace", np.zeros(len(traj)))), dtype=float)
         execution_normal_load, load_noise = self.apply_execution_normal_load_noise(
             normal_load,
             noise_std=float(kwargs.get("execution_normal_load_noise_std", 0.0)),
@@ -3556,14 +4378,25 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
             execution_joint_noise_std=float(kwargs.get("execution_joint_noise_std", 0.0)),
             execution_joint_noise_smooth=float(kwargs.get("execution_joint_noise_smooth", 0.90)),
             execution_noise_seed=kwargs.get("execution_noise_seed", None),
+            execution_control=str(kwargs.get("execution_control", "position")),
             save_frame_indices=kwargs.get("save_frame_indices", None),
             save_frame_dir=kwargs.get("save_frame_dir", None),
             save_frame_prefix=str(kwargs.get("save_frame_prefix", "s4_planned")),
         )
         sim["planned_trajectory"] = traj
-        sim["normal_load_trace"] = execution_normal_load
+        applied_load = np.asarray(sim.get("normal_force_trace", sim.get("normal_load_trace", execution_normal_load)), dtype=float)
+        measured_load = np.asarray(sim.get("measured_normal_force_trace", sim.get("measured_normal_load_trace", applied_load)), dtype=float)
+        sim["normal_force_trace"] = applied_load
+        sim["normal_load_trace"] = applied_load
+        sim["measured_normal_force_trace"] = measured_load
+        sim["measured_normal_load_trace"] = measured_load
+        sim["preload_command_trace"] = np.asarray(sim.get("preload_command_trace", execution_normal_load), dtype=float)
+        sim["planned_normal_force_trace"] = normal_load
         sim["planned_normal_load_trace"] = normal_load
-        sim["execution_normal_load_noise"] = load_noise
+        preload_command = np.asarray(sim.get("preload_command_trace", execution_normal_load), dtype=float)
+        normal_force_noise = preload_command - normal_load if preload_command.shape == normal_load.shape else load_noise
+        sim["execution_normal_force_noise"] = normal_force_noise
+        sim["execution_normal_load_noise"] = normal_force_noise
         sim["true_labels"] = np.asarray(planned_episode.get("true_labels", []), dtype=int)
         sim["planner"] = str(planned_episode.get("planner", "s4_clean_geometric_insert_planner"))
         sim["planned_constraint_values"] = dict(planned_episode.get("constraint_values", {}))
@@ -3571,7 +4404,7 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
 
     def compute_observation(self, latent_rollout, scene, backend=None):
         traj = np.asarray(latent_rollout["trajectory"], dtype=float)
-        load = latent_rollout.get("normal_load_trace")
+        load = latent_rollout.get("normal_force_trace", latent_rollout.get("normal_load_trace"))
         if load is not None:
             self.register_normal_load_trace(traj, np.asarray(load, dtype=float))
         features = np.asarray(self.compute_all_features_matrix(traj), dtype=float)
@@ -3586,14 +4419,27 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         }
         for key in (
             "planned_trajectory",
+            "contact_slider_trajectory",
             "reference_trajectory",
+            "normal_force_trace",
             "normal_load_trace",
             "joint_positions",
             "joint_velocities",
             "joint_position_commands",
             "joint_position_commands_nominal",
+            "joint_position_commands_planned",
+            "joint_position_commands_planned_nominal",
+            "joint_torque_commands",
             "execution_joint_noise",
+            "planned_normal_force_trace",
             "planned_normal_load_trace",
+            "measured_normal_force_trace",
+            "measured_normal_load_trace",
+            "preload_command_trace",
+            "preload_force_command_trace",
+            "preload_indent_trace",
+            "executed_surf_dist_trace",
+            "execution_normal_force_noise",
             "execution_normal_load_noise",
             "reference_trajectory_world",
             "realized_ee_trajectory_world",
@@ -3606,6 +4452,22 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         ):
             if key in latent_rollout:
                 out[key] = latent_rollout[key]
+        if "normal_force_trace" not in out and "normal_load_trace" in out:
+            out["normal_force_trace"] = out["normal_load_trace"]
+        if "normal_load_trace" not in out and "normal_force_trace" in out:
+            out["normal_load_trace"] = out["normal_force_trace"]
+        if "planned_normal_force_trace" not in out and "planned_normal_load_trace" in out:
+            out["planned_normal_force_trace"] = out["planned_normal_load_trace"]
+        if "planned_normal_load_trace" not in out and "planned_normal_force_trace" in out:
+            out["planned_normal_load_trace"] = out["planned_normal_force_trace"]
+        if "measured_normal_force_trace" not in out and "measured_normal_load_trace" in out:
+            out["measured_normal_force_trace"] = out["measured_normal_load_trace"]
+        if "measured_normal_load_trace" not in out and "measured_normal_force_trace" in out:
+            out["measured_normal_load_trace"] = out["measured_normal_force_trace"]
+        if "execution_normal_force_noise" not in out and "execution_normal_load_noise" in out:
+            out["execution_normal_force_noise"] = out["execution_normal_load_noise"]
+        if "execution_normal_load_noise" not in out and "execution_normal_force_noise" in out:
+            out["execution_normal_load_noise"] = out["execution_normal_force_noise"]
         return out
 
     def compute_all_features_matrix(self, traj: np.ndarray, feat_ids=None) -> np.ndarray:
@@ -3625,24 +4487,24 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         angular_speed = np.abs(omega)
         surf_dist = np.abs(xyz[:, 2] - self.surface_height(xyz[:, :2]))
         rail_proj = self.project_to_rail(xyz[:, :2])
-        centerline_dist = np.asarray(rail_proj["dist"], dtype=float)
+        center_dist = np.asarray(rail_proj["dist"], dtype=float)
         orient_err = np.abs(self._wrap_to_pi(theta - np.asarray(rail_proj["angle"], dtype=float)))
         normal_load = self._lookup_cached_normal_load_trace(traj)
         if normal_load is None:
             normal_load = np.where(surf_dist < 0.004, self.normal_load_min, 0.0)
         start_dist = np.linalg.norm(xyz - xyz[0][None, :], axis=1)
-        insertion_err = np.maximum(float(self.slot_x) - xyz[:, 0], 0.0)
+        insert_err = np.maximum(float(self.slot_x) - xyz[:, 0], 0.0)
         noise = 0.35 * np.sin(0.19 * np.arange(T)) + 0.15 * np.cos(0.07 * np.arange(T))
         F = np.c_[
             surf_dist,
-            centerline_dist,
+            center_dist,
             orient_err,
             speed,
             angular_speed,
             normal_load,
             noise,
             start_dist,
-            insertion_err,
+            insert_err,
         ]
         return F if feat_ids is None else F[:, feat_ids]
 

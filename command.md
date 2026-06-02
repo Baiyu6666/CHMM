@@ -97,25 +97,31 @@ python experiments/collect_swcl_paper_figures.py  --demo-map S3ObsAvoid:7,S4Slid
 ## S5 Render
 
 ```bash
-python experiments/render_s5_demonstrations.py   --n-demos 3   --seed 127   --gui 1   --fps 10 --outdir outputs/swcl/videos/s5_demonstrations --playback-speed 1.5
+python experiments/render_s5_demonstrations.py   --n-demos 3   --seed 127   --gui 1   --fps 10 --width 1360 --height 900 --outdir outputs/swcl/videos/s5_demonstrations --playback-speed 1.5   --render-frame-stride 1 
+
 ```
 
 ```bash
 python experiments/render_s5_planned_trajectory.py \
   --constraints-json outputs/swcl/S5SphereInspect/method_seed_000/constraints.json \
-  --constraint-source target \
+  --constraint-source learned \
   --gui 1 \
   --fps 10 \
+  --width 1360 \
+  --height 900 \
   --outdir outputs/swcl/videos/s5_planned_render \
   --render-frame-stride 1 \
   --feature-overlay 1 \
-  --save-frame-indices 10,50,90,115,130 
+  --n-plans 2 \
+  --save-frame-indices 10,50,90,115,130 \
+    --render-frame-stride 20
+
 ```
 
 ## S4 Demonstration Render
 
 ```bash
-python experiments/render_s4_demonstrations.py   --n-demos 1   --seed 7   --outdir outputs/swcl/videos/s4_demonstrations   --gui 0   --fps 20    --feature-overlay 0  --save-frame-indices 0,50,100,130 
+python experiments/render_s4_demonstrations.py   --n-demos 2   --seed 7   --outdir outputs/swcl/videos/s4_demonstrations   --gui 1   --fps 20   --camera-target 0.72,0.14,0.54   --feature-overlay 1 
 
 ```
 
@@ -128,54 +134,35 @@ python experiments/render_s4_planned_trajectory.py   --constraints-json outputs/
 ```bash
 python experiments/render_s4_planned_trajectory.py \
   --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json \
-  --constraint-source target \
+  --constraint-source learned \
   --rail-shape sine \
   --rail-bend-amp 0.03 \
   --gui 0 \
   --fps 20 \
+  --width 1360 \
+  --height 900 \
+  --camera-target 0.72,0.14,0.54 \
   --outdir outputs/swcl/videos/s4_transfer_curve_guide \
-  --feature-overlay 0 \
-    --n-plans 3 \
-  --save-frame-indices 0,50,100,130 
+  --feature-overlay 1 \
+  --execution-control torque_preload \
+  --n-plans 1 \
+  --render-frame-stride 1
+#  --save-frame-indices 0,50,100,130 
 
 ```
 
 ```bash
 python experiments/render_s4_planned_trajectory.py \
   --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json \
-  --constraint-source target \
+  --constraint-source learned \
   --rail-shape straight \
   --surface-tilt-x 0.2 \
-  --gui 0 \
+  --gui 1 \
   --fps 20 \
   --outdir outputs/swcl/videos/s4_transfer_tilted_table \
-  --feature-overlay 0 \
-    --n-plans 3 \
-  --save-frame-indices 0,50,100,130
+  --feature-overlay 1 \
+  --n-plans 1 \
+  --render-frame-stride 1
+
+#  --save-frame-indices 0,50,100,130
 ```
-
-## Paper Wording: Active Constraints
-
-在 paper 里应该把 claim 收窄成 active / behavior-shaping constraints。这不是坏事，反而更严谨。
-
-可以这样写：
-
-> We aim to infer stage-wise constraints that are active in, and therefore shape, the demonstrated behavior. In this sense, feature relevance is evidence-based: a feature is considered relevant for a stage when the demonstrations exhibit statistical signatures consistent with an equality or inequality constraint on that feature.
-
-然后马上说明不可辨识性：
-
-> Constraints that are valid for the task but remain inactive in the demonstrations are generally not identifiable from observation alone. For example, a loose upper bound on speed may be physically valid, but if the demonstrated motion never approaches the bound, the data cannot distinguish this constraint from an unconstrained low-speed behavior induced by the stage geometry.
-
-关于 relevant feature，可以写成：
-
-> Therefore, our learned relevance masks should be interpreted as identifying features whose constraints are active in the demonstrations, rather than enumerating all possible task constraints.
-
-如果你要放在 limitations：
-
-> A limitation of our formulation is that inactive or weakly active inequality constraints may be classified as irrelevant, even when they are valid task constraints. This is an inherent ambiguity in learning constraints from demonstrations: without interventions, failed attempts, or demonstrations near the boundary, loose constraints leave little statistical evidence in the observed trajectories.
-
-更简洁的版本可以是：
-
-> Our method recovers demonstrated active constraints, not the complete feasible set.
-
-这句话我建议一定放进去。它能避免 reviewer 说“你没有 recover 所有 constraints”。你的回答就是：我们本来学的是 demonstrations 中 shaping behavior 的 stage-wise constraints。

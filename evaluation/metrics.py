@@ -38,6 +38,40 @@ _BOUNDARY_MODEL_TYPES = {
     "soft_truncated_t_upper_hn",
 }
 
+_LOWER_MODEL_TYPES = {
+    "margin_exp_lower",
+    "marginexp",
+    "margin_exp",
+    "margin_exp_lower_left_hn",
+    "marginexp_left_hn",
+    "margin_exp_left_hn",
+    "trunc_t_lower",
+    "truncated_t_lower",
+    "trunc_t_lower_z",
+    "truncated_t_lower_z",
+    "trunc_t_lower_hn",
+    "truncated_t_lower_hn",
+    "soft_trunc_t_lower_hn",
+    "soft_truncated_t_lower_hn",
+}
+
+_UPPER_MODEL_TYPES = {
+    "margin_exp_upper",
+    "marginexp_upper",
+    "margin_exp_upper",
+    "margin_exp_upper_right_hn",
+    "marginexp_upper_right_hn",
+    "margin_exp_upper_right_hn",
+    "trunc_t_upper",
+    "truncated_t_upper",
+    "trunc_t_upper_z",
+    "truncated_t_upper_z",
+    "trunc_t_upper_hn",
+    "truncated_t_upper_hn",
+    "soft_trunc_t_upper_hn",
+    "soft_truncated_t_upper_hn",
+}
+
 
 def _get_env_feature_schema(env):
     if hasattr(env, "get_feature_schema"):
@@ -305,6 +339,37 @@ def _compute_shared_constraint_value_matrix(learner):
     return learned_value_matrix
 
 
+def _learned_constraint_semantics_matrix(learner, predicted_active):
+    num_stages = int(getattr(learner, "num_stages", 0))
+    num_features = int(getattr(learner, "num_features", 0))
+    semantics = np.full((num_stages, num_features), "", dtype=object)
+    shared_param_kinds = getattr(learner, "shared_param_kinds", None)
+    feature_model_types = list(getattr(learner, "feature_model_types", []) or [])
+
+    for stage_idx in range(num_stages):
+        for feat_idx in range(num_features):
+            if predicted_active is not None and not bool(predicted_active[stage_idx, feat_idx]):
+                continue
+            kind = ""
+            try:
+                if shared_param_kinds is not None:
+                    shared_kind = shared_param_kinds[stage_idx][feat_idx]
+                    if shared_kind is not None:
+                        kind = str(shared_kind).lower()
+            except Exception:
+                kind = ""
+            if not kind and feat_idx < len(feature_model_types):
+                kind = str(feature_model_types[feat_idx]).lower()
+
+            if kind in _LOWER_MODEL_TYPES:
+                semantics[stage_idx, feat_idx] = "lower_bound"
+            elif kind in _UPPER_MODEL_TYPES:
+                semantics[stage_idx, feat_idx] = "upper_bound"
+            elif kind in _EQUALITY_MODEL_TYPES:
+                semantics[stage_idx, feat_idx] = "target_value"
+    return semantics
+
+
 def _estimate_constraint_value_raw(learner, stage_idx, local_feature_idx):
     shared_param_vectors = getattr(learner, "shared_param_vectors", None)
     feature_model_types = getattr(learner, "feature_model_types", None)
@@ -405,6 +470,9 @@ def _compute_constraint_metrics(learner):
         "ConstraintPredictedActiveMask": predicted_active.astype(int).tolist(),
         "ConstraintTargetMatrix": target_matrix.tolist(),
         "ConstraintSemanticsMatrix": semantics.tolist(),
+        "ConstraintLearnedSemanticsMatrix": _learned_constraint_semantics_matrix(
+            learner, predicted_active
+        ).tolist(),
         "ConstraintFeatureNames": _selected_feature_names(learner),
         "ConstraintFeatureScales": feature_scales.tolist(),
     }

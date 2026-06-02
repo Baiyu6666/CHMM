@@ -30,7 +30,7 @@
       "lambda_param_consensus": 0.2,
       "lambda_ineq_constraint": 0.5,
       "fixed_true_cutpoint_indices": [],
-      "truncated_inequality_z_threshold": 0.09,
+      "truncated_inequality_z_threshold": 0.1,
       "equality_dispersion_ratio_threshold": 0.06,
       "truncated_z_score_mode": "median_slack"
     },

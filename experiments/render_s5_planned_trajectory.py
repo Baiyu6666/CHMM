@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ from experiments.render_metrics import (
     constraint_violation_stats,
     parse_int_list,
     plan_seed_list,
+    print_render_violation_rates,
 )
 
 
@@ -47,6 +49,7 @@ def _load_constraint_payload(path: str | Path) -> tuple[dict, Path]:
             metrics_view = dict(metrics_payload.get("all_metrics", metrics_payload))
             for key in (
                 "ConstraintPredictedActiveMask",
+                "ConstraintLearnedSemanticsMatrix",
                 "ConstraintLearnedValueMatrix",
                 "ConstraintLearnedRawValueMatrix",
                 "ConstraintTargetMatrix",
@@ -109,6 +112,133 @@ def _matrix_bool_value(matrix, stage_idx: int, feature_idx: int):
         return None
 
 
+def _active_mask_from_matrix(matrix) -> np.ndarray | None:
+    if matrix is None:
+        return None
+    arr = np.asarray(matrix)
+    if arr.ndim != 2:
+        return None
+    try:
+        return np.isfinite(arr.astype(float))
+    except (TypeError, ValueError):
+        return None
+
+
+def _active_mask_from_payload(payload: dict, learned_matrix) -> np.ndarray | None:
+    predicted = payload.get("ConstraintPredictedActiveMask")
+    if predicted is not None:
+        arr = np.asarray(predicted)
+        if arr.ndim == 2:
+            return np.rint(arr.astype(float)).astype(bool)
+    return _active_mask_from_matrix(learned_matrix)
+
+
+def _learned_constraint_specs_from_payload(payload: dict, feature_names: list[str]) -> list[dict]:
+    semantics = payload.get("ConstraintLearnedSemanticsMatrix")
+    learned = payload.get("ConstraintLearnedValueMatrix")
+    active = payload.get("ConstraintPredictedActiveMask")
+    if semantics is None:
+        return []
+    sem_arr = np.asarray(semantics, dtype=object)
+    if sem_arr.ndim != 2:
+        return []
+    value_arr = None
+    if learned is not None:
+        try:
+            value_arr = np.asarray(learned, dtype=float)
+        except (TypeError, ValueError):
+            value_arr = None
+    active_arr = None
+    if active is not None:
+        try:
+            active_arr = np.rint(np.asarray(active, dtype=float)).astype(bool)
+        except (TypeError, ValueError):
+            active_arr = None
+
+    specs = []
+    for stage_idx in range(sem_arr.shape[0]):
+        for feature_idx in range(sem_arr.shape[1]):
+            if feature_idx >= len(feature_names):
+                continue
+            if active_arr is not None and active_arr.shape == sem_arr.shape and not bool(active_arr[stage_idx, feature_idx]):
+                continue
+            if value_arr is not None and value_arr.shape == sem_arr.shape and not np.isfinite(float(value_arr[stage_idx, feature_idx])):
+                continue
+            semantic = str(sem_arr[stage_idx, feature_idx]).strip()
+            if not semantic:
+                continue
+            specs.append(
+                {
+                    "feature_name": str(feature_names[feature_idx]),
+                    "stage": int(stage_idx),
+                    "semantics": semantic,
+                }
+            )
+    return specs
+
+
+def _constraint_specs_from_payload(
+    payload: dict,
+    env: S5SphereInspectEnv,
+    *,
+    constraint_source: str,
+    feature_names: list[str],
+) -> list[dict]:
+    return list(payload.get("constraint_specs") or env.get_constraint_specs())
+
+
+def _true_active_mask_from_specs(payload: dict, specs: list[dict], feature_names: list[str], shape: tuple[int, int]) -> np.ndarray:
+    true_mask = payload.get("ConstraintTrueActiveMask")
+    if true_mask is not None:
+        arr = np.asarray(true_mask)
+        if arr.ndim == 2:
+            return np.rint(arr.astype(float)).astype(bool)
+    out = np.zeros(shape, dtype=bool)
+    for spec in specs:
+        name = str(spec.get("feature_name", ""))
+        if name not in feature_names:
+            continue
+        stage_idx = int(spec.get("stage", -1))
+        feat_idx = int(feature_names.index(name))
+        if 0 <= stage_idx < out.shape[0] and 0 <= feat_idx < out.shape[1]:
+            out[stage_idx, feat_idx] = True
+    return out
+
+
+def _format_mask_entries(mask: np.ndarray, feature_names: list[str], limit: int = 20) -> str:
+    rows = []
+    for stage_idx, feat_idx in np.argwhere(mask)[: int(limit)]:
+        name = feature_names[int(feat_idx)] if int(feat_idx) < len(feature_names) else f"feature_{int(feat_idx)}"
+        rows.append(f"s{int(stage_idx) + 1}:{name}")
+    suffix = "" if int(np.sum(mask)) <= int(limit) else f"; ... {int(np.sum(mask)) - int(limit)} more"
+    return "; ".join(rows) + suffix
+
+
+def _check_learned_mask_covers_gt(payload: dict, learned_matrix, feature_names: list[str], specs: list[dict]) -> None:
+    learned_arr = _active_mask_from_payload(payload, learned_matrix)
+    if learned_arr is None:
+        raise ValueError("Cannot infer learned active mask from ConstraintPredictedActiveMask or ConstraintLearnedValueMatrix.")
+    true_arr = _true_active_mask_from_specs(payload, specs, feature_names, learned_arr.shape)
+    if true_arr.shape != learned_arr.shape:
+        raise ValueError(
+            f"GT active mask shape {true_arr.shape} does not match learned active mask shape {learned_arr.shape}."
+        )
+    missing = true_arr & ~learned_arr
+    if np.any(missing):
+        raise ValueError(
+            "Learned active mask is missing GT constraints required for rendering: "
+            + _format_mask_entries(missing, feature_names)
+        )
+    extra = learned_arr & ~true_arr
+    if np.any(extra):
+        warnings.warn(
+            "Learned active mask contains extra constraints not in the GT active mask; "
+            "they will be ignored for rendering: " + _format_mask_entries(extra, feature_names),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
 def _constraint_values_from_payload(payload: dict, env: S5SphereInspectEnv, *, constraint_source: str = "learned") -> dict:
     feature_names = list(payload.get("ConstraintFeatureNames", []))
     if not feature_names:
@@ -124,7 +254,9 @@ def _constraint_values_from_payload(payload: dict, env: S5SphereInspectEnv, *, c
         )
     target = payload.get("ConstraintTargetMatrix")
     predicted_active = payload.get("ConstraintPredictedActiveMask") if source == "learned" else None
-    specs = list(payload.get("constraint_specs") or env.get_constraint_specs())
+    specs = _constraint_specs_from_payload(payload, env, constraint_source=source, feature_names=feature_names)
+    if source == "learned":
+        _check_learned_mask_covers_gt(payload, learned, feature_names, specs)
 
     out = {}
     for spec in specs:
@@ -133,13 +265,12 @@ def _constraint_values_from_payload(payload: dict, env: S5SphereInspectEnv, *, c
             continue
         stage_idx = int(spec.get("stage", 0))
         feature_idx = int(feature_names.index(name))
-        active = _matrix_bool_value(predicted_active, stage_idx, feature_idx)
-        if active is False:
-            continue
         value = _finite_matrix_value(learned, stage_idx, feature_idx)
         if value is None and source == "target":
             value = _finite_matrix_value(target, stage_idx, feature_idx)
         if value is None:
+            if source == "learned":
+                raise ValueError(f"Missing learned value for GT constraint s{stage_idx + 1}:{name}.")
             continue
         out[f"s{stage_idx + 1}:{name}"] = float(value)
     required = ["s2:surf_dist", "s2:normal_err", "s2:speed", "s4:surf_dist", "s4:speed"]
@@ -412,15 +543,29 @@ def _auto_stage_lengths(
     speed_safety: float,
     global_speed_max: float | None,
     stage_length_scale: float,
+    stage4_length_multiplier: float,
 ) -> tuple[list[int], dict]:
+    def _apply_stage4_multiplier(lengths: list[int], info: dict) -> tuple[list[int], dict]:
+        multiplier = float(stage4_length_multiplier)
+        if not np.isfinite(multiplier) or multiplier <= 0.0:
+            multiplier = 1.0
+        out = [int(v) for v in lengths]
+        if len(out) >= 4 and abs(multiplier - 1.0) > 1e-12:
+            out[3] = max(1, int(round(float(out[3]) * multiplier)))
+        info = dict(info)
+        info["stage4_length_multiplier"] = float(multiplier)
+        info["lengths_after_stage4_multiplier"] = [int(v) for v in out]
+        info["auto_total_length_after_stage4_multiplier"] = int(np.sum(out))
+        return out, info
+
     if overrides:
         lengths = _stage_lengths(env, overrides)
-        return lengths, {"source": "override", "lengths": [int(v) for v in lengths]}
+        return lengths, {"source": "override", "stage4_length_multiplier": 1.0, "lengths": [int(v) for v in lengths]}
 
     source = str(stage_length_source or "learned-ratio").strip().lower()
     if source == "fixed":
         lengths = _stage_lengths(env, None)
-        return lengths, {"source": "fixed", "lengths": [int(v) for v in lengths]}
+        return _apply_stage4_multiplier(lengths, {"source": "fixed", "lengths": [int(v) for v in lengths]})
 
     ratio, mean_total, ratio_source = _learned_stage_length_prior(segmentation_path)
     if ratio is None or mean_total is None:
@@ -431,43 +576,18 @@ def _auto_stage_lengths(
     if not np.isfinite(scale) or scale <= 0.0:
         scale = 1.0
     total = int(max(int(round(float(mean_total) * scale)), 5))
-    speed_safety = float(np.clip(speed_safety, 0.10, 1.0))
-    for _ in range(12):
-        lengths = _allocate_lengths_from_ratio(ratio, total)
-        dists = _stage_reference_distances(start, goal, lengths)
-        feasible = True
-        required_total = int(total)
-        for stage_idx in range(5):
-            key = f"s{stage_idx + 1}:speed"
-            speed_candidates = []
-            if key in dict(constraint_values or {}):
-                speed_candidates.append(_constraint_value(constraint_values, key, np.nan))
-            if global_speed_max is not None and np.isfinite(float(global_speed_max)) and float(global_speed_max) > 0.0:
-                speed_candidates.append(float(global_speed_max))
-            speed_candidates = [float(v) for v in speed_candidates if np.isfinite(float(v)) and float(v) > 0.0]
-            if not speed_candidates:
-                continue
-            speed = min(speed_candidates)
-            max_step = max(float(speed) * speed_safety * float(env.dt), 1e-8)
-            required_edges = int(np.ceil(float(dists[stage_idx]) / max_step))
-            if required_edges > max(int(lengths[stage_idx]) - 1, 1):
-                stage_ratio = max(float(ratio[stage_idx]), 1e-6)
-                required_total = max(required_total, int(np.ceil((required_edges + 1) / stage_ratio)))
-                feasible = False
-        if feasible or required_total <= total:
-            break
-        total = int(required_total)
     lengths = _allocate_lengths_from_ratio(ratio, total)
-    return lengths, {
+    return _apply_stage4_multiplier(lengths, {
         "source": "learned-ratio",
         "ratio_source": ratio_source,
         "segmentation_path": None if segmentation_path is None else str(Path(segmentation_path)),
         "ratios": [float(v) for v in np.asarray(ratio, dtype=float).tolist()],
         "mean_total_length": int(mean_total),
         "stage_length_scale": float(scale),
+        "speed_feasibility_correction": "post_projection_resample_only",
         "auto_total_length": int(np.sum(lengths)),
         "lengths": [int(v) for v in lengths],
-    }
+    })
 
 
 def _unit_rows(x: np.ndarray) -> np.ndarray:
@@ -670,6 +790,7 @@ def _plan_s5_stage_constraint_optimizer(
     objective_step: float,
     global_speed_max: float | None,
     stage_length_scale: float,
+    stage4_length_multiplier: float,
     start_xyz: tuple[float, float, float] | None = None,
     goal_xyz: tuple[float, float, float] | None = None,
 ) -> dict:
@@ -693,6 +814,7 @@ def _plan_s5_stage_constraint_optimizer(
         speed_safety=speed_safety,
         global_speed_max=global_speed_max,
         stage_length_scale=stage_length_scale,
+        stage4_length_multiplier=stage4_length_multiplier,
     )
     labels = np.repeat(np.arange(5), lengths)
     T = int(labels.size)
@@ -1036,6 +1158,7 @@ def render_s5_planned_trajectory(
     stage_length_source: str,
     global_speed_max: float | None,
     stage_length_scale: float,
+    stage4_length_multiplier: float,
     save_frame_indices: list[int],
     start_xyz: tuple[float, float, float] | None,
     goal_xyz: tuple[float, float, float] | None,
@@ -1074,9 +1197,18 @@ def render_s5_planned_trajectory(
         method_seed=benchmark_method_seed,
     )
     raw_constraint_values = _constraint_values_from_payload(payload, env, constraint_source=str(constraint_source))
+    feature_names = list(payload.get("ConstraintFeatureNames", [])) or [
+        "surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"
+    ]
+    constraint_specs_for_clearance = _constraint_specs_from_payload(
+        payload,
+        env,
+        constraint_source=str(constraint_source),
+        feature_names=feature_names,
+    )
     constraint_values = apply_inequality_constraint_clearance(
         raw_constraint_values,
-        env.get_constraint_specs(),
+        constraint_specs_for_clearance,
         upper_scale=0.96,
         lower_scale=1.04,
     )
@@ -1105,6 +1237,7 @@ def render_s5_planned_trajectory(
             objective_step=float(optimizer_objective_step),
             global_speed_max=global_speed_max,
             stage_length_scale=float(stage_length_scale),
+            stage4_length_multiplier=float(stage4_length_multiplier),
             start_xyz=resolved_start_xyz,
             goal_xyz=resolved_goal_xyz,
         )
@@ -1216,7 +1349,7 @@ def render_s5_planned_trajectory(
         feature_overlay_title=(
             "Executed trajectory feature profile (planned with learned constraints)"
             if str(constraint_source).lower() == "learned"
-            else "Executed trajectory feature profile (planned with GT constraints)"
+            else "Executed trajectory feature profile (planned with Ground truth constraints)"
         ),
         save_frame_indices=save_frame_indices,
         save_frame_dir=out_dir,
@@ -1284,6 +1417,7 @@ def render_s5_planned_trajectory(
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[saved] {summary_path}")
     print(f"[saved] features={feature_plot_path}, video={render_summary.get('video_path')}")
+    print_render_violation_rates(summary)
     return summary
 
 
@@ -1302,14 +1436,14 @@ def main() -> None:
     parser.add_argument("--goal-camera-offset", type=float, default=0.04, help="If --goal-xyz is omitted, move the seeded goal this far horizontally toward the camera.")
     parser.add_argument("--gui", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("--fps", type=float, default=15.0)
-    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--width", type=int, default=1360)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--render-frame-stride", type=int, default=1)
     parser.add_argument("--realtime", type=int, default=0)
     parser.add_argument("--gui-hold-seconds", type=float, default=None)
     parser.add_argument("--camera-yaw", type=float, default=90.0)
     parser.add_argument("--camera-pitch", type=float, default=-16.0)
-    parser.add_argument("--camera-distance", type=float, default=1.45)
+    parser.add_argument("--camera-distance", type=float, default=1.35)
     parser.add_argument("--camera-fov", type=float, default=38.0)
     parser.add_argument(
         "--camera-target-offset",
@@ -1344,10 +1478,16 @@ def main() -> None:
     parser.add_argument(
         "--stage-length-scale",
         type=float,
-        default=0.64,
-        help="Scale applied to learned-ratio total length before speed-feasibility correction.",
+        default=1.0,
+        help="Scale applied to the learned-ratio mean demonstration length.",
     )
-    parser.add_argument("--execution-joint-noise-std", type=float, default=0.002)
+    parser.add_argument(
+        "--stage4-length-multiplier",
+        type=float,
+        default=3.0,
+        help="Multiplier applied to the automatically selected stage 4 length for S5 planned render.",
+    )
+    parser.add_argument("--execution-joint-noise-std", type=float, default=0.0002)
     parser.add_argument("--execution-joint-noise-smooth", type=float, default=0.90)
     parser.add_argument("--execution-noise-seed", type=int, default=None)
     parser.add_argument("--planner", choices=["waypoint", "optimizer"], default="optimizer")
@@ -1433,6 +1573,7 @@ def main() -> None:
             stage_length_source=str(args.stage_length_source),
             global_speed_max=(None if float(args.global_speed_max) <= 0.0 else float(args.global_speed_max)),
             stage_length_scale=float(args.stage_length_scale),
+            stage4_length_multiplier=float(args.stage4_length_multiplier),
             save_frame_indices=_parse_frame_indices(args.save_frame_indices),
             start_xyz=_parse_optional_vec3(args.start_xyz),
             goal_xyz=_parse_optional_vec3(args.goal_xyz),
@@ -1490,6 +1631,7 @@ def main() -> None:
         aggregate["constraint_violation"] = aggregate["planned_constraint_violation"]
         (out_dir / "s5_planned_render_summary.json").write_text(json.dumps(aggregate, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"[saved] {out_dir / 's5_planned_render_summary.json'}")
+        print_render_violation_rates(aggregate)
 
 
 if __name__ == "__main__":

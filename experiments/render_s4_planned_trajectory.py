@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ from experiments.render_metrics import (
     constraint_violation_stats,
     parse_int_list,
     plan_seed_list,
+    print_render_violation_rates,
 )
 
 
@@ -47,6 +49,7 @@ def _load_constraint_payload(path: str | Path) -> tuple[dict, Path]:
             metrics_view = dict(metrics_payload.get("all_metrics", metrics_payload))
             for key in (
                 "ConstraintPredictedActiveMask",
+                "ConstraintLearnedSemanticsMatrix",
                 "ConstraintLearnedValueMatrix",
                 "ConstraintLearnedRawValueMatrix",
                 "ConstraintTargetMatrix",
@@ -103,6 +106,27 @@ def _matrix_bool_value(matrix, stage_idx: int, feature_idx: int):
         return None
 
 
+def _canonical_feature_name(name: str) -> str:
+    return str(name)
+
+
+def _canonical_constraint_key(key: str) -> str:
+    return str(key)
+
+
+def _constraint_key_aliases(key: str) -> list[str]:
+    return [str(key)]
+
+
+def _canonical_constraint_spec(spec: dict) -> dict:
+    out = dict(spec)
+    if "feature_name" in out:
+        out["feature_name"] = _canonical_feature_name(str(out.get("feature_name", "")))
+    if "oracle_key" in out:
+        out["oracle_key"] = _canonical_constraint_key(str(out.get("oracle_key", "")))
+    return out
+
+
 def _active_mask_from_matrix(matrix) -> np.ndarray | None:
     if matrix is None:
         return None
@@ -122,6 +146,112 @@ def _active_mask_from_payload(payload: dict, learned_matrix) -> np.ndarray | Non
         if arr.ndim == 2:
             return np.rint(arr.astype(float)).astype(bool)
     return _active_mask_from_matrix(learned_matrix)
+
+
+def _learned_constraint_specs_from_payload(payload: dict, feature_names: list[str]) -> list[dict]:
+    semantics = payload.get("ConstraintLearnedSemanticsMatrix")
+    learned = payload.get("ConstraintLearnedValueMatrix")
+    active = payload.get("ConstraintPredictedActiveMask")
+    if semantics is None:
+        return []
+    sem_arr = np.asarray(semantics, dtype=object)
+    if sem_arr.ndim != 2:
+        return []
+    value_arr = None
+    if learned is not None:
+        try:
+            value_arr = np.asarray(learned, dtype=float)
+        except (TypeError, ValueError):
+            value_arr = None
+    active_arr = None
+    if active is not None:
+        try:
+            active_arr = np.rint(np.asarray(active, dtype=float)).astype(bool)
+        except (TypeError, ValueError):
+            active_arr = None
+
+    specs = []
+    for stage_idx in range(sem_arr.shape[0]):
+        for feature_idx in range(sem_arr.shape[1]):
+            if feature_idx >= len(feature_names):
+                continue
+            if active_arr is not None and active_arr.shape == sem_arr.shape and not bool(active_arr[stage_idx, feature_idx]):
+                continue
+            if value_arr is not None and value_arr.shape == sem_arr.shape and not np.isfinite(float(value_arr[stage_idx, feature_idx])):
+                continue
+            semantic = str(sem_arr[stage_idx, feature_idx]).strip()
+            if not semantic:
+                continue
+            specs.append(
+                {
+                    "feature_name": _canonical_feature_name(str(feature_names[feature_idx])),
+                    "stage": int(stage_idx),
+                    "semantics": semantic,
+                }
+            )
+    return specs
+
+
+def _constraint_specs_from_payload(
+    payload: dict,
+    env: S4SlideInsertEnv,
+    *,
+    constraint_source: str,
+    feature_names: list[str],
+) -> list[dict]:
+    return [_canonical_constraint_spec(spec) for spec in list(payload.get("constraint_specs") or env.get_constraint_specs())]
+
+
+def _true_active_mask_from_specs(payload: dict, specs: list[dict], feature_names: list[str], shape: tuple[int, int]) -> np.ndarray:
+    true_mask = payload.get("ConstraintTrueActiveMask")
+    if true_mask is not None:
+        arr = np.asarray(true_mask)
+        if arr.ndim == 2:
+            return np.rint(arr.astype(float)).astype(bool)
+    out = np.zeros(shape, dtype=bool)
+    for spec in specs:
+        name = _canonical_feature_name(str(spec.get("feature_name", "")))
+        if name not in feature_names:
+            continue
+        stage_idx = int(spec.get("stage", -1))
+        feat_idx = int(feature_names.index(name))
+        if 0 <= stage_idx < out.shape[0] and 0 <= feat_idx < out.shape[1]:
+            out[stage_idx, feat_idx] = True
+    return out
+
+
+def _format_mask_entries(mask: np.ndarray, feature_names: list[str], limit: int = 20) -> str:
+    rows = []
+    for stage_idx, feat_idx in np.argwhere(mask)[: int(limit)]:
+        name = feature_names[int(feat_idx)] if int(feat_idx) < len(feature_names) else f"feature_{int(feat_idx)}"
+        rows.append(f"s{int(stage_idx) + 1}:{name}")
+    suffix = "" if int(np.sum(mask)) <= int(limit) else f"; ... {int(np.sum(mask)) - int(limit)} more"
+    return "; ".join(rows) + suffix
+
+
+def _check_learned_mask_covers_gt(payload: dict, learned_matrix, feature_names: list[str], specs: list[dict]) -> None:
+    learned_arr = _active_mask_from_payload(payload, learned_matrix)
+    if learned_arr is None:
+        raise ValueError("Cannot infer learned active mask from ConstraintPredictedActiveMask or ConstraintLearnedValueMatrix.")
+    true_arr = _true_active_mask_from_specs(payload, specs, feature_names, learned_arr.shape)
+    if true_arr.shape != learned_arr.shape:
+        raise ValueError(
+            f"GT active mask shape {true_arr.shape} does not match learned active mask shape {learned_arr.shape}."
+        )
+    missing = true_arr & ~learned_arr
+    if np.any(missing):
+        raise ValueError(
+            "Learned active mask is missing GT constraints required for rendering: "
+            + _format_mask_entries(missing, feature_names)
+        )
+    extra = learned_arr & ~true_arr
+    if np.any(extra):
+        warnings.warn(
+            "Learned active mask contains extra constraints not in the GT active mask; "
+            "they will be ignored for rendering: " + _format_mask_entries(extra, feature_names),
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
 
 def _validate_learned_active_matches_gt(payload: dict, learned_matrix, feature_names: list[str]) -> None:
@@ -162,42 +292,45 @@ def _constraint_values_from_payload(
     *,
     constraint_source: str = "learned",
 ) -> dict:
-    feature_names = list(payload.get("ConstraintFeatureNames", []))
+    feature_names = [_canonical_feature_name(name) for name in list(payload.get("ConstraintFeatureNames", []))]
     if not feature_names:
-        feature_names = ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"]
+        feature_names = ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"]
     source = str(constraint_source or "learned").strip().lower()
     if source not in {"learned", "target"}:
         raise ValueError(f"Unsupported constraint source {constraint_source!r}.")
     if source == "target":
         out = {}
         for spec in env.get_constraint_specs():
-            oracle_key = str(spec.get("oracle_key", ""))
-            if oracle_key not in env.true_constraints:
+            canon_spec = _canonical_constraint_spec(spec)
+            oracle_key = str(canon_spec.get("oracle_key", ""))
+            value_key = next((key for key in _constraint_key_aliases(oracle_key) if key in env.true_constraints), None)
+            if value_key is None:
                 continue
-            stage_idx = int(spec.get("stage", 0))
-            name = str(spec.get("feature_name", ""))
-            out[f"s{stage_idx + 1}:{name}"] = float(env.true_constraints[oracle_key])
+            stage_idx = int(canon_spec.get("stage", 0))
+            name = str(canon_spec.get("feature_name", ""))
+            out[f"s{stage_idx + 1}:{name}"] = float(env.true_constraints[value_key])
         return out
     else:
         learned = payload.get("ConstraintLearnedValueMatrix")
         if learned is None:
             raise ValueError("Constraint JSON does not contain ConstraintLearnedValueMatrix.")
-        _validate_learned_active_matches_gt(payload, learned, feature_names)
     predicted_active = payload.get("ConstraintPredictedActiveMask") if source == "learned" else None
-    specs = list(payload.get("constraint_specs") or env.get_constraint_specs())
+    specs = _constraint_specs_from_payload(payload, env, constraint_source=source, feature_names=feature_names)
+    if source == "learned":
+        _check_learned_mask_covers_gt(payload, learned, feature_names, specs)
     out = {}
     for spec in specs:
-        name = str(spec.get("feature_name", ""))
+        name = _canonical_feature_name(str(spec.get("feature_name", "")))
         if name not in feature_names:
             continue
         stage_idx = int(spec.get("stage", 0))
         feature_idx = int(feature_names.index(name))
-        active = _matrix_bool_value(predicted_active, stage_idx, feature_idx)
-        if active is False:
-            continue
         value = _finite_matrix_value(learned, stage_idx, feature_idx)
-        if value is not None:
-            out[f"s{stage_idx + 1}:{name}"] = float(value)
+        if value is None:
+            if source == "learned":
+                raise ValueError(f"Missing learned value for GT constraint s{stage_idx + 1}:{name}.")
+            continue
+        out[f"s{stage_idx + 1}:{name}"] = float(value)
     return out
 
 
@@ -235,13 +368,40 @@ def _parse_rail_polyline(text: str | None):
     return pts or None
 
 
+def _parse_optional_vec3(text: str | None):
+    if text is None or not str(text).strip():
+        return None
+    vals = [float(v.strip()) for v in str(text).split(",") if v.strip()]
+    if len(vals) != 3:
+        raise ValueError(f"Invalid vec3 {text!r}; expected x,y,z.")
+    return tuple(vals)
+
+
 def _feature_names(feature_schema: list[dict], dim: int) -> list[str]:
     names = [f"feature_{idx}" for idx in range(int(dim))]
     for idx, item in enumerate(feature_schema or []):
         col = int(item.get("column_idx", item.get("id", idx)))
         if 0 <= col < len(names):
-            names[col] = str(item.get("name", names[col]))
+            names[col] = _canonical_feature_name(str(item.get("name", names[col])))
     return names
+
+
+_S4_FEATURE_UNITS = {
+    "surf_dist": "m",
+    "center_dist": "m",
+    "orient_err": "rad",
+    "speed": "m/s",
+    "angular_speed": "rad/s",
+    "normal_force": "N",
+    "start_dist": "m",
+    "insert_err": "m",
+}
+
+
+def _feature_label_with_unit(name: str) -> str:
+    name = str(name)
+    unit = _S4_FEATURE_UNITS.get(name)
+    return name if not unit else f"{name} [{unit}]"
 
 
 def _stage_spans(cutpoints: list[int], length: int) -> list[tuple[int, int]]:
@@ -275,6 +435,7 @@ def _plot_feature_profiles(
     else:
         specs = list(constraint_payload.get("constraint_specs") or env.get_constraint_specs())
         true_constraints = dict(constraint_payload.get("true_constraints") or env.true_constraints)
+    specs = [_canonical_constraint_spec(spec) for spec in specs]
 
     out_path = Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -291,16 +452,17 @@ def _plot_feature_profiles(
             ax.axvline(int(cp), color="#9CA3AF", linestyle="--", linewidth=0.8, alpha=0.75)
         feat_name = names[feat_idx]
         for spec in specs:
-            if str(spec.get("feature_name", "")) != feat_name:
+            if _canonical_feature_name(str(spec.get("feature_name", ""))) != feat_name:
                 continue
             stage_idx = int(spec.get("stage", -1))
             if stage_idx < 0 or stage_idx >= len(spans):
                 continue
             x0, x1 = spans[stage_idx]
             oracle_key = str(spec.get("oracle_key", ""))
-            if oracle_key in true_constraints:
+            true_key = next((key for key in _constraint_key_aliases(oracle_key) if key in true_constraints), None)
+            if true_key is not None:
                 ax.hlines(
-                    float(true_constraints[oracle_key]),
+                    float(true_constraints[true_key]),
                     x0,
                     x1,
                     colors="#111827",
@@ -321,7 +483,7 @@ def _plot_feature_profiles(
                     label="planned constraint" if not learned_label_used else None,
                 )
                 learned_label_used = True
-        ax.set_ylabel(feat_name, rotation=0, ha="right", va="center")
+        ax.set_ylabel(_feature_label_with_unit(feat_name), rotation=0, ha="right", va="center")
         ax.grid(alpha=0.18)
     axes[0].legend(loc="upper right", frameon=False, ncol=2)
     axes[-1].set_xlabel("t")
@@ -416,7 +578,12 @@ def _scale_total_stage_lengths(lengths: list[int], scale: float) -> list[int]:
 
 
 def _constraint_value(constraint_values: dict, key: str, default: float) -> float:
-    value = dict(constraint_values or {}).get(key)
+    values = dict(constraint_values or {})
+    value = None
+    for alias in _constraint_key_aliases(key):
+        if alias in values:
+            value = values[alias]
+            break
     if value is None:
         return float(default)
     value = float(value)
@@ -474,6 +641,126 @@ def _limit_edge_speeds(
         xyz[-1] = np.asarray(fixed_goal, dtype=float)
 
 
+def _interp_by_arclength(block: np.ndarray) -> np.ndarray:
+    vals = np.asarray(block, dtype=float)
+    if vals.ndim != 2 or vals.shape[0] < 3:
+        return vals.copy()
+    xyz = vals[:, :3]
+    edge = np.linalg.norm(np.diff(xyz, axis=0), axis=1)
+    total = float(np.sum(edge))
+    if not np.isfinite(total) or total <= 1e-10:
+        return vals.copy()
+    s_old = np.concatenate([[0.0], np.cumsum(edge)])
+    keep = np.concatenate([[True], np.diff(s_old) > 1e-12])
+    if int(np.sum(keep)) < 2:
+        return vals.copy()
+    s_old = s_old[keep]
+    source = vals[keep].copy()
+    source[:, 3] = np.unwrap(source[:, 3])
+    s_new = np.linspace(0.0, total, vals.shape[0])
+    out = np.empty_like(vals)
+    for d in range(vals.shape[1]):
+        out[:, d] = np.interp(s_new, s_old, source[:, d])
+    out[:, 3] = ((out[:, 3] + np.pi) % (2.0 * np.pi)) - np.pi
+    out[0] = vals[0]
+    out[-1] = vals[-1]
+    return out
+
+
+def _smooth_stage_speed_timing(
+    env: S4SlideInsertEnv,
+    traj: np.ndarray,
+    labels: np.ndarray,
+    constraint_values: dict,
+    *,
+    blend: float = 1.0,
+) -> np.ndarray:
+    out = np.asarray(traj, dtype=float).copy()
+    labels = np.asarray(labels, dtype=int).reshape(-1)
+    blend = float(np.clip(blend, 0.0, 1.0))
+    if blend <= 0.0 or out.ndim != 2 or out.shape[0] != labels.size:
+        return out
+    use_rail = hasattr(env, "project_to_rail") and hasattr(env, "rail_pose_at_s")
+    for stage_idx in np.unique(labels):
+        idx = np.flatnonzero(labels == int(stage_idx))
+        if idx.size < 3:
+            continue
+        block = out[idx].copy()
+        candidate = None
+        if use_rail and int(stage_idx) > 0:
+            stage_no = int(stage_idx) + 1
+            proj = env.project_to_rail(block[:, :2])
+            s_old = np.asarray(proj.get("s", []), dtype=float).reshape(-1)
+            if s_old.size == idx.size and np.all(np.isfinite(s_old)):
+                s_new = np.linspace(float(s_old[0]), float(s_old[-1]), idx.size)
+                surf = _constraint_value(
+                    constraint_values,
+                    f"s{stage_no}:surf_dist",
+                    float(env.true_constraints.get("surface_target", 0.0)),
+                )
+                center = _constraint_value(
+                    constraint_values,
+                    f"s{stage_no}:center_dist",
+                    float(env.clearance_target),
+                )
+                orient = _constraint_value(
+                    constraint_values,
+                    f"s{stage_no}:orient_err",
+                    float(env.theta_stage2_end),
+                )
+                signed = np.asarray(proj.get("signed_dist", np.zeros(idx.size)), dtype=float).reshape(-1)
+                sign = 1.0 if signed.size == 0 or float(np.nanmean(signed)) >= 0.0 else -1.0
+                points, _tangents, normals, angles = env.rail_pose_at_s(s_new)
+                candidate = np.zeros_like(block)
+                candidate[:, :2] = (
+                    np.asarray(points, dtype=float).reshape((-1, 2))
+                    + np.asarray(normals, dtype=float).reshape((-1, 2)) * (sign * abs(float(center)))
+                )
+                candidate[:, 2] = env.surface_height(candidate[:, :2]) + float(surf)
+                candidate[:, 3] = np.asarray(angles, dtype=float).reshape(-1) + float(orient)
+        if candidate is None:
+            candidate = _interp_by_arclength(block)
+        candidate[0] = block[0]
+        candidate[-1] = block[-1]
+        out[idx] = (1.0 - blend) * block + blend * candidate
+    out[0] = np.asarray(traj, dtype=float)[0]
+    out[-1] = np.asarray(traj, dtype=float)[-1]
+    return out
+
+
+def _reproject_stage_orientation_targets(
+    env: S4SlideInsertEnv,
+    traj: np.ndarray,
+    labels: np.ndarray,
+    constraint_values: dict,
+) -> np.ndarray:
+    out = np.asarray(traj, dtype=float).copy()
+    labels = np.asarray(labels, dtype=int).reshape(-1)
+    if out.ndim != 2 or out.shape[0] != labels.size or not (hasattr(env, "project_to_rail") and hasattr(env, "rail_pose_at_s")):
+        return out
+    proj = env.project_to_rail(out[:, :2])
+    rail_angle = np.asarray(proj.get("angle", np.zeros(out.shape[0])), dtype=float).reshape(-1)
+    if rail_angle.size != out.shape[0] or not np.all(np.isfinite(rail_angle)):
+        return out
+    theta_prev = out[:, 3].copy()
+    for stage_idx in (1, 2, 3):
+        mask = labels == int(stage_idx)
+        if not np.any(mask):
+            continue
+        stage_no = int(stage_idx) + 1
+        orient = _constraint_value(
+            constraint_values,
+            f"s{stage_no}:orient_err",
+            float(env.theta_stage2_end if stage_idx < 3 else env.theta_stage4_end),
+        )
+        target = rail_angle[mask] + float(orient)
+        current = theta_prev[mask]
+        delta = np.arctan2(np.sin(target - current), np.cos(target - current))
+        out[mask, 3] = current + delta
+    out[:, 3] = ((out[:, 3] + np.pi) % (2.0 * np.pi)) - np.pi
+    return out
+
+
 def _plan_s4_stage_constraint_optimizer(
     env: S4SlideInsertEnv,
     scene: dict,
@@ -487,6 +774,7 @@ def _plan_s4_stage_constraint_optimizer(
     smooth_step: float,
     constraint_step: float,
     objective_step: float,
+    speed_smooth: float,
 ) -> dict:
     """Simple direct trajectory optimizer for testing learned/GT constraints.
 
@@ -500,10 +788,10 @@ def _plan_s4_stage_constraint_optimizer(
     cutpoints = np.where(np.diff(labels) != 0)[0].astype(int)
 
     surf2 = _constraint_value(constraint_values, "s2:surf_dist", float(env.true_constraints.get("surface_target", 0.0)))
-    center2 = _constraint_value(constraint_values, "s2:centerline_dist", float(env.clearance_target))
+    center2 = _constraint_value(constraint_values, "s2:center_dist", float(env.clearance_target))
     theta2 = _constraint_value(constraint_values, "s2:orient_err", float(env.theta_stage2_end))
     surf4 = _constraint_value(constraint_values, "s4:surf_dist", float(env.true_constraints.get("surface_target", 0.0)))
-    center4 = _constraint_value(constraint_values, "s4:centerline_dist", float(env.clearance_target))
+    center4 = _constraint_value(constraint_values, "s4:center_dist", float(env.clearance_target))
     theta4 = _constraint_value(constraint_values, "s4:orient_err", float(env.theta_stage4_end))
     rail_total = float(env.rail_total_length()) if hasattr(env, "rail_total_length") else abs(float(env.slot_x) - float(env.start[0]))
     end_point, _end_tangent, end_normal, end_angle = env.rail_pose_at_s(rail_total) if hasattr(env, "rail_pose_at_s") else (
@@ -548,7 +836,7 @@ def _plan_s4_stage_constraint_optimizer(
         cursor = l1
         for n_steps, sa, sb, surf, center, theta, endpoint in (
             (l2, s1, s2, surf2, center2, theta2, False),
-            (l3, s2, s3, _constraint_value(constraint_values, "s3:surf_dist", surf2), _constraint_value(constraint_values, "s3:centerline_dist", center2), _constraint_value(constraint_values, "s3:orient_err", theta2), False),
+            (l3, s2, s3, _constraint_value(constraint_values, "s3:surf_dist", surf2), _constraint_value(constraint_values, "s3:center_dist", center2), _constraint_value(constraint_values, "s3:orient_err", theta2), False),
             (l4, s3, s4, surf4, center4, theta4, True),
         ):
             if n_steps <= 0:
@@ -598,7 +886,7 @@ def _plan_s4_stage_constraint_optimizer(
             )
             center = _constraint_value(
                 constraint_values,
-                f"s{stage_no}:centerline_dist",
+                f"s{stage_no}:center_dist",
                 float(env.clearance_target),
             )
             orient = _constraint_value(
@@ -631,16 +919,20 @@ def _plan_s4_stage_constraint_optimizer(
         traj[0] = start
         traj[-1] = goal
 
-    normal_load = np.zeros(T, dtype=float)
-    for stage_idx, key in [(1, "s2:normal_load"), (2, "s3:normal_load"), (3, "s4:normal_load")]:
-        normal_load[labels == stage_idx] = max(_constraint_value(constraint_values, key, float(env.normal_load_min)), 0.0)
+    traj = _smooth_stage_speed_timing(env, traj, labels, constraint_values, blend=float(speed_smooth))
+    traj = _reproject_stage_orientation_targets(env, traj, labels, constraint_values)
+
+    normal_force = np.zeros(T, dtype=float)
+    for stage_idx, key in [(1, "s2:normal_force"), (2, "s3:normal_force"), (3, "s4:normal_force")]:
+        normal_force[labels == stage_idx] = max(_constraint_value(constraint_values, key, float(env.normal_load_min)), 0.0)
 
     return {
         "trajectory": traj,
         "planned_trajectory": traj,
         "true_cutpoints": cutpoints,
         "true_labels": labels,
-        "normal_load_trace": normal_load,
+        "normal_force_trace": normal_force,
+        "normal_load_trace": normal_force,
         "constraint_values": dict(constraint_values or {}),
         "stage_lengths": {f"stage{i + 1}": int(n) for i, n in enumerate(lengths)},
         "global_speed_max": None if global_speed_max is None else float(global_speed_max),
@@ -666,6 +958,7 @@ def render_s4_planned_trajectory(
     camera_pitch: float,
     camera_distance: float,
     camera_fov: float,
+    camera_target,
     plot_features: bool,
     constraint_source: str,
     speed_safety: float,
@@ -677,6 +970,33 @@ def render_s4_planned_trajectory(
     benchmark_method_seed: int | None,
     visualize_normal_load: bool,
     feature_overlay: bool,
+    execution_control: str,
+    torque_kp: float,
+    torque_kd: float,
+    torque_limit: float,
+    torque_substep_target_interp: bool,
+    torque_arm_preload_scale: float,
+    torque_preload_scale: float,
+    torque_preload_max: float,
+    torque_preload_indent_min: float,
+    torque_preload_indent_max: float,
+    torque_preload_indent_per_newton: float,
+    torque_preload_adaptive_indent_gain: float,
+    torque_preload_adaptive_indent_max: float,
+    torque_force_feedback_gain: float,
+    torque_force_relief_max: float,
+    torque_force_command_max: float,
+    torque_use_contact_proxy: bool,
+    torque_contact_proxy_clearance: float,
+    torque_apply_external_preload: bool,
+    torque_contact_distance_tol: float,
+    torque_contact_stiffness: float,
+    torque_contact_damping: float,
+    torque_slider_constraint_force: float,
+    torque_slider_constraint_erp: float,
+    torque_slider_constraint_force_min: float,
+    torque_slider_constraint_force_threshold: float,
+    torque_slider_constraint_force_per_newton: float,
     execution_joint_noise_std: float,
     execution_joint_noise_smooth: float,
     execution_noise_seed: int | None,
@@ -689,6 +1009,7 @@ def render_s4_planned_trajectory(
     optimizer_smooth_step: float,
     optimizer_constraint_step: float,
     optimizer_objective_step: float,
+    optimizer_speed_smooth: float,
     rail_shape: str,
     rail_bend_amp: float,
     rail_polyline,
@@ -713,6 +1034,32 @@ def render_s4_planned_trajectory(
             "pybullet_camera_fov": float(camera_fov),
             "pybullet_render_width": int(width),
             "pybullet_render_height": int(height),
+            "pybullet_torque_kp": float(torque_kp),
+            "pybullet_torque_kd": float(torque_kd),
+            "pybullet_torque_limit": float(torque_limit),
+            "pybullet_torque_substep_target_interp": bool(torque_substep_target_interp),
+            "pybullet_torque_arm_preload_scale": float(torque_arm_preload_scale),
+            "pybullet_torque_preload_scale": float(torque_preload_scale),
+            "pybullet_torque_preload_max": float(torque_preload_max),
+            "pybullet_torque_preload_indent_min": float(torque_preload_indent_min),
+            "pybullet_torque_preload_indent_max": float(torque_preload_indent_max),
+            "pybullet_torque_preload_indent_per_newton": float(torque_preload_indent_per_newton),
+            "pybullet_torque_preload_adaptive_indent_gain": float(torque_preload_adaptive_indent_gain),
+            "pybullet_torque_preload_adaptive_indent_max": float(torque_preload_adaptive_indent_max),
+            "pybullet_torque_force_feedback_gain": float(torque_force_feedback_gain),
+            "pybullet_torque_force_relief_max": float(torque_force_relief_max),
+            "pybullet_torque_force_command_max": float(torque_force_command_max),
+            "pybullet_torque_use_contact_proxy": bool(torque_use_contact_proxy),
+            "pybullet_torque_contact_proxy_clearance": float(torque_contact_proxy_clearance),
+            "pybullet_torque_apply_external_preload": bool(torque_apply_external_preload),
+            "pybullet_torque_contact_distance_tol": float(torque_contact_distance_tol),
+            "pybullet_torque_contact_stiffness": float(torque_contact_stiffness),
+            "pybullet_torque_contact_damping": float(torque_contact_damping),
+            "pybullet_torque_slider_constraint_force": float(torque_slider_constraint_force),
+            "pybullet_torque_slider_constraint_erp": float(torque_slider_constraint_erp),
+            "pybullet_torque_slider_constraint_force_min": float(torque_slider_constraint_force_min),
+            "pybullet_torque_slider_constraint_force_threshold": float(torque_slider_constraint_force_threshold),
+            "pybullet_torque_slider_constraint_force_per_newton": float(torque_slider_constraint_force_per_newton),
             "rail_shape": str(rail_shape),
             "rail_bend_amp": float(rail_bend_amp),
             "rail_polyline": rail_polyline,
@@ -720,6 +1067,8 @@ def render_s4_planned_trajectory(
             "surface_tilt_y": float(surface_tilt_y),
         }
     )
+    if camera_target is not None:
+        env_cfg["pybullet_camera_target"] = tuple(float(v) for v in np.asarray(camera_target, dtype=float).reshape(3))
     env = S4SlideInsertEnv(**env_cfg)
 
     raw_payload, resolved_constraints_path = _load_constraint_payload(constraints_json)
@@ -734,9 +1083,18 @@ def render_s4_planned_trajectory(
         env,
         constraint_source=str(constraint_source),
     )
+    feature_names = [_canonical_feature_name(name) for name in list(payload.get("ConstraintFeatureNames", []))] or [
+        "surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"
+    ]
+    constraint_specs_for_clearance = _constraint_specs_from_payload(
+        payload,
+        env,
+        constraint_source=str(constraint_source),
+        feature_names=feature_names,
+    )
     constraint_values = apply_inequality_constraint_clearance(
         raw_constraint_values,
-        env.get_constraint_specs(),
+        constraint_specs_for_clearance,
         upper_scale=0.96,
         lower_scale=1.04,
     )
@@ -757,6 +1115,7 @@ def render_s4_planned_trajectory(
             smooth_step=float(optimizer_smooth_step),
             constraint_step=float(optimizer_constraint_step),
             objective_step=float(optimizer_objective_step),
+            speed_smooth=float(optimizer_speed_smooth),
         )
     else:
         planned = env.plan_episode_from_constraints(
@@ -792,8 +1151,9 @@ def render_s4_planned_trajectory(
         feature_overlay_title=(
             "Executed trajectory feature profile (planned with learned constraints)"
             if str(constraint_source).lower() == "learned"
-            else "Executed trajectory feature profile (planned with GT constraints)"
+            else "Executed trajectory feature profile (planned with Ground truth constraints)"
         ),
+        execution_control=str(execution_control),
         execution_joint_noise_std=float(execution_joint_noise_std),
         execution_joint_noise_smooth=float(execution_joint_noise_smooth),
         execution_noise_seed=execution_noise_seed,
@@ -808,14 +1168,22 @@ def render_s4_planned_trajectory(
 
     planned_traj = np.asarray(planned["trajectory"], dtype=float)
     executed_traj = np.asarray(obs["trajectory"], dtype=float)
-    planned_normal_load = np.asarray(planned.get("normal_load_trace", []), dtype=float)
-    executed_normal_load = np.asarray(obs.get("normal_load_trace", latent.get("normal_load_trace", [])), dtype=float)
-    if planned_normal_load.size == len(planned_traj):
-        env.register_normal_load_trace(planned_traj, planned_normal_load)
-    if executed_normal_load.size == len(executed_traj):
-        env.register_normal_load_trace(executed_traj, executed_normal_load)
+    contact_slider_traj = np.asarray(obs.get("contact_slider_trajectory", []), dtype=float)
+    executed_feature_traj = executed_traj
+    planned_normal_force = np.asarray(planned.get("normal_force_trace", planned.get("normal_load_trace", [])), dtype=float)
+    executed_normal_force = np.asarray(
+        obs.get("normal_force_trace", obs.get("normal_load_trace", latent.get("normal_force_trace", latent.get("normal_load_trace", [])))),
+        dtype=float,
+    )
+    if planned_normal_force.size == len(planned_traj):
+        env.register_normal_load_trace(planned_traj, planned_normal_force)
     planned_features = np.asarray(env.compute_all_features_matrix(planned_traj), dtype=float)
-    executed_features = np.asarray(obs["features"], dtype=float)
+    if executed_normal_force.size == len(executed_traj):
+        env.register_normal_load_trace(executed_traj, executed_normal_force)
+    executed_features = np.asarray(env.compute_all_features_matrix(executed_feature_traj), dtype=float)
+    executed_surf_dist = np.asarray(obs.get("executed_surf_dist_trace", []), dtype=float).reshape(-1)
+    if executed_surf_dist.size == len(executed_features) and executed_features.shape[1] > 0:
+        executed_features[:, 0] = executed_surf_dist
     cutpoints = [int(v) for v in np.asarray(planned["true_cutpoints"], dtype=int).reshape(-1).tolist()]
 
     feature_plot_path = None
@@ -835,15 +1203,29 @@ def render_s4_planned_trajectory(
         out_dir / f"{output_prefix}_rollout.npz",
         planned_trajectory=planned_traj,
         executed_trajectory=executed_traj,
+        contact_slider_trajectory=contact_slider_traj,
+        executed_feature_trajectory=executed_feature_traj,
         planned_features=planned_features,
         executed_features=executed_features,
         cutpoints=np.asarray(cutpoints, dtype=int),
-        normal_load_trace=executed_normal_load,
-        planned_normal_load_trace=planned_normal_load,
-        execution_normal_load_noise=np.asarray(obs.get("execution_normal_load_noise", []), dtype=float),
+        normal_force_trace=executed_normal_force,
+        planned_normal_force_trace=planned_normal_force,
+        measured_normal_force_trace=np.asarray(obs.get("measured_normal_force_trace", obs.get("measured_normal_load_trace", [])), dtype=float),
+        normal_load_trace=executed_normal_force,
+        planned_normal_load_trace=planned_normal_force,
+        measured_normal_load_trace=np.asarray(obs.get("measured_normal_load_trace", obs.get("measured_normal_force_trace", [])), dtype=float),
+        preload_command_trace=np.asarray(obs.get("preload_command_trace", []), dtype=float),
+        preload_force_command_trace=np.asarray(obs.get("preload_force_command_trace", []), dtype=float),
+        preload_indent_trace=np.asarray(obs.get("preload_indent_trace", []), dtype=float),
+        executed_surf_dist_trace=executed_surf_dist,
+        execution_normal_force_noise=np.asarray(obs.get("execution_normal_force_noise", obs.get("execution_normal_load_noise", [])), dtype=float),
+        execution_normal_load_noise=np.asarray(obs.get("execution_normal_load_noise", obs.get("execution_normal_force_noise", [])), dtype=float),
         joint_positions=np.asarray(obs.get("joint_positions", []), dtype=float),
         joint_position_commands=np.asarray(obs.get("joint_position_commands", []), dtype=float),
         joint_position_commands_nominal=np.asarray(obs.get("joint_position_commands_nominal", []), dtype=float),
+        joint_position_commands_planned=np.asarray(obs.get("joint_position_commands_planned", []), dtype=float),
+        joint_position_commands_planned_nominal=np.asarray(obs.get("joint_position_commands_planned_nominal", []), dtype=float),
+        joint_torque_commands=np.asarray(obs.get("joint_torque_commands", []), dtype=float),
         execution_joint_noise=np.asarray(obs.get("execution_joint_noise", []), dtype=float),
         ik_position_error_world=np.asarray(obs.get("ik_position_error_world", []), dtype=float),
     )
@@ -878,6 +1260,7 @@ def render_s4_planned_trajectory(
         "inequality_clearance": {"upper_scale": 0.96, "lower_scale": 1.04},
         "stage_lengths": dict(planned["stage_lengths"]),
         "global_speed_max": planned.get("global_speed_max"),
+        "optimizer_speed_smooth": float(optimizer_speed_smooth),
         "rail_shape": str(getattr(env, "rail_shape", "straight")),
         "rail_bend_amp": float(getattr(env, "rail_bend_amp", 0.0)),
         "rail_polyline": env.get_rail_polyline(num=64).tolist() if hasattr(env, "get_rail_polyline") else None,
@@ -889,9 +1272,40 @@ def render_s4_planned_trajectory(
         "frames": int(latent.get("frames", 0)),
         "saved_frames": list(latent.get("saved_frames", [])),
         "feature_overlay": bool(feature_overlay),
+        "execution_control": str(execution_control),
+        "robot_backend": str(obs.get("robot_backend", latent.get("robot_backend", ""))),
+        "torque_kp": float(torque_kp),
+        "torque_kd": float(torque_kd),
+        "torque_limit": float(torque_limit),
+        "torque_substep_target_interp": bool(torque_substep_target_interp),
+        "torque_arm_preload_scale": float(torque_arm_preload_scale),
+        "torque_preload_scale": float(torque_preload_scale),
+        "torque_preload_max": float(torque_preload_max),
+        "torque_preload_indent_min": float(torque_preload_indent_min),
+        "torque_preload_indent_max": float(torque_preload_indent_max),
+        "torque_preload_indent_per_newton": float(torque_preload_indent_per_newton),
+        "torque_preload_adaptive_indent_gain": float(torque_preload_adaptive_indent_gain),
+        "torque_preload_adaptive_indent_max": float(torque_preload_adaptive_indent_max),
+        "torque_force_feedback_gain": float(torque_force_feedback_gain),
+        "torque_force_relief_max": float(torque_force_relief_max),
+        "torque_force_command_max": float(torque_force_command_max),
+        "torque_use_contact_proxy": bool(torque_use_contact_proxy),
+        "torque_contact_proxy_clearance": float(torque_contact_proxy_clearance),
+        "torque_apply_external_preload": bool(torque_apply_external_preload),
+        "torque_contact_distance_tol": float(torque_contact_distance_tol),
+        "torque_contact_stiffness": float(torque_contact_stiffness),
+        "torque_contact_damping": float(torque_contact_damping),
+        "torque_slider_constraint_force": float(torque_slider_constraint_force),
+        "torque_slider_constraint_erp": float(torque_slider_constraint_erp),
+        "torque_slider_constraint_force_min": float(torque_slider_constraint_force_min),
+        "torque_slider_constraint_force_threshold": float(torque_slider_constraint_force_threshold),
+        "torque_slider_constraint_force_per_newton": float(torque_slider_constraint_force_per_newton),
         "execution_joint_noise_std": float(execution_joint_noise_std),
         "execution_joint_noise_smooth": float(execution_joint_noise_smooth),
         "execution_noise_seed": None if execution_noise_seed is None else int(execution_noise_seed),
+        "execution_normal_force_noise_std": float(execution_normal_load_noise_std),
+        "execution_normal_force_noise_smooth": float(execution_normal_load_noise_smooth),
+        "execution_normal_force_noise_seed": None if execution_normal_load_noise_seed is None else int(execution_normal_load_noise_seed),
         "execution_normal_load_noise_std": float(execution_normal_load_noise_std),
         "execution_normal_load_noise_smooth": float(execution_normal_load_noise_smooth),
         "execution_normal_load_noise_seed": None if execution_normal_load_noise_seed is None else int(execution_normal_load_noise_seed),
@@ -907,6 +1321,7 @@ def render_s4_planned_trajectory(
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"[saved] {summary_path}")
     print(f"[saved] features={feature_plot_path}, video={video_path}")
+    print_render_violation_rates(summary)
     return summary
 
 
@@ -922,7 +1337,7 @@ def main() -> None:
     parser.add_argument("--n-plans", type=int, default=1, help="Number of planned trajectories to render, starting from --seed, when --plan-seeds is not set.")
     parser.add_argument("--gui", type=int, choices=[0, 1, 2], default=1)
     parser.add_argument("--fps", type=float, default=15.0)
-    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--width", type=int, default=1360)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--render-frame-stride", type=int, default=1)
     parser.add_argument("--realtime", type=int, default=0)
@@ -931,26 +1346,55 @@ def main() -> None:
     parser.add_argument("--camera-pitch", type=float, default=-33.0)
     parser.add_argument("--camera-distance", type=float, default=0.90)
     parser.add_argument("--camera-fov", type=float, default=42.0)
+    parser.add_argument("--camera-target", default="0.72,0.14,0.54", help="World-frame camera target as x,y,z. Increase x/y to pan the S4 view right, moving the robot toward the left side of the video area.")
     parser.add_argument("--plot-features", type=int, default=1)
     parser.add_argument("--constraint-source", choices=["learned", "target"], default="learned")
     parser.add_argument("--speed-safety", type=float, default=1.0)
-    parser.add_argument("--global-speed-max", type=float, default=0.012)
+    parser.add_argument("--global-speed-max", type=float, default=0.016)
     parser.add_argument("--stage-lengths", default=None, help="Optional comma list, e.g. stage3:67,stage4:21.")
     parser.add_argument("--stage-length-scale", type=float, default=1.20, help="Scale the total planned trajectory length while preserving stage ratios.")
-    parser.add_argument("--visualize-normal-load", type=int, default=0)
+    parser.add_argument("--visualize-normal-force", "--visualize-normal-load", dest="visualize_normal_load", type=int, default=0)
     parser.add_argument("--feature-overlay", type=int, default=1)
+    parser.add_argument("--execution-control", choices=["position", "torque_preload"], default="position", help="S4 PyBullet execution controller. torque_preload uses torque-level tracking with an attached slider and table contact normal-load measurement.")
+    parser.add_argument("--torque-kp", type=float, default=450.0)
+    parser.add_argument("--torque-kd", type=float, default=70.0)
+    parser.add_argument("--torque-limit", type=float, default=500.0)
+    parser.add_argument("--torque-substep-target-interp", type=int, default=1)
+    parser.add_argument("--torque-arm-preload-scale", type=float, default=1.0)
+    parser.add_argument("--torque-preload-scale", type=float, default=1.0)
+    parser.add_argument("--torque-preload-max", type=float, default=30.0)
+    parser.add_argument("--torque-preload-indent-min", type=float, default=0.0)
+    parser.add_argument("--torque-preload-indent-max", type=float, default=0.014)
+    parser.add_argument("--torque-preload-indent-per-newton", type=float, default=0.0009)
+    parser.add_argument("--torque-preload-adaptive-indent-gain", type=float, default=0.0)
+    parser.add_argument("--torque-preload-adaptive-indent-max", type=float, default=0.014)
+    parser.add_argument("--torque-force-feedback-gain", type=float, default=28.0)
+    parser.add_argument("--torque-force-relief-max", type=float, default=80.0)
+    parser.add_argument("--torque-force-command-max", type=float, default=260.0)
+    parser.add_argument("--torque-use-contact-proxy", type=int, default=1)
+    parser.add_argument("--torque-contact-proxy-clearance", type=float, default=0.0)
+    parser.add_argument("--torque-apply-external-preload", type=int, default=0)
+    parser.add_argument("--torque-contact-distance-tol", type=float, default=1e-5)
+    parser.add_argument("--torque-contact-stiffness", type=float, default=7000.0)
+    parser.add_argument("--torque-contact-damping", type=float, default=30.0)
+    parser.add_argument("--torque-slider-constraint-force", type=float, default=1000000.0)
+    parser.add_argument("--torque-slider-constraint-erp", type=float, default=0.0)
+    parser.add_argument("--torque-slider-constraint-force-min", type=float, default=2.5)
+    parser.add_argument("--torque-slider-constraint-force-threshold", type=float, default=5.0)
+    parser.add_argument("--torque-slider-constraint-force-per-newton", type=float, default=5.0)
     parser.add_argument("--save-frame-indices", default=None, help="Comma-separated source frame indices to save as PNGs in --outdir, e.g. 0,80,157.")
-    parser.add_argument("--execution-joint-noise-std", type=float, default=0.002)
+    parser.add_argument("--execution-joint-noise-std", type=float, default=0.0002)
     parser.add_argument("--execution-joint-noise-smooth", type=float, default=0.90)
     parser.add_argument("--execution-noise-seed", type=int, default=None)
-    parser.add_argument("--execution-normal-load-noise-std", type=float, default=0.025)
-    parser.add_argument("--execution-normal-load-noise-smooth", type=float, default=0.85)
-    parser.add_argument("--execution-normal-load-noise-seed", type=int, default=None)
+    parser.add_argument("--execution-normal-force-noise-std", "--execution-normal-load-noise-std", dest="execution_normal_load_noise_std", type=float, default=0.0025)
+    parser.add_argument("--execution-normal-force-noise-smooth", "--execution-normal-load-noise-smooth", dest="execution_normal_load_noise_smooth", type=float, default=0.85)
+    parser.add_argument("--execution-normal-force-noise-seed", "--execution-normal-load-noise-seed", dest="execution_normal_load_noise_seed", type=int, default=None)
     parser.add_argument("--planner", choices=["waypoint", "optimizer"], default="optimizer")
     parser.add_argument("--optimizer-iters", type=int, default=500)
     parser.add_argument("--optimizer-smooth-step", type=float, default=0.18)
     parser.add_argument("--optimizer-constraint-step", type=float, default=0.45)
     parser.add_argument("--optimizer-objective-step", type=float, default=0.08)
+    parser.add_argument("--optimizer-speed-smooth", type=float, default=1.0, help="Stage-wise arc-length retiming strength for smoother planned speed. Use 0 to disable.")
     parser.add_argument("--rail-shape", choices=["straight", "sine", "polyline"], default="straight")
     parser.add_argument("--rail-bend-amp", type=float, default=0.012)
     parser.add_argument("--rail-polyline", default=None, help="Optional transfer rail centerline as 'x,y;x,y;...'.")
@@ -986,6 +1430,7 @@ def main() -> None:
             camera_pitch=float(args.camera_pitch),
             camera_distance=float(args.camera_distance),
             camera_fov=float(args.camera_fov),
+            camera_target=_parse_optional_vec3(args.camera_target),
             plot_features=bool(args.plot_features),
             constraint_source=str(args.constraint_source),
             speed_safety=float(args.speed_safety),
@@ -997,6 +1442,33 @@ def main() -> None:
             benchmark_method_seed=args.benchmark_method_seed,
             visualize_normal_load=bool(args.visualize_normal_load),
             feature_overlay=bool(args.feature_overlay),
+            execution_control=str(args.execution_control),
+            torque_kp=float(args.torque_kp),
+            torque_kd=float(args.torque_kd),
+            torque_limit=float(args.torque_limit),
+            torque_substep_target_interp=bool(args.torque_substep_target_interp),
+            torque_arm_preload_scale=float(args.torque_arm_preload_scale),
+            torque_preload_scale=float(args.torque_preload_scale),
+            torque_preload_max=float(args.torque_preload_max),
+            torque_preload_indent_min=float(args.torque_preload_indent_min),
+            torque_preload_indent_max=float(args.torque_preload_indent_max),
+            torque_preload_indent_per_newton=float(args.torque_preload_indent_per_newton),
+            torque_preload_adaptive_indent_gain=float(args.torque_preload_adaptive_indent_gain),
+            torque_preload_adaptive_indent_max=float(args.torque_preload_adaptive_indent_max),
+            torque_force_feedback_gain=float(args.torque_force_feedback_gain),
+            torque_force_relief_max=float(args.torque_force_relief_max),
+            torque_force_command_max=float(args.torque_force_command_max),
+            torque_use_contact_proxy=bool(args.torque_use_contact_proxy),
+            torque_contact_proxy_clearance=float(args.torque_contact_proxy_clearance),
+            torque_apply_external_preload=bool(args.torque_apply_external_preload),
+            torque_contact_distance_tol=float(args.torque_contact_distance_tol),
+            torque_contact_stiffness=float(args.torque_contact_stiffness),
+            torque_contact_damping=float(args.torque_contact_damping),
+            torque_slider_constraint_force=float(args.torque_slider_constraint_force),
+            torque_slider_constraint_erp=float(args.torque_slider_constraint_erp),
+            torque_slider_constraint_force_min=float(args.torque_slider_constraint_force_min),
+            torque_slider_constraint_force_threshold=float(args.torque_slider_constraint_force_threshold),
+            torque_slider_constraint_force_per_newton=float(args.torque_slider_constraint_force_per_newton),
             execution_joint_noise_std=float(args.execution_joint_noise_std),
             execution_joint_noise_smooth=float(args.execution_joint_noise_smooth),
             execution_noise_seed=(None if args.execution_noise_seed is None else int(args.execution_noise_seed) + int(plan_idx)),
@@ -1009,6 +1481,7 @@ def main() -> None:
             optimizer_smooth_step=float(args.optimizer_smooth_step),
             optimizer_constraint_step=float(args.optimizer_constraint_step),
             optimizer_objective_step=float(args.optimizer_objective_step),
+            optimizer_speed_smooth=float(args.optimizer_speed_smooth),
             rail_shape=str(args.rail_shape),
             rail_bend_amp=float(args.rail_bend_amp),
             rail_polyline=_parse_rail_polyline(args.rail_polyline),
@@ -1067,6 +1540,7 @@ def main() -> None:
         )
         (out_dir / "s4_planned_render_summary.json").write_text(json.dumps(aggregate, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"[saved] {out_dir / 's4_planned_render_summary.json'}")
+        print_render_violation_rates(aggregate)
 
 
 if __name__ == "__main__":

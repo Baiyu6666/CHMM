@@ -5,29 +5,23 @@
   "pybullet_precheck_ik_waypoints": true,
   "pybullet_filter_ik_valid": true,
   "seed": 127,
-  "n_requested_demos": 3,
+  "n_requested_demos": 1,
   "demo_indices": [
-    0,
-    1,
-    2
+    0
   ],
   "demo_cache": {
     "path": "/home/baiyu/PycharmProjects/LearnStageConstraint/envs/demo_cache/S5SphereInspect/seed_127_d5334c04d851ab7f.npz",
     "hit": true
   },
-  "combined_video": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/s5_demonstrations.mp4",
-  "combined_video_segments": [
-    "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/_s5_demo_segments/s5_demo_00.mp4",
-    "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/_s5_demo_segments/s5_demo_01.mp4",
-    "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/_s5_demo_segments/s5_demo_02.mp4"
-  ],
-  "inter_demo_pause_seconds": 2.0,
+  "combined_video": null,
+  "combined_video_segments": [],
+  "inter_demo_pause_seconds": null,
   "playback_speed": 1.5,
   "playback_label": "×1.5",
   "constraint_violation": {
-    "average_violation_rate": 0.017094017094017096,
-    "total_timesteps": 234,
-    "violating_timesteps": 4,
+    "average_violation_rate": 0.012987012987012988,
+    "total_timesteps": 77,
+    "violating_timesteps": 1,
     "feature_stage_violation_rate_matrix": [
       [
         NaN,
@@ -41,7 +35,7 @@
       [
         0.0,
         0.0,
-        0.03773584905660377,
+        0.02857142857142857,
         NaN,
         NaN,
         NaN,
@@ -115,7 +109,7 @@
       "playback_speed": 1.5,
       "playback_label": "×1.5",
       "video": {
-        "video_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/_s5_demo_segments/s5_demo_00.mp4",
+        "video_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/s5_demo_00.mp4",
         "frames_written": 107,
         "source_frames": 77,
         "fps": 10.0,
@@ -123,7 +117,7 @@
         "playback_speed": 1.5,
         "playback_label": "×1.5",
         "gui": 1,
-        "wall_seconds": 129.0707929134369,
+        "wall_seconds": 148.3446340560913,
         "has_robot_joint_playback": true,
         "hide_gripper": true,
         "draw_tool_bar": true,
@@ -224,286 +218,6 @@
           "1": 2.2712019252510392e-05
         },
         "max_speed_ratio": 1.000450861270394,
-        "thresholds": {
-          "max_position_error": 0.00216,
-          "max_axis_error": 0.3,
-          "global_axis_error": false,
-          "constrained_max_axis_error": 0.45,
-          "max_speed_ratio": 1.25
-        }
-      }
-    },
-    {
-      "demo_local_index": 2,
-      "demo_index": 1,
-      "seed": 127,
-      "rollout_backend": "pybullet",
-      "observation_backend": "pybullet",
-      "trajectory_points": 78,
-      "true_cutpoints": [
-        12,
-        46,
-        60,
-        68
-      ],
-      "feature_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/s5_demo_01_features.png",
-      "feature_plot_series": [
-        "planned/reference",
-        "pybullet executed"
-      ],
-      "feature_overlay": true,
-      "playback_speed": 1.5,
-      "playback_label": "×1.5",
-      "video": {
-        "video_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/_s5_demo_segments/s5_demo_01.mp4",
-        "frames_written": 108,
-        "source_frames": 78,
-        "fps": 10.0,
-        "output_fps": 15.0,
-        "playback_speed": 1.5,
-        "playback_label": "×1.5",
-        "gui": 1,
-        "wall_seconds": 125.99976086616516,
-        "has_robot_joint_playback": true,
-        "hide_gripper": true,
-        "draw_tool_bar": true,
-        "draw_stage_trace": false,
-        "draw_executed_trace": true,
-        "trace_stride": 1,
-        "saved_frames": [],
-        "trace_width": 3.0,
-        "draw_current_marker": false,
-        "stage4_shell_offset": 0.0324,
-        "sphere_texture_name": "",
-        "title": "S5SphereInspect demo 1"
-      },
-      "saved_frames": [],
-      "constraint_violation": {
-        "average_violation_rate": 0.02564102564102564,
-        "total_timesteps": 78,
-        "violating_timesteps": 2,
-        "feature_stage_violation_rate_matrix": [
-          [
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            0.0,
-            0.0,
-            0.058823529411764705,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            0.0,
-            NaN,
-            0.0,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ]
-        ],
-        "feature_names": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "noise",
-          "start_dist",
-          "goal_dist"
-        ],
-        "stage_names": [
-          "stage1",
-          "stage2",
-          "stage3",
-          "stage4",
-          "stage5"
-        ]
-      },
-      "ik_position_error_world": {
-        "mean": 3.1730671725101854e-06,
-        "max": 4.863193485989187e-06
-      },
-      "ik_axis_error_rad": {
-        "mean": 1.0023964807743906e-05,
-        "max": 2.727491790917736e-05
-      },
-      "ik_filter": {
-        "valid": true,
-        "reason": "ok",
-        "max_position_error": 4.863193485989187e-06,
-        "max_axis_error": 2.727491790917736e-05,
-        "constrained_max_axis_error": 1.796741457678118e-05,
-        "constrained_stage_axis_max": {
-          "1": 1.796741457678118e-05
-        },
-        "max_speed_ratio": 1.000281686719291,
-        "thresholds": {
-          "max_position_error": 0.00216,
-          "max_axis_error": 0.3,
-          "global_axis_error": false,
-          "constrained_max_axis_error": 0.45,
-          "max_speed_ratio": 1.25
-        }
-      }
-    },
-    {
-      "demo_local_index": 3,
-      "demo_index": 2,
-      "seed": 127,
-      "rollout_backend": "pybullet",
-      "observation_backend": "pybullet",
-      "trajectory_points": 79,
-      "true_cutpoints": [
-        10,
-        47,
-        59,
-        67
-      ],
-      "feature_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/s5_demo_02_features.png",
-      "feature_plot_series": [
-        "planned/reference",
-        "pybullet executed"
-      ],
-      "feature_overlay": true,
-      "playback_speed": 1.5,
-      "playback_label": "×1.5",
-      "video": {
-        "video_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/videos/s5_demonstrations/_s5_demo_segments/s5_demo_02.mp4",
-        "frames_written": 79,
-        "source_frames": 79,
-        "fps": 10.0,
-        "output_fps": 15.0,
-        "playback_speed": 1.5,
-        "playback_label": "×1.5",
-        "gui": 1,
-        "wall_seconds": 127.86290764808655,
-        "has_robot_joint_playback": true,
-        "hide_gripper": true,
-        "draw_tool_bar": true,
-        "draw_stage_trace": false,
-        "draw_executed_trace": true,
-        "trace_stride": 1,
-        "saved_frames": [],
-        "trace_width": 3.0,
-        "draw_current_marker": false,
-        "stage4_shell_offset": 0.0324,
-        "sphere_texture_name": "",
-        "title": "S5SphereInspect demo 2"
-      },
-      "saved_frames": [],
-      "constraint_violation": {
-        "average_violation_rate": 0.012658227848101266,
-        "total_timesteps": 79,
-        "violating_timesteps": 1,
-        "feature_stage_violation_rate_matrix": [
-          [
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            0.0,
-            0.0,
-            0.02702702702702703,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            0.0,
-            NaN,
-            0.0,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ],
-          [
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN,
-            NaN
-          ]
-        ],
-        "feature_names": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "noise",
-          "start_dist",
-          "goal_dist"
-        ],
-        "stage_names": [
-          "stage1",
-          "stage2",
-          "stage3",
-          "stage4",
-          "stage5"
-        ]
-      },
-      "ik_position_error_world": {
-        "mean": 3.4895228032855687e-06,
-        "max": 6.336480145201892e-06
-      },
-      "ik_axis_error_rad": {
-        "mean": 1.2454661011615125e-05,
-        "max": 2.2617361220541712e-05
-      },
-      "ik_filter": {
-        "valid": true,
-        "reason": "ok",
-        "max_position_error": 6.336480145201892e-06,
-        "max_axis_error": 2.2617361220541712e-05,
-        "constrained_max_axis_error": 2.242098454297542e-05,
-        "constrained_stage_axis_max": {
-          "1": 2.242098454297542e-05
-        },
-        "max_speed_ratio": 1.0002859902930572,
         "thresholds": {
           "max_position_error": 0.00216,
           "max_axis_error": 0.3,

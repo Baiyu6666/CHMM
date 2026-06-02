@@ -7,28 +7,29 @@
   "dt": 0.4,
   "seg_lengths": [35, 14, 67, 21],
   "seg_length_jitter": [9, 3, 11, 7],
-  "normal_load_min": 0.4,
+  "normal_load_min": 4.0,
+  "normal_load_scale": 10.0,
   "method_overrides": {
     "swcl": {
       "n_stages": 4,
-      "selected_raw_feature_ids": ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"],
+      "selected_raw_feature_ids": ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"],
       "feature_activation_mode": "score",
       "feature_model_types": {
         "surf_dist": "student_t",
-        "centerline_dist": "student_t",
+        "center_dist": "student_t",
         "orient_err": "trunc_t_auto_z",
         "speed": "trunc_t_auto_z",
-        "normal_load": "trunc_t_auto_z",
+        "normal_force": "trunc_t_auto_z",
         "start_dist": "trunc_t_auto_z",
-        "insertion_err": "trunc_t_auto_z",
+        "insert_err": "trunc_t_auto_z",
         "noise": "student_t"
       },
-      "force_inactive_feature_ids": ["start_dist", "insertion_err"],
+      "force_inactive_feature_ids": ["start_dist", "insert_err"],
       "max_iter": 10,
       "truncated_inequality_z_threshold": 0.06,
       "truncated_auto_z_score_gap_threshold": 0.6,
       "truncated_z_score_mode": "median_slack",
-      "lambda_activation_consensus": 0.75,
+      "lambda_activation_consensus": 0.3,
       "lambda_param_consensus": 0.5,
       "duration_min": null,
       "duration_max": null,
@@ -39,15 +40,15 @@
     },
     "fchmm": {
       "n_stages": 4,
-      "selected_raw_feature_ids": ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"],
+      "selected_raw_feature_ids": ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"],
       "feature_model_types": {
         "surf_dist": "student_t",
-        "centerline_dist": "student_t",
+        "center_dist": "student_t",
         "orient_err": "trunc_t_upper_z",
         "speed": "trunc_t_upper_z",
-        "normal_load": "trunc_t_lower_z",
+        "normal_force": "trunc_t_lower_z",
         "start_dist": "trunc_t_lower_z",
-        "insertion_err": "trunc_t_lower_z",
+        "insert_err": "trunc_t_lower_z",
         "noise": "student_t"
       },
       "fixed_feature_mask": [[1,1,1,1,1,1,1], [1,1,1,1,1,1,1], [1,1,1,1,1,1,1], [1,1,1,1,1,1,1]],
@@ -56,19 +57,19 @@
     "arhsmm": {
       "segmenter": {
         "n_stages": 4,
-        "selected_raw_feature_ids": ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"]
+        "selected_raw_feature_ids": ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"]
       },
       "posthoc_constraint": {
         "constraint_core_trim": 2,
-        "selected_raw_feature_ids": ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"],
+        "selected_raw_feature_ids": ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"],
         "feature_model_types": {
           "surf_dist": "student_t",
-          "centerline_dist": "student_t",
+          "center_dist": "student_t",
           "orient_err": "trunc_t_upper_z",
           "speed": "trunc_t_upper_z",
-          "normal_load": "trunc_t_lower_z",
+          "normal_force": "trunc_t_lower_z",
           "start_dist": "trunc_t_lower_z",
-          "insertion_err": "trunc_t_lower_z",
+          "insert_err": "trunc_t_lower_z",
           "noise": "student_t"
         },
         "fixed_feature_mask": [[0,0,0,0,0,0,0], [1,1,0,0,1,0,0], [1,1,1,1,1,0,0], [1,1,1,1,1,0,0]]
@@ -77,7 +78,7 @@
     "cluster": {
       "segmenter": {
         "n_stages": 4,
-        "selected_raw_feature_ids": ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"],
+        "selected_raw_feature_ids": ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"],
         "feature_distance_weight": 0.3,
         "use_state": true,
         "use_velocity": false,
@@ -87,15 +88,15 @@
       },
       "posthoc_constraint": {
         "constraint_core_trim": 0,
-        "selected_raw_feature_ids": ["surf_dist", "centerline_dist", "orient_err", "speed", "normal_load", "start_dist", "insertion_err"],
+        "selected_raw_feature_ids": ["surf_dist", "center_dist", "orient_err", "speed", "normal_force", "start_dist", "insert_err"],
         "feature_model_types": {
           "surf_dist": "student_t",
-          "centerline_dist": "student_t",
+          "center_dist": "student_t",
           "orient_err": "trunc_t_upper_z",
           "speed": "trunc_t_upper_z",
-          "normal_load": "trunc_t_lower_z",
+          "normal_force": "trunc_t_lower_z",
           "start_dist": "trunc_t_lower_z",
-          "insertion_err": "trunc_t_lower_z",
+          "insert_err": "trunc_t_lower_z",
           "noise": "student_t"
         },
         "fixed_feature_mask": [[0,0,0,0,0,0,0], [1,1,0,0,1,0,0], [1,1,1,1,1,0,0], [1,1,1,1,1,0,0]]

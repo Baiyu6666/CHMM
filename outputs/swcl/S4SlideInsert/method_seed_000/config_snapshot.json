@@ -2,7 +2,7 @@
   "dataset_name": "S4SlideInsert",
   "method_name": "swcl",
   "dataset_kwargs": {
-    "n_demos": 10,
+    "n_demos": 2,
     "seed": 1342,
     "rollout_backend": "analytic",
     "observation_backend": "analytic",
@@ -19,30 +19,31 @@
       11,
       7
     ],
-    "normal_load_min": 0.4
+    "normal_load_min": 4.0,
+    "normal_load_scale": 10.0
   },
   "method_kwargs": {
-    "max_iter": 10,
+    "max_iter": 1,
     "verbose": true,
     "n_stages": 4,
     "seed": 0,
     "selected_raw_feature_ids": [
       "surf_dist",
-      "centerline_dist",
+      "center_dist",
       "orient_err",
       "speed",
-      "normal_load",
+      "normal_force",
       "start_dist",
-      "insertion_err"
+      "insert_err"
     ],
     "feature_model_types": {
       "surf_dist": "student_t",
-      "centerline_dist": "student_t",
+      "center_dist": "student_t",
       "orient_err": "trunc_t_auto_z",
       "speed": "trunc_t_auto_z",
-      "normal_load": "trunc_t_auto_z",
+      "normal_force": "trunc_t_auto_z",
       "start_dist": "trunc_t_auto_z",
-      "insertion_err": "trunc_t_auto_z",
+      "insert_err": "trunc_t_auto_z",
       "noise": "student_t"
     },
     "fixed_feature_mask": null,
@@ -50,7 +51,7 @@
     "lambda_ineq_constraint": 0.5,
     "lambda_progress": 0.5,
     "lambda_param_consensus": 0.5,
-    "lambda_activation_consensus": 0.75,
+    "lambda_activation_consensus": 0.3,
     "consensus_schedule": "linear",
     "progress_delta_scale": 20.0,
     "duration_min": null,
@@ -67,15 +68,16 @@
     "truncated_z_optimize_trigger_scale": 3.0,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": 22,
+    "plot_every": null,
     "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S4SlideInsert/method_seed_000",
     "force_inactive_feature_ids": [
       "start_dist",
-      "insertion_err"
+      "insert_err"
     ],
     "truncated_auto_z_score_gap_threshold": 0.6,
     "truncated_z_score_mode": "median_slack",
     "inequality_trim_fraction": 0.1,
-    "inequality_trim_min_n": 10
+    "inequality_trim_min_n": 10,
+    "disable_plots": true
   }
 }

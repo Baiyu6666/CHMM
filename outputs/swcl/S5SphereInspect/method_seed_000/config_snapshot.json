@@ -2,7 +2,7 @@
   "dataset_name": "S5SphereInspect",
   "method_name": "swcl",
   "dataset_kwargs": {
-    "n_demos": 10,
+    "n_demos": 1,
     "seed": 127,
     "rollout_backend": "pybullet",
     "observation_backend": "pybullet",
@@ -10,7 +10,7 @@
     "eval_tag": "S5SphereInspect"
   },
   "method_kwargs": {
-    "max_iter": 10,
+    "max_iter": 1,
     "verbose": true,
     "n_stages": 5,
     "seed": 0,
@@ -44,7 +44,7 @@
     "equality_score_mode": "dispersion",
     "equality_dispersion_ratio_threshold": 0.06,
     "constraint_core_trim": 0,
-    "short_segment_penalty_c": 3,
+    "short_segment_penalty_c": 0,
     "stage_count_penalty": 12.0,
     "inequality_score_activation_threshold": -0.5,
     "truncated_inequality_z_threshold": 0.1,
@@ -52,8 +52,9 @@
     "truncated_z_optimize_trigger_scale": 3.0,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": 10,
+    "plot_every": null,
     "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspect/method_seed_000",
-    "truncated_z_score_mode": "median_slack"
+    "truncated_z_score_mode": "median_slack",
+    "disable_plots": true
   }
 }

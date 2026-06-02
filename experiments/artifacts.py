@@ -19,6 +19,7 @@ _CONSTRAINT_KEYS = (
     "ConstraintTrueActiveMask",
     "ConstraintPredictedActiveMask",
     "ConstraintTargetMatrix",
+    "ConstraintLearnedSemanticsMatrix",
     "ConstraintLearnedValueMatrix",
     "ConstraintLearnedRawValueMatrix",
     "ConstraintLearnedValuePerDemo",
