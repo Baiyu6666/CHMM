@@ -1,0 +1,31 @@
+{
+  "name": "S3ObsAvoidReal",
+  "n_demos": 7,
+  "seed": 0,
+  "method_overrides": {
+    "swcl": {
+      "n_stages": 3,
+      "selected_raw_feature_ids": ["obs_dist", "line1_dist", "line2_dist"],
+      "feature_model_types": {
+        "obs_dist": "trunc_t_auto_z",
+        "line1_dist": "student_t",
+        "line2_dist": "student_t"
+      },
+      "max_iter": 10,
+      "truncated_inequality_z_threshold": -0.2
+    },
+    "fchmm": {
+      "n_stages": 3,
+      "selected_raw_feature_ids": ["obs_dist", "line1_dist", "line2_dist"],
+      "feature_model_types": {
+        "obs_dist": "trunc_t_lower_z",
+        "line1_dist": "student_t",
+        "line2_dist": "student_t"
+      },
+      "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+      "feat_weight": 0.5,
+      "x_weight": 0.05,
+      "gmm_K": 2
+    }
+  }
+}

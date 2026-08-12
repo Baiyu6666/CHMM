@@ -1,0 +1,153 @@
+{
+  "dataset": "S3ObsAvoidReal",
+  "source": "2026-08-12-09-36-21.bag",
+  "coordinate_system": "iiwa_link_0_xy_m",
+  "dt_s": 0.025,
+  "geometry_estimation_status": "estimated_from_demonstrations",
+  "obstacle": {
+    "center": [
+      0.6272699099255913,
+      0.007200048498438732
+    ],
+    "radius_m": 0.04429052047102707,
+    "minimum_observed_stage1_distance_m": 0.04529052047102707,
+    "estimation": "maximum circle in the common stage-1 trajectory gap with 1 mm margin"
+  },
+  "line_1": {
+    "point": [
+      0.6309827279689935,
+      -0.13029231229476684
+    ],
+    "direction": [
+      0.19458239588158638,
+      0.9808861764817474
+    ],
+    "fit_rms_m": 0.002069280467515804
+  },
+  "line_2": {
+    "point": [
+      0.7011234415902401,
+      -0.2018504567999534
+    ],
+    "direction": [
+      0.9932897322989072,
+      -0.11565253006123637
+    ],
+    "fit_rms_m": 0.0034037868626893186
+  },
+  "line_angle_degrees": 85.4209340429652,
+  "demonstrations": [
+    {
+      "demo": 1,
+      "source_file": "demo_01.csv",
+      "candidate_start_index": 186,
+      "candidate_end_index": 1019,
+      "frames": 834,
+      "duration_s": 19.059754372,
+      "cutpoints": [
+        164,
+        588
+      ],
+      "cutpoint_times_s": [
+        3.7399449350000005,
+        13.399923562000001
+      ]
+    },
+    {
+      "demo": 2,
+      "source_file": "demo_02.csv",
+      "candidate_start_index": 82,
+      "candidate_end_index": 989,
+      "frames": 908,
+      "duration_s": 20.739932534,
+      "cutpoints": [
+        292,
+        621
+      ],
+      "cutpoint_times_s": [
+        6.6700222490000005,
+        14.209858654000001
+      ]
+    },
+    {
+      "demo": 3,
+      "source_file": "demo_03.csv",
+      "candidate_start_index": 83,
+      "candidate_end_index": 1142,
+      "frames": 1060,
+      "duration_s": 24.209835294999998,
+      "cutpoints": [
+        267,
+        761
+      ],
+      "cutpoint_times_s": [
+        6.089843511000001,
+        17.379883765
+      ]
+    },
+    {
+      "demo": 4,
+      "source_file": "demo_04.csv",
+      "candidate_start_index": 393,
+      "candidate_end_index": 1251,
+      "frames": 859,
+      "duration_s": 19.714878559,
+      "cutpoints": [
+        211,
+        555
+      ],
+      "cutpoint_times_s": [
+        4.869989869000001,
+        12.749975209000002
+      ]
+    },
+    {
+      "demo": 5,
+      "source_file": "demo_05.csv",
+      "candidate_start_index": 158,
+      "candidate_end_index": 1266,
+      "frames": 1109,
+      "duration_s": 25.349876882,
+      "cutpoints": [
+        248,
+        864
+      ],
+      "cutpoint_times_s": [
+        5.640035868,
+        19.749916552
+      ]
+    },
+    {
+      "demo": 6,
+      "source_file": "demo_06.csv",
+      "candidate_start_index": 60,
+      "candidate_end_index": 1004,
+      "frames": 945,
+      "duration_s": 21.529853101999997,
+      "cutpoints": [
+        278,
+        596
+      ],
+      "cutpoint_times_s": [
+        6.3649504189999995,
+        13.609894042
+      ]
+    },
+    {
+      "demo": 7,
+      "source_file": "demo_07.csv",
+      "candidate_start_index": 213,
+      "candidate_end_index": 921,
+      "frames": 709,
+      "duration_s": 16.26492262,
+      "cutpoints": [
+        114,
+        457
+      ],
+      "cutpoint_times_s": [
+        2.6450009349999997,
+        10.46487546
+      ]
+    }
+  ]
+}
