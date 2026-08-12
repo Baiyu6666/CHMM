@@ -1,0 +1,78 @@
+{
+  "features": [
+    {
+      "feature": "normal_force",
+      "base_feature": "normal_force",
+      "feature_scale": 1.0,
+      "score_feature_scale": 1.0,
+      "raw_feature_scale": 1.0,
+      "boundary_index": 2,
+      "true_stage_pair": [
+        2,
+        3
+      ],
+      "summary_json": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_b2_inequality_cutpoint_summary.json",
+      "scores_csv": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_b2_inequality_cutpoint_scores.csv",
+      "combined_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_b2_inequality_cutpoint_combined.png",
+      "best": {
+        "method": "seg_q05",
+        "cut_fraction": 0.16049382716049382,
+        "cut_n": 13,
+        "score": -0.4604927636563521,
+        "mean_margin": 0.31049276365635203,
+        "total_margin": 25.149913856164517,
+        "selection_value": 150.31619487953648,
+        "true_cut_n": 13,
+        "true_cut_fraction": 0.16049382716049382,
+        "baseline_fit": "mle",
+        "half_t_scale_quantile": 0.9,
+        "selection_objective": "active-loglik",
+        "observation_noise_scale": 0.03
+      }
+    },
+    {
+      "feature": "normal_force_x10",
+      "base_feature": "normal_force",
+      "feature_scale": 10.0,
+      "score_feature_scale": 10.0,
+      "raw_feature_scale": 1.0,
+      "boundary_index": 2,
+      "true_stage_pair": [
+        2,
+        3
+      ],
+      "summary_json": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_x10_b2_inequality_cutpoint_summary.json",
+      "scores_csv": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_x10_b2_inequality_cutpoint_scores.csv",
+      "combined_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_x10_b2_inequality_cutpoint_combined.png",
+      "best": {
+        "method": "seg_q05",
+        "cut_fraction": 0.13580246913580246,
+        "cut_n": 11,
+        "score": 1.8280997225927598,
+        "mean_margin": 0.03999859201455672,
+        "total_margin": 3.2398859531790944,
+        "selection_value": 8.093516757028677,
+        "true_cut_n": 13,
+        "true_cut_fraction": 0.16049382716049382,
+        "baseline_fit": "mle",
+        "half_t_scale_quantile": 0.9,
+        "selection_objective": "active-loglik",
+        "observation_noise_scale": 0.03
+      }
+    }
+  ],
+  "boundary_index": 2,
+  "true_stage_pair": [
+    2,
+    3
+  ],
+  "score_space": "standardized",
+  "gain_threshold": 0.15,
+  "soft_boundary_scale": 0.1,
+  "direction": "lower",
+  "baseline_fit": "mle",
+  "half_t_scale_quantile": 0.9,
+  "selection_objective": "active-loglik",
+  "observation_noise_scale": 0.03,
+  "selection_metric": "max_split_active_loglik=sum(stage_len*(-active_nll) if gain>threshold else 0)"
+}

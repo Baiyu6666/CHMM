@@ -9,14 +9,7 @@
   "method_overrides": {
     "swcl": {
       "n_stages": 5,
-      "selected_raw_feature_ids": [
-        "surf_dist",
-        "normal_err",
-        "speed",
-        "ang_speed",
-        "start_dist",
-        "goal_dist"
-      ],
+      "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
       "feature_model_types": {
         "surf_dist": "student_t",
         "speed": "trunc_t_auto_z",
@@ -28,23 +21,16 @@
       "max_iter": 10,
       "lambda_activation_consensus": 1,
       "lambda_param_consensus": 0.2,
-      "lambda_ineq_constraint": 0.5,
+      "lambda_ineq_constraint": 0.05,
       "fixed_true_cutpoint_indices": [],
-      "truncated_inequality_z_threshold": 0.1,
+      "truncated_inequality_z_threshold": -0.25,
       "equality_dispersion_ratio_threshold": 0.06,
-      "truncated_z_score_mode": "median_slack"
+      "truncated_z_score_mode": "soft_fit_minus_baseline"
     },
     "fchmm": {
       "n_stages": 5,
       "feat_weight": 0.1,
-      "selected_raw_feature_ids": [
-        "surf_dist",
-        "normal_err",
-        "speed",
-        "ang_speed",
-        "start_dist",
-        "goal_dist"
-      ],
+      "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
       "feature_model_types": {
         "surf_dist": "student_t",
         "speed": "trunc_t_upper_z",
@@ -53,36 +39,16 @@
         "start_dist": "trunc_t_lower_z",
         "goal_dist": "trunc_t_lower_z"
       },
-      "fixed_feature_mask": [
-        [1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1, 1]
-      ]
+      "fixed_feature_mask": [[1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1]]
     },
     "hmm": {
       "segmenter": {
         "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ]
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"]
       },
       "posthoc_constraint": {
         "constraint_core_trim": 0,
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ],
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
         "feature_model_types": {
           "surf_dist": "student_t",
           "speed": "trunc_t_upper_z",
@@ -91,36 +57,16 @@
           "start_dist": "trunc_t_lower_z",
           "goal_dist": "trunc_t_lower_z"
         },
-        "fixed_feature_mask": [
-          [0, 0, 0, 0, 0, 0],
-          [1, 1, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [1, 0, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0]
-        ]
+        "fixed_feature_mask": [[0, 0, 0, 0, 0, 0], [1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0]]
       }
     },
     "arhsmm": {
       "segmenter": {
         "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ]
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"]
       },
       "posthoc_constraint": {
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ],
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
         "feature_model_types": {
           "surf_dist": "student_t",
           "speed": "trunc_t_upper_z",
@@ -129,36 +75,16 @@
           "start_dist": "trunc_t_lower_z",
           "goal_dist": "trunc_t_lower_z"
         },
-        "fixed_feature_mask": [
-          [0, 0, 0, 0, 0, 0],
-          [1, 1, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [1, 0, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0]
-        ]
+        "fixed_feature_mask": [[0, 0, 0, 0, 0, 0], [1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0]]
       }
     },
     "changepoint": {
       "segmenter": {
         "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ]
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"]
       },
       "posthoc_constraint": {
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ],
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
         "feature_model_types": {
           "surf_dist": "student_t",
           "speed": "trunc_t_upper_z",
@@ -167,26 +93,13 @@
           "start_dist": "trunc_t_lower_z",
           "goal_dist": "trunc_t_lower_z"
         },
-        "fixed_feature_mask": [
-          [0, 0, 0, 0, 0, 0],
-          [1, 1, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [1, 0, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0]
-        ]
+        "fixed_feature_mask": [[0, 0, 0, 0, 0, 0], [1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0]]
       }
     },
     "cluster": {
       "segmenter": {
         "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ],
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
         "feature_distance_weight": 0.1,
         "use_state": true,
         "use_velocity": false,
@@ -195,14 +108,7 @@
         "init_mode": "random_stage_ends"
       },
       "posthoc_constraint": {
-        "selected_raw_feature_ids": [
-          "surf_dist",
-          "normal_err",
-          "speed",
-          "ang_speed",
-          "start_dist",
-          "goal_dist"
-        ],
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
         "feature_model_types": {
           "surf_dist": "student_t",
           "speed": "trunc_t_upper_z",
@@ -211,13 +117,7 @@
           "start_dist": "trunc_t_lower_z",
           "goal_dist": "trunc_t_lower_z"
         },
-        "fixed_feature_mask": [
-          [0, 0, 0, 0, 0, 0],
-          [1, 1, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [1, 0, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0]
-        ]
+        "fixed_feature_mask": [[0, 0, 0, 0, 0, 0], [1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0]]
       }
     }
   }

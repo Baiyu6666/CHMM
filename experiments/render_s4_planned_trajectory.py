@@ -387,14 +387,26 @@ def _feature_names(feature_schema: list[dict], dim: int) -> list[str]:
 
 
 _S4_FEATURE_UNITS = {
-    "surf_dist": "m",
-    "center_dist": "m",
-    "orient_err": "rad",
-    "speed": "m/s",
-    "angular_speed": "rad/s",
+    "surf_dist": "mm",
+    "center_dist": "mm",
+    "orient_err": "deg",
+    "speed": "mm/s",
+    "angular_speed": "deg/s",
     "normal_force": "N",
-    "start_dist": "m",
-    "insert_err": "m",
+    "start_dist": "mm",
+    "insert_err": "mm",
+}
+
+
+_S4_FEATURE_DISPLAY_SCALE = {
+    "surf_dist": 1000.0,
+    "center_dist": 1000.0,
+    "orient_err": 180.0 / np.pi,
+    "speed": 1000.0,
+    "angular_speed": 180.0 / np.pi,
+    "normal_force": 1.0,
+    "start_dist": 1000.0,
+    "insert_err": 1000.0,
 }
 
 
@@ -402,6 +414,10 @@ def _feature_label_with_unit(name: str) -> str:
     name = str(name)
     unit = _S4_FEATURE_UNITS.get(name)
     return name if not unit else f"{name} [{unit}]"
+
+
+def _display_scale_for_feature(name: str) -> float:
+    return float(_S4_FEATURE_DISPLAY_SCALE.get(str(name), 1.0))
 
 
 def _stage_spans(cutpoints: list[int], length: int) -> list[tuple[int, int]]:
@@ -424,10 +440,16 @@ def _plot_feature_profiles(
 ) -> Path:
     if plt is None:
         raise RuntimeError("matplotlib is required to plot feature profiles.")
-    Fp = np.asarray(planned_features, dtype=float)
-    Fe = np.asarray(executed_features, dtype=float)
+    Fp = np.asarray(planned_features, dtype=float).copy()
+    Fe = np.asarray(executed_features, dtype=float).copy()
     dim = int(max(Fp.shape[1], Fe.shape[1]))
     names = _feature_names(env.get_feature_schema(), dim)
+    for feat_idx, name in enumerate(names):
+        scale = _display_scale_for_feature(name)
+        if feat_idx < Fp.shape[1]:
+            Fp[:, feat_idx] *= scale
+        if feat_idx < Fe.shape[1]:
+            Fe[:, feat_idx] *= scale
     spans = _stage_spans(cutpoints, max(len(Fp), len(Fe)))
     if bool(use_env_true_constraints):
         specs = list(env.get_constraint_specs())
@@ -461,8 +483,9 @@ def _plot_feature_profiles(
             oracle_key = str(spec.get("oracle_key", ""))
             true_key = next((key for key in _constraint_key_aliases(oracle_key) if key in true_constraints), None)
             if true_key is not None:
+                scale = _display_scale_for_feature(feat_name)
                 ax.hlines(
-                    float(true_constraints[true_key]),
+                    float(true_constraints[true_key]) * scale,
                     x0,
                     x1,
                     colors="#111827",
@@ -473,8 +496,9 @@ def _plot_feature_profiles(
                 true_label_used = True
             learned_key = f"s{stage_idx + 1}:{feat_name}"
             if learned_key in constraint_values:
+                scale = _display_scale_for_feature(feat_name)
                 ax.hlines(
-                    float(constraint_values[learned_key]),
+                    float(constraint_values[learned_key]) * scale,
                     x0,
                     x1,
                     colors="#7C3AED",
@@ -1015,6 +1039,8 @@ def render_s4_planned_trajectory(
     rail_polyline,
     surface_tilt_x: float,
     surface_tilt_y: float,
+    playback_speed: float = 1.0,
+    playback_label: str | None = None,
     output_prefix: str = "s4_planned",
     video_path_override: str | Path | None = None,
 ) -> dict:
@@ -1070,6 +1096,15 @@ def render_s4_planned_trajectory(
     if camera_target is not None:
         env_cfg["pybullet_camera_target"] = tuple(float(v) for v in np.asarray(camera_target, dtype=float).reshape(3))
     env = S4SlideInsertEnv(**env_cfg)
+    playback_speed = float(max(float(playback_speed), 1e-6))
+    playback_real_time_multiplier = (
+        float(getattr(env, "dt", 1.0))
+        * float(fps)
+        * playback_speed
+        * float(max(int(render_frame_stride), 1))
+    )
+    if playback_label is None:
+        playback_label = f"{playback_real_time_multiplier:g}x real time"
 
     raw_payload, resolved_constraints_path = _load_constraint_payload(constraints_json)
     payload = _select_constraint_payload(
@@ -1153,6 +1188,8 @@ def render_s4_planned_trajectory(
             if str(constraint_source).lower() == "learned"
             else "Executed trajectory feature profile (planned with Ground truth constraints)"
         ),
+        playback_speed=float(playback_speed),
+        playback_label=playback_label,
         execution_control=str(execution_control),
         execution_joint_noise_std=float(execution_joint_noise_std),
         execution_joint_noise_smooth=float(execution_joint_noise_smooth),
@@ -1272,6 +1309,9 @@ def render_s4_planned_trajectory(
         "frames": int(latent.get("frames", 0)),
         "saved_frames": list(latent.get("saved_frames", [])),
         "feature_overlay": bool(feature_overlay),
+        "playback_speed": float(playback_speed),
+        "playback_real_time_multiplier": float(playback_real_time_multiplier),
+        "playback_label": playback_label,
         "execution_control": str(execution_control),
         "robot_backend": str(obs.get("robot_backend", latent.get("robot_backend", ""))),
         "torque_kp": float(torque_kp),
@@ -1332,6 +1372,8 @@ def main() -> None:
     parser.add_argument("--benchmark-dataset", default=None)
     parser.add_argument("--benchmark-method-seed", type=int, default=None)
     parser.add_argument("--outdir", default="outputs/s4_planned_render")
+    parser.add_argument("--output-prefix", default="s4_planned", help="Prefix for generated video, feature, rollout, and summary files.")
+    parser.add_argument("--video-filename", default=None, help="Exact MP4 filename to write inside --outdir for single-plan renders.")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--plan-seeds", default=None, help="Comma-separated seeds for rendering multiple planned trajectories.")
     parser.add_argument("--n-plans", type=int, default=1, help="Number of planned trajectories to render, starting from --seed, when --plan-seeds is not set.")
@@ -1340,6 +1382,8 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=1360)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--render-frame-stride", type=int, default=1)
+    parser.add_argument("--playback-speed", type=float, default=1.0, help="MP4 playback speed multiplier; the corner label reports real-time speed.")
+    parser.add_argument("--playback-label", default=None, help="Optional lower-left video label. Defaults to '<multiplier>x real time'.")
     parser.add_argument("--realtime", type=int, default=0)
     parser.add_argument("--gui-hold-seconds", type=float, default=None)
     parser.add_argument("--camera-yaw", type=float, default=38.0)
@@ -1410,10 +1454,16 @@ def main() -> None:
     summaries = []
     temp_videos = []
     multi = len(seeds) > 1
+    base_prefix = str(args.output_prefix or "s4_planned")
+    video_filename = None if args.video_filename is None or not str(args.video_filename).strip() else str(args.video_filename).strip()
+    if video_filename is not None and not video_filename.lower().endswith(".mp4"):
+        video_filename += ".mp4"
     for plan_idx, plan_seed in enumerate(seeds):
-        prefix = "s4_planned" if not multi else f"s4_planned_seed_{int(plan_seed):03d}"
+        prefix = base_prefix if not multi else f"{base_prefix}_seed_{int(plan_seed):03d}"
         video_override = None
-        if multi and int(args.gui) == 1:
+        if not multi and int(args.gui) == 1 and video_filename is not None:
+            video_override = out_dir / video_filename
+        elif multi and int(args.gui) == 1:
             video_override = out_dir / f"._tmp_{prefix}_pybullet.mp4"
         summary = render_s4_planned_trajectory(
             constraints_json=args.constraints_json,
@@ -1424,6 +1474,8 @@ def main() -> None:
             width=int(args.width),
             height=int(args.height),
             render_frame_stride=int(args.render_frame_stride),
+            playback_speed=float(args.playback_speed),
+            playback_label=args.playback_label,
             realtime=bool(args.realtime),
             gui_hold_seconds=args.gui_hold_seconds,
             camera_yaw=float(args.camera_yaw),
@@ -1497,7 +1549,8 @@ def main() -> None:
     if multi:
         final_video = None
         if int(args.gui) == 1 and temp_videos:
-            final_video = concat_mp4_files(temp_videos, out_dir / "s4_planned_pybullet.mp4")
+            final_name = video_filename or f"{base_prefix}_pybullet.mp4"
+            final_video = concat_mp4_files(temp_videos, out_dir / final_name)
             for path in temp_videos:
                 try:
                     path.unlink()

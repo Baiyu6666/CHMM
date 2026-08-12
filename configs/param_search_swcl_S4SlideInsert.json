@@ -1,5 +1,6 @@
 {
   "lambda_ineq_constraint": [0.02, 0.04, 0.06, 0.08],
-  "truncated_inequality_z_threshold": [0.4, 0.5, 0.7, 0.9],
+  "truncated_inequality_z_threshold": [-0.5, -0.4, -0.3, -0.2, -0.1],
+  "truncated_z_score_mode": ["fast_fit_minus_baseline"],
   "inequality_trim_fraction": [0.0, 0.03, 0.05, 0.1]
 }

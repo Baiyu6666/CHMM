@@ -1,0 +1,54 @@
+{
+  "demo_lengths": [
+    95,
+    85,
+    89
+  ],
+  "true_taus": null,
+  "true_cutpoints": [
+    [
+      17,
+      36
+    ],
+    [
+      19,
+      25
+    ],
+    [
+      17,
+      35
+    ]
+  ],
+  "predicted_taus": [],
+  "predicted_cutpoints": [
+    [
+      16,
+      36
+    ],
+    [
+      16,
+      19
+    ],
+    [
+      13,
+      33
+    ]
+  ],
+  "predicted_stage_ends": [
+    [
+      16,
+      36,
+      94
+    ],
+    [
+      16,
+      19,
+      84
+    ],
+    [
+      13,
+      33,
+      88
+    ]
+  ]
+}

@@ -22,6 +22,25 @@ from envs.S5SphereInspect import _apply_default_s5_loader_config, load_S5SphereI
 from experiments.render_metrics import constraint_violation_stats, parse_int_list, print_render_violation_rates
 
 
+_DISPLAY_UNITS = {
+    "surf_dist": "mm",
+    "normal_err": "deg",
+    "speed": "mm/s",
+    "ang_speed": "deg/s",
+    "start_dist": "mm",
+    "goal_dist": "mm",
+}
+
+_DISPLAY_SCALE = {
+    "surf_dist": 1000.0,
+    "normal_err": 180.0 / np.pi,
+    "speed": 1000.0,
+    "ang_speed": 180.0 / np.pi,
+    "start_dist": 1000.0,
+    "goal_dist": 1000.0,
+}
+
+
 def _parse_csv_ints(text: str | None) -> list[int] | None:
     if text is None or not str(text).strip():
         return None
@@ -105,6 +124,80 @@ def _bundle_tool_axis(env, trajectory: np.ndarray):
     return None
 
 
+def _training_feature_names_from_config() -> list[str] | None:
+    cfg_path = PROJECT_ROOT / "configs" / "envs" / "S5SphereInspect.json"
+    if not cfg_path.exists():
+        return None
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    selected = (
+        cfg.get("method_overrides", {})
+        .get("swcl", {})
+        .get("selected_raw_feature_ids")
+    )
+    if not selected:
+        return None
+    return [str(name) for name in selected]
+
+
+def _filter_features_for_display(
+    features: np.ndarray,
+    feature_schema: list[dict],
+    selected_names: list[str] | None,
+) -> tuple[np.ndarray, list[dict]]:
+    F = np.asarray(features, dtype=float)
+    schema = list(feature_schema or [])
+    if not selected_names:
+        return F, schema
+    name_to_col = {}
+    for idx, item in enumerate(schema):
+        name = str(item.get("name", f"feature_{idx}"))
+        col = int(item.get("column_idx", item.get("id", idx)))
+        if 0 <= col < F.shape[1]:
+            name_to_col[name] = col
+    cols = [name_to_col[name] for name in selected_names if name in name_to_col]
+    if not cols:
+        return F, schema
+    scales = np.asarray([float(_DISPLAY_SCALE.get(name, 1.0)) for name in selected_names if name in name_to_col], dtype=float)
+    filtered_schema = []
+    for new_idx, name in enumerate(selected_names):
+        if name not in name_to_col:
+            continue
+        old = next((dict(item) for item in schema if str(item.get("name", "")) == name), {"name": name})
+        old["id"] = int(new_idx)
+        old["column_idx"] = int(new_idx)
+        if name in _DISPLAY_UNITS:
+            old["unit"] = _DISPLAY_UNITS[name]
+        filtered_schema.append(old)
+    return F[:, cols] * scales[None, :], filtered_schema
+
+
+def _display_units_from_schema(feature_schema: list[dict]) -> dict[str, str]:
+    out = {}
+    for item in feature_schema or []:
+        name = str(item.get("name", ""))
+        unit = str(item.get("unit", ""))
+        if name and unit:
+            out[name] = unit
+    return out
+
+
+def _scale_true_constraints_for_display(
+    true_constraints: dict,
+    constraint_specs: list[dict],
+) -> dict:
+    scaled = dict(true_constraints or {})
+    for spec in constraint_specs:
+        name = str(spec.get("feature_name", ""))
+        key = str(spec.get("oracle_key", ""))
+        if not key or key not in scaled:
+            continue
+        try:
+            scaled[key] = float(scaled[key]) * float(_DISPLAY_SCALE.get(name, 1.0))
+        except (TypeError, ValueError):
+            pass
+    return scaled
+
+
 def _plot_feature_traces(
     *,
     features: np.ndarray,
@@ -124,7 +217,7 @@ def _plot_feature_traces(
         raise ValueError("reference_features must have shape (T, D).")
     schema = list(feature_schema or [])
     name_by_idx = {int(item.get("id", idx)): str(item.get("name", f"feature_{idx}")) for idx, item in enumerate(schema)}
-    names = ["surf_dist", "normal_err", "speed", "ang_speed"]
+    names = [name_by_idx[idx] for idx in sorted(name_by_idx)]
     name_to_idx = {name: idx for idx, name in name_by_idx.items()}
     plot_items: list[tuple[int, str]] = []
     for name in names:
@@ -148,7 +241,8 @@ def _plot_feature_traces(
         for cp in cutpoints:
             if 0 <= int(cp) < len(t):
                 ax.axvline(int(cp), color="#6B7280", linestyle="--", linewidth=1.0, alpha=0.72)
-        ax.set_ylabel(feat_name)
+        unit = next((str(item.get("unit", "")) for item in schema if str(item.get("name", "")) == feat_name), "")
+        ax.set_ylabel(feat_name if not unit else f"{feat_name} [{unit}]")
         ax.grid(alpha=0.22)
     axes[0].legend(loc="upper right", frameon=False)
     axes[-1].set_xlabel("t")
@@ -219,8 +313,6 @@ def render_s5_demonstrations(
         out_dir = PROJECT_ROOT / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     playback_speed = float(max(float(playback_speed), 1e-6))
-    if playback_label is None and abs(playback_speed - 1.0) > 1e-8:
-        playback_label = f"\u00d7{playback_speed:g}"
 
     cfg = _apply_default_s5_loader_config({})
     cfg["rollout_backend"] = str(rollout_backend)
@@ -241,6 +333,15 @@ def render_s5_demonstrations(
         demo_kwargs={},
     )
     env = bundle.env
+    playback_real_time_multiplier = (
+        float(getattr(env, "dt", 1.0))
+        * float(fps)
+        * float(playback_speed)
+        * float(max(int(render_frame_stride), 1))
+    )
+    if playback_label is None:
+        playback_label = f"{float(playback_real_time_multiplier):g}x real time"
+    display_feature_names = _training_feature_names_from_config()
     cache_meta = None if not getattr(bundle, "meta", None) else bundle.meta.get("demo_cache")
     if cache_meta:
         status = "hit" if bool(cache_meta.get("hit", False)) else "miss"
@@ -307,8 +408,24 @@ def render_s5_demonstrations(
             tool_axis = obs.get("tool_axis")
             joint_positions = obs.get("joint_positions")
             cutpoints = [int(v) for v in np.asarray(obs["true_cutpoints"], dtype=int).reshape(-1).tolist()]
+            feature_matrix = np.asarray(obs["features"], dtype=float)
+            display_feature_matrix, display_feature_schema = _filter_features_for_display(
+                feature_matrix,
+                list(obs["feature_schema"]),
+                display_feature_names,
+            )
+            display_constraint_specs = [
+                dict(spec)
+                for spec in env.get_constraint_specs()
+                if display_feature_names is None or str(spec.get("feature_name", "")) in set(display_feature_names)
+            ]
+            display_true_constraints = _scale_true_constraints_for_display(
+                dict(env.true_constraints),
+                display_constraint_specs,
+            )
             feature_plot_path = None
             reference_features = None
+            display_reference_features = None
             feature_plot_series = ["pybullet executed"]
             if "reference_trajectory" in obs:
                 reference_tool_axis = obs.get("reference_tool_axis")
@@ -317,12 +434,17 @@ def render_s5_demonstrations(
                     tool_axis=(None if reference_tool_axis is None else np.asarray(reference_tool_axis, dtype=float)),
                     use_cached=False,
                 )
+                display_reference_features, _ = _filter_features_for_display(
+                    reference_features,
+                    list(obs["feature_schema"]),
+                    display_feature_names,
+                )
                 feature_plot_series.insert(0, "planned/reference")
             if bool(plot_features):
                 feature_plot_path = _plot_feature_traces(
-                    features=np.asarray(obs["features"], dtype=float),
-                    reference_features=None if reference_features is None else np.asarray(reference_features, dtype=float),
-                    feature_schema=list(obs["feature_schema"]),
+                    features=display_feature_matrix,
+                    reference_features=display_reference_features,
+                    feature_schema=display_feature_schema,
                     cutpoints=cutpoints,
                     output_path=out_dir / f"s5_demo_{int(demo_idx):02d}_features.png",
                     title=f"S5SphereInspect demo {int(demo_idx)} feature traces",
@@ -344,7 +466,6 @@ def render_s5_demonstrations(
                     if gui_hold_seconds is None
                     else float(gui_hold_seconds)
                 )
-            feature_matrix = np.asarray(obs["features"], dtype=float)
             render_summary = env.render_episode(
                 scene,
                 trajectory,
@@ -378,10 +499,11 @@ def render_s5_demonstrations(
                 trace_width=float(trace_width),
                 draw_current_marker=bool(draw_current_marker),
                 feature_overlay=bool(feature_overlay),
-                feature_overlay_features=feature_matrix,
-                feature_overlay_names=_feature_names(list(obs["feature_schema"]), feature_matrix.shape[1]),
-                feature_overlay_specs=list(env.get_constraint_specs()),
-                feature_overlay_true_constraints=dict(env.true_constraints),
+                feature_overlay_features=display_feature_matrix,
+                feature_overlay_names=_feature_names(display_feature_schema, display_feature_matrix.shape[1]),
+                feature_overlay_units=_display_units_from_schema(display_feature_schema),
+                feature_overlay_specs=display_constraint_specs,
+                feature_overlay_true_constraints=display_true_constraints,
                 feature_overlay_title="Executed demonstration feature profile",
                 playback_speed=float(playback_speed),
                 playback_label=playback_label,
@@ -414,6 +536,7 @@ def render_s5_demonstrations(
                 "feature_plot_series": feature_plot_series,
                 "feature_overlay": bool(feature_overlay),
                 "playback_speed": float(playback_speed),
+                "playback_real_time_multiplier": float(playback_real_time_multiplier),
                 "playback_label": playback_label,
                 "video": render_summary,
                 "saved_frames": list(render_summary.get("saved_frames", [])),
@@ -476,6 +599,7 @@ def render_s5_demonstrations(
             None if not combine_video else float(1.5 if gui_hold_seconds is None else gui_hold_seconds)
         ),
         "playback_speed": float(playback_speed),
+        "playback_real_time_multiplier": float(playback_real_time_multiplier),
         "playback_label": playback_label,
         "constraint_violation": constraint_violation_stats(
             features_list=violation_features,
@@ -539,8 +663,8 @@ def main() -> None:
     parser.add_argument("--draw-current-marker", type=int, default=0)
     parser.add_argument("--plot-features", type=int, default=1, help="1 to save per-demo S5 feature trace PNGs.")
     parser.add_argument("--feature-overlay", type=int, default=1, help="1 to overlay feature traces on rendered videos.")
-    parser.add_argument("--playback-speed", type=float, default=1.0, help="MP4 playback speed multiplier; 1.5 writes the same frames at 1.5x FPS.")
-    parser.add_argument("--playback-label", default=None, help="Optional lower-right video label. Defaults to '\u00d7SPEED' when speed != 1.")
+    parser.add_argument("--playback-speed", type=float, default=1.0, help="MP4 playback speed multiplier; the corner label reports real-time speed.")
+    parser.add_argument("--playback-label", default=None, help="Optional lower-left video label. Defaults to '<multiplier>x real time'.")
     parser.add_argument("--save-frame-indices", default=None, help="Comma-separated source frame indices to save as PNGs in --outdir, e.g. 0,80,157.")
     parser.add_argument("--no-precheck", action="store_true", help="Disable waypoint IK precheck before full PyBullet rollout.")
     parser.add_argument("--no-filter", action="store_true", help="Disable final IK/rollout rejection filter.")

@@ -1,0 +1,443 @@
+\documentclass[11pt]{ctexart}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{Soft Half-t 不等式约束模型说明}
+\author{}
+\date{2026-06-05}
+
+\begin{document}
+\maketitle
+
+\section{目标}
+
+我们希望从一个候选阶段内的 feature 数据中判断该阶段是否存在单边不等式约束。给定一个阶段内的标准化 feature 样本
+\[
+\mathcal{X}=\{x_1,\ldots,x_n\},
+\]
+不等式约束有两种方向：
+\[
+\text{lower bound: } x\ge b,
+\qquad
+\text{upper bound: } x\le b.
+\]
+
+模型的核心思想是：如果某个阶段确实满足单边不等式约束，那么样本应该集中在某个边界 $b$ 的合法一侧，并且越靠近边界越常见；离边界越远，概率逐渐下降。同时，少量落在非法一侧的样本不应该导致 likelihood 直接变成零，因此使用 soft boundary 而不是 hard truncation。
+
+\section{方向和 signed slack}
+
+用一个方向变量 $d\in\{\mathrm{lower},\mathrm{upper}\}$ 表示不等式方向。定义符号
+\[
+ a_d=
+ \begin{cases}
+ +1, & d=\mathrm{lower},\\
+ -1, & d=\mathrm{upper}.
+ \end{cases}
+\]
+
+对任意样本 $x_i$，定义 signed slack：
+\[
+ y_i = a_d(x_i-b).
+\]
+
+于是：
+\begin{itemize}[leftmargin=2em]
+  \item $y_i\ge 0$ 表示样本在合法一侧；
+  \item $y_i=0$ 表示样本正好在边界 $b$；
+  \item $y_i<0$ 表示样本违反不等式约束。
+\end{itemize}
+
+lower bound 时，$y_i=x_i-b$；upper bound 时，$y_i=b-x_i$。
+
+\section{Soft Half-t Density}
+
+令 $t_\nu(z)$ 表示自由度为 $\nu$ 的标准 Student-t 密度：
+\[
+ t_\nu(z)
+ =
+ \frac{\Gamma\left(\frac{\nu+1}{2}\right)}
+ {\sqrt{\nu\pi}\,\Gamma\left(\frac{\nu}{2}\right)}
+ \left(1+\frac{z^2}{\nu}\right)^{-\frac{\nu+1}{2}}.
+\]
+
+Soft half-t 不等式模型定义为
+\[
+ p_{\mathrm{ineq}}(x\mid b,\tau,\nu,\alpha,d)
+ =
+ \begin{cases}
+ \dfrac{1}{Z}\dfrac{2}{\tau}t_\nu\!\left(\dfrac{y}{\tau}\right),
+ & y\ge 0,\\[1.2em]
+ \dfrac{1}{Z}\dfrac{2}{\tau}t_\nu(0)\exp\!\left(\dfrac{y}{\alpha}\right),
+ & y<0,
+ \end{cases}
+\]
+其中
+\[
+ y=a_d(x-b).
+\]
+
+归一化常数为
+\[
+ Z = 1 + \frac{2}{\tau}t_\nu(0)\alpha.
+\]
+
+这个 density 可以理解为两部分：
+\begin{itemize}[leftmargin=2em]
+  \item 合法侧 $y\ge 0$ 是 half-Student-t 分布；
+  \item 非法侧 $y<0$ 是指数泄漏项，用来给 violation 一个连续但快速衰减的概率。
+\end{itemize}
+
+\section{参数含义}
+
+模型参数包括
+\[
+(b,\tau,\nu,\alpha,d).
+\]
+
+各参数的含义如下：
+\begin{itemize}[leftmargin=2em]
+  \item $b$：不等式边界。lower bound 中是下界，upper bound 中是上界。
+  \item $d$：不等式方向，决定合法区域在 $b$ 的哪一侧。
+  \item $\tau$：合法侧 half-t 的 scale，控制合法侧数据离边界的典型距离。
+  \item $\nu$：Student-t 自由度，控制尾部厚度。$\nu$ 越小尾部越厚，模型越能容忍远离边界的合法侧样本。
+  \item $\alpha$：soft boundary 的泄漏尺度，控制非法侧 violation 的惩罚强度。
+\end{itemize}
+
+通常令
+\[
+\alpha = \rho\tau,
+\]
+其中 $\rho>0$ 是相对 softness。$\rho$ 越小，非法侧衰减越快，模型越接近 hard inequality；$\rho$ 越大，非法侧越宽松。
+
+\section{模型形状}
+
+Soft half-t density 的最大值点在边界 $b$：
+\[
+\arg\max_x p_{\mathrm{ineq}}(x)=b.
+\]
+
+在合法侧，density 从 $b$ 开始随 $|x-b|$ 增大而下降：
+\[
+ p(x)\propto
+ \left(1+\frac{(a_d(x-b)/\tau)^2}{\nu}\right)^{-\frac{\nu+1}{2}},
+ \qquad a_d(x-b)\ge 0.
+\]
+
+在非法侧，density 从边界向外指数下降：
+\[
+ p(x)\propto \exp\left(\frac{a_d(x-b)}{\alpha}\right),
+ \qquad a_d(x-b)<0.
+\]
+
+因此，这个分布是单峰、单边、边界锚定的。它不是对称分布，也不会退化成普通 baseline 分布；它始终表达“边界附近最高、合法侧 heavy tail、非法侧 soft penalty”的单边结构。
+
+\section{边界和 Scale 的估计}
+
+对于 lower bound，边界通常由低分位数估计：
+\[
+ b_{\mathrm{lower}} = Q_{q_b}(\mathcal{X}),
+ \qquad q_b\approx 0.05.
+\]
+
+对于 upper bound，边界通常由高分位数估计：
+\[
+ b_{\mathrm{upper}} = Q_{1-q_b}(\mathcal{X}),
+ \qquad q_b\approx 0.05.
+\]
+
+给定方向和边界后，先计算合法 slack：
+\[
+ s_i = \max(a_d(x_i-b),0).
+\]
+
+scale $\tau$ 用 slack 的高分位数估计，而不是用 second moment：
+\[
+ \tau_0
+ =
+ \frac{Q_q(\{s_i\})}{T_\nu^{-1}\left(\frac{1+q}{2}\right)},
+ \qquad q\in[0.9,0.95].
+\]
+其中 $T_\nu^{-1}$ 是标准 Student-t CDF 的 inverse。
+
+这个公式来自 half-t 分布的 CDF：
+\[
+ P(S\le s)=2T_\nu(s/\tau)-1.
+\]
+所以
+\[
+ Q_q(S)=\tau T_\nu^{-1}\left(\frac{1+q}{2}\right).
+\]
+
+使用高分位数估计 scale 的原因是：当大量样本贴近边界时，低分位数或 second moment 可能让 $\tau$ 过小，使模型变成过尖的 spike；高分位数可以让 scale 更多反映合法侧的整体 slack 宽度。
+
+为了避免几乎常数的 feature 段产生无限尖锐的 density，还可以设置观测噪声下限：
+\[
+ \tau = \max(\tau_0,\epsilon),
+\]
+其中 $\epsilon$ 表示最小可辨别 feature 噪声尺度。
+
+\section{Likelihood}
+
+给定一个候选阶段的数据 $\mathcal{X}$，soft half-t 不等式模型的平均 negative log-likelihood 为
+\[
+ \mathrm{NLL}_{\mathrm{ineq}}
+ =
+ -\frac{1}{n}\sum_{i=1}^n
+ \log p_{\mathrm{ineq}}(x_i\mid b,\tau,\nu,\alpha,d).
+\]
+
+如果需要比较 lower 和 upper 两个方向，则分别计算
+\[
+ \mathrm{NLL}_{\mathrm{lower}},
+ \qquad
+ \mathrm{NLL}_{\mathrm{upper}},
+\]
+并选择 likelihood 更好的方向：
+\[
+ \hat d = \arg\min_{d\in\{\mathrm{lower},\mathrm{upper}\}}
+ \mathrm{NLL}_{\mathrm{ineq}}(d).
+\]
+
+\section{Baseline Comparison}
+
+为了判断一个阶段是否真的表现出不等式结构，需要和一个无约束 baseline 分布比较。baseline 的作用不是给分段提供奖励，而是提供一个参照：只有当单边不等式模型明显优于无约束模型时，才认为该阶段存在不等式约束。
+
+baseline 使用普通 Student-t 分布：
+\[
+ p_{\mathrm{base}}(x\mid \mu_b,\sigma_b,\nu_b)
+ =
+ \frac{1}{\sigma_b}
+ t_{\nu_b}\!\left(\frac{x-\mu_b}{\sigma_b}\right).
+\]
+
+其平均 negative log-likelihood 为
+\[
+ \mathrm{NLL}_{\mathrm{base}}
+ =
+ -\frac{1}{n}\sum_{i=1}^n
+ \log p_{\mathrm{base}}(x_i\mid \mu_b,\sigma_b,\nu_b).
+\]
+
+Student-t baseline 可以用稳健估计或 MLE 估计。概念上，baseline 应该描述“这个阶段的 feature 只是一个普通单峰无约束分布”的解释能力。它不包含边界 $b$，也不区分 lower/upper 方向。
+
+如果使用 MLE baseline，可以固定自由度 $\nu_b$，优化
+\[
+ (\hat\mu_b,\hat\sigma_b)
+ =
+ \arg\min_{\mu,\sigma}
+ \left[-\frac{1}{n}\sum_{i=1}^n
+ \log p_{\mathrm{base}}(x_i\mid \mu,\sigma,\nu_b)\right].
+\]
+
+为了避免某些低方差阶段产生异常大的 likelihood，baseline scale 和 inequality scale 可以共享同一个最小噪声尺度：
+\[
+ \sigma_b \leftarrow \max(\sigma_b,\epsilon),
+ \qquad
+ \tau \leftarrow \max(\tau,
+ \epsilon).
+\]
+
+这样做的含义是：feature 的测量或标准化后数值存在一个最小可分辨尺度，任何模型都不应该把 scale 缩到低于这个尺度。
+
+\section{不等式方向选择}
+
+对于每个候选阶段和每个 feature，可以分别拟合 lower-bound 和 upper-bound 两个 soft half-t 模型。
+
+lower-bound 模型：
+\[
+ d=\mathrm{lower},
+ \qquad
+ b_{\mathrm{lower}}=Q_{q_b}(\mathcal{X}),
+ \qquad
+ y_i=x_i-b_{\mathrm{lower}}.
+\]
+
+upper-bound 模型：
+\[
+ d=\mathrm{upper},
+ \qquad
+ b_{\mathrm{upper}}=Q_{1-q_b}(\mathcal{X}),
+ \qquad
+ y_i=b_{\mathrm{upper}}-x_i.
+\]
+
+分别计算两个方向的不等式 NLL：
+\[
+ \mathrm{NLL}_{\mathrm{lower}}
+ =
+ -\frac{1}{n}\sum_i
+ \log p_{\mathrm{ineq}}(x_i\mid b_{\mathrm{lower}},\tau_{\mathrm{lower}},\nu,\alpha_{\mathrm{lower}},\mathrm{lower}),
+\]
+\[
+ \mathrm{NLL}_{\mathrm{upper}}
+ =
+ -\frac{1}{n}\sum_i
+ \log p_{\mathrm{ineq}}(x_i\mid b_{\mathrm{upper}},\tau_{\mathrm{upper}},\nu,\alpha_{\mathrm{upper}},\mathrm{upper}).
+\]
+
+然后用相同的 baseline 作为参照，得到两个方向的 gain：
+\[
+ \mathrm{gain}_{\mathrm{lower}}
+ =
+ \mathrm{NLL}_{\mathrm{base}}-\mathrm{NLL}_{\mathrm{lower}},
+\]
+\[
+ \mathrm{gain}_{\mathrm{upper}}
+ =
+ \mathrm{NLL}_{\mathrm{base}}-\mathrm{NLL}_{\mathrm{upper}}.
+\]
+
+如果方向未知，则选择 gain 最大的方向：
+\[
+ \hat d
+ =
+ \arg\max_{d\in\{\mathrm{lower},\mathrm{upper}\}}
+ \mathrm{gain}_d.
+\]
+
+等价地，如果定义
+\[
+ \mathrm{score}_d
+ =
+ \mathrm{NLL}_{\mathrm{ineq},d}-\mathrm{NLL}_{\mathrm{base}},
+\]
+则选择 score 最小的方向：
+\[
+ \hat d
+ =
+ \arg\min_{d\in\{\mathrm{lower},\mathrm{upper}\}}
+ \mathrm{score}_d.
+\]
+
+如果先验已经指定方向，例如某个 feature 只能是 upper-bound 或只能是 lower-bound，则不做方向搜索，只评估指定方向。
+
+\section{激活判断}
+
+方向选定后，判断该候选阶段是否激活不等式约束。设选定方向为 $\hat d$，对应的不等式 NLL 为
+\[
+ \mathrm{NLL}_{\mathrm{ineq}}
+ =
+ \mathrm{NLL}_{\mathrm{ineq},\hat d}.
+\]
+
+定义 likelihood gain：
+\[
+ \mathrm{gain}
+ =
+ \mathrm{NLL}_{\mathrm{base}}-\mathrm{NLL}_{\mathrm{ineq}}.
+\]
+
+或者定义 score：
+\[
+ \mathrm{score}
+ =
+ \mathrm{NLL}_{\mathrm{ineq}}-\mathrm{NLL}_{\mathrm{base}}
+ = -\mathrm{gain}.
+\]
+
+激活规则为
+\[
+ \mathrm{active}
+ =
+ \mathbf{1}\left[\mathrm{gain}>\gamma\right],
+\]
+其中 $\gamma$ 是激活阈值。等价地，若使用 score，则
+\[
+ \mathrm{active}
+ =
+ \mathbf{1}\left[\mathrm{score}< -\gamma\right].
+\]
+
+这个判断的意义是：不等式模型必须比普通 Student-t baseline 好出一个 margin，才认为该阶段真的存在单边约束。否则，即使 soft half-t 本身能拟合数据，也不把它当作有效约束。
+
+\section{分段中的 Likelihood / Cost}
+
+在分段时，需要决定一个候选阶段是否因为满足不等式而获得约束项。这里区分两种情况。
+
+如果不等式没有激活：
+\[
+ \mathrm{active}=0,
+ \qquad
+ C_{\mathrm{ineq}}=0.
+\]
+
+也就是说，未激活时不使用 baseline likelihood 影响分段。这样可以避免算法退化成“选择 baseline likelihood 最大的切分点”。baseline 只用于判断是否激活，不作为 inactive segment 的分段目标。
+
+如果不等式激活：
+\[
+ \mathrm{active}=1,
+\]
+则使用 soft half-t 不等式模型的 total negative log-likelihood 作为该阶段的不等式代价：
+\[
+ C_{\mathrm{ineq}}
+ =
+ \lambda_{\mathrm{ineq}}\sum_{i=1}^{n}
+ \left[-\log p_{\mathrm{ineq}}(x_i\mid b,\tau,\nu,\alpha,\hat d)\right].
+\]
+
+等价地，使用平均 NLL 表示为
+\[
+ C_{\mathrm{ineq}}
+ =
+ \lambda_{\mathrm{ineq}}\,n\,\mathrm{NLL}_{\mathrm{ineq}}.
+\]
+
+这里 $n$ 是候选阶段长度，$\lambda_{\mathrm{ineq}}$ 是不等式约束项权重。使用 total NLL 的原因是：分段目标应该考虑该阶段所有样本对约束的支持程度，而不是只看平均值。长阶段中稳定满足约束比短阶段中的偶然贴边更有统计意义。
+
+如果整个分段方案包含多个阶段和多个 feature，则总不等式代价可以写成
+\[
+ C_{\mathrm{ineq,total}}
+ =
+ \sum_{k}\sum_{m}
+ \mathbf{1}[\mathrm{active}_{k,m}=1]\,
+ \lambda_{\mathrm{ineq}}
+ \sum_{i\in \mathcal{S}_k}
+ \left[-\log p_{\mathrm{ineq}}(x_{i,m}\mid b_{k,m},\tau_{k,m},\nu,\alpha_{k,m},d_{k,m})\right],
+\]
+其中 $\mathcal{S}_k$ 表示第 $k$ 个阶段包含的时间点集合，$m$ 表示 feature index。
+
+\section{整体流程总结}
+
+对每个候选阶段和每个 feature，方法流程如下：
+\begin{enumerate}[leftmargin=2em]
+  \item 取该阶段内的标准化 feature 样本 $\mathcal{X}$。
+  \item 拟合无约束 Student-t baseline，得到 $\mathrm{NLL}_{\mathrm{base}}$。
+  \item 拟合 lower soft half-t，得到 $\mathrm{NLL}_{\mathrm{lower}}$ 和 $\mathrm{gain}_{\mathrm{lower}}$。
+  \item 拟合 upper soft half-t，得到 $\mathrm{NLL}_{\mathrm{upper}}$ 和 $\mathrm{gain}_{\mathrm{upper}}$。
+  \item 如果方向未知，选择 gain 最大的方向；如果方向已知，只使用指定方向。
+  \item 若最佳 gain 超过激活阈值 $\gamma$，则该 feature 在该阶段激活不等式约束。
+  \item 激活时，分段目标中加入 soft half-t total NLL；未激活时，该 feature 的不等式 cost 为 0。
+\end{enumerate}
+
+\section{直观解释}
+
+Soft half-t 不等式模型表达的是以下假设：
+
+\begin{quote}
+如果某个阶段存在单边约束，那么该阶段的 feature 应该在某个边界附近形成单峰密度；边界合法侧允许 heavy-tailed spread，非法侧允许少量 violation，但 violation 的概率随越界距离指数衰减。
+\end{quote}
+
+这个模型相比 hard truncated distribution 更稳定，因为 violation 不会导致 likelihood 变成 $-\infty$。相比普通 Student-t baseline，它又保留了明确的单边 inductive bias：最高密度固定在边界上，而不是自由地把中心放在样本均值或中位数附近。
+
+\section{模型的主要优点和局限}
+
+优点：
+\begin{itemize}[leftmargin=2em]
+  \item 明确表达 lower-bound 或 upper-bound 的单边结构。
+  \item mode 锚定在边界 $b$，适合描述“贴边”的不等式约束。
+  \item 合法侧使用 Student-t heavy tail，对合法但远离边界的点较稳健。
+  \item 非法侧使用 soft exponential leakage，可以容忍少量 violation。
+  \item 通过和 baseline 比较，可以避免把所有阶段都强行解释成不等式约束。
+\end{itemize}
+
+局限：
+\begin{itemize}[leftmargin=2em]
+  \item 如果一个多模态分布在某个方向上也能被解释成“边界附近高密度 + 合法侧 spread”，模型仍可能给出较高 likelihood。
+  \item scale 太小时 likelihood 会异常尖锐，因此需要合理的 scale estimation 或 noise floor。
+  \item 激活阈值控制模型的保守程度；阈值太低会漏检，太高会误检。
+  \item 模型本身只描述单个 feature 的边缘分布，不直接建模多个 feature 之间的联合依赖。
+\end{itemize}
+
+\end{document}

@@ -1,6 +1,6 @@
 {
-  "ModelObjectiveFinal": 1121.6415643863115,
-  "SegmentationLogLikelihoodFinal": 1121.6415643863115,
-  "PosthocObjectiveFinal": -10999999060.417854,
-  "PosthocFeatureObjectiveFinal": -10999999060.417854
+  "ModelObjectiveFinal": 1121.6417541448873,
+  "SegmentationLogLikelihoodFinal": 1121.6417541448873,
+  "PosthocObjectiveFinal": 884.7757634246263,
+  "PosthocFeatureObjectiveFinal": 884.7757634246263
 }

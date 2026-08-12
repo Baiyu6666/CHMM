@@ -24,6 +24,23 @@ def _weighted_quantile(values, weights, q):
     return float(vals[min(idx, len(vals) - 1)])
 
 
+def _fit_quantile(values, weights, q):
+    vals = np.asarray(values, dtype=float).reshape(-1)
+    ws = np.asarray(weights, dtype=float).reshape(-1)
+    if vals.size == 0:
+        return np.nan
+    if ws.size != vals.size:
+        raise ValueError("weights must match values for quantile fitting.")
+    positive = ws > 1e-12
+    vals = vals[positive]
+    ws = ws[positive]
+    if vals.size == 0 or float(np.sum(ws)) <= 1e-12:
+        return np.nan
+    if np.allclose(ws, ws[0]):
+        return float(np.quantile(vals, q))
+    return _weighted_quantile(vals, ws, q)
+
+
 def _student_t_logpdf(x, *, mu, sigma, nu):
     x = np.asarray(x, float)
     sigma = max(float(sigma), 1e-6)
@@ -62,6 +79,53 @@ def _student_t_standard_cdf(z, nu):
 def _student_t_cdf(x, *, mu, sigma, nu):
     z = (np.asarray(x, float) - float(mu)) / max(float(sigma), 1e-6)
     return _student_t_standard_cdf(z, nu)
+
+
+def _student_t_standard_ppf(q, nu):
+    q = float(np.clip(float(q), 1e-12, 1.0 - 1e-12))
+    nu = max(float(nu), 1e-6)
+    lo, hi = -128.0, 128.0
+    for _ in range(96):
+        mid = 0.5 * (lo + hi)
+        if float(_student_t_standard_cdf(mid, nu)) < q:
+            lo = mid
+        else:
+            hi = mid
+    return float(0.5 * (lo + hi))
+
+
+def _anchored_soft_half_t_logpdf(x, *, b, scale, nu, softness, direction):
+    x = np.asarray(x, float)
+    scale = max(float(scale), 1e-6)
+    nu = max(float(nu), 1e-6)
+    sign = 1.0 if str(direction).lower() == "lower" else -1.0
+    signed_slack = sign * (x - float(b))
+    log_t_norm = (
+        math.log(2.0)
+        + math.lgamma(0.5 * (nu + 1.0))
+        - math.lgamma(0.5 * nu)
+        - 0.5 * math.log(nu * math.pi)
+        - math.log(scale)
+    )
+    if float(softness) <= 1e-12:
+        logp = np.full_like(x, -690.0, dtype=float)
+        ok = signed_slack >= 0.0
+        if np.any(ok):
+            z = signed_slack[ok] / scale
+            logp[ok] = log_t_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu)
+        return logp
+
+    softness = max(float(softness), 1e-12)
+    half_t_at_zero = float(math.exp(min(log_t_norm, 700.0)))
+    log_partition = math.log1p(max(half_t_at_zero * softness, 0.0))
+    logp = np.empty_like(x, dtype=float)
+    ok = signed_slack >= 0.0
+    if np.any(ok):
+        z = signed_slack[ok] / scale
+        logp[ok] = log_t_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu) - log_partition
+    if np.any(~ok):
+        logp[~ok] = log_t_norm + signed_slack[~ok] / softness - log_partition
+    return np.maximum(logp, -690.0)
 
 
 def _fit_truncated_student_t_fixed_boundary(vals, weights, *, b, side, mu0, sigma0, nu):
@@ -840,7 +904,20 @@ class MarginExpUpperRightHNEmission(BaseEmissionModel):
 class TruncatedStudentTUpperEmission(BaseEmissionModel):
     model_type = "trunc_t_upper"
 
-    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0, optimize_m_step=False):
+    def __init__(
+        self,
+        mu_init=0.0,
+        sigma_init=1.0,
+        b_init=0.0,
+        q_low=0.1,
+        q_high=0.9,
+        nu=3.0,
+        optimize_m_step=False,
+        soft_boundary_scale=0.1,
+        observation_noise_scale=0.003,
+        half_t_scale_quantile=0.9,
+        boundary_quantile=0.95,
+    ):
         self.mu = float(mu_init)
         self.sigma = max(float(sigma_init), 1e-6)
         self.b = float(b_init)
@@ -848,21 +925,38 @@ class TruncatedStudentTUpperEmission(BaseEmissionModel):
         self.q_high = float(q_high)
         self.nu = max(float(nu), 1e-3)
         self.optimize_m_step = bool(optimize_m_step)
+        self.soft_boundary_scale = max(float(soft_boundary_scale), 0.0)
+        self.observation_noise_scale = max(float(observation_noise_scale), 0.0)
+        self.half_t_scale_quantile = float(np.clip(float(half_t_scale_quantile), 0.5, 0.99))
+        self.boundary_quantile = float(np.clip(float(boundary_quantile), 0.5, 1.0))
+        self.slack_q50 = 0.0
+        self.slack_q75 = 0.0
+        self.slack_q95 = 0.0
         self._update_interval()
 
     def _update_interval(self):
-        base = StudentTModel(mu=self.mu, sigma=self.sigma, nu=self.nu, q_low=self.q_low, q_high=self.q_high)
-        self.L = float(min(base.L, self.b))
+        z = _student_t_standard_ppf(0.5 + 0.5 * float(np.clip(self.q_high, 0.0, 1.0)), self.nu)
+        self.L = float(self.b - z * self.sigma)
         self.U = float(self.b)
 
     def logpdf(self, x):
-        x = np.asarray(x, float)
-        cdf_b = float(np.clip(_student_t_cdf(self.b, mu=self.mu, sigma=self.sigma, nu=self.nu), 1e-10, 1.0))
-        logp = np.full_like(x, -1e9, dtype=float)
-        inside = x <= self.b
-        if np.any(inside):
-            logp[inside] = _student_t_logpdf(x[inside], mu=self.mu, sigma=self.sigma, nu=self.nu) - math.log(cdf_b)
-        return logp
+        return _anchored_soft_half_t_logpdf(
+            x,
+            b=self.b,
+            scale=self.sigma,
+            nu=self.nu,
+            softness=max(float(self.soft_boundary_scale) * max(float(self.sigma), 1e-6), 1e-12),
+            direction="upper",
+        )
+
+    def _scale_from_slack(self, slack, weights):
+        q = float(self.half_t_scale_quantile)
+        slack_q = _fit_quantile(np.maximum(slack, 0.0), weights, q)
+        if not np.isfinite(slack_q):
+            return max(float(self.sigma), float(self.observation_noise_scale), 1e-6)
+        unit_q = _student_t_standard_ppf(0.5 + 0.5 * q, self.nu)
+        scale = float(slack_q) / max(float(unit_q), 1e-12)
+        return max(float(scale), float(self.observation_noise_scale), 1e-6)
 
     def m_step_update(self, xs, ws=None):
         vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
@@ -881,22 +975,13 @@ class TruncatedStudentTUpperEmission(BaseEmissionModel):
         if total_w <= 1e-12:
             return
 
-        self.b = float(np.max(vals))
-        mu0 = float(np.median(vals))
-        sigma0 = max(float(np.std(vals)), 1e-6)
-        if self.optimize_m_step:
-            self.mu, self.sigma = _fit_truncated_student_t_fixed_boundary(
-                vals,
-                weights,
-                b=self.b,
-                side="upper",
-                mu0=mu0,
-                sigma0=sigma0,
-                nu=self.nu,
-            )
-        else:
-            self.mu, self.sigma = float(mu0), float(sigma0)
-        self.sigma = max(float(self.sigma), 1e-6)
+        self.b = float(_fit_quantile(vals, weights, self.boundary_quantile))
+        self.mu = float(_fit_quantile(vals, weights, 0.5))
+        slack = np.maximum(float(self.b) - vals, 0.0)
+        self.sigma = self._scale_from_slack(slack, weights)
+        self.slack_q50 = float(_fit_quantile(slack, weights, 0.5))
+        self.slack_q75 = float(_fit_quantile(slack, weights, 0.75))
+        self.slack_q95 = float(_fit_quantile(slack, weights, 0.95))
         self._update_interval()
 
     def get_summary(self):
@@ -908,14 +993,35 @@ class TruncatedStudentTUpperEmission(BaseEmissionModel):
             "nu": float(self.nu),
             "L": float(self.L),
             "U": float(self.U),
-            "fit_mode": "optimized_mle" if self.optimize_m_step else "fast_median_std",
+            "fit_mode": "anchored_soft_half_t",
+            "soft_boundary_scale": float(self.soft_boundary_scale),
+            "softness": float(self.soft_boundary_scale * max(self.sigma, 1e-6)),
+            "observation_noise_scale": float(self.observation_noise_scale),
+            "half_t_scale_quantile": float(self.half_t_scale_quantile),
+            "boundary_quantile": float(self.boundary_quantile),
+            "slack_q50": float(self.slack_q50),
+            "slack_q75": float(self.slack_q75),
+            "slack_q95": float(self.slack_q95),
         }
 
 
 class TruncatedStudentTLowerEmission(BaseEmissionModel):
     model_type = "trunc_t_lower"
 
-    def __init__(self, mu_init=0.0, sigma_init=1.0, b_init=0.0, q_low=0.1, q_high=0.9, nu=3.0, optimize_m_step=False):
+    def __init__(
+        self,
+        mu_init=0.0,
+        sigma_init=1.0,
+        b_init=0.0,
+        q_low=0.1,
+        q_high=0.9,
+        nu=3.0,
+        optimize_m_step=False,
+        soft_boundary_scale=0.1,
+        observation_noise_scale=0.003,
+        half_t_scale_quantile=0.9,
+        boundary_quantile=0.05,
+    ):
         self.mu = float(mu_init)
         self.sigma = max(float(sigma_init), 1e-6)
         self.b = float(b_init)
@@ -923,22 +1029,38 @@ class TruncatedStudentTLowerEmission(BaseEmissionModel):
         self.q_high = float(q_high)
         self.nu = max(float(nu), 1e-3)
         self.optimize_m_step = bool(optimize_m_step)
+        self.soft_boundary_scale = max(float(soft_boundary_scale), 0.0)
+        self.observation_noise_scale = max(float(observation_noise_scale), 0.0)
+        self.half_t_scale_quantile = float(np.clip(float(half_t_scale_quantile), 0.5, 0.99))
+        self.boundary_quantile = float(np.clip(float(boundary_quantile), 0.0, 0.5))
+        self.slack_q50 = 0.0
+        self.slack_q75 = 0.0
+        self.slack_q95 = 0.0
         self._update_interval()
 
     def _update_interval(self):
-        base = StudentTModel(mu=self.mu, sigma=self.sigma, nu=self.nu, q_low=self.q_low, q_high=self.q_high)
         self.L = float(self.b)
-        self.U = float(max(base.U, self.b))
+        z = _student_t_standard_ppf(0.5 + 0.5 * float(np.clip(self.q_high, 0.0, 1.0)), self.nu)
+        self.U = float(self.b + z * self.sigma)
 
     def logpdf(self, x):
-        x = np.asarray(x, float)
-        cdf_b = float(np.clip(_student_t_cdf(self.b, mu=self.mu, sigma=self.sigma, nu=self.nu), 0.0, 1.0 - 1e-10))
-        survival_b = max(1.0 - cdf_b, 1e-10)
-        logp = np.full_like(x, -1e9, dtype=float)
-        inside = x >= self.b
-        if np.any(inside):
-            logp[inside] = _student_t_logpdf(x[inside], mu=self.mu, sigma=self.sigma, nu=self.nu) - math.log(survival_b)
-        return logp
+        return _anchored_soft_half_t_logpdf(
+            x,
+            b=self.b,
+            scale=self.sigma,
+            nu=self.nu,
+            softness=max(float(self.soft_boundary_scale) * max(float(self.sigma), 1e-6), 1e-12),
+            direction="lower",
+        )
+
+    def _scale_from_slack(self, slack, weights):
+        q = float(self.half_t_scale_quantile)
+        slack_q = _fit_quantile(np.maximum(slack, 0.0), weights, q)
+        if not np.isfinite(slack_q):
+            return max(float(self.sigma), float(self.observation_noise_scale), 1e-6)
+        unit_q = _student_t_standard_ppf(0.5 + 0.5 * q, self.nu)
+        scale = float(slack_q) / max(float(unit_q), 1e-12)
+        return max(float(scale), float(self.observation_noise_scale), 1e-6)
 
     def m_step_update(self, xs, ws=None):
         vals = np.concatenate([np.asarray(x, float).reshape(-1) for x in xs], axis=0)
@@ -957,22 +1079,13 @@ class TruncatedStudentTLowerEmission(BaseEmissionModel):
         if total_w <= 1e-12:
             return
 
-        self.b = float(np.min(vals))
-        mu0 = float(np.median(vals))
-        sigma0 = max(float(np.std(vals)), 1e-6)
-        if self.optimize_m_step:
-            self.mu, self.sigma = _fit_truncated_student_t_fixed_boundary(
-                vals,
-                weights,
-                b=self.b,
-                side="lower",
-                mu0=mu0,
-                sigma0=sigma0,
-                nu=self.nu,
-            )
-        else:
-            self.mu, self.sigma = float(mu0), float(sigma0)
-        self.sigma = max(float(self.sigma), 1e-6)
+        self.b = float(_fit_quantile(vals, weights, self.boundary_quantile))
+        self.mu = float(_fit_quantile(vals, weights, 0.5))
+        slack = np.maximum(vals - float(self.b), 0.0)
+        self.sigma = self._scale_from_slack(slack, weights)
+        self.slack_q50 = float(_fit_quantile(slack, weights, 0.5))
+        self.slack_q75 = float(_fit_quantile(slack, weights, 0.75))
+        self.slack_q95 = float(_fit_quantile(slack, weights, 0.95))
         self._update_interval()
 
     def get_summary(self):
@@ -984,7 +1097,15 @@ class TruncatedStudentTLowerEmission(BaseEmissionModel):
             "nu": float(self.nu),
             "L": float(self.L),
             "U": float(self.U),
-            "fit_mode": "optimized_mle" if self.optimize_m_step else "fast_median_std",
+            "fit_mode": "anchored_soft_half_t",
+            "soft_boundary_scale": float(self.soft_boundary_scale),
+            "softness": float(self.soft_boundary_scale * max(self.sigma, 1e-6)),
+            "observation_noise_scale": float(self.observation_noise_scale),
+            "half_t_scale_quantile": float(self.half_t_scale_quantile),
+            "boundary_quantile": float(self.boundary_quantile),
+            "slack_q50": float(self.slack_q50),
+            "slack_q75": float(self.slack_q75),
+            "slack_q95": float(self.slack_q95),
         }
 
 

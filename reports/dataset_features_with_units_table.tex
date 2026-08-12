@@ -1,0 +1,55 @@
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2.2pt}
+\renewcommand{\arraystretch}{1.03}
+\newcommand{\val}[1]{\mbox{#1}}
+\begin{tabular}{
+>{\raggedright\arraybackslash}p{1.95cm}
+>{\raggedright\arraybackslash}p{2.35cm}
+>{\raggedright\arraybackslash}p{6.85cm}
+*{5}{>{\centering\arraybackslash}p{0.85cm}}
+}
+\toprule
+Dataset & Feature & Description & Stage 1 & Stage 2 & Stage 3 & Stage 4 & Stage 5 \\
+\midrule
+
+\multirow{6}{1.85cm}{\centering\textbf{S3ObsAvoid}}
+& \texttt{obs\_dist}  & Distance to the obstacle in the 2D point-mass workspace (cm) & \val{$\geq 40.0$} & \NoAct & \NoAct & \NA & \NA \\
+& \texttt{speed}      & Planar speed magnitude (cm/s) & \NoAct & \val{$=5.5$} & \val{$=4.5$} & \NA & \NA \\
+& \texttt{arc\_dist}  & Distance to the terminal circle center (cm) & \NoAct & \NoAct & \val{$=20.0$} & \NA & \NA \\
+& \texttt{heading}    & Unwrapped planar heading angle from velocity (rad) & \NoAct & \NoAct & \NoAct & \NA & \NA \\
+& \texttt{line\_dist} & Distance to an irrelevant straight line (cm) & \NoAct & \NoAct & \NoAct & \NA & \NA \\
+& \texttt{noise}      & Deterministic sine noise feature (unitless) & \NoAct & \NoAct & \NoAct & \NA & \NA \\
+
+\addlinespace[0.22em]
+\midrule
+\addlinespace[0.02em]
+
+\multirow{7}{1.85cm}{\centering\textbf{S4SlideInsert}}
+& \texttt{surf\_dist}    & Distance to the table/guide contact surface (mm) & \NoAct & \val{$=0$} & \val{$=0$} & \val{$=0$} & \NA \\
+& \texttt{center\_dist}  & Absolute lateral distance from the slot centerline (mm) & \NoAct & \val{$=0$} & \val{$=0$} & \val{$=0$} & \NA \\
+& \texttt{orient\_err}   & Absolute orientation error relative to the slot (deg) & \NoAct & \NoAct & \val{$\leq 3.44$} & \val{$\leq 2.29$} & \NA \\
+& \texttt{speed}         & 3D translational speed of the object/tool (mm/s) & \NoAct & \NoAct & \val{$\leq 7.20$} & \val{$\leq 2.88$} & \NA \\
+& \texttt{normal\_force} & Normal contact force applied against the guide (N) & \NoAct & \val{$\geq 4.0$} & \val{$\geq 7.2$} & \val{$\geq 10.0$} & \NA \\
+& \texttt{start\_dist}   & Distance to the demonstration start pose (mm) & \NoAct & \NoAct & \NoAct & \NoAct & \NA \\
+& \texttt{insert\_err}   & Remaining insertion distance along the slot (mm) & \NoAct & \NoAct & \NoAct & \NoAct & \NA \\
+
+\addlinespace[0.22em]
+\midrule
+\addlinespace[0.02em]
+
+\multirow{6}{1.85cm}{\centering\textbf{S5SphereInspect}}
+& \texttt{surf\_dist}  & Radial distance to the sphere surface (mm) & \NoAct & \val{$=0$} & \NoAct & \val{$=32.4$} & \NoAct \\
+& \texttt{normal\_err} & Angle between the tool axis and sphere normal (deg) & \NoAct & \val{$\leq 2.29$} & \NoAct & \NoAct & \NoAct \\
+& \texttt{speed}       & 3D translational speed along the inspection path (mm/s) & \NoAct & \val{$\leq 8.46$} & \NoAct & \val{$\leq 8.46$} & \NoAct \\
+& \texttt{ang\_speed}  & Tool-axis angular speed magnitude (deg/s) & \NoAct & \NoAct & \NoAct & \NoAct & \NoAct \\
+& \texttt{start\_dist} & Distance to the demonstration start position (mm) & \NoAct & \NoAct & \NoAct & \NoAct & \NoAct \\
+& \texttt{goal\_dist}  & Distance to the nominal inspection goal (mm) & \NoAct & \NoAct & \NoAct & \NoAct & \NoAct \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+
+\caption{Features and true stage-wise constraint values. S3 is a 2D point-mass task and reports distances in centimeters and speeds in centimeters per second. For readability, S4 and S5 distances are reported in millimeters, translational speeds in millimeters per second, and angles in degrees. \NoAct indicates an unconstrained feature-stage pair, and \NA indicates stages not present in the dataset.}
+\label{tab:dataset_features}
+\end{table*}

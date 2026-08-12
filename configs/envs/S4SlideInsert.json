@@ -20,23 +20,21 @@
         "orient_err": "trunc_t_auto_z",
         "speed": "trunc_t_auto_z",
         "normal_force": "trunc_t_auto_z",
-        "start_dist": "trunc_t_auto_z",
-        "insert_err": "trunc_t_auto_z",
+        "start_dist": "trunc_t_lower_z",
+        "insert_err": "trunc_t_upper_z",
         "noise": "student_t"
       },
-      "force_inactive_feature_ids": ["start_dist", "insert_err"],
       "max_iter": 10,
-      "truncated_inequality_z_threshold": 0.06,
-      "truncated_auto_z_score_gap_threshold": 0.6,
-      "truncated_z_score_mode": "median_slack",
-      "lambda_activation_consensus": 0.3,
+      "truncated_inequality_z_threshold": -0.25,
+      "truncated_z_score_mode": "soft_fit_minus_baseline",
+      "lambda_activation_consensus": 0.5,
       "lambda_param_consensus": 0.5,
-      "duration_min": null,
+      "duration_min": 7,
       "duration_max": null,
       "inequality_trim_fraction": 0.1,
       "inequality_trim_min_n": 10,
       "fixed_true_cutpoint_indices": [],
-      "lambda_ineq_constraint": 0.5
+      "lambda_ineq_constraint": 0.02
     },
     "fchmm": {
       "n_stages": 4,
@@ -51,7 +49,7 @@
         "insert_err": "trunc_t_lower_z",
         "noise": "student_t"
       },
-      "fixed_feature_mask": [[1,1,1,1,1,1,1], [1,1,1,1,1,1,1], [1,1,1,1,1,1,1], [1,1,1,1,1,1,1]],
+      "fixed_feature_mask": [[1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1]],
       "feat_weight": 0.1
     },
     "arhsmm": {
@@ -72,7 +70,7 @@
           "insert_err": "trunc_t_lower_z",
           "noise": "student_t"
         },
-        "fixed_feature_mask": [[0,0,0,0,0,0,0], [1,1,0,0,1,0,0], [1,1,1,1,1,0,0], [1,1,1,1,1,0,0]]
+        "fixed_feature_mask": [[0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 1, 0, 0], [1, 1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0, 0]]
       }
     },
     "cluster": {
@@ -99,7 +97,7 @@
           "insert_err": "trunc_t_lower_z",
           "noise": "student_t"
         },
-        "fixed_feature_mask": [[0,0,0,0,0,0,0], [1,1,0,0,1,0,0], [1,1,1,1,1,0,0], [1,1,1,1,1,0,0]]
+        "fixed_feature_mask": [[0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 1, 0, 0], [1, 1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0, 0]]
       }
     }
   }

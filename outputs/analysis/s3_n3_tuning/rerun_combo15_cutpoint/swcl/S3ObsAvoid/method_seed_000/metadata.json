@@ -1,0 +1,13 @@
+{
+  "created_at_utc": "2026-06-04T14:48:40.314634+00:00",
+  "dataset_name": "S3ObsAvoid",
+  "method_name": "swcl",
+  "pipeline": "joint",
+  "dataset_seed": 125949,
+  "method_seed": 0,
+  "num_demos": 3,
+  "num_stages": 3,
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s3_n3_tuning/rerun_combo15_cutpoint/swcl/S3ObsAvoid/method_seed_000",
+  "env_config_path": "outputs/analysis/s3_n3_tuning/configs/envs/S3ObsAvoid_combo15_cutpoint.json",
+  "method_config_path": "outputs/analysis/s3_n3_tuning/configs/methods/swcl.json"
+}

@@ -1,0 +1,285 @@
+{
+  "true_constraints": {
+    "d_safe": 0.4,
+    "v2_target": 0.055,
+    "v3_target": 0.045,
+    "arc_distance_target": 0.2
+  },
+  "constraint_specs": [
+    {
+      "feature_name": "obs_dist",
+      "stage": 0,
+      "semantics": "lower_bound",
+      "oracle_key": "d_safe"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "v2_target"
+    },
+    {
+      "feature_name": "arc_dist",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "arc_distance_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "v3_target"
+    }
+  ],
+  "ConstraintFeatureNames": [
+    "obs_dist",
+    "speed",
+    "arc_dist",
+    "heading",
+    "line_dist",
+    "noise"
+  ],
+  "ConstraintTrueActiveMask": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintPredictedActiveMask": [
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  ],
+  "ConstraintTargetMatrix": [
+    [
+      0.4,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.055,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.045,
+      0.2,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedSemanticsMatrix": [
+    [
+      "lower_bound",
+      "target_value",
+      "target_value",
+      "lower_bound",
+      "target_value",
+      "target_value"
+    ],
+    [
+      "lower_bound",
+      "target_value",
+      "target_value",
+      "lower_bound",
+      "target_value",
+      "target_value"
+    ],
+    [
+      "lower_bound",
+      "target_value",
+      "target_value",
+      "lower_bound",
+      "target_value",
+      "target_value"
+    ]
+  ],
+  "ConstraintLearnedValueMatrix": [
+    [
+      0.3937543662198735,
+      0.18297310558114993,
+      0.8749542802279919,
+      -1.3251168939530646,
+      1.0228862109625994,
+      0.0758155074464533
+    ],
+    [
+      1.094977212811068,
+      0.046956921916802626,
+      0.19952885884228125,
+      -3.7593581092216883,
+      0.8314515663396329,
+      -0.042720569087346394
+    ],
+    [
+      1.0163442436585692,
+      0.045805357239077124,
+      0.19972057962953624,
+      -6.120321669446833,
+      0.8383380796927024,
+      -0.011923715948267622
+    ]
+  ],
+  "ConstraintLearnedRawValueMatrix": [
+    [
+      0.3937543662198735,
+      0.18297310558114993,
+      0.8749542802279919,
+      -1.3251168939530646,
+      1.0228862109625994,
+      0.0758155074464533
+    ],
+    [
+      1.094977212811068,
+      0.046956921916802626,
+      0.19952885884228125,
+      -3.7593581092216883,
+      0.8314515663396329,
+      -0.042720569087346394
+    ],
+    [
+      1.0163442436585692,
+      0.045805357239077124,
+      0.19972057962953624,
+      -6.120321669446833,
+      0.8383380796927024,
+      -0.011923715948267622
+    ]
+  ],
+  "ConstraintLearnedValuePerDemo": [],
+  "ConstraintErrorMatrix": [
+    [
+      0.006184406964733667,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.03437071110185586,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.003441555672067305,
+      0.00018266971831223253,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintErrorMatrixRaw": [
+    [
+      0.006245633780126547,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.008043078083197375,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.0008053572390771258,
+      0.0002794203704637732,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintSemanticsMatrix": [
+    [
+      "lower_bound",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "target_value",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ConstraintFeatureScales": [
+    1.0099001918441046,
+    0.23400965023278456,
+    1.5296480064975375,
+    6.3271107859210876,
+    0.7801270192468435,
+    0.7509006094170386
+  ]
+}

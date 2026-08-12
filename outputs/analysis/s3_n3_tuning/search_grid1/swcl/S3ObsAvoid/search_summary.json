@@ -1,0 +1,702 @@
+{
+  "dataset": "S3ObsAvoid",
+  "method": "swcl",
+  "dataset_seed": 125949,
+  "method_seeds": [
+    0
+  ],
+  "grid": {
+    "truncated_inequality_z_threshold": [
+      -0.15,
+      -0.25,
+      -0.35
+    ],
+    "lambda_ineq_constraint": [
+      0.005,
+      0.015,
+      0.03
+    ],
+    "lambda_activation_consensus": [
+      0.3,
+      0.75
+    ],
+    "truncated_z_observation_noise_scale": [
+      0.003,
+      0.01
+    ]
+  },
+  "metric_keys": [
+    "MeanAbsCutpointError",
+    "MeanConstraintError",
+    "MeanConstraintErrorRaw",
+    "MeanStageSubgoalError"
+  ],
+  "best": {
+    "num_runs": 1,
+    "params": {
+      "truncated_inequality_z_threshold": -0.15,
+      "lambda_ineq_constraint": 0.03,
+      "lambda_activation_consensus": 0.3,
+      "truncated_z_observation_noise_scale": 0.003
+    },
+    "combo_id": 8,
+    "MeanAbsCutpointError_mean": 11.666666666666666,
+    "MeanAbsCutpointError_std": 0.0,
+    "MeanConstraintError_mean": 0.003109141146308631,
+    "MeanConstraintError_std": 0.0,
+    "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+    "MeanConstraintErrorRaw_std": 0.0,
+    "MeanStageSubgoalError_mean": 0.6591214134149771,
+    "MeanStageSubgoalError_std": 0.0
+  },
+  "results": [
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 8,
+      "MeanAbsCutpointError_mean": 11.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.6591214134149771,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 9,
+      "MeanAbsCutpointError_mean": 11.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.6591214134149771,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 10,
+      "MeanAbsCutpointError_mean": 13.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.6710100969885313,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 20,
+      "MeanAbsCutpointError_mean": 11.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.6591214134149771,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 21,
+      "MeanAbsCutpointError_mean": 11.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.6591214134149771,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 22,
+      "MeanAbsCutpointError_mean": 12.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.693223510876193,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 23,
+      "MeanAbsCutpointError_mean": 12.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.693223510876193,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 28,
+      "MeanAbsCutpointError_mean": 12.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.6311309838366451,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 32,
+      "MeanAbsCutpointError_mean": 12.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.693223510876193,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 33,
+      "MeanAbsCutpointError_mean": 12.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.693223510876193,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 34,
+      "MeanAbsCutpointError_mean": 12.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.693223510876193,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 35,
+      "MeanAbsCutpointError_mean": 12.666666666666666,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.003109141146308631,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0007732027185796062,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.693223510876193,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 30,
+      "MeanAbsCutpointError_mean": 10.5,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.0033957721772228285,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0008779378127567322,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.4964277114153411,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 31,
+      "MeanAbsCutpointError_mean": 6.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.004765173450542058,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003078552290879883,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11710627547548641,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 6,
+      "MeanAbsCutpointError_mean": 6.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.004768858709102164,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0030712440455775932,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.16231748117509037,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 7,
+      "MeanAbsCutpointError_mean": 6.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.004768858709102164,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0030712440455775932,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.16231748117509037,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 18,
+      "MeanAbsCutpointError_mean": 6.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.004768858709102164,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0030712440455775932,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.16231748117509037,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 19,
+      "MeanAbsCutpointError_mean": 6.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.004768858709102164,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0030712440455775932,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.16231748117509037,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 2,
+      "MeanAbsCutpointError_mean": 6.333333333333333,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005054819982379513,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003371036626689856,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11710627547548641,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 3,
+      "MeanAbsCutpointError_mean": 6.333333333333333,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005054819982379513,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003371036626689856,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11710627547548641,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 26,
+      "MeanAbsCutpointError_mean": 7.333333333333333,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005185549731387778,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003483267714251508,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11710590208001756,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 27,
+      "MeanAbsCutpointError_mean": 7.333333333333333,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005185549731387778,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003483267714251508,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11710590208001756,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.03,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 11,
+      "MeanAbsCutpointError_mean": 3.3333333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005330740630497008,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0026575551851926674,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.12810719344418742,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 14,
+      "MeanAbsCutpointError_mean": 3.1666666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005419326009315853,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0026791138324802136,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.1022322331657292,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.75,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 15,
+      "MeanAbsCutpointError_mean": 3.1666666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005419326009315853,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0026791138324802136,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.1022322331657292,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 4,
+      "MeanAbsCutpointError_mean": 4.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005547975529375066,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0028769184370501175,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.18193815378589318,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 5,
+      "MeanAbsCutpointError_mean": 4.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005547975529375066,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0028769184370501175,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.18193815378589318,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 16,
+      "MeanAbsCutpointError_mean": 4.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005547975529375066,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0028769184370501175,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.18193815378589318,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 17,
+      "MeanAbsCutpointError_mean": 4.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005547975529375066,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0028769184370501175,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.18193815378589318,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 0,
+      "MeanAbsCutpointError_mean": 3.3333333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.0056365609081939095,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0028984770843376636,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.15860638348676784,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.15,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 1,
+      "MeanAbsCutpointError_mean": 3.3333333333333335,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.0056365609081939095,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.0028984770843376636,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.15860638348676784,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.015,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 29,
+      "MeanAbsCutpointError_mean": 3.1666666666666665,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.005725146287012747,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.002920035731625208,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.16193080496162707,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 12,
+      "MeanAbsCutpointError_mean": 7.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.010066704238175636,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003988669909478255,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11371892338233056,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.25,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 13,
+      "MeanAbsCutpointError_mean": 7.166666666666667,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.010066704238175636,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003988669909478255,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.11371892338233056,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.003
+      },
+      "combo_id": 24,
+      "MeanAbsCutpointError_mean": 7.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.010066704238175636,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003988669909478255,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.09527467519388186,
+      "MeanStageSubgoalError_std": 0.0
+    },
+    {
+      "num_runs": 1,
+      "params": {
+        "truncated_inequality_z_threshold": -0.35,
+        "lambda_ineq_constraint": 0.005,
+        "lambda_activation_consensus": 0.3,
+        "truncated_z_observation_noise_scale": 0.01
+      },
+      "combo_id": 25,
+      "MeanAbsCutpointError_mean": 7.0,
+      "MeanAbsCutpointError_std": 0.0,
+      "MeanConstraintError_mean": 0.010066704238175636,
+      "MeanConstraintError_std": 0.0,
+      "MeanConstraintErrorRaw_mean": 0.003988669909478255,
+      "MeanConstraintErrorRaw_std": 0.0,
+      "MeanStageSubgoalError_mean": 0.09527467519388186,
+      "MeanStageSubgoalError_std": 0.0
+    }
+  ]
+}

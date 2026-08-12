@@ -28,6 +28,26 @@ from experiments.render_metrics import (
 )
 
 
+_S5_FEATURE_UNITS = {
+    "surf_dist": "mm",
+    "normal_err": "deg",
+    "speed": "mm/s",
+    "ang_speed": "deg/s",
+    "start_dist": "mm",
+    "goal_dist": "mm",
+}
+
+
+_S5_FEATURE_DISPLAY_SCALE = {
+    "surf_dist": 1000.0,
+    "normal_err": 180.0 / np.pi,
+    "speed": 1000.0,
+    "ang_speed": 180.0 / np.pi,
+    "start_dist": 1000.0,
+    "goal_dist": 1000.0,
+}
+
+
 def _load_json(path: str | Path) -> dict:
     p = Path(path)
     if not p.is_absolute():
@@ -1011,6 +1031,59 @@ def _feature_names(feature_schema: list[dict], dim: int) -> list[str]:
     return names
 
 
+def _display_scale_for_feature(name: str) -> float:
+    return float(_S5_FEATURE_DISPLAY_SCALE.get(str(name), 1.0))
+
+
+def _feature_label_with_unit(name: str) -> str:
+    unit = _S5_FEATURE_UNITS.get(str(name), "")
+    return str(name) if not unit else f"{name} [{unit}]"
+
+
+def _display_feature_schema(feature_schema: list[dict]) -> list[dict]:
+    out = []
+    for item in list(feature_schema or []):
+        spec = dict(item)
+        name = str(spec.get("name", ""))
+        if name in _S5_FEATURE_UNITS:
+            spec["unit"] = _S5_FEATURE_UNITS[name]
+        out.append(spec)
+    return out
+
+
+def _display_units_from_schema(feature_schema: list[dict]) -> dict[str, str]:
+    out = {}
+    for item in list(feature_schema or []):
+        name = str(item.get("name", ""))
+        unit = str(item.get("unit", ""))
+        if name and unit:
+            out[name] = unit
+    return out
+
+
+def _scale_features_for_display(features: np.ndarray, feature_schema: list[dict]) -> np.ndarray:
+    F = np.asarray(features, dtype=float).copy()
+    names = _feature_names(feature_schema, F.shape[1]) if F.ndim == 2 else []
+    for feat_idx, name in enumerate(names):
+        if feat_idx < F.shape[1]:
+            F[:, feat_idx] *= _display_scale_for_feature(name)
+    return F
+
+
+def _scale_true_constraints_for_display(true_constraints: dict, constraint_specs: list[dict]) -> dict:
+    scaled = dict(true_constraints or {})
+    for spec in list(constraint_specs or []):
+        name = str(spec.get("feature_name", ""))
+        key = str(spec.get("oracle_key", ""))
+        if key not in scaled:
+            continue
+        try:
+            scaled[key] = float(scaled[key]) * _display_scale_for_feature(name)
+        except (TypeError, ValueError):
+            pass
+    return scaled
+
+
 def _stage_spans(cutpoints: list[int], length: int) -> list[tuple[int, int]]:
     cuts = [int(v) for v in cutpoints if 0 <= int(v) < int(length) - 1]
     ends = cuts + [int(length) - 1]
@@ -1033,12 +1106,18 @@ def _plot_all_feature_profiles(
     if plt is None:
         raise RuntimeError("matplotlib is required to plot S5 feature profiles.")
 
-    F = np.asarray(features, dtype=float)
-    F_plan = np.asarray(planned_features, dtype=float)
+    F = np.asarray(features, dtype=float).copy()
+    F_plan = np.asarray(planned_features, dtype=float).copy()
     if F.ndim != 2 or F_plan.ndim != 2:
         raise ValueError("features and planned_features must have shape (T, D).")
     dim = int(max(F.shape[1], F_plan.shape[1]))
     names = _feature_names(feature_schema, dim)
+    for feat_idx, name in enumerate(names):
+        scale = _display_scale_for_feature(name)
+        if feat_idx < F.shape[1]:
+            F[:, feat_idx] *= scale
+        if feat_idx < F_plan.shape[1]:
+            F_plan[:, feat_idx] *= scale
     spans = _stage_spans(cutpoints, max(len(F), len(F_plan)))
     specs = list(constraint_payload.get("constraint_specs") or env.get_constraint_specs())
     true_constraints = dict(constraint_payload.get("true_constraints") or env.true_constraints)
@@ -1073,8 +1152,9 @@ def _plot_all_feature_profiles(
             oracle_key = str(spec.get("oracle_key", ""))
             if oracle_key in true_constraints:
                 label = "true target/bound" if not true_label_used else None
+                scale = _display_scale_for_feature(feat_name)
                 ax.hlines(
-                    float(true_constraints[oracle_key]),
+                    float(true_constraints[oracle_key]) * scale,
                     x0,
                     x1,
                     colors="#111827",
@@ -1086,8 +1166,9 @@ def _plot_all_feature_profiles(
             learned_key = f"s{stage_idx + 1}:{feat_name}"
             if learned_key in constraint_values:
                 label = "planned constraint" if not learned_label_used else None
+                scale = _display_scale_for_feature(feat_name)
                 ax.hlines(
-                    float(constraint_values[learned_key]),
+                    float(constraint_values[learned_key]) * scale,
                     x0,
                     x1,
                     colors="#7C3AED",
@@ -1097,7 +1178,7 @@ def _plot_all_feature_profiles(
                 )
                 learned_label_used = True
 
-        ax.set_ylabel(feat_name, rotation=0, ha="right", va="center")
+        ax.set_ylabel(_feature_label_with_unit(feat_name), rotation=0, ha="right", va="center")
         ax.grid(alpha=0.20)
 
     axes[0].legend(loc="upper right", frameon=False, ncol=2)
@@ -1163,6 +1244,8 @@ def render_s5_planned_trajectory(
     start_xyz: tuple[float, float, float] | None,
     goal_xyz: tuple[float, float, float] | None,
     goal_camera_offset: float,
+    playback_speed: float = 1.0,
+    playback_label: str | None = None,
     output_prefix: str = "s5_planned",
     video_path_override: str | Path | None = None,
 ) -> dict:
@@ -1183,6 +1266,15 @@ def render_s5_planned_trajectory(
     if bool(no_filter):
         cfg["pybullet_filter_ik_valid"] = False
     env = S5SphereInspectEnv(**cfg)
+    playback_speed = float(max(float(playback_speed), 1e-6))
+    playback_real_time_multiplier = (
+        float(getattr(env, "dt", 1.0))
+        * float(fps)
+        * playback_speed
+        * float(max(int(render_frame_stride), 1))
+    )
+    if playback_label is None:
+        playback_label = f"{playback_real_time_multiplier:g}x real time"
 
     raw_payload, resolved_constraints_path = _load_constraint_payload(constraints_json)
     default_segmentation_path = (
@@ -1274,6 +1366,13 @@ def render_s5_planned_trajectory(
         tool_axis=np.asarray(planned["tool_axis"], dtype=float),
         use_cached=False,
     )
+    display_feature_schema = _display_feature_schema(list(obs["feature_schema"]))
+    display_executed_features = _scale_features_for_display(np.asarray(obs["features"], dtype=float), list(obs["feature_schema"]))
+    display_constraint_specs = list(payload.get("constraint_specs") or env.get_constraint_specs())
+    display_true_constraints = _scale_true_constraints_for_display(
+        dict(payload.get("true_constraints") or env.true_constraints),
+        display_constraint_specs,
+    )
     feature_plot_path = None
     cutpoints = [int(v) for v in np.asarray(planned["true_cutpoints"], dtype=int).reshape(-1).tolist()]
     if bool(plot_features):
@@ -1342,15 +1441,18 @@ def render_s5_planned_trajectory(
         trace_width=float(trace_width),
         draw_current_marker=bool(draw_current_marker),
         feature_overlay=bool(feature_overlay),
-        feature_overlay_features=np.asarray(obs["features"], dtype=float),
-        feature_overlay_names=_feature_names(list(obs["feature_schema"]), np.asarray(obs["features"], dtype=float).shape[1]),
-        feature_overlay_specs=list(payload.get("constraint_specs") or env.get_constraint_specs()),
-        feature_overlay_true_constraints=dict(payload.get("true_constraints") or env.true_constraints),
+        feature_overlay_features=display_executed_features,
+        feature_overlay_names=_feature_names(display_feature_schema, display_executed_features.shape[1]),
+        feature_overlay_units=_display_units_from_schema(display_feature_schema),
+        feature_overlay_specs=display_constraint_specs,
+        feature_overlay_true_constraints=display_true_constraints,
         feature_overlay_title=(
             "Executed trajectory feature profile (planned with learned constraints)"
             if str(constraint_source).lower() == "learned"
             else "Executed trajectory feature profile (planned with Ground truth constraints)"
         ),
+        playback_speed=float(playback_speed),
+        playback_label=playback_label,
         save_frame_indices=save_frame_indices,
         save_frame_dir=out_dir,
         save_frame_prefix=output_prefix,
@@ -1401,6 +1503,9 @@ def render_s5_planned_trajectory(
         "saved_frames": list(render_summary.get("saved_frames", [])),
         "ik_filter": dict(latent.get("ik_filter", {})),
         "feature_overlay": bool(feature_overlay),
+        "playback_speed": float(playback_speed),
+        "playback_real_time_multiplier": float(playback_real_time_multiplier),
+        "playback_label": playback_label,
         "execution_joint_noise_std": float(execution_joint_noise_std),
         "execution_joint_noise_smooth": float(execution_joint_noise_smooth),
         "execution_noise_seed": None if execution_noise_seed is None else int(execution_noise_seed),
@@ -1439,6 +1544,8 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=1360)
     parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--render-frame-stride", type=int, default=1)
+    parser.add_argument("--playback-speed", type=float, default=1.0, help="MP4 playback speed multiplier; the corner label reports real-time speed.")
+    parser.add_argument("--playback-label", default=None, help="Optional lower-left video label. Defaults to '<multiplier>x real time'.")
     parser.add_argument("--realtime", type=int, default=0)
     parser.add_argument("--gui-hold-seconds", type=float, default=None)
     parser.add_argument("--camera-yaw", type=float, default=90.0)
@@ -1534,6 +1641,8 @@ def main() -> None:
             width=int(args.width),
             height=int(args.height),
             render_frame_stride=int(args.render_frame_stride),
+            playback_speed=float(args.playback_speed),
+            playback_label=args.playback_label,
             realtime=bool(args.realtime),
             gui_hold_seconds=args.gui_hold_seconds,
             camera_yaw=float(args.camera_yaw),

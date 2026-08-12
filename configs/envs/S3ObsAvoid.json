@@ -1,7 +1,7 @@
 {
   "name": "S3ObsAvoid",
   "n_demos": 10,
-  "seed": 125949,
+  "seed": 1259149,
   "method_overrides": {
     "swcl": {
       "n_stages": 3,
@@ -10,19 +10,19 @@
         "obs_dist": "trunc_t_auto_z",
         "speed": "student_t",
         "arc_dist": "student_t",
-        "heading": "student_t",
+        "heading": "trunc_t_auto_z",
         "line_dist": "student_t",
         "noise": "student_t"
       },
       "max_iter": 10,
-      "truncated_inequality_z_threshold": 0.4,
+      "truncated_inequality_z_threshold": -0.2,
       "lambda_ineq_constraint": 0.015,
       "fixed_true_cutpoint_indices": [],
       "lambda_activation_consensus": 0.75,
-      "lambda_param_consensus": 20,
+      "lambda_param_consensus": 3,
       "short_segment_penalty_c": 0,
       "equality_dispersion_ratio_threshold": 0.03,
-      "truncated_z_score_mode": "median_slack"
+      "truncated_z_score_mode": "soft_fit_minus_baseline"
     },
     "fchmm": {
       "n_stages": 3,
@@ -31,7 +31,7 @@
         "obs_dist": "trunc_t_lower_z",
         "speed": "student_t",
         "arc_dist": "student_t",
-        "heading": "student_t",
+        "heading": "trunc_t_lower_z",
         "line_dist": "student_t",
         "noise": "student_t"
       },
@@ -54,7 +54,7 @@
           "obs_dist": "trunc_t_lower_z",
           "speed": "student_t",
           "arc_dist": "student_t",
-          "heading": "student_t",
+          "heading": "trunc_t_lower_z",
           "line_dist": "student_t",
           "noise": "student_t"
         },
@@ -72,7 +72,7 @@
           "obs_dist": "trunc_t_lower_z",
           "speed": "student_t",
           "arc_dist": "student_t",
-          "heading": "student_t",
+          "heading": "trunc_t_lower_z",
           "line_dist": "student_t",
           "noise": "student_t"
         },
@@ -90,7 +90,7 @@
           "obs_dist": "trunc_t_lower_z",
           "speed": "student_t",
           "arc_dist": "student_t",
-          "heading": "student_t",
+          "heading": "trunc_t_lower_z",
           "line_dist": "student_t",
           "noise": "student_t"
         },
@@ -114,7 +114,7 @@
           "obs_dist": "trunc_t_lower_z",
           "speed": "student_t",
           "arc_dist": "student_t",
-          "heading": "student_t",
+          "heading": "trunc_t_lower_z",
           "line_dist": "student_t",
           "noise": "student_t"
         },

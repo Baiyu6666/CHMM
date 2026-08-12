@@ -1,0 +1,321 @@
+{
+  "name": "S3ObsAvoid",
+  "n_demos": 3,
+  "seed": 125949,
+  "method_overrides": {
+    "swcl": {
+      "n_stages": 3,
+      "selected_raw_feature_ids": [
+        "obs_dist",
+        "speed",
+        "arc_dist",
+        "heading",
+        "line_dist",
+        "noise"
+      ],
+      "feature_model_types": {
+        "obs_dist": "trunc_t_auto_z",
+        "speed": "student_t",
+        "arc_dist": "student_t",
+        "heading": "student_t",
+        "line_dist": "student_t",
+        "noise": "student_t"
+      },
+      "max_iter": 10,
+      "truncated_inequality_z_threshold": -0.25,
+      "lambda_ineq_constraint": 0.005,
+      "fixed_true_cutpoint_indices": [],
+      "lambda_activation_consensus": 0.75,
+      "lambda_param_consensus": 30,
+      "short_segment_penalty_c": 0,
+      "equality_dispersion_ratio_threshold": 0.03,
+      "truncated_z_score_mode": "soft_fit_minus_baseline",
+      "truncated_z_observation_noise_scale": 0.003
+    },
+    "fchmm": {
+      "n_stages": 3,
+      "selected_raw_feature_ids": [
+        "obs_dist",
+        "speed",
+        "arc_dist",
+        "heading",
+        "line_dist",
+        "noise"
+      ],
+      "feature_model_types": {
+        "obs_dist": "trunc_t_lower_z",
+        "speed": "student_t",
+        "arc_dist": "student_t",
+        "heading": "student_t",
+        "line_dist": "student_t",
+        "noise": "student_t"
+      },
+      "fixed_feature_mask": [
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      "feat_weight": 0.5,
+      "x_weight": 0.05,
+      "gmm_K": 2
+    },
+    "hmm": {
+      "segmenter": {
+        "n_stages": 3,
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ],
+        "feat_weight": 1,
+        "x_weight": 0.05,
+        "gmm_K": 2
+      },
+      "posthoc_constraint": {
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ],
+        "feature_model_types": {
+          "obs_dist": "trunc_t_lower_z",
+          "speed": "student_t",
+          "arc_dist": "student_t",
+          "heading": "student_t",
+          "line_dist": "student_t",
+          "noise": "student_t"
+        },
+        "fixed_feature_mask": [
+          [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            1,
+            0,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    "arhsmm": {
+      "segmenter": {
+        "n_stages": 3,
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ]
+      },
+      "posthoc_constraint": {
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ],
+        "feature_model_types": {
+          "obs_dist": "trunc_t_lower_z",
+          "speed": "student_t",
+          "arc_dist": "student_t",
+          "heading": "student_t",
+          "line_dist": "student_t",
+          "noise": "student_t"
+        },
+        "fixed_feature_mask": [
+          [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            1,
+            0,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    "changepoint": {
+      "segmenter": {
+        "n_stages": 3,
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ]
+      },
+      "posthoc_constraint": {
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ],
+        "feature_model_types": {
+          "obs_dist": "trunc_t_lower_z",
+          "speed": "student_t",
+          "arc_dist": "student_t",
+          "heading": "student_t",
+          "line_dist": "student_t",
+          "noise": "student_t"
+        },
+        "fixed_feature_mask": [
+          [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            1,
+            0,
+            0,
+            0
+          ]
+        ]
+      }
+    },
+    "cluster": {
+      "segmenter": {
+        "n_stages": 3,
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ],
+        "use_state": true,
+        "use_velocity": false,
+        "use_env_features": true,
+        "state_distance_weight": 0.2,
+        "min_len": 3,
+        "init_mode": "random_stage_ends"
+      },
+      "posthoc_constraint": {
+        "selected_raw_feature_ids": [
+          "obs_dist",
+          "speed",
+          "arc_dist",
+          "heading",
+          "line_dist",
+          "noise"
+        ],
+        "feature_model_types": {
+          "obs_dist": "trunc_t_lower_z",
+          "speed": "student_t",
+          "arc_dist": "student_t",
+          "heading": "student_t",
+          "line_dist": "student_t",
+          "noise": "student_t"
+        },
+        "fixed_feature_mask": [
+          [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            1,
+            0,
+            0,
+            0
+          ]
+        ]
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --method-seeds 0 \
   --dataset-seed 0 \
   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
+  --n-demos 10 \
   --refresh-demo-cache
 
 ```
@@ -17,14 +18,27 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --datasets S4SlideInsert  \
   --method-seeds 0 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
+  --plot_every 10 \
+  --n-demos 10
 
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods swcl \
   --datasets S3ObsAvoid  \
   --method-seeds 0 \
   --dataset-seed 0 \
-  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
+  --plot_every 10 \
+  --n-demos 10
+
+python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
+  --methods swcl \
+  --datasets S5SphereInspect  \
+  --method-seeds 0 \
+  --dataset-seed 0 \
+  --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
+  --plot_every 10 \
+  --n-demos 10
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
@@ -97,7 +111,7 @@ python experiments/collect_swcl_paper_figures.py  --demo-map S3ObsAvoid:7,S4Slid
 ## S5 Render
 
 ```bash
-python experiments/render_s5_demonstrations.py   --n-demos 3   --seed 127   --gui 1   --fps 10 --width 1360 --height 900 --outdir outputs/swcl/videos/s5_demonstrations --playback-speed 1.5   --render-frame-stride 1 
+python experiments/render_s5_demonstrations.py   --n-demos 5   --seed 127   --gui 1   --fps 10 --width 1360 --height 900 --outdir outputs/swcl/videos/s5_demonstrations --playback-speed 1.5   --render-frame-stride 1 
 
 ```
 
@@ -114,7 +128,7 @@ python experiments/render_s5_planned_trajectory.py \
   --feature-overlay 1 \
   --n-plans 2 \
   --save-frame-indices 10,50,90,115,130 \
-    --render-frame-stride 20
+    --render-frame-stride 1
 
 ```
 
@@ -137,12 +151,14 @@ python experiments/render_s4_planned_trajectory.py \
   --constraint-source learned \
   --rail-shape sine \
   --rail-bend-amp 0.03 \
-  --gui 0 \
+  --gui 1 \
   --fps 20 \
   --width 1360 \
   --height 900 \
   --camera-target 0.72,0.14,0.54 \
   --outdir outputs/swcl/videos/s4_transfer_curve_guide \
+  --output-prefix s4_curve_guide \
+  --video-filename s4_curve_guide.mp4 \
   --feature-overlay 1 \
   --execution-control torque_preload \
   --n-plans 1 \
@@ -160,6 +176,8 @@ python experiments/render_s4_planned_trajectory.py \
   --gui 1 \
   --fps 20 \
   --outdir outputs/swcl/videos/s4_transfer_tilted_table \
+  --output-prefix s4_tilted_table \
+  --video-filename tilted_table.mp4 \
   --feature-overlay 1 \
   --n-plans 1 \
   --render-frame-stride 1

@@ -27,20 +27,73 @@ except ModuleNotFoundError:
     plt = None
 
 
-def _plot_features(env, planned, executed, cutpoints, out_path: Path, planned_normal_load=None, executed_normal_load=None):
+_DISPLAY_UNITS = {
+    "surf_dist": "mm",
+    "center_dist": "mm",
+    "orient_err": "deg",
+    "speed": "mm/s",
+    "angular_speed": "deg/s",
+    "normal_force": "N",
+    "start_dist": "mm",
+    "insert_err": "mm",
+}
+
+_DISPLAY_SCALE = {
+    "surf_dist": 1000.0,
+    "center_dist": 1000.0,
+    "orient_err": 180.0 / np.pi,
+    "speed": 1000.0,
+    "angular_speed": 180.0 / np.pi,
+    "normal_force": 1.0,
+    "start_dist": 1000.0,
+    "insert_err": 1000.0,
+}
+
+
+def _training_feature_names_from_config() -> list[str] | None:
+    cfg_path = PROJECT_ROOT / "configs" / "envs" / "S4SlideInsert.json"
+    if not cfg_path.exists():
+        return None
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    selected = (
+        cfg.get("method_overrides", {})
+        .get("swcl", {})
+        .get("selected_raw_feature_ids")
+    )
+    if not selected:
+        return None
+    return [str(name) for name in selected]
+
+
+def _feature_columns(env, selected_names: list[str] | None) -> tuple[list[str], list[int]]:
+    schema = list(env.get_feature_schema())
+    name_to_col = {
+        str(spec.get("name", f"feature_{idx}")): int(spec.get("column_idx", spec.get("id", idx)))
+        for idx, spec in enumerate(schema)
+    }
+    if not selected_names:
+        names = [str(spec.get("name", f"feature_{idx}")) for idx, spec in enumerate(schema)]
+    else:
+        names = [name for name in selected_names if name in name_to_col]
+    cols = [name_to_col[name] for name in names]
+    return names, cols
+
+
+def _plot_features(env, planned, executed, cutpoints, out_path: Path, planned_normal_load=None, executed_normal_load=None, selected_feature_names=None):
     if plt is None:
         return None
-    names = [spec['name'] for spec in env.get_feature_schema()]
+    names, cols = _feature_columns(env, selected_feature_names)
     if planned_normal_load is not None:
         load = np.asarray(planned_normal_load, dtype=float)
         if len(load) == len(planned):
             env.register_normal_load_trace(planned, load)
-    planned_f = env.compute_all_features_matrix(planned)
+    scales = np.asarray([float(_DISPLAY_SCALE.get(name, 1.0)) for name in names], dtype=float)
+    planned_f = env.compute_all_features_matrix(planned)[:, cols] * scales[None, :]
     if executed_normal_load is not None:
         load = np.asarray(executed_normal_load, dtype=float)
         if len(load) == len(executed):
             env.register_normal_load_trace(executed, load)
-    executed_f = env.compute_all_features_matrix(executed)
+    executed_f = env.compute_all_features_matrix(executed)[:, cols] * scales[None, :]
     n = len(names)
     cols = 3
     rows = int(np.ceil(n / cols))
@@ -52,7 +105,8 @@ def _plot_features(env, planned, executed, cutpoints, out_path: Path, planned_no
         ax.plot(t, executed_f[:, j], color='#2563EB', linewidth=1.2, label='pybullet')
         for cp in np.asarray(cutpoints, dtype=int).reshape(-1):
             ax.axvline(int(cp), color='0.2', linestyle='--', linewidth=0.7, alpha=0.35)
-        ax.set_title(name, fontsize=9)
+        unit = _DISPLAY_UNITS.get(name)
+        ax.set_title(name if not unit else f"{name} [{unit}]", fontsize=9)
         ax.grid(alpha=0.18)
     for j in range(n, rows * cols):
         axes[j // cols][j % cols].axis('off')
@@ -93,6 +147,8 @@ def main():
     parser.add_argument('--width', type=int, default=1280)
     parser.add_argument('--height', type=int, default=900)
     parser.add_argument('--render-frame-stride', type=int, default=1)
+    parser.add_argument('--playback-speed', type=float, default=1.0, help="MP4 playback speed multiplier; the corner label reports real-time speed.")
+    parser.add_argument('--playback-label', default=None, help="Optional lower-left video label. Defaults to '<multiplier>x real time'.")
     parser.add_argument('--video-end-hold-seconds', type=float, default=2.0)
     parser.add_argument(
         '--gui',
@@ -140,6 +196,19 @@ def main():
         pybullet_render_width=int(args.width),
         pybullet_render_height=int(args.height),
     )
+    display_feature_names = _training_feature_names_from_config()
+    if display_feature_names:
+        env.get_overlay_feature_names = lambda names=tuple(display_feature_names): list(names)
+    playback_speed = float(max(float(args.playback_speed), 1e-6))
+    playback_real_time_multiplier = (
+        float(getattr(env, "dt", 1.0))
+        * float(args.fps)
+        * playback_speed
+        * float(max(int(args.render_frame_stride), 1))
+    )
+    playback_label = args.playback_label
+    if playback_label is None:
+        playback_label = f"{playback_real_time_multiplier:g}x real time"
     indices = _parse_indices(args.demo_indices, int(args.n_demos))
     save_frame_indices = _parse_frame_indices(args.save_frame_indices)
     summaries = []
@@ -197,6 +266,8 @@ def main():
                     visualize_normal_load=bool(args.visualize_normal_load),
                     feature_overlay=bool(args.feature_overlay),
                     feature_overlay_title="Demonstration feature profile",
+                    playback_speed=float(playback_speed),
+                    playback_label=playback_label,
                     save_frame_indices=save_frame_indices,
                     save_frame_dir=outdir,
                     save_frame_prefix=f's4_demo_{int(demo_idx):02d}',
@@ -220,6 +291,8 @@ def main():
                     visualize_normal_load=bool(args.visualize_normal_load),
                     feature_overlay=bool(args.feature_overlay),
                     feature_overlay_title="Demonstration feature profile",
+                    playback_speed=float(playback_speed),
+                    playback_label=playback_label,
                     save_frame_indices=save_frame_indices,
                     save_frame_dir=outdir,
                     save_frame_prefix=f's4_demo_{int(demo_idx):02d}',
@@ -258,6 +331,7 @@ def main():
                     feature_path,
                     planned_normal_load=latent.get('planned_normal_force_trace', latent.get('planned_normal_load_trace', latent.get('normal_force_trace', latent.get('normal_load_trace')))),
                     executed_normal_load=latent.get('normal_force_trace', latent.get('normal_load_trace')),
+                    selected_feature_names=display_feature_names,
                 )
             npz_path = outdir / f'demo_{demo_idx:02d}_rollout.npz'
             np.savez_compressed(
@@ -306,6 +380,9 @@ def main():
                 'visualize_normal_force': bool(args.visualize_normal_load),
                 'visualize_normal_load': bool(args.visualize_normal_load),
                 'feature_overlay': bool(args.feature_overlay),
+                'playback_speed': float(playback_speed),
+                'playback_real_time_multiplier': float(playback_real_time_multiplier),
+                'playback_label': playback_label,
                 'execution_normal_force_noise_std': float(args.execution_normal_load_noise_std),
                 'execution_normal_force_noise_smooth': float(args.execution_normal_load_noise_smooth),
                 'execution_normal_force_noise_seed': None if args.execution_normal_load_noise_seed is None else int(args.execution_normal_load_noise_seed),
@@ -345,6 +422,9 @@ def main():
         'gui': int(args.gui),
         'combined_video': None if combined_video_path is None else str(Path(combined_video_path).resolve()),
         'combined_video_segments': [] if combine_video else [str(Path(path).resolve()) for path in segment_paths],
+        'playback_speed': float(playback_speed),
+        'playback_real_time_multiplier': float(playback_real_time_multiplier),
+        'playback_label': playback_label,
         'constraint_violation': aggregate_violation,
         'demos': summaries,
     }

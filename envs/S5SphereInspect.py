@@ -1580,6 +1580,7 @@ class S5SphereInspectEnv:
                 feature_overlay=bool(kwargs.get("feature_overlay", False)),
                 feature_overlay_features=kwargs.get("feature_overlay_features"),
                 feature_overlay_names=kwargs.get("feature_overlay_names"),
+                feature_overlay_units=kwargs.get("feature_overlay_units"),
                 feature_overlay_specs=kwargs.get("feature_overlay_specs"),
                 feature_overlay_true_constraints=kwargs.get("feature_overlay_true_constraints"),
                 feature_overlay_title=kwargs.get("feature_overlay_title"),

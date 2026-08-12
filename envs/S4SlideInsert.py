@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from .rendering import _FFmpegVideoWriter, _save_rgb_frame, _space_was_triggered
+from .rendering import _FFmpegVideoWriter, _overlay_corner_label, _save_rgb_frame, _space_was_triggered
 from .pybullet_ur5 import _UR5PoseTracker, _quat_from_matrix, _require_pybullet
 
 try:
@@ -1200,14 +1200,25 @@ def _constraint_semantics_kind(spec: dict[str, object]) -> str:
 
 
 _S4_FEATURE_UNITS = {
-    "surf_dist": "m",
-    "center_dist": "m",
-    "orient_err": "rad",
-    "speed": "m/s",
-    "angular_speed": "rad/s",
+    "surf_dist": "mm",
+    "center_dist": "mm",
+    "orient_err": "deg",
+    "speed": "mm/s",
+    "angular_speed": "deg/s",
     "normal_force": "N",
-    "start_dist": "m",
-    "insert_err": "m",
+    "start_dist": "mm",
+    "insert_err": "mm",
+}
+
+_S4_FEATURE_DISPLAY_SCALE = {
+    "surf_dist": 1000.0,
+    "center_dist": 1000.0,
+    "orient_err": 180.0 / np.pi,
+    "speed": 1000.0,
+    "angular_speed": 180.0 / np.pi,
+    "normal_force": 1.0,
+    "start_dist": 1000.0,
+    "insert_err": 1000.0,
 }
 
 
@@ -1260,6 +1271,12 @@ def _overlay_constraint_feature_panel(
         surf_vals = np.asarray(surf_dist_trace, dtype=float).reshape(-1)
         if surf_vals.size >= len(prefix) and surf_idx < F.shape[1]:
             F[:, surf_idx] = surf_vals[: len(prefix)]
+    for name, feat_idx in name_to_idx.items():
+        scale = float(_S4_FEATURE_DISPLAY_SCALE.get(name, 1.0))
+        if feat_idx < F.shape[1]:
+            F[:, feat_idx] *= scale
+        if F_ylim is not None and feat_idx < F_ylim.shape[1]:
+            F_ylim[:, feat_idx] *= scale
     true_constraints = dict(getattr(env, "true_constraints", {}) or {})
     spans = _stage_spans(true_cutpoints, int(total_length))
     height, width = int(frame.shape[0]), int(frame.shape[1])
@@ -1387,7 +1404,7 @@ def _overlay_constraint_feature_panel(
             key = str(spec.get("oracle_key", ""))
             true_key = next((alias for alias in _constraint_key_aliases(key) if alias in true_constraints), None)
             if true_key is not None and np.isfinite(float(true_constraints[true_key])):
-                spec_vals.append(float(true_constraints[true_key]))
+                spec_vals.append(float(true_constraints[true_key]) * float(_S4_FEATURE_DISPLAY_SCALE.get(name, 1.0)))
         all_vals = np.concatenate([finite_vals, np.asarray(spec_vals, dtype=float)]) if spec_vals else finite_vals
         if all_vals.size == 0:
             continue
@@ -1427,7 +1444,7 @@ def _overlay_constraint_feature_panel(
             true_key = next((alias for alias in _constraint_key_aliases(key) if alias in true_constraints), None)
             if true_key is None:
                 continue
-            value = float(true_constraints[true_key])
+            value = float(true_constraints[true_key]) * float(_S4_FEATURE_DISPLAY_SCALE.get(name, 1.0))
             if not np.isfinite(value):
                 continue
             a, b = spans[stage_idx]
@@ -1577,6 +1594,8 @@ def _play_s4_reference(
     true_cutpoints: np.ndarray | None = None,
     feature_overlay: bool = True,
     feature_overlay_title: str | None = None,
+    playback_speed: float = 1.0,
+    playback_label: str | None = None,
     execution_joint_noise_std: float = 0.0,
     execution_joint_noise_smooth: float = 0.90,
     execution_noise_seed: int | None = None,
@@ -1599,8 +1618,10 @@ def _play_s4_reference(
     writer = None
     save_video = int(gui) == 1 and video_path is not None
     use_gui = int(gui) == 2
+    playback_speed = float(max(float(playback_speed), 1e-6))
+    output_fps = float(fps) * playback_speed
     if save_video:
-        writer = _FFmpegVideoWriter(out_path=video_path, width=width, height=height, fps=float(fps))
+        writer = _FFmpegVideoWriter(out_path=video_path, width=width, height=height, fps=float(output_fps))
     frame_count = 0
     frame_indices_to_save = _frame_index_set(save_frame_indices, len(ref))
     frame_save_dir = None if save_frame_dir is None else Path(save_frame_dir)
@@ -1695,6 +1716,7 @@ def _play_s4_reference(
                         ylim_trajectory=ref,
                         title=str(feature_overlay_title or "Executed features"),
                     )
+                frame = _overlay_corner_label(frame, playback_label)
                 if save_still:
                     frame_path = _save_rgb_frame(
                         frame,
@@ -1706,7 +1728,7 @@ def _play_s4_reference(
                     writer.append_data(frame)
                     frame_count += 1
             if use_gui and bool(realtime):
-                time.sleep(1.0 / max(float(fps), 1e-6))
+                time.sleep(1.0 / max(float(output_fps), 1e-6))
             i += 1
         if use_gui:
             hold_seconds = float(gui_hold_seconds)
@@ -1719,7 +1741,7 @@ def _play_s4_reference(
                 time.sleep(hold_seconds)
         if writer is not None and float(video_end_hold_seconds) > 0.0 and len(executed) > 0:
             last_idx = len(executed) - 1
-            hold_frames = int(round(float(video_end_hold_seconds) * float(fps)))
+            hold_frames = int(round(float(video_end_hold_seconds) * float(output_fps)))
             for _ in range(max(0, hold_frames)):
                 frame = _camera_frame(env, tracker, width=width, height=height)
                 if bool(visualize_normal_load) and load_trace is not None and len(load_trace) == len(ref):
@@ -1742,6 +1764,7 @@ def _play_s4_reference(
                         ylim_trajectory=ref,
                         title=str(feature_overlay_title or "Executed features"),
                     )
+                frame = _overlay_corner_label(frame, playback_label)
                 writer.append_data(frame)
                 frame_count += 1
     finally:
@@ -1810,6 +1833,8 @@ class S4PyBulletPlaybackSession:
             true_cutpoints=kwargs.get("true_cutpoints", None),
             feature_overlay=bool(kwargs.get("feature_overlay", True)),
             feature_overlay_title=kwargs.get("feature_overlay_title", None),
+            playback_speed=float(kwargs.get("playback_speed", 1.0)),
+            playback_label=kwargs.get("playback_label", None),
             execution_joint_noise_std=float(kwargs.get("execution_joint_noise_std", 0.0)),
             execution_joint_noise_smooth=float(kwargs.get("execution_joint_noise_smooth", 0.90)),
             execution_noise_seed=kwargs.get("execution_noise_seed", None),
@@ -1848,6 +1873,7 @@ def _run_s4_torque_preload_execution(
     visualize_normal_load: bool,
     feature_overlay: bool,
     feature_overlay_title: str | None,
+    playback_label: str | None,
     frame_indices_to_save: set[int],
     frame_save_dir: Path | None,
     save_frame_prefix: str,
@@ -2076,6 +2102,7 @@ def _run_s4_torque_preload_execution(
                     ylim_trajectory=ref,
                     title=str(feature_overlay_title or "Executed features"),
                 )
+            frame = _overlay_corner_label(frame, playback_label)
             if save_still:
                 frame_path = _save_rgb_frame(
                     frame,
@@ -2119,6 +2146,7 @@ def _run_s4_torque_preload_execution(
                     ylim_trajectory=ref,
                     title=str(feature_overlay_title or "Executed features"),
                 )
+            frame = _overlay_corner_label(frame, playback_label)
             writer.append_data(frame)
             frame_count += 1
 
@@ -2180,6 +2208,8 @@ def simulate_s4_demo_from_reference(
     visualize_normal_load: bool = True,
     feature_overlay: bool = True,
     feature_overlay_title: str | None = None,
+    playback_speed: float = 1.0,
+    playback_label: str | None = None,
     execution_joint_noise_std: float = 0.0,
     execution_joint_noise_smooth: float = 0.90,
     execution_noise_seed: int | None = None,
@@ -2208,8 +2238,10 @@ def simulate_s4_demo_from_reference(
     height = int(getattr(env, 'pybullet_render_height', 720) if height is None else height)
     save_video = int(gui) == 1 and video_path is not None
     use_gui = int(gui) == 2
+    playback_speed = float(max(float(playback_speed), 1e-6))
+    output_fps = float(fps) * playback_speed
     if save_video:
-        writer = _FFmpegVideoWriter(out_path=video_path, width=width, height=height, fps=float(fps))
+        writer = _FFmpegVideoWriter(out_path=video_path, width=width, height=height, fps=float(output_fps))
     frame_count = 0
     frame_indices_to_save = _frame_index_set(save_frame_indices, len(ref))
     frame_save_dir = None if save_frame_dir is None else Path(save_frame_dir)
@@ -2247,7 +2279,7 @@ def simulate_s4_demo_from_reference(
                 writer=writer,
                 width=int(width),
                 height=int(height),
-                fps=float(fps),
+                fps=float(output_fps),
                 render_frame_stride=int(render_frame_stride),
                 video_end_hold_seconds=float(video_end_hold_seconds),
                 realtime=bool(realtime),
@@ -2257,6 +2289,7 @@ def simulate_s4_demo_from_reference(
                 visualize_normal_load=bool(visualize_normal_load),
                 feature_overlay=bool(feature_overlay),
                 feature_overlay_title=feature_overlay_title,
+                playback_label=playback_label,
                 frame_indices_to_save=frame_indices_to_save,
                 frame_save_dir=frame_save_dir,
                 save_frame_prefix=str(save_frame_prefix),
@@ -2342,6 +2375,7 @@ def simulate_s4_demo_from_reference(
                         ylim_trajectory=ref,
                         title=str(feature_overlay_title or "Executed features"),
                     )
+                frame = _overlay_corner_label(frame, playback_label)
                 if save_still:
                     frame_path = _save_rgb_frame(
                         frame,
@@ -2353,7 +2387,7 @@ def simulate_s4_demo_from_reference(
                     writer.append_data(frame)
                     frame_count += 1
             if use_gui and bool(realtime):
-                time.sleep(1.0 / max(float(fps), 1e-6))
+                time.sleep(1.0 / max(float(output_fps), 1e-6))
             i += 1
         if use_gui:
             hold_seconds = float(gui_hold_seconds)
@@ -2366,7 +2400,7 @@ def simulate_s4_demo_from_reference(
                 time.sleep(hold_seconds)
         if writer is not None and float(video_end_hold_seconds) > 0.0 and len(executed) > 0:
             last_idx = len(executed) - 1
-            hold_frames = int(round(float(video_end_hold_seconds) * float(fps)))
+            hold_frames = int(round(float(video_end_hold_seconds) * float(output_fps)))
             for _ in range(max(0, hold_frames)):
                 frame = _camera_frame(env, tracker, width=width, height=height)
                 if bool(visualize_normal_load) and load_trace is not None and len(load_trace) == len(ref):
@@ -2389,6 +2423,7 @@ def simulate_s4_demo_from_reference(
                         ylim_trajectory=ref,
                         title=str(feature_overlay_title or "Executed features"),
                     )
+                frame = _overlay_corner_label(frame, playback_label)
                 writer.append_data(frame)
                 frame_count += 1
     finally:
@@ -4239,6 +4274,8 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
                 visualize_normal_load=bool(kwargs.get("visualize_normal_load", self.pybullet_visualize_normal_load)),
                 feature_overlay=bool(kwargs.get("feature_overlay", True)),
                 feature_overlay_title=kwargs.get("feature_overlay_title", None),
+                playback_speed=float(kwargs.get("playback_speed", 1.0)),
+                playback_label=kwargs.get("playback_label", None),
                 save_frame_indices=kwargs.get("save_frame_indices", None),
                 save_frame_dir=kwargs.get("save_frame_dir", None),
                 save_frame_prefix=str(kwargs.get("save_frame_prefix", "s4_demo")),
@@ -4375,6 +4412,8 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
             visualize_normal_load=bool(kwargs.get("visualize_normal_load", self.pybullet_visualize_normal_load)),
             feature_overlay=bool(kwargs.get("feature_overlay", True)),
             feature_overlay_title=kwargs.get("feature_overlay_title", None),
+            playback_speed=float(kwargs.get("playback_speed", 1.0)),
+            playback_label=kwargs.get("playback_label", None),
             execution_joint_noise_std=float(kwargs.get("execution_joint_noise_std", 0.0)),
             execution_joint_noise_smooth=float(kwargs.get("execution_joint_noise_smooth", 0.90)),
             execution_noise_seed=kwargs.get("execution_noise_seed", None),

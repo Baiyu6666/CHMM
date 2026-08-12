@@ -1,0 +1,75 @@
+{
+  "dataset_name": "S3ObsAvoid",
+  "method_name": "changepoint",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 1259149
+  },
+  "method_kwargs": {
+    "segmenter": {
+      "n_stages": 3,
+      "cost_type": "gaussian",
+      "use_velocity": true,
+      "vel_weight": 1.0,
+      "standardize": true,
+      "use_env_features": true,
+      "selected_raw_feature_ids": [
+        "obs_dist",
+        "speed",
+        "arc_dist",
+        "heading",
+        "line_dist",
+        "noise"
+      ],
+      "min_len": 1,
+      "seed": 0,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/baseline_soft_half_t_smoke/changepoint/changepoint/S3ObsAvoid/method_seed_000"
+    },
+    "posthoc_constraint": {
+      "verbose": true,
+      "fixed_feature_mask": [
+        [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "selected_raw_feature_ids": [
+        "obs_dist",
+        "speed",
+        "arc_dist",
+        "heading",
+        "line_dist",
+        "noise"
+      ],
+      "feature_model_types": {
+        "obs_dist": "trunc_t_lower_z",
+        "speed": "student_t",
+        "arc_dist": "student_t",
+        "heading": "student_t",
+        "line_dist": "student_t",
+        "noise": "student_t"
+      },
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/baseline_soft_half_t_smoke/changepoint/changepoint/S3ObsAvoid/method_seed_000"
+    }
+  }
+}

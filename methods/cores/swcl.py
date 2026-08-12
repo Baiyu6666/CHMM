@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+import hashlib
+import math
 import multiprocessing as mp
 import os
 import time
 from typing import Dict, List, Sequence
 
 import numpy as np
+try:
+    from scipy.stats import t as student_t_dist
+except ModuleNotFoundError:
+    student_t_dist = None
 
 from evaluation import evaluate_model_metrics
 from methods.base import format_training_log
@@ -25,7 +31,11 @@ from utils.models import (
     ZeroMeanGaussianModel,
 )
 from visualization.io import learner_plot_dir
-from visualization.learned_constraints_matrix import plot_learned_constraints_matrix_paper
+from visualization.learned_constraints_matrix import (
+    plot_learned_constraints_matrix_paper,
+    plot_true_constraints_matrix_paper,
+    plot_true_vs_learned_constraints_matrix_paper,
+)
 from visualization.swcl_4panel import (
     plt as swcl_plot_plt,
     plot_swcl_activation_rate_paper,
@@ -33,12 +43,20 @@ from visualization.swcl_4panel import (
     plot_swcl_key_feature_traces_paper,
     plot_swcl_results_4panel,
     plot_swcl_true_cutpoint_trajectory_paper,
-    plot_swcl_true_active_paper,
 )
 from visualization.swcl_activation import plot_swcl_activation_dynamics, plot_swcl_activation_masks
 
 
 _SWCL_PRECOMPUTE_MODEL = None
+
+
+@dataclass
+class _StudentTMLEFit:
+    mu: float
+    scale: float
+    nu: float
+    nll: float
+    converged: bool
 
 
 def _swcl_precompute_worker_init(model):
@@ -114,20 +132,27 @@ def _plot_swcl_final_outputs(model, it: int) -> None:
         plot_learned_constraints_matrix_paper(
             constraint_metrics,
             save_path=out_dir / f"paper_learned_constraints_iter_{int(it):04d}.png",
+            dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")),
+        )
+        plot_true_constraints_matrix_paper(
+            constraint_metrics,
+            save_path=out_dir / f"paper_true_constraint_active_iter_{int(it):04d}.png",
+            dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")),
+        )
+        plot_true_vs_learned_constraints_matrix_paper(
+            constraint_metrics,
+            save_path=out_dir / f"paper_true_vs_learned_constraints_iter_{int(it):04d}.png",
+            dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")),
         )
     except Exception as exc:
         if getattr(model, "verbose", False):
-            print(f"[SWCL] learned constraint matrix plot skipped: {exc}")
+            print(f"[SWCL] constraint matrix plot skipped: {exc}")
     if model.use_score_mode:
         plot_swcl_activation_dynamics(model, it)
         plot_swcl_activation_masks(model, it)
     plot_swcl_activation_rate_paper(
         model,
         save_path=out_dir / f"paper_activation_rate_iter_{int(it):04d}.png",
-    )
-    plot_swcl_true_active_paper(
-        model,
-        save_path=out_dir / f"paper_true_constraint_active_iter_{int(it):04d}.png",
     )
     env_tag = str(getattr(model.env, "eval_tag", model.env.__class__.__name__))
     if env_tag != "S4SlideInsert" and not env_tag.startswith("S5SphereInspect"):
@@ -259,8 +284,10 @@ class StageWiseConstraintLearningModel:
         short_segment_penalty_c=0.1,
         inequality_score_activation_threshold=-0.5,
         truncated_inequality_z_threshold=2.0,
-        truncated_auto_z_score_gap_threshold=0.05,
-        truncated_z_score_mode="z",
+        truncated_z_score_mode="fast_fit",
+        truncated_z_soft_boundary_scale=0.1,
+        truncated_z_observation_noise_scale=0.03,
+        truncated_z_half_t_scale_quantile=0.9,
         truncated_z_optimize=False,
         truncated_z_optimize_trigger_scale=3.0,
         activation_proto_temperature=0.1,
@@ -313,10 +340,22 @@ class StageWiseConstraintLearningModel:
         self.short_segment_penalty_c = float(short_segment_penalty_c)
         self.inequality_score_activation_threshold = float(inequality_score_activation_threshold)
         self.truncated_inequality_z_threshold = float(truncated_inequality_z_threshold)
-        self.truncated_auto_z_score_gap_threshold = float(truncated_auto_z_score_gap_threshold)
         self.truncated_z_score_mode = str(truncated_z_score_mode).lower()
-        if self.truncated_z_score_mode not in {"z", "median_slack"}:
-            raise ValueError("truncated_z_score_mode must be one of {'z', 'median_slack'}.")
+        allowed_truncated_z_score_modes = {
+            "fast_fit",
+            "fast_fit_minus_baseline",
+            "soft_fit_minus_baseline",
+        }
+        if self.truncated_z_score_mode not in allowed_truncated_z_score_modes:
+            raise ValueError(
+                f"truncated_z_score_mode must be one of {sorted(allowed_truncated_z_score_modes)}."
+            )
+        self.truncated_z_soft_boundary_scale = max(float(truncated_z_soft_boundary_scale), 0.0)
+        self.truncated_z_observation_noise_scale = max(float(truncated_z_observation_noise_scale), 0.0)
+        self.truncated_z_half_t_scale_quantile = float(np.clip(float(truncated_z_half_t_scale_quantile), 0.5, 0.99))
+        self._student_t_mle_cache = {}
+        self._student_t_mle_cache_max_size = 8192
+        self._student_t_mle_maxiter = 25
         self.truncated_z_optimize = bool(truncated_z_optimize)
         self.truncated_z_optimize_trigger_scale = max(float(truncated_z_optimize_trigger_scale), 1.0)
         self.activation_proto_temperature = max(float(activation_proto_temperature), 1e-6)
@@ -346,8 +385,16 @@ class StageWiseConstraintLearningModel:
         self._init_feature_preprocessing()
         self.force_inactive_feature_indices = self._resolve_force_inactive_feature_indices(self.force_inactive_feature_ids)
         self.feature_model_types = self._normalize_feature_model_types(self.num_features)
-        if any(self._is_auto_constraint_feature(feat_idx) for feat_idx in range(self.num_features)) and not self.use_score_mode:
-            raise ValueError("auto constraint type selection currently requires feature_activation_mode='score'.")
+        removed_auto_types = [
+            str(kind)
+            for kind in self.feature_model_types
+            if self._kind_is_removed_auto(kind)
+        ]
+        if removed_auto_types:
+            raise ValueError(
+                "feature_model_types='auto' has been removed. Use explicit feature model types, "
+                "or use 'trunc_t_auto_z' when only lower/upper inequality direction should be selected automatically."
+            )
         self.r = np.ones((self.num_stages, self.num_features), dtype=int)
         self.has_equality_feature = any(self._feature_supports_equality(feat_idx) for feat_idx in range(self.num_features))
         self.score_threshold_matrix = self._build_score_threshold_matrix()
@@ -405,7 +452,7 @@ class StageWiseConstraintLearningModel:
         self._segment_base_cache: Dict[tuple[int, int, int], tuple[_StageParams, float, float]] = {}
 
     @staticmethod
-    def _kind_is_auto(kind) -> bool:
+    def _kind_is_removed_auto(kind) -> bool:
         return str(kind).lower() in {"auto", "auto_constraint", "auto_eq_ineq", "auto_constraint_type"}
 
     @staticmethod
@@ -449,17 +496,9 @@ class StageWiseConstraintLearningModel:
         }
 
     def _feature_supports_equality(self, feat_idx: int) -> bool:
-        return self._kind_is_auto(self.feature_model_types[feat_idx]) or self._is_equality_feature(feat_idx)
-
-    def _is_auto_constraint_feature(self, feat_idx: int) -> bool:
-        return self._kind_is_auto(self.feature_model_types[feat_idx])
-
-    def _auto_constraint_threshold(self) -> float:
-        return 0.0
+        return self._is_equality_feature(feat_idx)
 
     def _score_threshold_for_kind(self, kind) -> float:
-        if self._kind_is_auto(kind):
-            return self._auto_constraint_threshold()
         if self._kind_is_equality(kind):
             return float(self._equality_score_threshold())
         if self._kind_is_truncated_z(kind) or self._kind_is_truncated_auto_z(kind):
@@ -473,8 +512,6 @@ class StageWiseConstraintLearningModel:
             if kind and kind != "unconstrained":
                 return kind
         base_kind = str(self.feature_model_types[feat_idx]).lower()
-        if self._kind_is_auto(base_kind):
-            return "student_t"
         return base_kind
 
     def _normalize_feature_model_types(self, num_features):
@@ -741,7 +778,11 @@ class StageWiseConstraintLearningModel:
 
     def _make_model_from_kind(self, kind):
         kind = str(kind).lower()
-        if self._kind_is_auto(kind) or kind == "unconstrained":
+        if self._kind_is_removed_auto(kind):
+            raise ValueError(
+                "feature_model_types='auto' has been removed. Use explicit model types or 'trunc_t_auto_z'."
+            )
+        if kind == "unconstrained":
             return StudentTModel(mu=0.0, sigma=1.0)
         if kind in {"gauss", "gaussian"}:
             return GaussianModel(mu=0.0, sigma=1.0)
@@ -776,7 +817,11 @@ class StageWiseConstraintLearningModel:
     def _fit_local_model(self, kind, xs):
         xs = np.asarray(xs, dtype=float).reshape(-1)
         kind = str(kind).lower()
-        if self._kind_is_auto(kind) or kind == "unconstrained":
+        if self._kind_is_removed_auto(kind):
+            raise ValueError(
+                "feature_model_types='auto' has been removed. Use explicit model types or 'trunc_t_auto_z'."
+            )
+        if kind == "unconstrained":
             kind = "student_t"
         if kind in {"gauss", "gaussian"}:
             mu = float(np.mean(xs))
@@ -806,14 +851,12 @@ class StageWiseConstraintLearningModel:
             model._update_interval()
             return model
         if kind in {"trunc_t_lower_z", "truncated_t_lower_z"}:
-            model = TruncatedStudentTLowerEmission()
-            model.m_step_update([xs])
-            if self.truncated_z_optimize:
-                fast_z = self._truncated_z_score(kind, model.get_summary())
-                trigger = float(self.truncated_inequality_z_threshold) * float(self.truncated_z_optimize_trigger_scale)
-                if fast_z < trigger:
-                    model = TruncatedStudentTLowerEmission(optimize_m_step=True)
-                    model.m_step_update([xs])
+            q05, q50 = np.quantile(xs, [0.05, 0.5])
+            model = TruncatedStudentTLowerEmission(
+                b_init=float(q05),
+                mu_init=float(q50),
+                sigma_init=float(max(np.std(xs), 1e-6)),
+            )
             model._update_interval()
             return model
         if kind in {"trunc_t_auto_z", "truncated_t_auto_z"}:
@@ -839,14 +882,12 @@ class StageWiseConstraintLearningModel:
             model._update_interval()
             return model
         if kind in {"trunc_t_upper_z", "truncated_t_upper_z"}:
-            model = TruncatedStudentTUpperEmission()
-            model.m_step_update([xs])
-            if self.truncated_z_optimize:
-                fast_z = self._truncated_z_score(kind, model.get_summary())
-                trigger = float(self.truncated_inequality_z_threshold) * float(self.truncated_z_optimize_trigger_scale)
-                if fast_z < trigger:
-                    model = TruncatedStudentTUpperEmission(optimize_m_step=True)
-                    model.m_step_update([xs])
+            q50, q95 = np.quantile(xs, [0.5, 0.95])
+            model = TruncatedStudentTUpperEmission(
+                b_init=float(q95),
+                mu_init=float(q50),
+                sigma_init=float(max(np.std(xs), 1e-6)),
+            )
             model._update_interval()
             return model
         if kind in {"trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn", "soft_truncated_t_upper_hn"}:
@@ -879,44 +920,405 @@ class StageWiseConstraintLearningModel:
         kept = vals[order[:keep_n]]
         return kept if kept.size >= 3 else vals
 
-    def _truncated_z_score(self, kind, summary) -> float:
-        mu = float(summary.get("mu", 0.0))
-        b = float(summary["b"])
-        kind_l = str(kind).lower()
-        if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
-            slack = float(mu - b)
-        elif kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
-            slack = float(b - mu)
+    def _fixed_student_t_profile_params(self, xs, nu: float = 3.0):
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        if xs.size == 0:
+            return 0.0, 1.0, max(float(nu), 1e-6)
+        nu = max(float(nu), 1e-6)
+        std = float(np.std(xs))
+        if nu > 2.0:
+            scale = std * math.sqrt((nu - 2.0) / nu)
         else:
-            raise ValueError(f"Unsupported truncated-z feature model type '{kind}'.")
-        if self.truncated_z_score_mode == "median_slack":
-            return float(slack)
-        sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
-        return float(slack / sigma)
+            scale = std
+        scale = max(float(scale), 1e-9)
+        return float(np.mean(xs)), float(scale), float(nu)
+
+    def _student_t_profile_nll_from_params(self, xs, mu: float, scale: float, nu: float = 3.0) -> float:
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        if xs.size == 0:
+            return 0.0
+        scale = max(float(scale), 1e-9)
+        nu = max(float(nu), 1e-6)
+        z = (xs - float(mu)) / scale
+        log_norm = (
+            math.lgamma(0.5 * (nu + 1.0))
+            - math.lgamma(0.5 * nu)
+            - 0.5 * math.log(nu * math.pi)
+            - math.log(scale)
+        )
+        logpdf = log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu)
+        return float(-np.mean(logpdf))
+
+    @staticmethod
+    def _softplus_stable(z):
+        z = np.asarray(z, dtype=float)
+        return np.log1p(np.exp(-np.abs(z))) + np.maximum(z, 0.0)
+
+    @staticmethod
+    def _log_sigmoid_stable(z):
+        z = np.asarray(z, dtype=float)
+        return -StageWiseConstraintLearningModel._softplus_stable(-z)
+
+    def _fixed_student_t_profile_nll(self, xs, nu: float = 3.0) -> float:
+        mu, scale, nu = self._fixed_student_t_profile_params(xs, nu=nu)
+        return self._student_t_profile_nll_from_params(xs, mu, scale, nu)
+
+    @staticmethod
+    def _student_t_mle_cache_key(xs, nu: float):
+        arr = np.ascontiguousarray(np.asarray(xs, dtype=np.float64).reshape(-1))
+        digest = hashlib.blake2b(arr.view(np.uint8), digest_size=16).digest()
+        return arr.size, round(float(nu), 12), digest
+
+    @staticmethod
+    def _student_t_ppf(q: float, nu: float) -> float:
+        if student_t_dist is None:
+            raise ImportError("scipy is required for soft_fit_minus_baseline Student-t scoring.")
+        return float(student_t_dist.ppf(float(q), df=max(float(nu), 1e-6)))
+
+    def _robust_student_t_profile_params(self, xs, nu: float = 3.0):
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        xs = xs[np.isfinite(xs)]
+        nu = max(float(nu), 1e-6)
+        if xs.size == 0:
+            return 0.0, 1.0, nu
+
+        q10, q50, q90 = np.quantile(xs, [0.10, 0.50, 0.90])
+        unit_width = self._student_t_ppf(0.90, nu) - self._student_t_ppf(0.10, nu)
+        scale = float(q90 - q10) / max(float(unit_width), 1e-12)
+        return float(q50), max(float(scale), 1e-12), nu
+
+    def _student_t_mle_params(self, xs, nu: float = 3.0) -> _StudentTMLEFit:
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        xs = xs[np.isfinite(xs)]
+        nu = max(float(nu), 1e-6)
+        if xs.size == 0:
+            return _StudentTMLEFit(mu=0.0, scale=1.0, nu=nu, nll=0.0, converged=False)
+
+        cache = getattr(self, "_student_t_mle_cache", None)
+        cache_key = None
+        if cache is not None:
+            cache_key = self._student_t_mle_cache_key(xs, nu)
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        init_mu, init_scale, _ = self._robust_student_t_profile_params(xs, nu=nu)
+        init_nll = self._student_t_profile_nll_from_params(xs, init_mu, init_scale, nu)
+        if xs.size < 3:
+            fit = _StudentTMLEFit(
+                mu=float(init_mu),
+                scale=float(init_scale),
+                nu=nu,
+                nll=float(init_nll),
+                converged=False,
+            )
+            if cache is not None and cache_key is not None:
+                cache[cache_key] = fit
+            return fit
+
+        x_min = float(np.min(xs))
+        x_max = float(np.max(xs))
+        x_span = max(float(x_max - x_min), float(np.std(xs)), float(init_scale), 1e-12)
+        if x_span <= 1e-10:
+            fit = _StudentTMLEFit(
+                mu=float(init_mu),
+                scale=float(init_scale),
+                nu=nu,
+                nll=float(init_nll),
+                converged=False,
+            )
+            if cache is not None and cache_key is not None:
+                cache[cache_key] = fit
+            return fit
+        mu_lo = x_min - 5.0 * x_span
+        mu_hi = x_max + 5.0 * x_span
+        scale_lo = max(1e-12, x_span * 1e-8)
+        scale_hi = max(scale_lo * 10.0, x_span * 20.0)
+
+        starts = [(float(init_mu), float(init_scale))]
+        mean_mu = float(np.mean(xs))
+        mean_scale = max(float(np.std(xs)), scale_lo)
+        mean_nll = self._student_t_profile_nll_from_params(xs, mean_mu, mean_scale, nu)
+        if mean_nll + 1e-6 < init_nll:
+            starts.append((mean_mu, mean_scale))
+
+        best_mu = float(init_mu)
+        best_scale = float(init_scale)
+        best_nll = float(min(init_nll, mean_nll))
+        if mean_nll < init_nll:
+            best_mu = mean_mu
+            best_scale = mean_scale
+        best_converged = False
+
+        maxiter = max(int(getattr(self, "_student_t_mle_maxiter", 25)), 1)
+        for start_mu, start_scale in starts:
+            mu = float(np.clip(float(start_mu), mu_lo, mu_hi))
+            scale = float(np.clip(float(start_scale), scale_lo, scale_hi))
+            converged = False
+            for _ in range(maxiter):
+                prev_mu = mu
+                prev_scale = scale
+                z = (xs - mu) / max(scale, scale_lo)
+                weights = (nu + 1.0) / (nu + z * z)
+                weight_sum = float(np.sum(weights))
+                if weight_sum <= 1e-12:
+                    break
+                mu = float(np.sum(weights * xs) / weight_sum)
+                scale = math.sqrt(max(float(np.mean(weights * (xs - mu) ** 2)), scale_lo * scale_lo))
+                mu = float(np.clip(mu, mu_lo, mu_hi))
+                scale = float(np.clip(scale, scale_lo, scale_hi))
+                rel_mu = abs(mu - prev_mu) / max(abs(prev_mu), x_span, 1e-12)
+                rel_scale = abs(scale - prev_scale) / max(abs(prev_scale), 1e-12)
+                if max(rel_mu, rel_scale) < 1e-5:
+                    converged = True
+                    break
+            nll = self._student_t_profile_nll_from_params(xs, mu, scale, nu)
+            if np.isfinite(nll) and float(nll) < best_nll:
+                best_mu = float(mu)
+                best_scale = float(scale)
+                best_nll = float(nll)
+                best_converged = bool(converged)
+
+        fit = _StudentTMLEFit(
+            mu=best_mu,
+            scale=best_scale,
+            nu=nu,
+            nll=best_nll,
+            converged=best_converged,
+        )
+        if cache is not None and cache_key is not None:
+            if len(cache) >= int(getattr(self, "_student_t_mle_cache_max_size", 8192)):
+                cache.clear()
+            cache[cache_key] = fit
+        return fit
+
+    def _half_t_quantile_profile_params(self, slack, nu: float = 3.0):
+        slack = np.maximum(np.asarray(slack, dtype=float).reshape(-1), 0.0)
+        slack = slack[np.isfinite(slack)]
+        nu = max(float(nu), 1e-6)
+        if slack.size == 0:
+            return 1.0, nu
+
+        q = float(np.clip(float(getattr(self, "truncated_z_half_t_scale_quantile", 0.9)), 0.5, 0.99))
+        slack_q = float(np.quantile(slack, q))
+        unit_q = self._student_t_ppf(0.5 + 0.5 * q, nu)
+        scale = slack_q / max(float(unit_q), 1e-12)
+        return max(float(scale), 1e-12), nu
+
+    def _truncated_z_scale_floor(self) -> float:
+        return max(float(getattr(self, "truncated_z_observation_noise_scale", 0.0)), 0.0)
+
+    def _half_t_slack_profile_score(self, slack, baseline_values=None, nu: float = 3.0):
+        slack = np.asarray(slack, dtype=float).reshape(-1)
+        if slack.size == 0:
+            return 1.0, {
+                "score": 1.0,
+                "nll": 0.0,
+                "active_nll": 0.0,
+                "baseline_nll": 0.0,
+                "baseline_mu": 0.0,
+                "baseline_scale": 1.0,
+                "observation_noise_scale": float(self._truncated_z_scale_floor()),
+                "nll_gain": 0.0,
+                "scale": 1.0,
+                "nu": float(nu),
+                "q50": 0.0,
+                "q75": 0.0,
+                "q95": 0.0,
+            }
+
+        slack = np.maximum(slack, 0.0)
+        q50, q75, q95 = np.quantile(slack, [0.5, 0.75, 0.95])
+        nu = max(float(nu), 1e-6)
+        scale, nu = self._half_t_quantile_profile_params(slack, nu=nu)
+        scale_floor = self._truncated_z_scale_floor()
+        scale = max(float(scale), scale_floor, 1e-6)
+        z = slack / scale
+        log_norm = (
+            math.log(2.0)
+            + math.lgamma(0.5 * (nu + 1.0))
+            - math.lgamma(0.5 * nu)
+            - 0.5 * math.log(nu * math.pi)
+            - math.log(scale)
+        )
+        logpdf = log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu)
+        nll = float(-np.mean(logpdf))
+        baseline_nll = float("nan")
+        baseline_mu = float("nan")
+        baseline_scale = float("nan")
+        if self.truncated_z_score_mode == "fast_fit_minus_baseline":
+            baseline_source = baseline_values if baseline_values is not None else slack
+            baseline_mu, baseline_scale, _ = self._fixed_student_t_profile_params(baseline_source, nu=nu)
+            baseline_scale = max(float(baseline_scale), scale_floor, 1e-6)
+            baseline_nll = self._student_t_profile_nll_from_params(baseline_source, baseline_mu, baseline_scale, nu)
+            score = float(nll - baseline_nll)
+        else:
+            score = float(math.exp(max(min(nll, 50.0), -50.0)))
+        return score, {
+            "score": score,
+            "nll": nll,
+            "active_nll": nll,
+            "baseline_nll": float(baseline_nll) if np.isfinite(baseline_nll) else np.nan,
+            "baseline_mu": float(baseline_mu),
+            "baseline_scale": float(baseline_scale),
+            "observation_noise_scale": float(scale_floor),
+            "nll_gain": float(baseline_nll - nll) if np.isfinite(baseline_nll) else np.nan,
+            "scale": float(scale),
+            "nu": float(nu),
+            "q50": float(q50),
+            "q75": float(q75),
+            "q95": float(q95),
+        }
+
+    def _soft_half_t_profile_nll_on_x(
+        self,
+        xs,
+        *,
+        b: float,
+        scale: float,
+        nu: float,
+        softness: float,
+        direction: str,
+    ) -> float:
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        if xs.size == 0:
+            return 0.0
+        scale = max(float(scale), 1e-6)
+        nu = max(float(nu), 1e-6)
+        sign = 1.0 if str(direction).lower() == "lower" else -1.0
+        softness = max(float(softness), 0.0)
+        signed_slack = sign * (xs - float(b))
+        log_t_norm = (
+            math.log(2.0)
+            + math.lgamma(0.5 * (nu + 1.0))
+            - math.lgamma(0.5 * nu)
+            - 0.5 * math.log(nu * math.pi)
+            - math.log(scale)
+        )
+        if softness <= 1e-12:
+            log_pdf_x = np.full_like(xs, -690.0, dtype=float)
+            ok = signed_slack >= 0.0
+            if np.any(ok):
+                z = signed_slack[ok] / scale
+                log_pdf_x[ok] = log_t_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu)
+            return float(-np.mean(log_pdf_x))
+
+        # Anchored soft boundary: exact half-t on the legal side and exponential
+        # leakage on the illegal side. The mode stays exactly at the boundary b.
+        log_half_t_at_zero = float(log_t_norm)
+        half_t_at_zero = float(math.exp(min(log_half_t_at_zero, 700.0)))
+        log_partition = math.log1p(max(half_t_at_zero * softness, 0.0))
+        log_pdf_x = np.empty_like(xs, dtype=float)
+        ok = signed_slack >= 0.0
+        if np.any(ok):
+            z = signed_slack[ok] / scale
+            log_pdf_x[ok] = log_t_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu) - log_partition
+        if np.any(~ok):
+            log_pdf_x[~ok] = log_half_t_at_zero + signed_slack[~ok] / softness - log_partition
+        return float(-np.mean(np.maximum(log_pdf_x, -690.0)))
+
+    def _soft_half_t_profile_score(self, xs, *, b: float, direction: str, slack=None, baseline_values=None, nu: float = 3.0):
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        if xs.size == 0:
+            return 0.0, {
+                "score": 0.0,
+                "nll": 0.0,
+                "active_nll": 0.0,
+                "baseline_nll": 0.0,
+                "baseline_mu": 0.0,
+                "baseline_scale": 1.0,
+                "observation_noise_scale": float(self._truncated_z_scale_floor()),
+                "nll_gain": 0.0,
+                "scale": 1.0,
+                "nu": float(nu),
+                "q50": 0.0,
+                "q75": 0.0,
+                "q95": 0.0,
+                "soft_boundary_scale": 0.0,
+            }
+
+        if slack is None:
+            sign = 1.0 if str(direction).lower() == "lower" else -1.0
+            slack = np.maximum(sign * (xs - float(b)), 0.0)
+        slack = np.maximum(np.asarray(slack, dtype=float).reshape(-1), 0.0)
+        q50, q75, q95 = np.quantile(slack, [0.5, 0.75, 0.95])
+        scale, nu = self._half_t_quantile_profile_params(slack, nu=nu)
+        scale_floor = self._truncated_z_scale_floor()
+        scale = max(float(scale), scale_floor, 1e-6)
+        softness = max(float(self.truncated_z_soft_boundary_scale) * scale, 1e-12)
+        nll = self._soft_half_t_profile_nll_on_x(
+            xs,
+            b=float(b),
+            scale=scale,
+            nu=nu,
+            softness=softness,
+            direction=direction,
+        )
+        baseline_source = baseline_values if baseline_values is not None else xs
+        baseline_fit = self._student_t_mle_params(baseline_source, nu=nu)
+        baseline_mu = float(baseline_fit.mu)
+        baseline_scale = max(float(baseline_fit.scale), scale_floor, 1e-6)
+        baseline_nu = float(baseline_fit.nu)
+        baseline_nll = self._student_t_profile_nll_from_params(xs, baseline_mu, baseline_scale, baseline_nu)
+        score = float(nll - baseline_nll)
+        return score, {
+            "score": score,
+            "nll": nll,
+            "active_nll": nll,
+            "baseline_nll": float(baseline_nll),
+            "baseline_mu": float(baseline_mu),
+            "baseline_scale": float(baseline_scale),
+            "baseline_nu": float(baseline_nu),
+            "observation_noise_scale": float(scale_floor),
+            "baseline_fit": "mle",
+            "baseline_converged": bool(baseline_fit.converged),
+            "nll_gain": float(baseline_nll - nll),
+            "scale": float(scale),
+            "nu": float(nu),
+            "q50": float(q50),
+            "q75": float(q75),
+            "q95": float(q95),
+            "soft_boundary_scale": float(softness),
+        }
 
     def _fit_truncated_auto_z_model(self, xs):
         xs = np.asarray(xs, dtype=float).reshape(-1)
         q05, q50, q95 = np.quantile(xs, [0.05, 0.5, 0.95])
-        lower_quantile_slack = max(float(q50 - q05), 0.0)
-        upper_quantile_slack = max(float(q95 - q50), 0.0)
-        quantile_spread = lower_quantile_slack + upper_quantile_slack
-        direction_conf = abs(lower_quantile_slack - upper_quantile_slack) / max(quantile_spread, 1e-12)
-        lower_model = TruncatedStudentTLowerEmission()
-        lower_model.m_step_update([xs])
-        upper_model = TruncatedStudentTUpperEmission()
-        upper_model.m_step_update([xs])
-        if self.truncated_z_optimize:
-            lower_fast = self._truncated_z_score("trunc_t_lower_z", lower_model.get_summary())
-            upper_fast = self._truncated_z_score("trunc_t_upper_z", upper_model.get_summary())
-            trigger = float(self.truncated_inequality_z_threshold) * float(self.truncated_z_optimize_trigger_scale)
-            if lower_fast < trigger:
-                lower_model = TruncatedStudentTLowerEmission(optimize_m_step=True)
-                lower_model.m_step_update([xs])
-            if upper_fast < trigger:
-                upper_model = TruncatedStudentTUpperEmission(optimize_m_step=True)
-                upper_model.m_step_update([xs])
-        lower_score = self._truncated_z_score("trunc_t_lower_z", lower_model.get_summary())
-        upper_score = self._truncated_z_score("trunc_t_upper_z", upper_model.get_summary())
+        lower_slack = np.maximum(xs - float(q05), 0.0)
+        upper_slack = np.maximum(float(q95) - xs, 0.0)
+        if self.truncated_z_score_mode == "soft_fit_minus_baseline":
+            lower_score, lower_stats = self._soft_half_t_profile_score(
+                xs, b=float(q05), direction="lower", slack=lower_slack, baseline_values=xs
+            )
+            upper_score, upper_stats = self._soft_half_t_profile_score(
+                xs, b=float(q95), direction="upper", slack=upper_slack, baseline_values=xs
+            )
+        else:
+            lower_score, lower_stats = self._half_t_slack_profile_score(lower_slack, baseline_values=xs)
+            upper_score, upper_stats = self._half_t_slack_profile_score(upper_slack, baseline_values=xs)
+        quantile_spread = max(float(q95 - q05), 0.0)
+        if quantile_spread <= 1e-6:
+            if self.truncated_z_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}:
+                lower_score = 0.0
+                upper_score = 0.0
+            else:
+                lower_score = 0.5
+                upper_score = 0.5
+            lower_stats = dict(lower_stats)
+            upper_stats = dict(upper_stats)
+            lower_stats["score"] = float(lower_score)
+            upper_stats["score"] = float(upper_score)
+        sigma = max(float(np.std(xs)), 1e-6)
+        lower_model = TruncatedStudentTLowerEmission(
+            b_init=float(q05),
+            mu_init=float(q50),
+            sigma_init=sigma,
+        )
+        upper_model = TruncatedStudentTUpperEmission(
+            b_init=float(q95),
+            mu_init=float(q50),
+            sigma_init=sigma,
+        )
         if float(lower_score) < float(upper_score):
             return lower_model, "trunc_t_lower_z", float(lower_score), {
                 "lower_score": float(lower_score),
@@ -924,9 +1326,27 @@ class StageWiseConstraintLearningModel:
                 "q05": float(q05),
                 "q50": float(q50),
                 "q95": float(q95),
-                "lower_quantile_slack": float(lower_quantile_slack),
-                "upper_quantile_slack": float(upper_quantile_slack),
-                "direction_conf": float(direction_conf),
+                "lower_slack_scale": float(lower_stats["scale"]),
+                "upper_slack_scale": float(upper_stats["scale"]),
+                "lower_slack_nu": float(lower_stats["nu"]),
+                "upper_slack_nu": float(upper_stats["nu"]),
+                "lower_slack_nll": float(lower_stats["nll"]),
+                "upper_slack_nll": float(upper_stats["nll"]),
+                "lower_baseline_nll": float(lower_stats["baseline_nll"]),
+                "upper_baseline_nll": float(upper_stats["baseline_nll"]),
+                "lower_baseline_mu": float(lower_stats["baseline_mu"]),
+                "upper_baseline_mu": float(upper_stats["baseline_mu"]),
+                "lower_baseline_scale": float(lower_stats["baseline_scale"]),
+                "upper_baseline_scale": float(upper_stats["baseline_scale"]),
+                "lower_nll_gain": float(lower_stats["nll_gain"]),
+                "upper_nll_gain": float(upper_stats["nll_gain"]),
+                "lower_slack_q50": float(lower_stats["q50"]),
+                "upper_slack_q50": float(upper_stats["q50"]),
+                "lower_slack_q75": float(lower_stats["q75"]),
+                "upper_slack_q75": float(upper_stats["q75"]),
+                "lower_slack_q95": float(lower_stats["q95"]),
+                "upper_slack_q95": float(upper_stats["q95"]),
+                "quantile_spread": float(quantile_spread),
             }
         return upper_model, "trunc_t_upper_z", float(upper_score), {
             "lower_score": float(lower_score),
@@ -934,77 +1354,163 @@ class StageWiseConstraintLearningModel:
             "q05": float(q05),
             "q50": float(q50),
             "q95": float(q95),
-            "lower_quantile_slack": float(lower_quantile_slack),
-            "upper_quantile_slack": float(upper_quantile_slack),
-            "direction_conf": float(direction_conf),
+            "lower_slack_scale": float(lower_stats["scale"]),
+            "upper_slack_scale": float(upper_stats["scale"]),
+            "lower_slack_nu": float(lower_stats["nu"]),
+            "upper_slack_nu": float(upper_stats["nu"]),
+            "lower_slack_nll": float(lower_stats["nll"]),
+            "upper_slack_nll": float(upper_stats["nll"]),
+            "lower_baseline_nll": float(lower_stats["baseline_nll"]),
+            "upper_baseline_nll": float(upper_stats["baseline_nll"]),
+            "lower_baseline_mu": float(lower_stats["baseline_mu"]),
+            "upper_baseline_mu": float(upper_stats["baseline_mu"]),
+            "lower_baseline_scale": float(lower_stats["baseline_scale"]),
+            "upper_baseline_scale": float(upper_stats["baseline_scale"]),
+            "lower_nll_gain": float(lower_stats["nll_gain"]),
+            "upper_nll_gain": float(upper_stats["nll_gain"]),
+            "lower_slack_q50": float(lower_stats["q50"]),
+            "upper_slack_q50": float(upper_stats["q50"]),
+            "lower_slack_q75": float(lower_stats["q75"]),
+            "upper_slack_q75": float(upper_stats["q75"]),
+            "lower_slack_q95": float(lower_stats["q95"]),
+            "upper_slack_q95": float(upper_stats["q95"]),
+            "quantile_spread": float(quantile_spread),
         }
 
-    def _fit_auto_constraint_feature(self, feat_idx: int, values, F_demo, segment_median: float):
-        values = np.asarray(values, dtype=float).reshape(-1)
-        F_demo = np.asarray(F_demo, dtype=float).reshape(-1)
-        candidate_kinds = ["student_t", "trunc_t_lower_z", "trunc_t_upper_z"]
-        candidate_records = []
-        for kind in candidate_kinds:
-            model = self._fit_local_model(kind, values)
-            summary = dict(model.get_summary())
-            summary["segment_median"] = float(segment_median)
-            kind_l = str(kind).lower()
-            if self._kind_is_equality(kind_l) and self.equality_score_mode == "dispersion":
-                score = float(_mean_abs_centered_dispersion(values))
-                threshold = float(self._equality_score_threshold())
-                weight = float(self.lambda_eq_constraint)
-            elif self._kind_is_equality(kind_l) and self.equality_score_mode == "gaussian_ll_gain":
-                local_gaussian = GaussianModel(
-                    mu=float(np.mean(values)),
-                    sigma=float(max(np.std(values), 1e-6)),
-                )
-                global_gaussian = GaussianModel(
-                    mu=float(np.mean(F_demo)),
-                    sigma=float(max(np.std(F_demo), 1e-6)),
-                )
-                local_loss = -np.asarray(local_gaussian.logpdf(values), dtype=float)
-                global_loss = -np.asarray(global_gaussian.logpdf(values), dtype=float)
-                score = float(np.mean(local_loss) - np.mean(global_loss))
-                threshold = float(self._equality_score_threshold())
-                weight = float(self.lambda_eq_constraint)
-            elif self._kind_is_truncated_z(kind_l):
-                score = float(self._truncated_z_score(kind_l, summary))
-                threshold = float(self.truncated_inequality_z_threshold)
-                weight = float(self.lambda_ineq_constraint)
-            else:
-                baseline_model = self._fit_student_t_baseline(values)
-                fitted_loss = -np.asarray(model.logpdf(values), dtype=float)
-                baseline_loss = -np.asarray(baseline_model.logpdf(values), dtype=float)
-                score = float(np.mean(fitted_loss) - np.mean(baseline_loss))
-                threshold = float(self.inequality_score_activation_threshold)
-                weight = float(self.lambda_ineq_constraint)
-            margin = float(threshold - score)
-            candidate_records.append(
-                {
-                    "kind": kind_l,
-                    "summary": summary,
-                    "score": float(score),
-                    "threshold": float(threshold),
-                    "margin": float(margin),
-                    "weighted_margin": float(weight * margin),
-                }
+    def _fit_truncated_fixed_z_profile_model(self, kind, xs):
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        q05, q50, q95 = np.quantile(xs, [0.05, 0.5, 0.95])
+        lower_slack = np.maximum(xs - float(q05), 0.0)
+        upper_slack = np.maximum(float(q95) - xs, 0.0)
+        if self.truncated_z_score_mode == "soft_fit_minus_baseline":
+            lower_score, lower_stats = self._soft_half_t_profile_score(
+                xs, b=float(q05), direction="lower", slack=lower_slack, baseline_values=xs
             )
+            upper_score, upper_stats = self._soft_half_t_profile_score(
+                xs, b=float(q95), direction="upper", slack=upper_slack, baseline_values=xs
+            )
+        else:
+            lower_score, lower_stats = self._half_t_slack_profile_score(lower_slack, baseline_values=xs)
+            upper_score, upper_stats = self._half_t_slack_profile_score(upper_slack, baseline_values=xs)
+        quantile_spread = max(float(q95 - q05), 0.0)
+        if quantile_spread <= 1e-6:
+            if self.truncated_z_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}:
+                lower_score = 0.0
+                upper_score = 0.0
+            else:
+                lower_score = 0.5
+                upper_score = 0.5
+            lower_stats = dict(lower_stats)
+            upper_stats = dict(upper_stats)
+            lower_stats["score"] = float(lower_score)
+            upper_stats["score"] = float(upper_score)
 
-        best_record = max(candidate_records, key=lambda item: float(item["weighted_margin"]))
-        positive_records = [item for item in candidate_records if float(item["margin"]) > 0.0]
-        chosen_record = max(positive_records, key=lambda item: float(item["weighted_margin"])) if positive_records else best_record
-        active = int(bool(positive_records) and float(chosen_record["weighted_margin"]) > 0.0)
-        chosen_kind = str(chosen_record["kind"]) if active else "unconstrained"
-        best_weighted_margin = float(chosen_record["weighted_margin"])
-        score = -best_weighted_margin
-        constraint_cost = float(len(values) * min(-best_weighted_margin, 0.0))
-        return {
-            "summary": dict(chosen_record["summary"]),
-            "selected_kind": chosen_kind,
-            "score": float(score),
-            "active": int(active),
-            "constraint_cost": float(constraint_cost),
+        kind_l = str(kind).lower()
+        sigma = max(float(np.std(xs)), 1e-6)
+        if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
+            selected_kind = "trunc_t_lower_z"
+            score = float(lower_score)
+            model = TruncatedStudentTLowerEmission(
+                b_init=float(q05),
+                mu_init=float(q50),
+                sigma_init=sigma,
+            )
+        elif kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
+            selected_kind = "trunc_t_upper_z"
+            score = float(upper_score)
+            model = TruncatedStudentTUpperEmission(
+                b_init=float(q95),
+                mu_init=float(q50),
+                sigma_init=sigma,
+            )
+        else:
+            raise ValueError(f"Unsupported truncated-z feature model type '{kind}'.")
+
+        candidates = {
+            "lower_score": float(lower_score),
+            "upper_score": float(upper_score),
+            "q05": float(q05),
+            "q50": float(q50),
+            "q95": float(q95),
+            "lower_slack_scale": float(lower_stats["scale"]),
+            "upper_slack_scale": float(upper_stats["scale"]),
+            "lower_slack_nu": float(lower_stats["nu"]),
+            "upper_slack_nu": float(upper_stats["nu"]),
+            "lower_slack_nll": float(lower_stats["nll"]),
+            "upper_slack_nll": float(upper_stats["nll"]),
+            "lower_baseline_nll": float(lower_stats["baseline_nll"]),
+            "upper_baseline_nll": float(upper_stats["baseline_nll"]),
+            "lower_baseline_mu": float(lower_stats["baseline_mu"]),
+            "upper_baseline_mu": float(upper_stats["baseline_mu"]),
+            "lower_baseline_scale": float(lower_stats["baseline_scale"]),
+            "upper_baseline_scale": float(upper_stats["baseline_scale"]),
+            "lower_nll_gain": float(lower_stats["nll_gain"]),
+            "upper_nll_gain": float(upper_stats["nll_gain"]),
+            "lower_slack_q50": float(lower_stats["q50"]),
+            "upper_slack_q50": float(upper_stats["q50"]),
+            "lower_slack_q75": float(lower_stats["q75"]),
+            "upper_slack_q75": float(upper_stats["q75"]),
+            "lower_slack_q95": float(lower_stats["q95"]),
+            "upper_slack_q95": float(upper_stats["q95"]),
+            "quantile_spread": float(quantile_spread),
         }
+        return model, selected_kind, score, candidates
+
+    def _add_slack_profile_summary(self, summary, selected_kind, candidates):
+        summary["auto_selected_kind"] = str(selected_kind)
+        summary["auto_score_mode"] = str(self.truncated_z_score_mode)
+        summary["auto_lower_score"] = float(candidates["lower_score"])
+        summary["auto_upper_score"] = float(candidates["upper_score"])
+        summary["auto_score_type"] = (
+            "soft_half_t_profile"
+            if self.truncated_z_score_mode == "soft_fit_minus_baseline"
+            else "half_t_slack_profile"
+        )
+        summary["auto_soft_boundary_scale"] = float(self.truncated_z_soft_boundary_scale)
+        summary["auto_observation_noise_scale"] = float(self.truncated_z_observation_noise_scale)
+        summary["auto_half_t_scale_quantile"] = float(self.truncated_z_half_t_scale_quantile)
+        summary["auto_q05"] = float(candidates["q05"])
+        summary["auto_q50"] = float(candidates["q50"])
+        summary["auto_q95"] = float(candidates["q95"])
+        summary["auto_lower_slack_scale"] = float(candidates["lower_slack_scale"])
+        summary["auto_upper_slack_scale"] = float(candidates["upper_slack_scale"])
+        summary["auto_lower_slack_nu"] = float(candidates["lower_slack_nu"])
+        summary["auto_upper_slack_nu"] = float(candidates["upper_slack_nu"])
+        summary["auto_lower_slack_nll"] = float(candidates["lower_slack_nll"])
+        summary["auto_upper_slack_nll"] = float(candidates["upper_slack_nll"])
+        summary["auto_lower_baseline_nll"] = float(candidates["lower_baseline_nll"])
+        summary["auto_upper_baseline_nll"] = float(candidates["upper_baseline_nll"])
+        summary["auto_lower_baseline_mu"] = float(candidates["lower_baseline_mu"])
+        summary["auto_upper_baseline_mu"] = float(candidates["upper_baseline_mu"])
+        summary["auto_lower_baseline_scale"] = float(candidates["lower_baseline_scale"])
+        summary["auto_upper_baseline_scale"] = float(candidates["upper_baseline_scale"])
+        summary["auto_lower_nll_gain"] = float(candidates["lower_nll_gain"])
+        summary["auto_upper_nll_gain"] = float(candidates["upper_nll_gain"])
+        summary["auto_lower_slack_q50"] = float(candidates["lower_slack_q50"])
+        summary["auto_upper_slack_q50"] = float(candidates["upper_slack_q50"])
+        summary["auto_lower_slack_q75"] = float(candidates["lower_slack_q75"])
+        summary["auto_upper_slack_q75"] = float(candidates["upper_slack_q75"])
+        summary["auto_lower_slack_q95"] = float(candidates["lower_slack_q95"])
+        summary["auto_upper_slack_q95"] = float(candidates["upper_slack_q95"])
+        summary["auto_quantile_spread"] = float(candidates["quantile_spread"])
+        return summary
+
+    @staticmethod
+    def _selected_truncated_z_active_nll(selected_kind, candidates) -> float:
+        kind_l = str(selected_kind).lower()
+        if "lower" in kind_l:
+            return float(candidates["lower_slack_nll"])
+        if "upper" in kind_l:
+            return float(candidates["upper_slack_nll"])
+        raise ValueError(f"Unsupported selected truncated-z kind '{selected_kind}'.")
+
+    def _active_truncated_z_loglik_cost(self, *, score: float, selected_kind, candidates, n: int) -> tuple[bool, float, float]:
+        is_active = float(score) < float(self.truncated_inequality_z_threshold)
+        active_nll = self._selected_truncated_z_active_nll(selected_kind, candidates)
+        if not is_active:
+            return False, 0.0, float(active_nll)
+        # DP minimizes costs, so using log-likelihood directly is n * active_nll.
+        return True, float(self.lambda_ineq_constraint * int(n) * active_nll), float(active_nll)
 
     def _segment_bounds_from_stage_ends(self, stage_ends):
         bounds = []
@@ -1113,58 +1619,59 @@ class StageWiseConstraintLearningModel:
         for feat_idx, kind in enumerate(self.feature_model_types):
             raw_values = F[:, feat_idx]
             values = raw_values
-            if self._is_auto_constraint_feature(feat_idx):
-                segment_median = float(np.median(values))
-                auto_info = self._fit_auto_constraint_feature(feat_idx, values, F_demo[:, feat_idx], segment_median)
-                summaries.append(dict(auto_info["summary"]))
-                selected_feature_kinds.append(str(auto_info["selected_kind"]))
-                param_vectors.append(
-                    self._summary_to_vector_or_none(str(auto_info["selected_kind"]), auto_info["summary"])
-                )
-                feature_scores[feat_idx] = float(auto_info["score"])
-                active_mask[feat_idx] = int(auto_info["active"])
-                feature_constraint_costs[feat_idx] = float(auto_info["constraint_cost"])
-                continue
             if self._kind_is_truncated_auto_z(kind):
                 values = self._trim_values_for_inequality_fit(raw_values)
                 segment_median = float(np.median(values))
                 model, selected_kind, score, candidates = self._fit_truncated_auto_z_model(values)
                 summary = dict(model.get_summary())
                 summary["segment_median"] = segment_median
-                summary["auto_selected_kind"] = str(selected_kind)
-                summary["auto_lower_score"] = float(candidates["lower_score"])
-                summary["auto_upper_score"] = float(candidates["upper_score"])
-                auto_score_gap = abs(float(candidates["lower_score"]) - float(candidates["upper_score"]))
-                auto_direction_conf = float(candidates["direction_conf"])
-                summary["auto_score_gap"] = float(auto_score_gap)
-                summary["auto_direction_conf"] = float(auto_direction_conf)
-                summary["auto_q05"] = float(candidates["q05"])
-                summary["auto_q50"] = float(candidates["q50"])
-                summary["auto_q95"] = float(candidates["q95"])
-                summary["auto_lower_quantile_slack"] = float(candidates["lower_quantile_slack"])
-                summary["auto_upper_quantile_slack"] = float(candidates["upper_quantile_slack"])
-                summary["auto_score_gap_threshold"] = float(self.truncated_auto_z_score_gap_threshold)
+                summary = self._add_slack_profile_summary(summary, selected_kind, candidates)
                 summaries.append(summary)
                 selected_feature_kinds.append(str(selected_kind))
                 param_vectors.append(self._summary_to_vector_or_none(str(selected_kind), summary))
                 feature_scores[feat_idx] = float(score)
-                is_active = (
-                    float(score) < float(self.truncated_inequality_z_threshold)
-                    and float(auto_direction_conf) > float(self.truncated_auto_z_score_gap_threshold)
+                is_active, active_nll_cost, active_nll = self._active_truncated_z_loglik_cost(
+                    score=float(score),
+                    selected_kind=selected_kind,
+                    candidates=candidates,
+                    n=len(values),
                 )
+                summary["auto_active_nll"] = float(active_nll)
+                summary["auto_active_nll_cost"] = float(active_nll_cost)
                 active_mask[feat_idx] = int(is_active)
-                if is_active:
-                    avg_step_cost = min(float(score) - float(self.truncated_inequality_z_threshold), 0.0)
-                    feature_constraint_costs[feat_idx] = float(self.lambda_ineq_constraint * len(values) * avg_step_cost)
-                else:
-                    feature_constraint_costs[feat_idx] = 0.0
+                feature_constraint_costs[feat_idx] = float(active_nll_cost)
                 continue
             is_equality_feature = self._is_equality_feature(feat_idx)
             if not is_equality_feature:
                 values = self._trim_values_for_inequality_fit(raw_values)
             segment_median = float(np.median(values))
+            kind_l = str(kind).lower()
+            if self._kind_is_truncated_z(kind_l):
+                model, selected_kind, score, candidates = self._fit_truncated_fixed_z_profile_model(kind_l, values)
+                summary = dict(model.get_summary())
+                summary["segment_median"] = segment_median
+                summary = self._add_slack_profile_summary(summary, selected_kind, candidates)
+                summaries.append(summary)
+                selected_feature_kinds.append(str(selected_kind))
+                param_vectors.append(self._summary_to_vector_or_none(str(selected_kind), summary))
+                feature_scores[feat_idx] = float(score)
+                if self.use_score_mode:
+                    is_active, active_nll_cost, active_nll = self._active_truncated_z_loglik_cost(
+                        score=float(score),
+                        selected_kind=selected_kind,
+                        candidates=candidates,
+                        n=len(values),
+                    )
+                    summary["auto_active_nll"] = float(active_nll)
+                    summary["auto_active_nll_cost"] = float(active_nll_cost)
+                    active_mask[feat_idx] = int(is_active)
+                    feature_constraint_costs[feat_idx] = float(active_nll_cost)
+                else:
+                    if self.r[int(stage_idx), feat_idx]:
+                        active_mask[feat_idx] = 1
+                        active_fit_losses[feat_idx] = -np.asarray(model.logpdf(values), dtype=float)
+                continue
             if self.use_score_mode and is_equality_feature and self.equality_score_mode == "dispersion":
-                kind_l = str(kind).lower()
                 if kind_l in {"gauss", "gaussian"}:
                     model = GaussianModel(
                         mu=float(np.mean(values)),
@@ -1215,8 +1722,6 @@ class StageWiseConstraintLearningModel:
                     local_loss = -np.asarray(local_gaussian.logpdf(values), dtype=float)
                     global_loss = -np.asarray(global_gaussian.logpdf(values), dtype=float)
                     score = float(np.mean(local_loss) - np.mean(global_loss))
-                elif self._kind_is_truncated_z(kind_l):
-                    score = self._truncated_z_score(kind_l, summary)
                 else:
                     if kind_l in {
                         "margin_exp_lower", "marginexp", "margin_exp",
@@ -1251,12 +1756,6 @@ class StageWiseConstraintLearningModel:
                     avg_step_cost = min(float(score) - float(threshold), 0.0)
                     feature_constraint_costs[feat_idx] = float(weight * len(values) * avg_step_cost)
             else:
-                if self._kind_is_truncated_z(kind_l):
-                    if self.r[int(stage_idx), feat_idx]:
-                        feature_scores[feat_idx] = self._truncated_z_score(kind_l, summary)
-                        active_mask[feat_idx] = 1
-                        active_fit_losses[feat_idx] = fitted_loss
-                    continue
                 if kind_l in {
                     "margin_exp_lower", "marginexp", "margin_exp",
                     "margin_exp_lower_left_hn", "marginexp_left_hn", "margin_exp_left_hn",
@@ -1381,19 +1880,15 @@ class StageWiseConstraintLearningModel:
                         "feature_idx": int(feat_idx),
                         "feature_name": feature_names[feat_idx],
                         "score_type": (
-                            "auto_margin"
-                            if self._is_auto_constraint_feature(feat_idx)
+                            self._equality_score_type()
+                            if self._is_equality_feature(feat_idx)
                             else (
-                                self._equality_score_type()
-                                if self._is_equality_feature(feat_idx)
+                                "truncated_auto_z"
+                                if self._kind_is_truncated_auto_z(self.feature_model_types[feat_idx])
                                 else (
-                                    "truncated_auto_z"
-                                    if self._kind_is_truncated_auto_z(self.feature_model_types[feat_idx])
-                                    else (
-                                        "truncated_z"
-                                        if self._kind_is_truncated_z(self.feature_model_types[feat_idx])
-                                        else "-ll_gain"
-                                    )
+                                    "truncated_z"
+                                    if self._kind_is_truncated_z(self.feature_model_types[feat_idx])
+                                    else "-ll_gain"
                                 )
                             )
                         ),
@@ -1666,8 +2161,6 @@ class StageWiseConstraintLearningModel:
         total = 0.0
         for stage_idx in range(self.num_stages):
             for feat_idx, _ in enumerate(self.feature_model_types):
-                if self._is_auto_constraint_feature(feat_idx):
-                    continue
                 shared_active = None
                 if shared_feature_score_mean is not None:
                     shared_active = int(np.rint(float(shared_feature_score_mean[stage_idx, feat_idx])))
@@ -1747,8 +2240,6 @@ class StageWiseConstraintLearningModel:
         param_consensus_cost = 0.0
         if lam_param_consensus > 0.0:
             for feat_idx, _ in enumerate(self.feature_model_types):
-                if self._is_auto_constraint_feature(feat_idx):
-                    continue
                 active_mask = stage_params.active_mask
                 if active_mask is None or not int(active_mask[feat_idx]):
                     continue
@@ -2034,7 +2525,7 @@ class StageWiseConstraintLearningModel:
                 ]
                 if not active_stage_params:
                     continue
-                if self._is_auto_constraint_feature(feat_idx) or self._kind_is_truncated_auto_z(self.feature_model_types[feat_idx]):
+                if self._kind_is_truncated_auto_z(self.feature_model_types[feat_idx]):
                     kind_counts = {}
                     for stage_params in active_stage_params:
                         kind = self._stage_feature_kind(stage_params, feat_idx)
@@ -2074,7 +2565,11 @@ class StageWiseConstraintLearningModel:
                 if vec is None:
                     continue
                 kind = shared_param_kinds[stage_idx][feat_idx] or str(base_kind).lower()
-                if self._kind_is_auto(kind) or kind == "unconstrained":
+                if self._kind_is_removed_auto(kind):
+                    raise ValueError(
+                        "feature_model_types='auto' has been removed. Use explicit model types or 'trunc_t_auto_z'."
+                    )
+                if kind == "unconstrained":
                     continue
                 self.feature_models[stage_idx][feat_idx] = self._vector_to_model(kind, vec)
 

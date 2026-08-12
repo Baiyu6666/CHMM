@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 try:
@@ -21,7 +23,6 @@ except ModuleNotFoundError:
     Axes3D = None
 
 from .io import learner_plot_dir, save_figure
-from utils.models import GaussianModel, TruncatedStudentTLowerEmission, TruncatedStudentTUpperEmission
 
 PAPER_FIGSIZE = (8.4, 6.0)
 PAPER_TITLE_SIZE = 9
@@ -29,6 +30,104 @@ PAPER_LABEL_SIZE = 8
 PAPER_TICK_SIZE = 7
 PAPER_LEGEND_SIZE = 6.5
 STAGE_COLORS = ["#D55E00", "#0072B2", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
+
+
+def _half_t_pdf(slack, scale, nu=3.0):
+    slack = np.asarray(slack, dtype=float)
+    out = np.zeros_like(slack, dtype=float)
+    valid = np.isfinite(slack) & (slack >= 0.0)
+    if not np.any(valid):
+        return out
+    scale = max(float(scale), 1e-12)
+    nu = max(float(nu), 1e-12)
+    z = slack[valid] / scale
+    log_norm = (
+        math.log(2.0)
+        + math.lgamma(0.5 * (nu + 1.0))
+        - math.lgamma(0.5 * nu)
+        - 0.5 * math.log(nu * math.pi)
+        - math.log(scale)
+    )
+    out[valid] = np.exp(log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu))
+    return out
+
+
+def _softplus_stable(z):
+    z = np.asarray(z, dtype=float)
+    return np.log1p(np.exp(-np.abs(z))) + np.maximum(z, 0.0)
+
+
+def _log_sigmoid_stable(z):
+    return -_softplus_stable(-z)
+
+
+def _soft_half_t_pdf_on_x(xs, b, scale, nu=3.0, softness=1e-6, direction="lower"):
+    xs = np.asarray(xs, dtype=float)
+    out = np.full_like(xs, np.nan, dtype=float)
+    valid = np.isfinite(xs)
+    if not np.any(valid):
+        return out
+    scale = max(float(scale), 1e-12)
+    nu = max(float(nu), 1e-12)
+    softness = max(float(softness), 0.0)
+    sign = 1.0 if str(direction).lower() == "lower" else -1.0
+    signed = sign * (xs[valid] - float(b))
+    log_norm = (
+        math.log(2.0)
+        + math.lgamma(0.5 * (nu + 1.0))
+        - math.lgamma(0.5 * nu)
+        - 0.5 * math.log(nu * math.pi)
+        - math.log(scale)
+    )
+    if softness <= 1e-12:
+        local = np.zeros_like(signed, dtype=float)
+        ok = signed >= 0.0
+        if np.any(ok):
+            z = signed[ok] / scale
+            local[ok] = np.exp(log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu))
+        out[valid] = local
+        return out
+
+    half_t_at_zero = float(math.exp(min(log_norm, 700.0)))
+    partition = 1.0 + max(half_t_at_zero * softness, 0.0)
+    local = np.empty_like(signed, dtype=float)
+    ok = signed >= 0.0
+    if np.any(ok):
+        z = signed[ok] / scale
+        local[ok] = np.exp(log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu))
+    if np.any(~ok):
+        local[~ok] = half_t_at_zero * np.exp(np.maximum(signed[~ok] / softness, -745.0))
+    out[valid] = local / partition
+    return out
+
+
+def _fixed_student_t_profile_params(values, nu=3.0):
+    xs = _finite_1d(values)
+    if xs.size == 0:
+        return np.nan, np.nan, float(nu)
+    nu = max(float(nu), 1e-12)
+    std = float(np.std(xs))
+    scale = std * math.sqrt((nu - 2.0) / nu) if nu > 2.0 else std
+    return float(np.mean(xs)), max(float(scale), 1e-9), nu
+
+
+def _student_t_pdf(xs, mu, scale, nu=3.0):
+    xs = np.asarray(xs, dtype=float)
+    out = np.full_like(xs, np.nan, dtype=float)
+    valid = np.isfinite(xs)
+    if not np.any(valid) or not np.isfinite(mu) or not np.isfinite(scale) or scale <= 0.0:
+        return out
+    scale = max(float(scale), 1e-12)
+    nu = max(float(nu), 1e-12)
+    z = (xs[valid] - float(mu)) / scale
+    log_norm = (
+        math.lgamma(0.5 * (nu + 1.0))
+        - math.lgamma(0.5 * nu)
+        - 0.5 * math.log(nu * math.pi)
+        - math.log(scale)
+    )
+    out[valid] = np.exp(log_norm - 0.5 * (nu + 1.0) * np.log1p((z * z) / nu))
+    return out
 
 
 def _legend(ax, *, outside=False):
@@ -145,29 +244,6 @@ def _kind_is_upper_display(kind: str) -> bool:
         "trunc_t_upper_hn", "truncated_t_upper_hn", "soft_trunc_t_upper_hn",
         "soft_truncated_t_upper_hn",
     }
-
-
-def _fit_optimized_truncated_z_display_model(kind: str, vals):
-    vals = np.asarray(vals, dtype=float).reshape(-1)
-    if vals.size == 0:
-        return None, None, np.nan
-    kind_l = str(kind).lower()
-    if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
-        model = TruncatedStudentTLowerEmission(optimize_m_step=True)
-    elif kind_l in {"trunc_t_upper_z", "truncated_t_upper_z"}:
-        model = TruncatedStudentTUpperEmission(optimize_m_step=True)
-    else:
-        return None, None, np.nan
-    model.m_step_update([vals])
-    summary = dict(model.get_summary())
-    sigma = max(float(summary.get("sigma", 1.0)), 1e-12)
-    mu = float(summary.get("mu", 0.0))
-    b = float(summary.get("b", 0.0))
-    if kind_l in {"trunc_t_lower_z", "truncated_t_lower_z"}:
-        z = float((mu - b) / sigma)
-    else:
-        z = float((b - mu) / sigma)
-    return model, summary, z
 
 
 def _summary_center_z(summary: dict, kind: str):
@@ -1018,56 +1094,95 @@ def plot_swcl_key_feature_traces_paper(learner, demo_idx=0, save_path=None):
     starts, ends = _segment_bounds(stage_ends)
     feature_colors = _feature_plot_colors(len(feature_order))
 
-    fig, ax = plt.subplots(figsize=(3.35, 2.15), constrained_layout=False)
+    fig, ax = plt.subplots(figsize=(3.05, 1.78), constrained_layout=False)
+    plotted_values = []
     for local_idx, feat_idx in enumerate(feature_order):
         feature_name = _feature_name(learner, feat_idx)
         color = feature_colors[local_idx % len(feature_colors)]
         values = np.asarray(F_std[:, feat_idx], dtype=float)
-        ax.plot(t_axis, values, color=color, lw=1.35, label=feature_name)
+        plotted_values.append(values[np.isfinite(values)])
+        ax.plot(
+            t_axis,
+            values,
+            color=color,
+            lw=1.20,
+            alpha=0.90,
+            label=feature_name,
+        )
 
     for cp_idx, cp in enumerate(stage_ends[:-1]):
         ax.axvline(
             int(cp),
             color="black",
             linestyle=":",
-            lw=1.1,
+            lw=1.05,
             alpha=0.95,
             zorder=4,
-            label="learned cutpoints" if cp_idx == 0 else "",
+            label="learned_cutpoint" if cp_idx == 0 else "",
         )
     for cp_idx, cp in enumerate(_true_cutpoints_for_demo(learner, demo_idx)):
         ax.axvline(
             int(cp),
             color="#7a7a7a",
             linestyle="-",
-            lw=1.0,
-            alpha=0.45,
+            lw=0.95,
+            alpha=0.50,
             zorder=3,
-            label="true cutpoints" if cp_idx == 0 else "",
+            label="true_cutpoint" if cp_idx == 0 else "",
         )
 
-    ax.set_xlabel("timestep", fontsize=PAPER_LABEL_SIZE, labelpad=1)
-    ax.set_ylabel("normalized feature", fontsize=PAPER_LABEL_SIZE)
-    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    if plotted_values:
+        finite_vals = np.concatenate([v for v in plotted_values if v.size > 0], axis=0)
+        if finite_vals.size > 0:
+            lo, hi = np.percentile(finite_vals, [1.0, 99.0])
+            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                pad = 0.10 * float(hi - lo)
+                ax.set_ylim(float(lo - pad), float(hi + pad))
+
+    y0, y1 = ax.get_ylim()
+    stage_y = y1 - 0.055 * float(y1 - y0)
+    for stage_idx, (s, e) in enumerate(zip(starts, ends)):
+        if int(e) < int(s):
+            continue
+        center = 0.5 * (float(s) + float(e))
+        ax.text(
+            center,
+            stage_y,
+            f"S{stage_idx + 1}",
+            ha="center",
+            va="top",
+            fontsize=6.3,
+            color="#4b5563",
+            zorder=5,
+        )
+
+    ax.set_xlabel("timestep", fontsize=7.4, labelpad=0.5)
+    ax.set_ylabel("normalized feature", fontsize=7.4, labelpad=1.0)
+    ax.tick_params(labelsize=6.7, pad=1.5)
     _style_paper_axis(ax, grid_axis="y", grid_alpha=0.14)
+    ax.tick_params(labelsize=6.7, pad=1.5)
     handles, labels = ax.get_legend_handles_labels()
     if handles:
-        legend_ncol = max(1, int(np.ceil(len(handles) / 2.0)))
-        ax.legend(
-            handles,
-            labels,
+        by_label = {}
+        for handle, label in zip(handles, labels):
+            if label and not str(label).startswith("_") and label not in by_label:
+                by_label[label] = handle
+        legend_ncol = 3
+        fig.legend(
+            list(by_label.values()),
+            list(by_label.keys()),
             loc="upper center",
-            bbox_to_anchor=(0.5, 1.23),
+            bbox_to_anchor=(0.5, 0.985),
             ncol=legend_ncol,
-            fontsize=6.2,
+            fontsize=6.25,
             frameon=False,
-            handlelength=1.6,
-            columnspacing=0.7,
-            handletextpad=0.4,
-            labelspacing=0.25,
-            borderaxespad=0.15,
+            handlelength=1.20,
+            columnspacing=0.48,
+            handletextpad=0.32,
+            labelspacing=0.08,
+            borderaxespad=0.0,
         )
-    fig.tight_layout(pad=0.10)
+    fig.subplots_adjust(left=0.118, right=0.992, bottom=0.170, top=0.755)
     save_path = learner_plot_dir(learner) / f"paper_key_feature_traces_demo_{demo_idx:02d}.png" if save_path is None else save_path
     return save_figure(fig, save_path, dpi=300)
 
@@ -1284,10 +1399,10 @@ def _finite_1d(values):
 def _safe_hist(ax, values, *, max_bins, min_bins, color, alpha, label):
     xs = _finite_1d(values)
     if xs.size == 0:
-        return
+        return np.asarray([], dtype=float)
     if xs.size == 1:
         ax.axvline(float(xs[0]), color=color, alpha=max(alpha, 0.45), lw=2.0, label=label)
-        return
+        return np.asarray([], dtype=float)
     data_min = float(np.min(xs))
     data_max = float(np.max(xs))
     span = float(data_max - data_min)
@@ -1299,7 +1414,7 @@ def _safe_hist(ax, values, *, max_bins, min_bins, color, alpha, label):
         bins = int(min(max(xs.size // 2, min_bins), max_bins))
         bins = max(bins, 2)
         hist_range = (data_min, data_max)
-    ax.hist(
+    counts, _, _ = ax.hist(
         xs,
         bins=bins,
         range=hist_range,
@@ -1308,6 +1423,7 @@ def _safe_hist(ax, values, *, max_bins, min_bins, color, alpha, label):
         color=color,
         label=label,
     )
+    return np.asarray(counts, dtype=float)
 
 
 def _draw_trajectories(ax, learner, it, demo_idx=0):
@@ -1604,7 +1720,7 @@ def _draw_feature_bands(ax, learner, demo_idx=0, standardized=False):
             + learner.feat_mean[learner.selected_feature_columns][None, :]
         )
     )
-    max_features = min(learner.num_features, 6)
+    max_features = int(learner.num_features)
     colors = _feature_plot_colors(max_features)
     stage_ends = learner.stage_ends_[demo_idx]
     starts, ends = _segment_bounds(stage_ends)
@@ -2550,75 +2666,50 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 kind = _stage_feature_kind_for_display(learner, stage_params_list, stage_idx, feat_idx)
                 is_equality_feature = _kind_is_equality_display(kind)
                 is_truncated_z_feature = _kind_is_truncated_z_display(kind)
-                kept_vals = vals
-                trimmed_vals = np.asarray([], dtype=float)
-                if not is_equality_feature:
-                    trim_fraction = float(getattr(learner, "inequality_trim_fraction", 0.0))
-                    trim_min_n = int(getattr(learner, "inequality_trim_min_n", 20))
-                    trim_n = int(np.floor(vals.size * trim_fraction)) if vals.size >= trim_min_n else 0
-                    if trim_n > 0 and vals.size - trim_n >= 3 and hasattr(learner, "_fit_student_t_baseline"):
-                        trim_baseline = learner._fit_student_t_baseline(vals)
-                        trim_nll = -np.asarray(trim_baseline.logpdf(vals), dtype=float)
-                        trim_order = np.argsort(trim_nll, kind="mergesort")
-                        kept_idx = trim_order[: vals.size - trim_n]
-                        trimmed_idx = trim_order[vals.size - trim_n :]
-                        kept_vals = vals[kept_idx]
-                        trimmed_vals = vals[trimmed_idx]
-                plot_vals = kept_vals if trimmed_vals.size > 0 else vals
+                summary = stage_params.model_summaries[feat_idx]
+                auto_score_type = str(summary.get("auto_score_type", "")).lower()
+                is_auto_boundary_score = auto_score_type == "boundary_concentration"
+                is_auto_slack_score = auto_score_type in {"half_t_slack_profile", "soft_half_t_profile"}
+                is_soft_slack_score = auto_score_type == "soft_half_t_profile"
+                is_auto_score = is_auto_boundary_score or is_auto_slack_score
+                selected_boundary = np.nan
+                selected_kind = str(kind).lower()
+                if is_truncated_z_feature:
+                    selected_kind = str(summary.get("auto_selected_kind", kind)).lower()
+                    if is_auto_score:
+                        if "lower" in selected_kind:
+                            selected_boundary = float(summary.get("auto_q05", np.nan))
+                        elif "upper" in selected_kind:
+                            selected_boundary = float(summary.get("auto_q95", np.nan))
+                    elif "lower" in selected_kind or "upper" in selected_kind:
+                        selected_boundary = float(summary.get("b", np.nan))
+                plot_vals = vals
                 show_full_demo = is_equality_feature
-                is_dispersion_equality = (
-                    is_equality_feature
-                    and getattr(learner, "equality_score_mode", "dispersion") == "dispersion"
-                )
-                fitted_model = None
-                baseline_model = None
-                optimized_trunc_model = None
-                optimized_trunc_summary = None
-                optimized_trunc_z = np.nan
-                if not is_dispersion_equality:
-                    summary = stage_params.model_summaries[feat_idx]
-                    fitted_model = learner._vector_to_model(kind, learner._summary_to_vector(kind, summary))
-                    if is_equality_feature:
-                        baseline_model = GaussianModel(
-                            mu=float(np.mean(full_vals)),
-                            sigma=float(max(np.std(full_vals), 1e-6)),
-                        )
-                    elif is_truncated_z_feature:
-                        baseline_model = None
-                        optimized_trunc_model, optimized_trunc_summary, optimized_trunc_z = _fit_optimized_truncated_z_display_model(
-                            kind,
-                            plot_vals,
-                        )
-                    else:
-                        baseline_model = learner._fit_student_t_baseline(plot_vals)
 
                 if show_full_demo:
                     lo_candidates = [np.min(plot_vals), np.min(full_vals)]
                     hi_candidates = [np.max(plot_vals), np.max(full_vals)]
-                    if fitted_model is not None:
-                        lo_candidates.append(getattr(fitted_model, "L", np.min(plot_vals)))
-                        hi_candidates.append(getattr(fitted_model, "U", np.max(plot_vals)))
-                    if baseline_model is not None:
-                        lo_candidates.append(getattr(baseline_model, "L", np.min(plot_vals)))
-                        hi_candidates.append(getattr(baseline_model, "U", np.max(plot_vals)))
-                    if optimized_trunc_model is not None:
-                        lo_candidates.append(getattr(optimized_trunc_model, "L", np.min(plot_vals)))
-                        hi_candidates.append(getattr(optimized_trunc_model, "U", np.max(plot_vals)))
                     lo = float(min(lo_candidates))
                     hi = float(max(hi_candidates))
                     pad = max(0.15 * (hi - lo + 1e-6), 0.2)
                 else:
-                    visible_vals = vals if trimmed_vals.size > 0 else plot_vals
+                    visible_vals = plot_vals
                     q_lo, q_hi = np.quantile(visible_vals, [0.02, 0.98])
                     center = float(np.median(plot_vals))
-                    span = max(float(q_hi - q_lo), 0.03)
+                    span = max(float(q_hi - q_lo), 0.0)
                     lo = min(float(np.min(visible_vals)), center - 1.25 * span)
                     hi = max(float(np.max(visible_vals)), center + 1.25 * span)
-                    pad = max(0.08 * (hi - lo + 1e-6), 0.01)
-                xs = np.linspace(lo - pad, hi + pad, 300)
+                    if np.isfinite(selected_boundary):
+                        lo = min(lo, float(selected_boundary))
+                        hi = max(hi, float(selected_boundary))
+                    if hi <= lo:
+                        lo = center - 5e-4
+                        hi = center + 5e-4
+                    pad = max(0.08 * (hi - lo + 1e-12), 1e-4)
 
+                density_for_ylim = []
                 if show_full_demo:
-                    _safe_hist(
+                    full_hist_density = _safe_hist(
                         ax,
                         full_vals,
                         max_bins=24,
@@ -2627,95 +2718,146 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                         alpha=0.18,
                         label="full demo",
                     )
-                _safe_hist(
+                    if full_hist_density.size:
+                        density_for_ylim.append(full_hist_density)
+                hist_density = _safe_hist(
                     ax,
                     plot_vals,
                     max_bins=16,
                     min_bins=6,
                     color="tab:blue",
                     alpha=0.35,
-                    label="kept segment" if trimmed_vals.size > 0 else "segment",
+                    label="segment",
                 )
-                if trimmed_vals.size > 0:
-                    ymin, ymax = ax.get_ylim()
-                    rug_y = ymin + 0.08 * (ymax - ymin)
-                    ax.scatter(
-                        trimmed_vals,
-                        np.full(trimmed_vals.shape, rug_y),
-                        color="tab:orange",
-                        marker="x",
-                        s=34,
-                        linewidths=1.4,
-                        label="ineq trim ignored",
-                        zorder=5,
-                    )
-                    ax.set_ylim(ymin, ymax)
-                if fitted_model is not None:
-                    fitted_label = "fast fitted" if is_truncated_z_feature else "fitted"
-                    ax.plot(xs, np.exp(fitted_model.logpdf(xs)), color="tab:red", lw=2.0, label=fitted_label)
-                if optimized_trunc_model is not None:
-                    ax.plot(
-                        xs,
-                        np.exp(optimized_trunc_model.logpdf(xs)),
-                        color="tab:purple",
-                        lw=2.0,
-                        linestyle="--",
-                        label="optimized ref",
-                    )
-                if baseline_model is not None:
-                    ax.plot(
-                        xs,
-                        np.exp(baseline_model.logpdf(xs)),
-                        color="tab:green",
-                        lw=2.0,
-                        linestyle="--",
-                        label="baseline",
-                    )
-                ax.axvline(float(np.mean(plot_vals)), color="tab:blue", lw=1.0, linestyle=":", alpha=0.8)
+                if hist_density.size:
+                    density_for_ylim.append(hist_density)
+                if is_auto_slack_score and np.isfinite(selected_boundary):
+                    curve_xs = np.linspace(lo - pad, hi + pad, 400)
+                    if str(summary.get("auto_score_mode", "")).lower() in {
+                        "fast_fit_minus_baseline",
+                        "soft_fit_minus_baseline",
+                    }:
+                        selected_prefix_for_baseline = (
+                            "lower" if "lower" in selected_kind else ("upper" if "upper" in selected_kind else "lower")
+                        )
+                        baseline_nu = float(summary.get(f"auto_{selected_prefix_for_baseline}_slack_nu", 3.0))
+                        baseline_mu = float(summary.get(f"auto_{selected_prefix_for_baseline}_baseline_mu", np.nan))
+                        baseline_scale = float(summary.get(f"auto_{selected_prefix_for_baseline}_baseline_scale", np.nan))
+                        if not np.isfinite(baseline_mu) or not np.isfinite(baseline_scale):
+                            baseline_mu, baseline_scale, baseline_nu = _fixed_student_t_profile_params(plot_vals, nu=3.0)
+                        baseline_pdf = _student_t_pdf(curve_xs, baseline_mu, baseline_scale, baseline_nu)
+                        valid_baseline = np.isfinite(baseline_pdf)
+                        if np.any(valid_baseline):
+                            density_for_ylim.append(baseline_pdf[valid_baseline])
+                            ax.plot(
+                                curve_xs[valid_baseline],
+                                baseline_pdf[valid_baseline],
+                                color="tab:purple",
+                                lw=1.8,
+                                linestyle="-.",
+                                alpha=0.9,
+                                label="baseline Student-t",
+                            )
+                    if "lower" in selected_kind:
+                        scale = float(summary.get("auto_lower_slack_scale", np.nan))
+                        nu = float(summary.get("auto_lower_slack_nu", 3.0))
+                        curve_slack = curve_xs - float(selected_boundary)
+                    elif "upper" in selected_kind:
+                        scale = float(summary.get("auto_upper_slack_scale", np.nan))
+                        nu = float(summary.get("auto_upper_slack_nu", 3.0))
+                        curve_slack = float(selected_boundary) - curve_xs
+                    else:
+                        scale = np.nan
+                        nu = np.nan
+                        curve_slack = np.full_like(curve_xs, np.nan)
+                    if np.isfinite(scale) and np.isfinite(nu):
+                        support = np.isfinite(curve_slack) & (curve_slack >= 0.0)
+                        if is_soft_slack_score:
+                            softness = float(summary.get("auto_soft_boundary_scale", 0.1)) * float(scale)
+                            curve_pdf = _soft_half_t_pdf_on_x(
+                                curve_xs,
+                                float(selected_boundary),
+                                scale,
+                                nu,
+                                softness,
+                                direction="lower" if "lower" in selected_kind else "upper",
+                            )
+                            support = np.isfinite(curve_pdf)
+                            curve_label = "anchored half-t profile"
+                        else:
+                            curve_pdf = _half_t_pdf(curve_slack, scale, nu)
+                            curve_label = "half-t slack profile"
+                        if np.any(support):
+                            density_for_ylim.append(curve_pdf[support])
+                            ax.plot(
+                                curve_xs[support],
+                                curve_pdf[support],
+                                color="tab:red",
+                                lw=2.0,
+                                alpha=0.9,
+                                label=curve_label,
+                            )
+                ax.axvline(
+                    float(np.mean(plot_vals)),
+                    color="tab:blue",
+                    lw=1.0,
+                    linestyle=":",
+                    alpha=0.8,
+                    label="segment mean",
+                )
                 if show_full_demo:
-                    ax.axvline(float(np.mean(full_vals)), color="tab:gray", lw=1.0, linestyle="-.", alpha=0.9)
+                    ax.axvline(
+                        float(np.mean(full_vals)),
+                        color="tab:gray",
+                        lw=1.0,
+                        linestyle="-.",
+                        alpha=0.9,
+                        label="full demo mean",
+                    )
+                ax.set_xlim(lo - pad, hi + pad)
+                y_candidates = []
+                for density_values in density_for_ylim:
+                    finite_density = np.asarray(density_values, dtype=float)
+                    finite_density = finite_density[np.isfinite(finite_density) & (finite_density > 0.0)]
+                    if finite_density.size == 0:
+                        continue
+                    y_candidates.append(float(np.nanpercentile(finite_density, 99.0)))
+                if y_candidates:
+                    y_top = max(y_candidates)
+                    if np.isfinite(y_top) and y_top > 0.0:
+                        ax.set_ylim(0.0, y_top * 1.15)
 
                 raw_score = float(stage_params.feature_scores[feat_idx])
                 threshold = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
                 score_margin = threshold - raw_score
                 weighted_cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
-                trunc_score_mode = str(getattr(learner, "truncated_z_score_mode", "z")).lower()
+                trunc_score_mode = str(getattr(learner, "truncated_z_score_mode", "fast_fit")).lower()
+                is_minus_baseline_score = trunc_score_mode in {
+                    "fast_fit_minus_baseline",
+                    "soft_fit_minus_baseline",
+                }
                 score_label = (
-                    "median slack"
-                    if is_truncated_z_feature and trunc_score_mode == "median_slack"
-                    else ("z score" if is_truncated_z_feature else "raw score")
+                    "nll diff"
+                    if is_auto_slack_score and is_minus_baseline_score
+                    else "slack score"
+                    if is_auto_slack_score
+                    else "boundary score"
+                    if is_auto_boundary_score
+                    else (
+                        "fast-fit score"
+                        if is_truncated_z_feature and trunc_score_mode == "fast_fit"
+                        else ("nll diff" if is_truncated_z_feature and is_minus_baseline_score else "raw score")
+                    )
                 )
                 info_lines = [
-                    f"core steps = {len(vals)}",
                     f"segment = [{s},{e}]",
-                    f"core = [{core_s},{core_e}]",
                     f"{score_label} = {raw_score:.3f}",
                     f"margin = {score_margin:.3f}",
                     f"weighted cost = {weighted_cost:.3f}",
                 ]
-                if trimmed_vals.size > 0:
-                    info_lines.insert(3, f"ineq kept/trim = {kept_vals.size}/{trimmed_vals.size}")
-                if fitted_model is not None and baseline_model is not None:
-                    fitted_ll = np.asarray(fitted_model.logpdf(plot_vals), dtype=float)
-                    baseline_ll = np.asarray(baseline_model.logpdf(plot_vals), dtype=float)
-                    fitted_step = float(np.mean(fitted_ll))
-                    baseline_step = float(np.mean(baseline_ll))
-                    info_lines[3:3] = [
-                        f"fitted avg LL = {fitted_step:.3f}",
-                        f"baseline avg LL = {baseline_step:.3f}",
-                        f"avg LL gain = {fitted_step - baseline_step:.3f}",
-                    ]
                 if is_equality_feature:
                     short_segment_penalty = _short_segment_penalty_for_stage(learner, len(vals))
                     if getattr(learner, "equality_score_mode", "dispersion") == "gaussian_ll_gain":
-                        global_baseline_model = GaussianModel(
-                            mu=float(np.mean(full_vals)),
-                            sigma=float(max(np.std(full_vals), 1e-6)),
-                        )
-                        global_baseline_ll = np.asarray(global_baseline_model.logpdf(vals), dtype=float)
-                        global_baseline_step = float(np.mean(global_baseline_ll))
-                        info_lines.append(f"global gaussian avg LL = {global_baseline_step:.3f}")
-                        info_lines.append(f"gaussian ll gain = {fitted_step - global_baseline_step:.3f}")
                         info_lines.append(f"short seg penalty = {short_segment_penalty:.3f}")
                     else:
                         stage_dispersion = float(_mean_abs_centered_dispersion(vals))
@@ -2724,24 +2866,29 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     info_lines.append(f"threshold = {threshold:.3f}")
                 else:
                     if is_truncated_z_feature:
-                        summary = stage_params.model_summaries[feat_idx]
-                        info_lines.append(f"fast b = {float(summary.get('b', np.nan)):.3f}")
-                        info_lines.append(f"fast mu = {float(summary.get('mu', np.nan)):.3f}")
-                        info_lines.append(f"fast sigma = {float(summary.get('sigma', np.nan)):.3f}")
-                        fast_score_label = "fast slack" if trunc_score_mode == "median_slack" else "fast z"
-                        info_lines.append(f"{fast_score_label} = {raw_score:.3f}")
-                        if "auto_lower_score" in summary or "auto_upper_score" in summary:
-                            info_lines.append(f"auto lower = {float(summary.get('auto_lower_score', np.nan)):.3f}")
-                            info_lines.append(f"auto upper = {float(summary.get('auto_upper_score', np.nan)):.3f}")
-                            if "auto_direction_conf" in summary:
-                                info_lines.append(f"auto dir conf = {float(summary.get('auto_direction_conf', np.nan)):.3f}")
-                            if "auto_score_gap" in summary:
-                                info_lines.append(f"auto raw gap = {float(summary.get('auto_score_gap', np.nan)):.3f}")
-                        if optimized_trunc_summary is not None:
-                            info_lines.append(f"opt b = {float(optimized_trunc_summary.get('b', np.nan)):.3f}")
-                            info_lines.append(f"opt mu = {float(optimized_trunc_summary.get('mu', np.nan)):.3f}")
-                            info_lines.append(f"opt sigma = {float(optimized_trunc_summary.get('sigma', np.nan)):.3f}")
-                            info_lines.append(f"opt z = {float(optimized_trunc_z):.3f}")
+                        if is_auto_score:
+                            selected_kind = str(summary.get("auto_selected_kind", ""))
+                            selected_dir = "lower" if "lower" in selected_kind else ("upper" if "upper" in selected_kind else "unknown")
+                            auto_score_mode = str(summary.get("auto_score_mode", "")).lower()
+                            candidate_score_label = (
+                                "nll diff"
+                                if auto_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}
+                                else "score"
+                            )
+                            info_lines.append(f"lower {candidate_score_label} = {float(summary.get('auto_lower_score', np.nan)):.3f}")
+                            info_lines.append(f"upper {candidate_score_label} = {float(summary.get('auto_upper_score', np.nan)):.3f}")
+                            if is_auto_slack_score:
+                                selected_prefix = "lower" if selected_dir == "lower" else "upper"
+                                active_nll = float(summary.get(f"auto_{selected_prefix}_slack_nll", np.nan))
+                                baseline_nll = float(summary.get(f"auto_{selected_prefix}_baseline_nll", np.nan))
+                                if auto_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}:
+                                    info_lines.append(f"{selected_prefix} ineq logL = {-active_nll:.3f}")
+                                    info_lines.append(f"{selected_prefix} baseline logL = {-baseline_nll:.3f}")
+                                else:
+                                    info_lines.append(f"{selected_prefix} active nll = {active_nll:.3f}")
+                        else:
+                            fast_score_label = "fast-fit score" if trunc_score_mode == "fast_fit" else score_label
+                            info_lines.append(f"{fast_score_label} = {raw_score:.3f}")
                     info_lines.append(f"threshold = {threshold:.3f}")
 
                 ax.set_title(f"{scenario_label} | stage {stage_idx + 1} | {feature_names[feat_idx]}", fontsize=PAPER_TITLE_SIZE, pad=4)
@@ -2756,12 +2903,28 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     va="top",
                     ha="left",
                     fontsize=8,
-                    bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.9, "edgecolor": "0.7"},
+                    bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.55, "edgecolor": "0.7"},
                 )
-                _legend(ax)
             row_idx += 1
 
-    fig.suptitle(title, fontsize=12)
+    legend_items = {}
+    for ax in axes.ravel():
+        handles, labels = ax.get_legend_handles_labels()
+        for handle, label in zip(handles, labels):
+            text = str(label).strip() if label is not None else ""
+            if text and not text.startswith("_") and text not in legend_items:
+                legend_items[text] = handle
+    if legend_items:
+        fig.legend(
+            legend_items.values(),
+            legend_items.keys(),
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.995),
+            ncol=min(max(len(legend_items), 1), 6),
+            fontsize=PAPER_LEGEND_SIZE,
+            frameon=False,
+        )
+    fig.suptitle(title, fontsize=12, y=0.975 if legend_items else 0.99)
     save_figure(fig, learner_plot_dir(learner) / filename, dpi=190)
 
 

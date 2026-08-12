@@ -100,8 +100,9 @@ Important SWCL config fields:
 - `selected_raw_feature_ids`: feature subset used for learning
 - `feature_model_types`: per-feature equality/inequality model family
 - `feature_activation_mode`: activation-selection mode, usually `score`
-- `truncated_z_score_mode`: inequality score mode, e.g. `median_slack`
-- `truncated_inequality_z_threshold`: inequality activation threshold
+- `truncated_z_score_mode`: explicit/auto lower-upper inequality score mode. `fast_fit` uses the half-t slack profile score; `fast_fit_minus_baseline` uses active NLL minus a Student-t baseline NLL; `soft_fit_minus_baseline` uses the soft-boundary half-t score from `s4_start_dist_inequality_cutpoint_test`.
+- `truncated_z_soft_boundary_scale`: soft-boundary width as a multiple of the fitted half-t slack scale, used only by `soft_fit_minus_baseline`.
+- `truncated_inequality_z_threshold`: inequality activation threshold. For `fast_fit_minus_baseline`, the score is active NLL minus baseline NLL, so negative thresholds require a stronger one-sided fit.
 - `lambda_eq_constraint`: equality constraint weight
 - `lambda_ineq_constraint`: inequality constraint weight
 - `lambda_param_consensus`: cross-demo parameter-consensus weight
@@ -175,7 +176,7 @@ Parameter grids are JSON files mapping dotted parameter paths to candidate lists
 ```json
 {
   "lambda_ineq_constraint": [0.25, 0.5, 1.0],
-  "truncated_inequality_z_threshold": [0.04, 0.06, 0.08]
+  "truncated_inequality_z_threshold": [-0.5, -0.4, -0.3, -0.2, -0.1]
 }
 ```
 

@@ -165,6 +165,7 @@ def _overlay_feature_panel(
     *,
     features: np.ndarray,
     feature_names: Sequence[str],
+    feature_units: dict[str, str] | None = None,
     current_index: int,
     cutpoints: Sequence[int] | None,
     constraint_specs: Sequence[dict] | None,
@@ -189,6 +190,11 @@ def _overlay_feature_panel(
             shown.append(name)
     if not shown:
         return frame
+    units = {str(k): str(v) for k, v in dict(feature_units or {}).items() if str(v)}
+
+    def label_for(name: str) -> str:
+        unit = units.get(str(name), "")
+        return str(name) if not unit else f"{name} [{unit}]"
 
     spans = stage_segments(F_all.shape[0], cutpoints=cutpoints)
     height, width = int(frame.shape[0]), int(frame.shape[1])
@@ -271,7 +277,7 @@ def _overlay_feature_panel(
 
     true_constraints = dict(true_constraints or {})
     try:
-        max_label_w = max(draw.textbbox((0, 0), name, font=font_bold)[2] for name in shown)
+        max_label_w = max(draw.textbbox((0, 0), label_for(name), font=font_bold)[2] for name in shown)
     except Exception:
         max_label_w = int(round(108 * panel_scale))
     plot_x0 = x0 + int(min(max(max_label_w + 24, 120 * panel_scale), 0.38 * panel_w))
@@ -332,7 +338,7 @@ def _overlay_feature_panel(
 
         label_x = x0 + pad
         label_y = ry0 + int(round(8 * panel_scale))
-        draw.text((label_x, label_y), name, fill=(18, 24, 38, 255), font=font_bold)
+        draw.text((label_x, label_y), label_for(name), fill=(18, 24, 38, 255), font=font_bold)
         draw.text((label_x, label_y + font_size + int(round(4 * panel_scale))), f"{trace[-1]:.3g}", fill=(37, 99, 235, 255), font=font)
         draw.rectangle((plot_x0, py0, plot_x1, py1), outline=(188, 196, 206, 220), fill=(248, 250, 252, 205), width=line_w_thin)
         for cp in np.asarray(cutpoints if cutpoints is not None else [], dtype=int).reshape(-1):
@@ -385,29 +391,15 @@ def _overlay_corner_label(frame: np.ndarray, text: str | None) -> np.ndarray:
         font = ImageFont.truetype("DejaVuSans-Bold.ttf", int(np.clip(round(height * 0.026), 18, 30)))
     except Exception:
         font = ImageFont.load_default() if ImageFont is not None else None
+    margin = int(max(16, round(min(width, height) * 0.022)))
+    x0 = margin
     try:
         bbox = draw.textbbox((0, 0), label, font=font)
-        text_w = int(bbox[2] - bbox[0])
         text_h = int(bbox[3] - bbox[1])
     except Exception:
-        text_w, text_h = draw.textsize(label, font=font)
-    pad_x = int(max(12, round(width * 0.012)))
-    pad_y = int(max(8, round(height * 0.010)))
-    margin = int(max(16, round(min(width, height) * 0.022)))
-    box_w = text_w + 2 * pad_x
-    box_h = text_h + 2 * pad_y
-    x1 = width - margin
-    y1 = height - margin
-    x0 = max(0, x1 - box_w)
-    y0 = max(0, y1 - box_h)
-    draw.rounded_rectangle(
-        (x0, y0, x1, y1),
-        radius=max(5, int(round(box_h * 0.18))),
-        fill=(18, 24, 38, 185),
-        outline=(255, 255, 255, 130),
-        width=1,
-    )
-    draw.text((x0 + pad_x, y0 + pad_y - 1), label, fill=(255, 255, 255, 245), font=font)
+        _text_w, text_h = draw.textsize(label, font=font)
+    y0 = max(0, height - margin - text_h)
+    draw.text((x0, y0), label, fill=(0, 0, 0, 255), font=font)
     return np.asarray(Image.alpha_composite(image, overlay).convert("RGB"), dtype=np.uint8)
 
 
@@ -638,7 +630,7 @@ class _FFmpegVideoWriter:
                 self.proc.stdin.close()
             except Exception:
                 pass
-        self.proc.wait(timeout=30)
+        self.proc.wait()
         if self.proc.returncode not in (0, None):
             raise RuntimeError(f"ffmpeg exited with code {self.proc.returncode}")
 
@@ -1120,6 +1112,7 @@ def _render_rgb(
     width: int,
     height: int,
     pitch_deg: float = -23.0,
+    fov: float = 37.0,
 ) -> np.ndarray:
     view, proj = _camera_matrices(
         yaw_deg=float(yaw_deg),
@@ -1128,7 +1121,7 @@ def _render_rgb(
         width=int(width),
         height=int(height),
         pitch_deg=float(pitch_deg),
-        fov=37.0,
+        fov=float(fov),
     )
     _, _, rgba, _, _ = p.getCameraImage(
         width=width,
@@ -1318,6 +1311,7 @@ def render_s5_pybullet_demo_video(
     feature_overlay: bool = False,
     feature_overlay_features: np.ndarray | None = None,
     feature_overlay_names: Sequence[str] | None = None,
+    feature_overlay_units: dict[str, str] | None = None,
     feature_overlay_specs: Sequence[dict] | None = None,
     feature_overlay_true_constraints: dict | None = None,
     feature_overlay_title: str | None = None,
@@ -1570,6 +1564,7 @@ def render_s5_pybullet_demo_video(
                     width=int(width),
                     height=int(height),
                     pitch_deg=float(camera_pitch),
+                    fov=float(camera_fov),
                 )
                 view, proj = _camera_matrices(
                     yaw_deg=float(camera_yaw),
@@ -1580,23 +1575,13 @@ def render_s5_pybullet_demo_video(
                     pitch_deg=float(camera_pitch),
                     fov=float(camera_fov),
                 )
-                if abs(float(camera_fov) - 37.0) > 1e-8:
-                    _, _, rgba, _, _ = p.getCameraImage(
-                        width=int(width),
-                        height=int(height),
-                        viewMatrix=view,
-                        projectionMatrix=proj,
-                        renderer=p.ER_TINY_RENDERER,
-                        lightDirection=[1.8, -1.1, 2.8],
-                        shadow=1,
-                    )
-                    frame = np.asarray(rgba, dtype=np.uint8).reshape(int(height), int(width), 4)[:, :, :3]
                 visible_stage_labels = [item for item in stage_label_items if int(i) >= int(item.get("start", 0))]
                 if bool(feature_overlay) and feature_overlay_features is not None:
                     frame = _overlay_feature_panel(
                         frame,
                         features=np.asarray(feature_overlay_features, dtype=float),
                         feature_names=list(feature_overlay_names or []),
+                        feature_units=dict(feature_overlay_units or {}),
                         current_index=int(i),
                         cutpoints=cutpoints,
                         constraint_specs=list(feature_overlay_specs or []),
@@ -1637,6 +1622,7 @@ def render_s5_pybullet_demo_video(
                     width=int(width),
                     height=int(height),
                     pitch_deg=float(camera_pitch),
+                    fov=float(camera_fov),
                 )
                 view, proj = _camera_matrices(
                     yaw_deg=float(camera_yaw),
@@ -1647,17 +1633,6 @@ def render_s5_pybullet_demo_video(
                     pitch_deg=float(camera_pitch),
                     fov=float(camera_fov),
                 )
-                if abs(float(camera_fov) - 37.0) > 1e-8:
-                    _, _, rgba, _, _ = p.getCameraImage(
-                        width=int(width),
-                        height=int(height),
-                        viewMatrix=view,
-                        projectionMatrix=proj,
-                        renderer=p.ER_TINY_RENDERER,
-                        lightDirection=[1.8, -1.1, 2.8],
-                        shadow=1,
-                    )
-                    frame = np.asarray(rgba, dtype=np.uint8).reshape(int(height), int(width), 4)[:, :, :3]
                 frame = _overlay_trajectory_stage_labels(
                     frame,
                     labels=stage_label_items,
@@ -1669,6 +1644,7 @@ def render_s5_pybullet_demo_video(
                         frame,
                         features=np.asarray(feature_overlay_features, dtype=float),
                         feature_names=list(feature_overlay_names or []),
+                        feature_units=dict(feature_overlay_units or {}),
                         current_index=int(len(pts) - 1),
                         cutpoints=cutpoints,
                         constraint_specs=list(feature_overlay_specs or []),

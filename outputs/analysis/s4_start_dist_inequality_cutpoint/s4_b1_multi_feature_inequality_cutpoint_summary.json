@@ -1,0 +1,108 @@
+{
+  "features": [
+    {
+      "feature": "insert_err",
+      "base_feature": "insert_err",
+      "feature_scale": 1.0,
+      "score_feature_scale": 1.0,
+      "raw_feature_scale": 1.0,
+      "boundary_index": 1,
+      "true_stage_pair": [
+        1,
+        2
+      ],
+      "summary_json": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_insert_err_b1_inequality_cutpoint_summary.json",
+      "scores_csv": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_insert_err_b1_inequality_cutpoint_scores.csv",
+      "combined_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_insert_err_b1_inequality_cutpoint_combined.png",
+      "best": {
+        "method": "seg_q05",
+        "cut_fraction": 0.6046511627906976,
+        "cut_n": 26,
+        "score": -0.1290071981197355,
+        "mean_margin": 0.028477841100467638,
+        "total_margin": 1.2245471673201085,
+        "selection_value": 35.51173714968729,
+        "true_cut_n": 30,
+        "true_cut_fraction": 0.6976744186046512,
+        "baseline_fit": "mle",
+        "half_t_scale_quantile": 0.9,
+        "selection_objective": "active-loglik",
+        "observation_noise_scale": 0.003
+      }
+    },
+    {
+      "feature": "start_dist",
+      "base_feature": "start_dist",
+      "feature_scale": 1.0,
+      "score_feature_scale": 1.0,
+      "raw_feature_scale": 1.0,
+      "boundary_index": 1,
+      "true_stage_pair": [
+        1,
+        2
+      ],
+      "summary_json": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_start_dist_b1_inequality_cutpoint_summary.json",
+      "scores_csv": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_start_dist_b1_inequality_cutpoint_scores.csv",
+      "combined_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_start_dist_b1_inequality_cutpoint_combined.png",
+      "best": {
+        "method": "seg_q05",
+        "cut_fraction": 0.11627906976744186,
+        "cut_n": 5,
+        "score": 0.26278936048881507,
+        "mean_margin": 0.0,
+        "total_margin": 0.0,
+        "selection_value": 0.0,
+        "true_cut_n": 30,
+        "true_cut_fraction": 0.6976744186046512,
+        "baseline_fit": "mle",
+        "half_t_scale_quantile": 0.9,
+        "selection_objective": "active-loglik",
+        "observation_noise_scale": 0.003
+      }
+    },
+    {
+      "feature": "normal_force",
+      "base_feature": "normal_force",
+      "feature_scale": 1.0,
+      "score_feature_scale": 1.0,
+      "raw_feature_scale": 1.0,
+      "boundary_index": 1,
+      "true_stage_pair": [
+        1,
+        2
+      ],
+      "summary_json": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_b1_inequality_cutpoint_summary.json",
+      "scores_csv": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_b1_inequality_cutpoint_scores.csv",
+      "combined_plot": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/analysis/s4_start_dist_inequality_cutpoint/s4_normal_force_b1_inequality_cutpoint_combined.png",
+      "best": {
+        "method": "seg_q05",
+        "cut_fraction": 0.6976744186046512,
+        "cut_n": 30,
+        "score": -0.3229768601724578,
+        "mean_margin": 0.12297686017245779,
+        "total_margin": 5.288004987415685,
+        "selection_value": 151.23472261767824,
+        "true_cut_n": 30,
+        "true_cut_fraction": 0.6976744186046512,
+        "baseline_fit": "mle",
+        "half_t_scale_quantile": 0.9,
+        "selection_objective": "active-loglik",
+        "observation_noise_scale": 0.003
+      }
+    }
+  ],
+  "boundary_index": 1,
+  "true_stage_pair": [
+    1,
+    2
+  ],
+  "score_space": "standardized",
+  "gain_threshold": 0.2,
+  "soft_boundary_scale": 0.1,
+  "direction": "lower",
+  "baseline_fit": "mle",
+  "half_t_scale_quantile": 0.9,
+  "selection_objective": "active-loglik",
+  "observation_noise_scale": 0.003,
+  "selection_metric": "max_split_active_loglik=sum(stage_len*(-active_nll) if gain>threshold else 0)"
+}
