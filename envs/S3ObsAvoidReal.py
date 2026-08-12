@@ -50,8 +50,9 @@ class S3ObsAvoidRealEnv:
     def get_feature_schema(self):
         return [
             {"id": 0, "column_idx": 0, "name": "obs_dist", "description": "2D distance to estimated circular obstacle center"},
-            {"id": 1, "column_idx": 1, "name": "line1_dist", "description": "Perpendicular 2D distance to estimated stage-2 line"},
-            {"id": 2, "column_idx": 2, "name": "line2_dist", "description": "Perpendicular 2D distance to estimated stage-3 line"},
+            {"id": 1, "column_idx": 1, "name": "speed", "description": "2D end-effector speed magnitude"},
+            {"id": 2, "column_idx": 2, "name": "line1_dist", "description": "Perpendicular 2D distance to estimated stage-2 line"},
+            {"id": 3, "column_idx": 3, "name": "line2_dist", "description": "Perpendicular 2D distance to estimated stage-3 line"},
         ]
 
     def get_true_constraints(self):
@@ -82,6 +83,15 @@ class S3ObsAvoidRealEnv:
     def get_asset_handles(self):
         return {"estimated_obstacle": {"type": "circle"}, "track_lines": [{"type": "line"}, {"type": "line"}]}
 
+    def get_true_reference_lines(self):
+        """True planar track geometry consumed by trajectory/debug plots."""
+        return [
+            {"name": "true line 1", "point": self.line1_point.copy(),
+             "direction": self.line1_direction.copy(), "color": "#2563EB"},
+            {"name": "true line 2", "point": self.line2_point.copy(),
+             "direction": self.line2_direction.copy(), "color": "#059669"},
+        ]
+
     def sample_scene(self, seed=None, rng=None):
         return {
             "task_name": "S3ObsAvoidReal",
@@ -95,8 +105,14 @@ class S3ObsAvoidRealEnv:
 
     def compute_all_features_matrix(self, traj, feat_ids=None):
         points = np.asarray(traj, dtype=float)[:, :2]
+        speed = np.zeros(len(points), dtype=float)
+        if len(points) > 1:
+            edge_speed = np.linalg.norm(np.diff(points, axis=0), axis=1) / float(self.dt)
+            speed[0] = edge_speed[0]
+            speed[1:] = edge_speed
         features = np.column_stack([
             np.linalg.norm(points - self.obs_center[None, :], axis=1),
+            speed,
             self._line_distance(points, self.line1_point, self.line1_direction),
             self._line_distance(points, self.line2_point, self.line2_direction),
         ])
@@ -119,7 +135,7 @@ class S3ObsAvoidRealEnv:
         )
 
 
-def load_S3ObsAvoidReal(n_demos=7, seed=0, env_kwargs=None, demo_kwargs=None, **extra_env_kwargs):
+def load_S3ObsAvoidReal(n_demos=4, seed=0, env_kwargs=None, demo_kwargs=None, **extra_env_kwargs):
     env_cfg = dict(env_kwargs or {})
     env_cfg.update(extra_env_kwargs)
     env = S3ObsAvoidRealEnv(**env_cfg)

@@ -863,14 +863,27 @@ def _draw_planar_obstacles(ax, env):
                     label="obstacle" if idx == 0 and not ax.patches else None,
                 )
             )
-        return
-    if hasattr(env, "obs_radius") and (hasattr(env, "obs_center") or hasattr(env, "obs_center_xy")):
+    elif hasattr(env, "obs_radius") and (hasattr(env, "obs_center") or hasattr(env, "obs_center_xy")):
         center = getattr(env, "obs_center", None)
         if center is None:
             center = getattr(env, "obs_center_xy")
         cx, cy = np.asarray(center, dtype=float).reshape(-1)[:2]
         r = env.obs_radius
         ax.add_patch(plt.Circle((cx, cy), r, color="gray", fill=False, linestyle="-", label="obstacle"))
+    reference_lines = env.get_true_reference_lines() if hasattr(env, "get_true_reference_lines") else []
+    for index, spec in enumerate(reference_lines):
+        point = np.asarray(spec["point"], dtype=float).reshape(-1)[:2]
+        direction = np.asarray(spec["direction"], dtype=float).reshape(-1)[:2]
+        ax.axline(
+            point,
+            point + direction,
+            color=spec.get("color", "#475569"),
+            linestyle=(0, (4, 3)),
+            linewidth=1.05,
+            alpha=0.85,
+            label=str(spec.get("name", f"true line {index + 1}")),
+            zorder=1,
+        )
 
 
 def _draw_sphere_trajectory_3d(ax, learner, it, demo_idx=0):

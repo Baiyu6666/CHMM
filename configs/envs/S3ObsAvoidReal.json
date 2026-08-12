@@ -1,6 +1,6 @@
 {
   "name": "S3ObsAvoidReal",
-  "n_demos": 7,
+  "n_demos": 4,
   "seed": 0,
   "method_overrides": {
     "swcl": {
@@ -12,17 +12,25 @@
         "line2_dist": "student_t"
       },
       "max_iter": 10,
-      "truncated_inequality_z_threshold": -0.2
+      "truncated_inequality_z_threshold": -0.15,
+      "lambda_ineq_constraint": 0.015,
+      "fixed_true_cutpoint_indices": [0,1 ],
+      "lambda_activation_consensus": 0.75,
+      "lambda_param_consensus": 3,
+      "short_segment_penalty_c": 0,
+      "equality_dispersion_ratio_threshold": 0.05,
+      "truncated_z_score_mode": "soft_fit_minus_baseline"
     },
     "fchmm": {
       "n_stages": 3,
-      "selected_raw_feature_ids": ["obs_dist", "line1_dist", "line2_dist"],
+      "selected_raw_feature_ids": ["obs_dist", "speed", "line1_dist", "line2_dist"],
       "feature_model_types": {
         "obs_dist": "trunc_t_lower_z",
+        "speed": "student_t",
         "line1_dist": "student_t",
         "line2_dist": "student_t"
       },
-      "fixed_feature_mask": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+      "fixed_feature_mask": [[1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
       "feat_weight": 0.5,
       "x_weight": 0.05,
       "gmm_K": 2

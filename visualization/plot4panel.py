@@ -830,11 +830,24 @@ def _draw_env_xy_obstacles(ax, env):
                     alpha=0.95,
                 )
             )
-        return
-    if _env_has_xy_obstacle(env):
+    elif _env_has_xy_obstacle(env):
         cx, cy = env.obs_center
         r = env.obs_radius
         ax.add_patch(plt.Circle((cx, cy), r, color='gray', fill=False, linestyle='-', label='obstacle'))
+    reference_lines = env.get_true_reference_lines() if hasattr(env, "get_true_reference_lines") else []
+    for index, spec in enumerate(reference_lines):
+        point = np.asarray(spec["point"], dtype=float).reshape(-1)[:2]
+        direction = np.asarray(spec["direction"], dtype=float).reshape(-1)[:2]
+        ax.axline(
+            point,
+            point + direction,
+            color=spec.get("color", "#475569"),
+            linestyle=(0, (4, 3)),
+            linewidth=1.05,
+            alpha=0.85,
+            label=str(spec.get("name", f"true line {index + 1}")),
+            zorder=1,
+        )
 
 
 def _is_pickplace(env) -> bool:
