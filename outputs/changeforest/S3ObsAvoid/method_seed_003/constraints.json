@@ -1,0 +1,285 @@
+{
+  "true_constraints": {
+    "d_safe": 0.4,
+    "v2_target": 0.055,
+    "v3_target": 0.045,
+    "arc_distance_target": 0.2
+  },
+  "constraint_specs": [
+    {
+      "feature_name": "obs_dist",
+      "stage": 0,
+      "semantics": "lower_bound",
+      "oracle_key": "d_safe"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "v2_target"
+    },
+    {
+      "feature_name": "arc_dist",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "arc_distance_target"
+    },
+    {
+      "feature_name": "speed",
+      "stage": 2,
+      "semantics": "target_value",
+      "oracle_key": "v3_target"
+    }
+  ],
+  "ConstraintFeatureNames": [
+    "obs_dist",
+    "speed",
+    "arc_dist",
+    "heading",
+    "line_dist",
+    "noise"
+  ],
+  "ConstraintTrueActiveMask": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintPredictedActiveMask": [
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintTargetMatrix": [
+    [
+      0.4,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.055,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.045,
+      0.2,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedSemanticsMatrix": [
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "lower_bound",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "target_value",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ConstraintLearnedValueMatrix": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.054542569142888464,
+      0.16256783480415832,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.04683520366164163,
+      0.19967341070000047,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedRawValueMatrix": [
+    [
+      1.0476006803161357,
+      0.0871280375624544,
+      0.44878861607549564,
+      -1.9233363624021396,
+      0.9081373989151309,
+      0.0009495591566612824
+    ],
+    [
+      1.0476006803161357,
+      0.054542569142888464,
+      0.16256783480415832,
+      -1.9233363624021396,
+      0.9081373989151309,
+      0.0009495591566612824
+    ],
+    [
+      1.0476006803161357,
+      0.04683520366164163,
+      0.19967341070000047,
+      -1.9233363624021396,
+      0.9081373989151309,
+      0.0009495591566612824
+    ]
+  ],
+  "ConstraintLearnedValuePerDemo": [],
+  "ParameterErrorMatrix": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.001954752108113918,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.007842427266636375,
+      0.00021350617829218017,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ParameterErrorMatrixRaw": [
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.00045743085711153625,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.001835203661641631,
+      0.00032658929999954123,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintSemanticsMatrix": [
+    [
+      "lower_bound",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "target_value",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ConstraintFeatureScales": [
+    1.0099001918441046,
+    0.23400965023278456,
+    1.5296480064975375,
+    6.3271107859210876,
+    0.7801270192468435,
+    0.7509006094170386
+  ]
+}

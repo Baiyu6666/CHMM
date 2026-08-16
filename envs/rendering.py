@@ -23,12 +23,8 @@ except ModuleNotFoundError:
     ImageDraw = None
     ImageFont = None
 
-try:
-    import pybullet as p
-    import pybullet_data
-except ModuleNotFoundError:
-    p = None
-    pybullet_data = None
+p = None
+pybullet_data = None
 
 
 STAGE_COLORS = ["#D55E00", "#0072B2", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
@@ -575,8 +571,15 @@ def _require_matplotlib() -> None:
 
 
 def _require_pybullet() -> None:
+    global p, pybullet_data
     if p is None or pybullet_data is None:
-        raise RuntimeError("pybullet is required for env.render_episode(..., backend='pybullet').")
+        try:
+            import pybullet as p_module
+            import pybullet_data as pybullet_data_module
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("pybullet is required for env.render_episode(..., backend='pybullet').") from exc
+        p = p_module
+        pybullet_data = pybullet_data_module
 
 
 class _FFmpegVideoWriter:

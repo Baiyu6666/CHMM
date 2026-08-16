@@ -40,6 +40,16 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --plot_every 10 \
   --n-demos 10
 
+
+python runners/run_benchmark.py \
+  --methods swcl \
+  --datasets S3ObsAvoidReal \
+  --method-seeds 0 \
+  --dataset-seed 0 \
+  --outdir outputs/benchmark/s3_real_restore \
+  --n-demos 4 \
+  --plot-every 10
+
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
   --methods fchmm,arhsmm,cluster \

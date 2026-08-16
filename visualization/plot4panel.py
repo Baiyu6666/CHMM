@@ -1,4 +1,6 @@
 # visualization/plot4panel.py
+from __future__ import annotations
+
 import numpy as np
 from pathlib import Path
 
@@ -740,8 +742,9 @@ def _draw_eval_metric_text(ax, metrics):
                 scalar_metrics[str(key)] = value_f
     preferred_keys = [
         "MeanAbsCutpointError",
+        "SemanticConstraintF1",
         "MeanStageSubgoalError",
-        "MeanConstraintError",
+        "MeanParameterError",
         "ConstraintActivationAccuracy",
     ]
     ordered_keys = [key for key in preferred_keys if key in scalar_metrics]
@@ -1254,7 +1257,10 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
     extra_rows = 0 if not extra_panel_indices else int(np.ceil(len(extra_panel_indices) / min(4, len(extra_panel_indices))))
     show_cutpoint_row = _has_cutpoint_evolution_history(learner)
     show_summary_row = isinstance(metrics, dict) and (
-        np.asarray(metrics.get("ConstraintErrorMatrix", []), dtype=float).ndim == 2
+        np.asarray(
+            metrics.get("ParameterErrorMatrix", metrics.get("ConstraintErrorMatrix", [])),
+            dtype=float,
+        ).ndim == 2
         or any(np.isscalar(v) and np.isfinite(float(v)) for v in metrics.values())
     )
     cut_demo_rows = int(np.ceil(max(len(learner.demos), 1) / 4.0))
@@ -1703,11 +1709,14 @@ def plot_results_4panel(learner, taus, it, gammas, alphas, betas, xis_list, aux_
         _draw_eval_metric_text(ax_metrics, metrics)
 
         ax_error = fig.add_subplot(summary_gs[0, 1])
-        error_matrix = np.asarray(metrics.get("ConstraintErrorMatrix", []), dtype=float)
+        error_matrix = np.asarray(
+            metrics.get("ParameterErrorMatrix", metrics.get("ConstraintErrorMatrix", [])),
+            dtype=float,
+        )
         _draw_summary_heatmap(
             ax_error,
             error_matrix.T if error_matrix.ndim == 2 else error_matrix,
-            "normalized constraint error",
+            "normalized parameter error",
             feature_names=_summary_feature_names(learner, metrics),
             stage_labels=_summary_stage_labels(learner),
             cmap="YlOrRd",

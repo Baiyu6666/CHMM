@@ -4517,11 +4517,11 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         vel = np.zeros_like(xyz)
         omega = np.zeros(T, dtype=float)
         if T > 1:
-            vel[:-1] = np.diff(xyz, axis=0) / max(self.dt, 1e-12)
-            vel[-1] = vel[-2]
+            vel[1:] = np.diff(xyz, axis=0) / max(self.dt, 1e-12)
+            vel[0] = vel[1]
             dtheta = self._wrap_to_pi(np.diff(theta)) / max(self.dt, 1e-12)
-            omega[:-1] = dtheta
-            omega[-1] = omega[-2]
+            omega[1:] = dtheta
+            omega[0] = omega[1]
         speed = np.linalg.norm(vel, axis=1)
         angular_speed = np.abs(omega)
         surf_dist = np.abs(xyz[:, 2] - self.surface_height(xyz[:, :2]))

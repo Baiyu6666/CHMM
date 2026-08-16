@@ -1,0 +1,93 @@
+{
+  "dataset_name": "S4SlideInsert",
+  "method_name": "changeforest",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 1342,
+    "rollout_backend": "analytic",
+    "observation_backend": "analytic",
+    "dt": 0.4,
+    "seg_lengths": [
+      35,
+      14,
+      67,
+      21
+    ],
+    "seg_length_jitter": [
+      9,
+      3,
+      11,
+      7
+    ],
+    "normal_load_min": 4.0,
+    "normal_load_scale": 10.0
+  },
+  "method_kwargs": {
+    "segmenter": {
+      "n_stages": 4,
+      "use_state": false,
+      "use_velocity": true,
+      "velocity_weight": 1.0,
+      "use_env_features": false,
+      "selected_raw_feature_ids": [
+        "surf_dist",
+        "center_dist",
+        "orient_err",
+        "speed",
+        "normal_force",
+        "start_dist",
+        "insert_err"
+      ],
+      "standardize": true,
+      "min_len": 3,
+      "method": "random_forest",
+      "seed": 5,
+      "random_forest_n_estimators": 50,
+      "random_forest_max_depth": 1,
+      "random_forest_max_features": "sqrt",
+      "random_forest_n_jobs": 1,
+      "model_selection_n_permutations": 0,
+      "verbose": true,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/changeforest/S4SlideInsert/method_seed_005"
+    },
+    "posthoc_constraint": {
+      "posthoc_training_mode": "voting",
+      "verbose": true,
+      "fixed_feature_mask": null,
+      "selected_raw_feature_ids": [
+        "surf_dist",
+        "center_dist",
+        "orient_err",
+        "speed",
+        "normal_force",
+        "start_dist",
+        "insert_err"
+      ],
+      "feature_model_types": null,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/changeforest/S4SlideInsert/method_seed_005",
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "truncated_z_half_t_scale_quantile": 0.9,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 2.2,
+      "map_eq_distribution": "gaussian",
+      "map_inactive_distribution": "gaussian",
+      "map_nu_eq": 3.0,
+      "map_nu_inactive": 3.0,
+      "map_nu_ineq": 3.0,
+      "map_boundary_quantile": 0.0,
+      "map_activation_prior": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "map_active_mode_prior": null
+    }
+  }
+}

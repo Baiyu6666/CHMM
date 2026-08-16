@@ -1,0 +1,86 @@
+{
+  "arhsmm": {
+    "MeanConstraintError": 0.009434241723448564,
+    "MeanConstraintErrorRaw": 0.000593522396469402,
+    "ConstraintLearnedSemanticsMatrix": [
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "target_value",
+        "",
+        "",
+        "lower_bound",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "target_value",
+        "upper_bound",
+        "upper_bound",
+        "lower_bound",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "target_value",
+        "upper_bound",
+        "upper_bound",
+        "lower_bound",
+        "",
+        ""
+      ]
+    ]
+  },
+  "cluster": {
+    "MeanConstraintError": 0.00904711348329653,
+    "MeanConstraintErrorRaw": 0.0005910260796407074,
+    "ConstraintLearnedSemanticsMatrix": [
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "target_value",
+        "",
+        "",
+        "lower_bound",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "target_value",
+        "upper_bound",
+        "upper_bound",
+        "lower_bound",
+        "",
+        ""
+      ],
+      [
+        "target_value",
+        "target_value",
+        "upper_bound",
+        "upper_bound",
+        "lower_bound",
+        "",
+        ""
+      ]
+    ]
+  }
+}

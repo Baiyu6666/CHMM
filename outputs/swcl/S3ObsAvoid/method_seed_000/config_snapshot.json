@@ -52,7 +52,7 @@
     "truncated_z_optimize_trigger_scale": 3.0,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": 10,
+    "plot_every": null,
     "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S3ObsAvoid/method_seed_000"
   }
 }

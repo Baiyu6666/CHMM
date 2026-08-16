@@ -2,15 +2,27 @@
   "scalar_metrics": {
     "MeanAbsCutpointError": 14.025,
     "MeanStageSubgoalError": 0.07872839599976374,
-    "MeanConstraintError": 0.05179976941451177,
-    "MeanConstraintErrorRaw": 0.0034646621510327964
+    "SemanticConstraintPrecision": 0.0,
+    "SemanticConstraintRecall": 0.0,
+    "SemanticConstraintF1": 0.0,
+    "SemanticConstraintMatchCount": 0.0,
+    "TrueConstraintCount": 5.0,
+    "PredictedConstraintCount": 7.0,
+    "MeanParameterError": NaN,
+    "MeanParameterErrorRaw": NaN
   },
   "all_metrics": {
     "MeanAbsCutpointError": 14.025,
     "MeanStageSubgoalError": 0.07872839599976374,
-    "MeanConstraintError": 0.05179976941451177,
-    "MeanConstraintErrorRaw": 0.0034646621510327964,
-    "ConstraintErrorMatrix": [
+    "SemanticConstraintPrecision": 0.0,
+    "SemanticConstraintRecall": 0.0,
+    "SemanticConstraintF1": 0.0,
+    "SemanticConstraintMatchCount": 0,
+    "TrueConstraintCount": 5,
+    "PredictedConstraintCount": 7,
+    "MeanParameterError": NaN,
+    "MeanParameterErrorRaw": NaN,
+    "ParameterErrorMatrix": [
       [
         NaN,
         NaN,
@@ -20,14 +32,6 @@
         NaN
       ],
       [
-        3.837768401602803e-05,
-        0.0014622199542931728,
-        0.005997019506203477,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
         NaN,
         NaN,
         NaN,
@@ -36,9 +40,17 @@
         NaN
       ],
       [
-        0.2249056464114939,
         NaN,
-        0.02659558351655224,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -52,19 +64,11 @@
         NaN
       ]
     ],
-    "ConstraintErrorMatrixRaw": [
+    "ParameterErrorMatrixRaw": [
       [
         NaN,
         NaN,
         NaN,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
-        2.8585652121805583e-06,
-        0.0003999200230312902,
-        3.098827089137793e-05,
         NaN,
         NaN,
         NaN
@@ -78,9 +82,17 @@
         NaN
       ],
       [
-        0.016752117104991908,
         NaN,
-        0.00013742679103722483,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        NaN,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -138,8 +150,16 @@
     ],
     "ConstraintPredictedActiveMask": [
       [
+        1,
         0,
         0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
         0,
         0,
         0,
@@ -163,14 +183,6 @@
       ],
       [
         1,
-        0,
-        1,
-        0,
-        0,
-        0
-      ],
-      [
-        0,
         0,
         0,
         0,
@@ -264,23 +276,7 @@
     ],
     "ConstraintLearnedSemanticsMatrix": [
       [
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "target_value",
-        "upper_bound",
-        "upper_bound",
-        "",
-        "",
-        ""
-      ],
-      [
-        "",
+        "lower_bound",
         "",
         "",
         "",
@@ -288,8 +284,16 @@
         ""
       ],
       [
-        "target_value",
+        "lower_bound",
+        "lower_bound",
         "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "lower_bound",
+        "lower_bound",
         "upper_bound",
         "",
         "",
@@ -297,6 +301,14 @@
       ],
       [
         "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "lower_bound",
         "",
         "",
         "",
@@ -322,6 +334,30 @@
     ],
     "ConstraintLearnedValueMatrix": [
       [
+        3.6760989358466944e-07,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        1.7918267979435964e-07,
+        0.02085355336149368,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        5.661699218582894e-07,
+        0.020509379576613834,
+        0.00845971217623772,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
         NaN,
         NaN,
         NaN,
@@ -330,31 +366,7 @@
         NaN
       ],
       [
-        2.8585652121805583e-06,
-        0.03960007997696871,
-        0.008490988270891378,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
-        NaN,
-        NaN,
-        NaN,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
-        0.01564788289500809,
-        NaN,
-        0.008322573208962776,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
-        NaN,
+        0.030757818694657067,
         NaN,
         NaN,
         NaN,
@@ -364,6 +376,30 @@
     ],
     "ConstraintLearnedRawValueMatrix": [
       [
+        3.6760989358466944e-07,
+        0.10158489238903948,
+        0.007639086684378288,
+        0.04112343753885147,
+        0.16447107839562072,
+        0.2889733595429724
+      ],
+      [
+        1.7918267979435964e-07,
+        0.02085355336149368,
+        0.007639086684378288,
+        0.04112343753885147,
+        0.16447107839562072,
+        0.2889733595429724
+      ],
+      [
+        5.661699218582894e-07,
+        0.020509379576613834,
+        0.00845971217623772,
+        0.04112343753885147,
+        0.16447107839562072,
+        0.2889733595429724
+      ],
+      [
         0.02045219957117411,
         0.10158489238903948,
         0.007639086684378288,
@@ -372,31 +408,7 @@
         0.2889733595429724
       ],
       [
-        2.8585652121805583e-06,
-        0.03960007997696871,
-        0.008490988270891378,
-        0.04112343753885147,
-        0.16447107839562072,
-        0.2889733595429724
-      ],
-      [
-        0.02045219957117411,
-        0.10158489238903948,
-        0.007639086684378288,
-        0.04112343753885147,
-        0.16447107839562072,
-        0.2889733595429724
-      ],
-      [
-        0.01564788289500809,
-        0.10158489238903948,
-        0.008322573208962776,
-        0.04112343753885147,
-        0.16447107839562072,
-        0.2889733595429724
-      ],
-      [
-        0.02045219957117411,
+        0.030757818694657067,
         0.10158489238903948,
         0.007639086684378288,
         0.04112343753885147,
@@ -409,7 +421,7 @@
   "objectives": {
     "ModelObjectiveFinal": 502.61639885045975,
     "SegmentationObjectiveFinal": 502.61639885045975,
-    "PosthocObjectiveFinal": -2540.0223592757607,
-    "PosthocFeatureObjectiveFinal": -2540.0223592757607
+    "PosthocObjectiveFinal": -2233.105898960627,
+    "PosthocFeatureObjectiveFinal": -2233.105898960627
   }
 }

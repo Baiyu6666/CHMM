@@ -7,7 +7,9 @@ import numpy as np
 
 from envs.base import TaskBundle
 
+from ..backends.changeforest import segment_with_changeforest
 from ..backends.changepoint import segment_changepoint
+from ..backends.gmm_hmm import segment_with_gmm_hmm
 from ..backends.hmm import segment_with_hmm
 from ..backends.ordered_cluster import segment_ordered_cluster
 from ..base import SegmentationResult, labels_to_cutpoints, labels_to_taus
@@ -22,7 +24,32 @@ class SequentialBaselineSegmenter:
     def run(self, dataset: TaskBundle) -> SegmentationResult:
         taus = None
         disable_plots = bool(self.kwargs.get("disable_plots", False))
-        if self.method in {"fchmm", "hmm"}:
+        if self.method == "gmmhmm":
+            if dataset.env is None:
+                raise ValueError("GMM-HMM segmenter requires a dataset env with feature API.")
+            resolved_kwargs = dict(self.kwargs)
+            labels, model, seg_hist, posts = segment_with_gmm_hmm(
+                dataset.demos,
+                env=dataset.env,
+                true_cutpoints=getattr(dataset, "true_cutpoints", None),
+                n_stages=resolved_kwargs.get("n_stages", 2),
+                n_components=resolved_kwargs.get("n_components", 3),
+                reg_covar=resolved_kwargs.get("reg_covar", 1e-3),
+                max_iter=resolved_kwargs.get("max_iter", 30),
+                tol=resolved_kwargs.get("tol", 1e-4),
+                seed=resolved_kwargs.get("seed", 0),
+                use_state=resolved_kwargs.get("use_state", True),
+                use_velocity=resolved_kwargs.get("use_velocity", False),
+                velocity_weight=resolved_kwargs.get("velocity_weight", 1.0),
+                use_env_features=resolved_kwargs.get("use_env_features", True),
+                selected_raw_feature_ids=resolved_kwargs.get("selected_raw_feature_ids"),
+                standardize=resolved_kwargs.get("standardize", True),
+                init_mode=resolved_kwargs.get("init_mode", "random_stage_ends"),
+                min_len=resolved_kwargs.get("min_len", 3),
+                verbose=resolved_kwargs.get("verbose", True),
+            )
+            extras = {"gammas": posts, "segmentation_history": seg_hist}
+        elif self.method in {"fchmm", "hmm"}:
             if dataset.env is None:
                 raise ValueError(f"{self.method.upper()} segmenter requires a dataset env with feature API.")
             resolved_kwargs = dict(self.kwargs)
@@ -114,6 +141,30 @@ class SequentialBaselineSegmenter:
             )
             model = None
             seg_hist = {}
+            extras = {"segmentation_history": seg_hist}
+        elif self.method == "changeforest":
+            resolved_kwargs = dict(self.kwargs)
+            labels, model = segment_with_changeforest(
+                dataset.demos,
+                env=dataset.env,
+                n_stages=resolved_kwargs.get("n_stages", 2),
+                selected_raw_feature_ids=resolved_kwargs.get("selected_raw_feature_ids"),
+                use_state=resolved_kwargs.get("use_state", False),
+                use_velocity=resolved_kwargs.get("use_velocity", True),
+                velocity_weight=resolved_kwargs.get("velocity_weight", 1.0),
+                use_env_features=resolved_kwargs.get("use_env_features", False),
+                standardize=resolved_kwargs.get("standardize", True),
+                min_len=resolved_kwargs.get("min_len", 3),
+                method=resolved_kwargs.get("method", "random_forest"),
+                seed=resolved_kwargs.get("seed", 0),
+                random_forest_n_estimators=resolved_kwargs.get("random_forest_n_estimators", 50),
+                random_forest_max_depth=resolved_kwargs.get("random_forest_max_depth", 1),
+                random_forest_max_features=resolved_kwargs.get("random_forest_max_features", "sqrt"),
+                random_forest_n_jobs=resolved_kwargs.get("random_forest_n_jobs", 1),
+                model_selection_n_permutations=resolved_kwargs.get("model_selection_n_permutations", 0),
+                verbose=resolved_kwargs.get("verbose", True),
+            )
+            seg_hist = {"splits": model.split_history_}
             extras = {"segmentation_history": seg_hist}
         elif self.method == "cluster":
             resolved_kwargs = dict(self.kwargs)

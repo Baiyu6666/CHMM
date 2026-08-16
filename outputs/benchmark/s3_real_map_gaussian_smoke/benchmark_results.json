@@ -1,0 +1,191 @@
+{
+  "methods": [
+    "map"
+  ],
+  "datasets": [
+    "S3ObsAvoidReal"
+  ],
+  "dataset_seed": 0,
+  "method_seeds": [
+    0
+  ],
+  "results": [
+    {
+      "method": "map",
+      "dataset": "S3ObsAvoidReal",
+      "dataset_seed": 0,
+      "method_seed": 0,
+      "metrics": {
+        "MeanAbsCutpointError": 0.0,
+        "MeanStageSubgoalError": 0.0,
+        "MeanConstraintError": 0.041910536854098325,
+        "MeanConstraintErrorRaw": 0.007691929690276535,
+        "ConstraintErrorMatrix": [
+          [
+            0.09559151365506907,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            0.003629251438469556,
+            NaN
+          ],
+          [
+            NaN,
+            NaN,
+            0.026510845468756355
+          ]
+        ],
+        "ConstraintErrorMatrixRaw": [
+          [
+            0.015645286950153103,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            0.0003939441432936619,
+            NaN
+          ],
+          [
+            NaN,
+            NaN,
+            0.00703655797738284
+          ]
+        ],
+        "ConstraintTrueActiveMask": [
+          [
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1
+          ]
+        ],
+        "ConstraintPredictedActiveMask": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "ConstraintTargetMatrix": [
+          [
+            0.04429052047222934,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            0.0,
+            NaN
+          ],
+          [
+            NaN,
+            NaN,
+            0.0
+          ]
+        ],
+        "ConstraintSemanticsMatrix": [
+          [
+            "lower_bound",
+            "",
+            ""
+          ],
+          [
+            "",
+            "target_value",
+            ""
+          ],
+          [
+            "",
+            "",
+            "target_value"
+          ]
+        ],
+        "ConstraintLearnedSemanticsMatrix": [
+          [
+            "lower_bound",
+            "lower_bound",
+            "lower_bound"
+          ],
+          [
+            "lower_bound",
+            "lower_bound",
+            "upper_bound"
+          ],
+          [
+            "lower_bound",
+            "upper_bound",
+            "target_value"
+          ]
+        ],
+        "ConstraintFeatureNames": [
+          "obs_dist",
+          "line1_dist",
+          "line2_dist"
+        ],
+        "ConstraintFeatureScales": [
+          0.16366815789325517,
+          0.10854694142100745,
+          0.2654218623723482
+        ],
+        "ConstraintLearnedValueMatrix": [
+          [
+            0.05993580742238244,
+            0.014380709501190796,
+            0.11982703203437586
+          ],
+          [
+            0.08993035604853464,
+            0.0003939441432936619,
+            0.10872537700518653
+          ],
+          [
+            0.19939472800813238,
+            0.11382243089079341,
+            0.00703655797738284
+          ]
+        ],
+        "ConstraintLearnedRawValueMatrix": [
+          [
+            0.05993580742238244,
+            0.014380709501190796,
+            0.11982703203437586
+          ],
+          [
+            0.08993035604853464,
+            0.0003939441432936619,
+            0.10872537700518653
+          ],
+          [
+            0.19939472800813238,
+            0.11382243089079341,
+            0.00703655797738284
+          ]
+        ],
+        "ConstraintLearnedValuePerDemo": []
+      },
+      "objectives": {}
+    }
+  ]
+}

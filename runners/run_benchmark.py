@@ -21,9 +21,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.config_loader import load_json
+from experiments.config_loader import (
+    inherit_map_posthoc_parameters,
+    load_json,
+    resolve_dataset_method_override,
+)
 from experiments.artifacts import (
     apply_run_plot_dirs,
+    dataset_fingerprint,
     default_method_seed,
     _extract_objectives,
     resolve_run_dir,
@@ -31,6 +36,8 @@ from experiments.artifacts import (
     write_json,
 )
 from experiments.unified_experiment import run_experiment
+from envs import load_env
+from methods import JOINT_METHODS
 from visualization.io import save_figure
 from visualization.plot4panel import plot_demos_goals_snapshot
 
@@ -121,13 +128,13 @@ def _parse_kv_overrides(items: list[str] | None) -> dict[str, Any]:
 
 
 def _top_level_or_segmenter_override(method_name: str, key: str, value: Any) -> dict[str, Any]:
-    if str(method_name) in {"swcl", "fchmm"}:
+    if str(method_name) in JOINT_METHODS or str(method_name) == "fchmm":
         return {str(key): value}
     return {"segmenter": {str(key): value}}
 
 
 def _extract_metrics(method_name: str, result: dict[str, Any]) -> dict[str, Any]:
-    if method_name in {"swcl"}:
+    if method_name in JOINT_METHODS:
         return dict(result["joint_result"]["metrics"])
     return dict(result["constraints"]["metrics"])
 
@@ -158,14 +165,15 @@ def _print_completed_run_metrics(
         f"method={method_name} dataset={dataset_name} "
         f"dataset_seed={int(dataset_seed)} method_seed={int(method_seed)} | "
         f"segmentation_error={_metric_text(metrics, 'MeanAbsCutpointError')} | "
-        f"constraint_error={_metric_text(metrics, 'MeanConstraintError')} | "
-        f"constraint_error_raw={_metric_text(metrics, 'MeanConstraintErrorRaw')}",
+        f"semantic_f1={_metric_text(metrics, 'SemanticConstraintF1')} | "
+        f"parameter_error={_metric_text(metrics, 'MeanParameterError')} | "
+        f"parameter_error_raw={_metric_text(metrics, 'MeanParameterErrorRaw')}",
         flush=True,
     )
 
 
 def _extract_plot_record(method_name: str, result: dict[str, Any], method_seed: int) -> dict[str, Any]:
-    if method_name == "swcl":
+    if method_name in JOINT_METHODS:
         learner = result["joint_result"]["model"]
         gammas = result["joint_result"]["gammas"]
     elif method_name == "fchmm":
@@ -303,16 +311,12 @@ def _merge_with_existing_summary(path: Path, new_rows: list[dict[str, Any]]) -> 
     existing_methods: list[str] = []
     existing_datasets: list[str] = []
     existing_method_seeds: list[int] = []
-    existing_dataset_seed = None
-
     if path.exists():
         existing = load_json(path)
         existing_rows = list(existing.get("results", []))
         existing_methods = [str(x) for x in existing.get("methods", [])]
         existing_datasets = [str(x) for x in existing.get("datasets", [])]
         existing_method_seeds = [int(x) for x in existing.get("method_seeds", [])]
-        if "dataset_seed" in existing:
-            existing_dataset_seed = int(existing["dataset_seed"])
 
     merged_by_key = {_row_key(row): row for row in existing_rows}
     for row in new_rows:
@@ -338,13 +342,22 @@ def _merge_with_existing_summary(path: Path, new_rows: list[dict[str, Any]]) -> 
     else:
         dataset_seed_value = dataset_seeds
 
-    if existing_dataset_seed is not None and isinstance(dataset_seed_value, int):
-        dataset_seed_value = int(dataset_seed_value)
+    dataset_seeds_by_dataset: dict[str, int | list[int]] = {}
+    for dataset_name in merged_datasets:
+        values = sorted(
+            {
+                int(row.get("dataset_seed", 0))
+                for row in merged_rows
+                if str(row.get("dataset")) == dataset_name
+            }
+        )
+        dataset_seeds_by_dataset[dataset_name] = values[0] if len(values) == 1 else values
 
     return {
         "methods": merged_methods,
         "datasets": merged_datasets,
         "dataset_seed": dataset_seed_value,
+        "dataset_seeds": dataset_seeds_by_dataset,
         "method_seeds": merged_method_seeds,
         "results": merged_rows,
     }
@@ -354,12 +367,13 @@ def run_benchmark(
     methods: list[str],
     datasets: list[str],
     method_seeds: list[int],
-    dataset_seed: int = 0,
+    dataset_seed: int | None = None,
     config_root: str | Path = "configs",
     outdir: str | Path = "outputs/benchmark",
     dataset_overrides: dict[str, dict[str, Any]] | None = None,
     method_overrides: dict[str, dict[str, Any]] | None = None,
     refresh_demo_cache: bool = False,
+    resume: bool = False,
 ) -> dict[str, Any]:
     config_root = Path(config_root)
     if not config_root.is_absolute():
@@ -371,9 +385,20 @@ def run_benchmark(
 
     dataset_overrides = dataset_overrides or {}
     method_overrides = method_overrides or {}
+    base_map_cfg = _load_method_config(config_root, "map")
+    summary_path = outdir / "benchmark_results.json"
+    existing_by_key: dict[tuple[str, str, int, int], dict[str, Any]] = {}
+    if resume and summary_path.exists():
+        existing_summary = load_json(summary_path)
+        existing_by_key = {
+            _row_key(row): row
+            for row in existing_summary.get("results", [])
+        }
 
     rows: list[dict[str, Any]] = []
     goal_records: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    expected_datasets: dict[str, tuple[int, str]] = {}
+    current_dataset_fingerprints: dict[str, str] = {}
     refreshed_demo_cache_keys: set[tuple[str, str]] = set()
     for method_name in methods:
         base_method_cfg = _load_method_config(config_root, method_name)
@@ -381,13 +406,42 @@ def run_benchmark(
         for dataset_name in datasets:
             base_dataset_cfg = _load_env_config(config_root, dataset_name)
             dataset_method_overrides = dict(base_dataset_cfg.pop("method_overrides", {}))
-            env_method_override = dataset_method_overrides.get(method_name, {})
+            env_method_override = resolve_dataset_method_override(
+                method_name,
+                dataset_method_overrides,
+            )
             external_dataset_override = dataset_overrides.get(dataset_name, {})
-            base_dataset_cfg.setdefault("seed", int(dataset_seed))
+            if dataset_seed is not None:
+                base_dataset_cfg["seed"] = int(dataset_seed)
             for method_seed in method_seeds:
                 dataset_cfg = dict(base_dataset_cfg)
                 run_method_cfg = dict(base_method_cfg)
                 dataset_cfg = _deep_merge(dataset_cfg, external_dataset_override)
+                actual_dataset_seed = int(dataset_cfg.get("seed", 0))
+                run_key = (
+                    str(method_name),
+                    str(dataset_name),
+                    actual_dataset_seed,
+                    int(method_seed),
+                )
+                existing_row = existing_by_key.get(run_key)
+                if existing_row is not None:
+                    if dataset_name not in current_dataset_fingerprints:
+                        current_dataset = load_env(dataset_name, **dataset_cfg)
+                        current_dataset_fingerprints[dataset_name] = dataset_fingerprint(current_dataset)
+                    current_fingerprint = current_dataset_fingerprints[dataset_name]
+                    if str(existing_row.get("dataset_fingerprint", "")) == current_fingerprint:
+                        expected_datasets.setdefault(
+                            dataset_name,
+                            (actual_dataset_seed, current_fingerprint),
+                        )
+                        print(
+                            "[benchmark] resume skip "
+                            f"method={method_name} dataset={dataset_name} "
+                            f"dataset_seed={actual_dataset_seed} method_seed={method_seed}",
+                            flush=True,
+                        )
+                        continue
                 if refresh_demo_cache and bool(dataset_cfg.get("cache_demos", False)):
                     cache_dir = _demo_cache_dataset_dir(dataset_name, dataset_cfg)
                     refresh_key = (str(dataset_name), str(cache_dir))
@@ -395,8 +449,14 @@ def run_benchmark(
                         _clear_demo_cache_for_dataset(dataset_name, dataset_cfg)
                         refreshed_demo_cache_keys.add(refresh_key)
                 run_method_cfg = _deep_merge(run_method_cfg, env_method_override)
+                run_method_cfg = inherit_map_posthoc_parameters(
+                    method_name,
+                    run_method_cfg,
+                    base_map_cfg,
+                    dataset_method_overrides,
+                )
                 run_method_cfg = _deep_merge(run_method_cfg, external_method_override)
-                if method_name in {"swcl", "fchmm"}:
+                if method_name in JOINT_METHODS or method_name == "fchmm":
                     run_method_cfg["seed"] = int(method_seed)
                 else:
                     segmenter_cfg = dict(run_method_cfg.get("segmenter", {}))
@@ -405,7 +465,7 @@ def run_benchmark(
                 run_dir = resolve_run_dir(
                     method_name=method_name,
                     dataset_name=dataset_name,
-                    dataset_seed=int(dataset_cfg.get("seed", dataset_seed)),
+                    dataset_seed=actual_dataset_seed,
                     method_seed=default_method_seed(method_name, run_method_cfg),
                     output_root=PROJECT_ROOT / "outputs",
                 )
@@ -421,6 +481,15 @@ def run_benchmark(
                     dataset_kwargs=dataset_cfg,
                     method_kwargs=run_method_cfg,
                 )
+                fingerprint = dataset_fingerprint(result.get("dataset"))
+                dataset_identity = (actual_dataset_seed, fingerprint)
+                expected_identity = expected_datasets.setdefault(dataset_name, dataset_identity)
+                if dataset_identity != expected_identity:
+                    raise RuntimeError(
+                        f"Dataset mismatch for {dataset_name}: expected seed/fingerprint "
+                        f"{expected_identity}, got {dataset_identity} for method={method_name}, "
+                        f"method_seed={method_seed}."
+                    )
                 save_run_artifacts(
                     run_dir=run_dir,
                     dataset_name=dataset_name,
@@ -435,20 +504,23 @@ def run_benchmark(
                 _print_completed_run_metrics(
                     method_name=method_name,
                     dataset_name=dataset_name,
-                    dataset_seed=int(dataset_cfg.get("seed", dataset_seed)),
+                    dataset_seed=actual_dataset_seed,
                     method_seed=int(method_seed),
                     metrics=metrics,
                 )
-                rows.append(
-                    {
-                        "method": method_name,
-                        "dataset": dataset_name,
-                        "dataset_seed": int(dataset_seed),
-                        "method_seed": int(method_seed),
-                        "metrics": metrics,
-                        "objectives": _extract_objectives(method_name, result),
-                    }
-                )
+                row = {
+                    "method": method_name,
+                    "dataset": dataset_name,
+                    "dataset_seed": actual_dataset_seed,
+                    "dataset_fingerprint": fingerprint,
+                    "method_seed": int(method_seed),
+                    "metrics": metrics,
+                    "objectives": _extract_objectives(method_name, result),
+                }
+                rows.append(row)
+                checkpoint = _merge_with_existing_summary(summary_path, [row])
+                write_json(summary_path, checkpoint)
+                _write_csv(outdir / "benchmark_results.csv", list(checkpoint["results"]))
                 goal_records.setdefault((dataset_name, method_name), []).append(
                     _extract_plot_record(method_name, result, method_seed)
                 )
@@ -456,8 +528,8 @@ def run_benchmark(
     for (dataset_name, method_name), records in goal_records.items():
         _plot_goal_grid(records, dataset_name=dataset_name, method_name=method_name, outdir=outdir)
 
-    summary = _merge_with_existing_summary(outdir / "benchmark_results.json", rows)
-    write_json(outdir / "benchmark_results.json", summary)
+    summary = _merge_with_existing_summary(summary_path, rows)
+    write_json(summary_path, summary)
     _write_csv(outdir / "benchmark_results.csv", list(summary["results"]))
     return summary
 
@@ -467,7 +539,12 @@ def main():
     parser.add_argument("--methods", default="swcl")
     parser.add_argument("--datasets", default="S3ObsAvoid")
     parser.add_argument("--method-seeds", default="0")
-    parser.add_argument("--dataset-seed", type=int, default=0)
+    parser.add_argument(
+        "--dataset-seed",
+        type=int,
+        default=None,
+        help="Override every selected environment seed. By default, each environment config seed is used.",
+    )
     parser.add_argument("--seeds", default=None)
     parser.add_argument("--config-root", default="configs")
     parser.add_argument("--outdir", default="outputs/benchmark")
@@ -497,6 +574,11 @@ def main():
         dest="refresh_demo_cache",
         action="store_true",
         help="Delete cached demos for selected datasets before loading them, forcing regeneration.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip completed runs only when their stored dataset fingerprint matches the current dataset.",
     )
     args = parser.parse_args()
 
@@ -537,10 +619,12 @@ def main():
         dataset_overrides=dataset_overrides,
         method_overrides=method_overrides,
         refresh_demo_cache=bool(args.refresh_demo_cache),
+        resume=bool(args.resume),
     )
     print(
         f"Completed {len(summary['results'])} runs "
-        f"for methods={methods}, datasets={datasets}, dataset_seed={args.dataset_seed}, method_seeds={method_seeds}."
+        f"for methods={methods}, datasets={datasets}, dataset_seeds={summary['dataset_seeds']}, "
+        f"method_seeds={method_seeds}."
     )
 
 

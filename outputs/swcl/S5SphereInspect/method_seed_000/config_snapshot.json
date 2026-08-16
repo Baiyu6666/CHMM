@@ -11,7 +11,7 @@
   },
   "method_kwargs": {
     "max_iter": 10,
-    "verbose": true,
+    "verbose": false,
     "n_stages": 5,
     "seed": 0,
     "selected_raw_feature_ids": [
@@ -56,7 +56,8 @@
     "truncated_z_optimize_trigger_scale": 3.0,
     "fixed_true_cutpoint_prefix": 0,
     "fixed_true_cutpoint_indices": [],
-    "plot_every": 10,
-    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspect/method_seed_000"
+    "plot_every": null,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S5SphereInspect/method_seed_000",
+    "precompute_num_workers": 4
   }
 }

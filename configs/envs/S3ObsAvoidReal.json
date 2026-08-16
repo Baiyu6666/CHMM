@@ -14,12 +14,33 @@
       "max_iter": 10,
       "truncated_inequality_z_threshold": -0.15,
       "lambda_ineq_constraint": 0.015,
-      "fixed_true_cutpoint_indices": [0,1 ],
+      "fixed_true_cutpoint_indices": [],
       "lambda_activation_consensus": 0.75,
       "lambda_param_consensus": 3,
       "short_segment_penalty_c": 0,
-      "equality_dispersion_ratio_threshold": 0.05,
+      "equality_dispersion_ratio_threshold": 0.075,
       "truncated_z_score_mode": "soft_fit_minus_baseline"
+    },
+    "map": {
+      "n_stages": 3,
+      "selected_raw_feature_ids": ["obs_dist", "line1_dist", "line2_dist"],
+      "max_iter": 8,
+      "fixed_true_cutpoint_indices": [],
+      "lambda_progress": 0.5,
+      "duration_min": 3,
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_boundary_quantile": 0.05,
+      "map_activation_prior": [0.5, 0.5, 0.5],
+      "map_active_mode_prior": {
+        "eq": [0, 1, 1],
+        "lb": [1, 0, 0],
+        "ub": [0, 0, 0]
+      }
     },
     "fchmm": {
       "n_stages": 3,

@@ -84,10 +84,16 @@ Configs are layered in this order:
 
 Supported method names are:
 - `swcl`
+- `map`
+- `map_pooled`
+- `map_balanced_pooled`
+- `map_balanced_vote`
 - `fchmm`
+- `gmmhmm`
 - `hmm`
 - `arhsmm`
 - `changepoint`
+- `changeforest`
 - `cluster`
 
 Supported dataset names are:
@@ -111,6 +117,23 @@ Important SWCL config fields:
 - `force_inactive_feature_ids`: keep selected features in reports while forcing their activation mask to zero
 - `plot_every`: plot interval; `null` disables periodic plots
 
+Important MAP config fields:
+- `map_mode_aggregation`: MAP M-step mode selection. `pooled` fits and scores candidates by summed point-wise NLL; `shared_vote` retains point-pooled candidate fits but gives each demo one mean-NLL vote; `demo_balanced_pooled` fits and scores candidates by the sum of per-demo mean NLLs; `demo_balanced_vote` combines demo-balanced candidate fits with strict-majority voting.
+- `map_pooled` is the controlled MAP ablation with the same dataset settings and deterministic initialization but `map_mode_aggregation=pooled`
+- `map_balanced_pooled` and `map_balanced_vote` inherit each dataset's `map` override automatically and change only the M-step aggregation.
+- `map_activation_prior`: feature-wise vector of `P(active)` values, shared by all stages; its mode cost is split evenly across demo vote scores under voting aggregation and applied once under direct pooled/balanced aggregation
+- `map_active_mode_prior`: `eq`, `lb`, and `ub` feature-wise vectors for `P(mode | active)`; the three probabilities for each feature must sum to one
+- `map_demo_num_workers`: number of MAP demo-segmentation worker processes; `null` uses up to one worker per demo, while `1` disables multiprocessing
+- MAP uses unweighted likelihoods; SWCL's equality/inequality weights do not apply to MAP
+
+Important post-hoc constraint config fields for `gmmhmm`, `hmm`, `arhsmm`, `changepoint`, `changeforest`, and `cluster`:
+- `posthoc_training_mode`: `swcl` keeps the original fixed-mask/fixed-mode per-demo fit followed by a coordinate-wise parameter median; `pooled` runs MAP candidate selection with summed NLL; `voting` runs the same MAP shared-candidate demo voting used by joint MAP. ARHSMM and Cluster default to `voting`.
+- `fixed_feature_mask` and `feature_model_types`: used by `swcl`; `pooled` and `voting` infer inactive/equality/lower/upper modes instead
+- Baseline post-hoc learners automatically inherit MAP likelihood, prior, feature-selection, and trimming parameters from the dataset's `map` override; explicit CLI method overrides still take precedence
+- `fchmm` trains its factorized constraint emissions internally and does not use the post-hoc learner
+- `gmmhmm` is a mode-agnostic left-to-right HMM with a three-component diagonal GMM emission per stage; its configured voting post-hoc is a controlled MAP-decoder segmentation ablation
+- `changeforest` is a fixed-K adaptation of changeforest: it repeatedly applies the upstream classifier gain to the best current interval until exactly `n_stages` ordered segments are obtained. It uses the same velocity-only representation and shallow random-forest settings across all datasets; significance testing is disabled because K is supplied to every baseline.
+
 ## Training and Evaluation
 
 Run one experiment from config files:
@@ -128,7 +151,7 @@ Run a benchmark:
 
 ```bash
 python runners/run_benchmark.py \
-  --methods swcl,fchmm,hmm,arhsmm,changepoint,cluster \
+  --methods swcl,map,map_pooled,gmmhmm,fchmm,hmm,arhsmm,changepoint,changeforest,cluster \
   --datasets S3ObsAvoid,S4SlideInsert,S5SphereInspect \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -151,8 +174,9 @@ python runners/run_benchmark.py \
 The benchmark runner prints the key metrics after each completed run:
 
 - `MeanAbsCutpointError`: segmentation error
-- `MeanConstraintError`: normalized constraint error
-- `MeanConstraintErrorRaw`: raw constraint error
+- `SemanticConstraintF1`: exact `(stage, feature, mode)` recovery F1, excluding inactive true negatives
+- `MeanParameterError`: normalized parameter error over constraints whose active mode is correctly identified
+- `MeanParameterErrorRaw`: raw parameter error over constraints whose active mode is correctly identified
 
 Per-run artifacts are saved under:
 
@@ -280,8 +304,12 @@ For rendering scripts that expose `--gui`:
 - `S3ObsAvoid`: 3-stage obstacle-avoidance environment
 - `S4SlideInsert`: 4-stage slide-insert environment
 - `S5SphereInspect`: 5-stage sphere-inspection environment
+- `map`: joint MAP stage-wise constraint learning with automatic feature modes
+- `map_pooled`: MAP ablation using pooled point-wise M-step aggregation
+- `map_balanced_pooled`: MAP ablation using summed per-demo mean NLLs for fitting and mode selection
+- `map_balanced_vote`: MAP ablation using demo-balanced fitting followed by strict-majority mode voting
 - `swcl`: joint stage-wise constraint learning
-- `fchmm`, `hmm`, `arhsmm`, `changepoint`, `cluster`: baseline segmentation pipelines with constraint evaluation
+- `gmmhmm`, `fchmm`, `hmm`, `arhsmm`, `changepoint`, `changeforest`, `cluster`: baseline segmentation pipelines with constraint evaluation
 - `method_seed_<seed>`: method initialization or search seed
 - `dataset_seed`: demonstration-generation seed from the environment config or CLI
 
@@ -299,7 +327,7 @@ Common benchmark command:
 
 ```bash
 python runners/run_benchmark.py \
-  --methods swcl,fchmm,hmm,arhsmm,changepoint,cluster \
+  --methods swcl,map,map_pooled,gmmhmm,fchmm,hmm,arhsmm,changepoint,changeforest,cluster \
   --datasets S3ObsAvoid,S4SlideInsert,S5SphereInspect \
   --method-seeds 0 \
   --dataset-seed 0 \

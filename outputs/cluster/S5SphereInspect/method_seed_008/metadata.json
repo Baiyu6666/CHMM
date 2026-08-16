@@ -1,9 +1,10 @@
 {
-  "created_at_utc": "2026-06-04T16:28:31.192252+00:00",
+  "created_at_utc": "2026-08-16T08:54:41.476115+00:00",
   "dataset_name": "S5SphereInspect",
   "method_name": "cluster",
   "pipeline": "sequential",
   "dataset_seed": 127,
+  "dataset_fingerprint": "92caa6edc1d4bf93e6be9a1610f25e850c936a36c9f95466290e1427c5583545",
   "method_seed": 8,
   "num_demos": 10,
   "num_stages": 5,

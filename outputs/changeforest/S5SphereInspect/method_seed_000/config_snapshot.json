@@ -1,0 +1,77 @@
+{
+  "dataset_name": "S5SphereInspect",
+  "method_name": "changeforest",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 127,
+    "rollout_backend": "pybullet",
+    "observation_backend": "pybullet",
+    "cache_demos": true,
+    "eval_tag": "S5SphereInspect"
+  },
+  "method_kwargs": {
+    "segmenter": {
+      "n_stages": 5,
+      "use_state": false,
+      "use_velocity": true,
+      "velocity_weight": 1.0,
+      "use_env_features": false,
+      "selected_raw_feature_ids": [
+        "surf_dist",
+        "normal_err",
+        "speed",
+        "ang_speed",
+        "start_dist",
+        "goal_dist"
+      ],
+      "standardize": true,
+      "min_len": 3,
+      "method": "random_forest",
+      "seed": 0,
+      "random_forest_n_estimators": 50,
+      "random_forest_max_depth": 1,
+      "random_forest_max_features": "sqrt",
+      "random_forest_n_jobs": 1,
+      "model_selection_n_permutations": 0,
+      "verbose": true,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/changeforest/S5SphereInspect/method_seed_000"
+    },
+    "posthoc_constraint": {
+      "posthoc_training_mode": "voting",
+      "verbose": true,
+      "fixed_feature_mask": null,
+      "selected_raw_feature_ids": [
+        "surf_dist",
+        "normal_err",
+        "speed",
+        "ang_speed",
+        "start_dist",
+        "goal_dist"
+      ],
+      "feature_model_types": null,
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/changeforest/S5SphereInspect/method_seed_000",
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "truncated_z_half_t_scale_quantile": 0.9,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_eq_distribution": "gaussian",
+      "map_inactive_distribution": "gaussian",
+      "map_nu_eq": 3.0,
+      "map_nu_inactive": 3.0,
+      "map_nu_ineq": 3.0,
+      "map_boundary_quantile": 0.05,
+      "map_activation_prior": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "map_active_mode_prior": null
+    }
+  }
+}

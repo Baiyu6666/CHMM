@@ -621,6 +621,154 @@ def _matrix_text_color(value, vmax):
     return "white" if abs(float(value)) >= threshold else "black"
 
 
+def _is_map_method(learner) -> bool:
+    return str(getattr(learner, "method_name", "")).lower() == "map"
+
+
+def _format_map_cost(value: float) -> str:
+    value = float(value)
+    if not np.isfinite(value):
+        return "nan"
+    if abs(value) >= 1000.0:
+        return f"{value:.1f}"
+    return f"{value:.2f}"
+
+
+def _map_mode_cost_rows(learner, demo_idx: int, stage_idx: int, feat_idx: int):
+    if not hasattr(learner, "_local_mode_candidates_cached"):
+        return None
+    stage_ends = getattr(learner, "stage_ends_", None)
+    if stage_ends is None or int(demo_idx) >= len(stage_ends):
+        return None
+    starts, ends = _segment_bounds(stage_ends[int(demo_idx)])
+    if int(stage_idx) >= len(starts):
+        return None
+    core_s, core_e = _core_bounds_for_display(learner, starts[int(stage_idx)], ends[int(stage_idx)])
+    try:
+        candidates = learner._local_mode_candidates_cached(int(demo_idx), int(core_s), int(core_e), int(feat_idx))
+    except Exception:
+        return None
+    modes = ("inactive", "eq", "lb", "ub")
+    rows = []
+    for mode in modes:
+        fit = candidates.get(mode) if isinstance(candidates, dict) else None
+        cost = float(getattr(fit, "cost", np.nan)) if fit is not None else np.nan
+        rows.append((mode, cost))
+    finite_rows = [(mode, cost) for mode, cost in rows if np.isfinite(cost)]
+    if not finite_rows:
+        return rows, None
+    order = {mode: idx for idx, mode in enumerate(modes)}
+    best_mode = min(finite_rows, key=lambda item: (float(item[1]), order.get(item[0], 99)))[0]
+    return rows, best_mode
+
+
+def _map_shared_mode_for_cell(learner, stage_idx: int, feat_idx: int):
+    shared_kinds = getattr(learner, "shared_param_kinds", None)
+    if shared_kinds is None:
+        return None
+    try:
+        kind = shared_kinds[int(stage_idx)][int(feat_idx)]
+    except Exception:
+        return None
+    if hasattr(learner, "_kind_to_mode"):
+        try:
+            return str(learner._kind_to_mode(kind))
+        except Exception:
+            pass
+    kind_l = "" if kind is None else str(kind).lower()
+    if kind_l in {"", "none", "inactive"}:
+        return "inactive"
+    if "lower" in kind_l or kind_l == "lb":
+        return "lb"
+    if "upper" in kind_l or kind_l == "ub":
+        return "ub"
+    return "eq"
+
+
+def _draw_map_mode_cost_matrix(ax, learner, demo_idx: int = 0, *, title=None, cell_fontsize=5.2):
+    if not getattr(learner, "current_stage_params_per_demo", None):
+        ax.axis("off")
+        return False
+    demo_idx = int(demo_idx)
+    if demo_idx >= len(learner.current_stage_params_per_demo):
+        ax.axis("off")
+        return False
+    num_stages = int(getattr(learner, "num_stages", len(learner.current_stage_params_per_demo[demo_idx])))
+    num_features = int(getattr(learner, "num_features", 0))
+    if num_stages <= 0 or num_features <= 0:
+        ax.axis("off")
+        return False
+
+    feature_labels = [_feature_name(learner, i) for i in range(num_features)]
+    stage_labels = [f"stage {i + 1}" for i in range(num_stages)]
+    ax.set_title(title or f"Demo {demo_idx} MAP mode costs", fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlim(-0.5, num_stages - 0.5)
+    ax.set_ylim(num_features - 0.5, -0.5)
+    ax.set_xticks(range(num_stages))
+    ax.set_xticklabels(stage_labels)
+    ax.set_yticks(range(num_features))
+    ax.set_yticklabels(feature_labels)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    ax.set_facecolor("white")
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(0.8)
+        spine.set_color("#333333")
+    for x in np.arange(-0.5, num_stages + 0.5, 1.0):
+        ax.axvline(x, color="#c9c9c9", linewidth=0.7, zorder=0)
+    for y in np.arange(-0.5, num_features + 0.5, 1.0):
+        ax.axhline(y, color="#c9c9c9", linewidth=0.7, zorder=0)
+
+    offsets = {
+        "inactive": -0.27,
+        "eq": -0.09,
+        "lb": 0.09,
+        "ub": 0.27,
+    }
+    for feat_idx in range(num_features):
+        for stage_idx in range(num_stages):
+            result = _map_mode_cost_rows(learner, demo_idx, stage_idx, feat_idx)
+            if result is None:
+                ax.text(
+                    stage_idx,
+                    feat_idx,
+                    "unavailable",
+                    ha="center",
+                    va="center",
+                    fontsize=cell_fontsize,
+                    color="#777777",
+                )
+                continue
+            rows, best_mode = result
+            shared_mode = _map_shared_mode_for_cell(learner, stage_idx, feat_idx)
+            for mode, cost in rows:
+                is_best = mode == best_mode
+                line_text = f"{mode}: {_format_map_cost(cost)}"
+                text_y = feat_idx + offsets.get(mode, 0.0)
+                text_color = "#D62728" if is_best else "#333333"
+                ax.text(
+                    stage_idx,
+                    text_y,
+                    line_text,
+                    ha="center",
+                    va="center",
+                    fontsize=cell_fontsize,
+                    color=text_color,
+                    fontweight="bold" if is_best else "normal",
+                )
+                if mode == shared_mode:
+                    half_width = min(0.42, max(0.15, 0.014 * len(line_text)))
+                    ax.plot(
+                        [stage_idx - half_width, stage_idx + half_width],
+                        [text_y + 0.055, text_y + 0.055],
+                        color=text_color,
+                        linewidth=0.9,
+                        solid_capstyle="butt",
+                        zorder=4,
+                    )
+    return True
+
+
 def _feature_stage_is_active_for_display(learner, local_stage_params, stage_idx, feat_idx):
     if getattr(learner, "feature_activation_mode", "fixed_mask") in {"score", "joint_mask_search"}:
         try:
@@ -1557,6 +1705,9 @@ def _draw_constraint_cost_matrix(ax, learner, demo_idx=0):
     if not getattr(learner, "current_stage_params_per_demo", None):
         ax.axis("off")
         return
+    if _is_map_method(learner):
+        _draw_map_mode_cost_matrix(ax, learner, demo_idx=demo_idx)
+        return
     raw_score_matrix = np.asarray(
         [stage_params.feature_scores for stage_params in learner.current_stage_params_per_demo[demo_idx]],
         dtype=float,
@@ -1597,6 +1748,27 @@ def plot_swcl_constraint_margin_paper(learner, demo_idx=0, save_path=None):
     if plt is None or not getattr(learner, "current_stage_params_per_demo", None):
         return None
     demo_idx = int(demo_idx)
+    if _is_map_method(learner):
+        num_stages = int(getattr(learner, "num_stages", 0))
+        num_features = int(getattr(learner, "num_features", 0))
+        fig_width = max(4.6, 1.18 * max(num_stages, 1) + 1.35)
+        fig_height = max(2.35, 0.82 * max(num_features, 1) + 0.62)
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height), constrained_layout=False)
+        title = f"{_paper_env_title(learner)} MAP mode costs" if _paper_env_title(learner) else f"Demo {demo_idx} MAP mode costs"
+        ok = _draw_map_mode_cost_matrix(
+            ax,
+            learner,
+            demo_idx=demo_idx,
+            title=title,
+            cell_fontsize=6.0,
+        )
+        if not ok:
+            plt.close(fig)
+            return None
+        fig.tight_layout(pad=0.35)
+        save_path = learner_plot_dir(learner) / f"paper_constraint_margin_demo_{demo_idx:02d}.png" if save_path is None else save_path
+        return save_figure(fig, save_path, dpi=300)
+
     raw_score_matrix = np.asarray(
         [stage_params.feature_scores for stage_params in learner.current_stage_params_per_demo[demo_idx]],
         dtype=float,
@@ -2256,8 +2428,9 @@ def _draw_eval_metric_text(ax, metrics):
         return
     preferred_keys = [
         "MeanAbsCutpointError",
+        "SemanticConstraintF1",
         "MeanStageSubgoalError",
-        "MeanConstraintError",
+        "MeanParameterError",
     ]
     scalar_metrics = {}
     for key, value in metrics.items():
@@ -2298,18 +2471,21 @@ def _draw_eval_metric_text(ax, metrics):
     ax.plot([0.03, 0.97], [0.975, 0.975], color="#333333", lw=0.8, transform=ax.transAxes, clip_on=False)
 
 
-def _draw_constraint_error_matrix(ax, learner, metrics):
+def _draw_parameter_error_matrix(ax, learner, metrics):
     if not isinstance(metrics, dict):
         ax.axis("off")
         return
-    matrix = np.asarray(metrics.get("ConstraintErrorMatrix", []), dtype=float)
+    matrix = np.asarray(
+        metrics.get("ParameterErrorMatrix", metrics.get("ConstraintErrorMatrix", [])),
+        dtype=float,
+    )
     if matrix.ndim != 2 or matrix.size == 0:
         ax.axis("off")
         return
     _draw_summary_heatmap(
         ax,
         matrix.T,
-        "normalized constraint error",
+        "normalized parameter error",
         feature_names=_summary_feature_names(learner, metrics),
         stage_labels=_summary_stage_labels(learner),
         cmap="YlOrRd",
@@ -2720,6 +2896,26 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                         hi = center + 5e-4
                     pad = max(0.08 * (hi - lo + 1e-12), 1e-4)
 
+                is_map_method = str(getattr(learner, "method_name", "")).lower() == "map"
+                map_mode_candidates = None
+                if is_map_method and hasattr(learner, "_local_mode_candidates_cached"):
+                    try:
+                        map_mode_candidates = learner._local_mode_candidates_cached(
+                            int(demo_idx),
+                            int(core_s),
+                            int(core_e),
+                            int(feat_idx),
+                        )
+                        for fit in map_mode_candidates.values():
+                            vec = getattr(fit, "vector", None)
+                            if vec is not None:
+                                eta = float(np.asarray(vec, dtype=float).reshape(-1)[0])
+                                lo = min(lo, eta)
+                                hi = max(hi, eta)
+                        pad = max(0.08 * (hi - lo + 1e-12), 1e-4)
+                    except Exception:
+                        map_mode_candidates = None
+
                 density_for_ylim = []
                 if show_full_demo:
                     full_hist_density = _safe_hist(
@@ -2744,7 +2940,55 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                 )
                 if hist_density.size:
                     density_for_ylim.append(hist_density)
-                if is_auto_slack_score and np.isfinite(selected_boundary):
+                if map_mode_candidates is not None:
+                    map_colors = {
+                        "inactive": "#6B7280",
+                        "eq": "#2563EB",
+                        "lb": "#059669",
+                        "ub": "#DC2626",
+                    }
+                    map_labels = {
+                        "inactive": "inactive/background",
+                        "eq": "equality",
+                        "lb": "lower-bound",
+                        "ub": "upper-bound",
+                    }
+                    selected_mode = learner._kind_to_mode(
+                        _stage_feature_kind_for_display(learner, stage_params_list, stage_idx, feat_idx)
+                    )
+                    curve_xs = np.linspace(lo - pad, hi + pad, 400)
+                    for mode in ("inactive", "eq", "lb", "ub"):
+                        fit = map_mode_candidates.get(mode)
+                        if fit is None:
+                            continue
+                        pdf = learner._map_mode_fit_pdf(curve_xs, fit)
+                        support = np.isfinite(pdf)
+                        if np.any(support):
+                            density_for_ylim.append(pdf[support])
+                            ax.plot(
+                                curve_xs[support],
+                                pdf[support],
+                                color=map_colors[mode],
+                                lw=2.5 if mode == selected_mode else 1.35,
+                                alpha=0.95 if mode == selected_mode else 0.62,
+                                linestyle="-" if mode == selected_mode else "--",
+                                label=map_labels[mode],
+                            )
+                        vec = getattr(fit, "vector", None)
+                        if vec is not None:
+                            eta = float(np.asarray(vec, dtype=float).reshape(-1)[0])
+                            ax.axvline(eta, color=map_colors[mode], lw=1.0, alpha=0.35)
+                    shared_vec = getattr(learner, "shared_param_vectors", [[None]])[stage_idx][feat_idx]
+                    if shared_vec is not None:
+                        ax.axvline(
+                            float(np.asarray(shared_vec, dtype=float).reshape(-1)[0]),
+                            color="#111827",
+                            lw=1.6,
+                            linestyle="-.",
+                            alpha=0.85,
+                            label="shared param",
+                        )
+                elif is_auto_slack_score and np.isfinite(selected_boundary):
                     curve_xs = np.linspace(lo - pad, hi + pad, 400)
                     if str(summary.get("auto_score_mode", "")).lower() in {
                         "fast_fit_minus_baseline",
@@ -2840,69 +3084,85 @@ def _plot_cutpoint_feature_distribution_compare(learner, it, demo_idx=0, vary_in
                     if np.isfinite(y_top) and y_top > 0.0:
                         ax.set_ylim(0.0, y_top * 1.15)
 
-                raw_score = float(stage_params.feature_scores[feat_idx])
-                threshold = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
-                score_margin = threshold - raw_score
-                weighted_cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
-                trunc_score_mode = str(getattr(learner, "truncated_z_score_mode", "fast_fit")).lower()
-                is_minus_baseline_score = trunc_score_mode in {
-                    "fast_fit_minus_baseline",
-                    "soft_fit_minus_baseline",
-                }
-                score_label = (
-                    "nll diff"
-                    if is_auto_slack_score and is_minus_baseline_score
-                    else "slack score"
-                    if is_auto_slack_score
-                    else "boundary score"
-                    if is_auto_boundary_score
-                    else (
-                        "fast-fit score"
-                        if is_truncated_z_feature and trunc_score_mode == "fast_fit"
-                        else ("nll diff" if is_truncated_z_feature and is_minus_baseline_score else "raw score")
+                if map_mode_candidates is not None:
+                    selected_mode = learner._kind_to_mode(
+                        _stage_feature_kind_for_display(learner, stage_params_list, stage_idx, feat_idx)
                     )
-                )
-                info_lines = [
-                    f"segment = [{s},{e}]",
-                    f"{score_label} = {raw_score:.3f}",
-                    f"margin = {score_margin:.3f}",
-                    f"weighted cost = {weighted_cost:.3f}",
-                ]
-                if is_equality_feature:
-                    short_segment_penalty = _short_segment_penalty_for_stage(learner, len(vals))
-                    if getattr(learner, "equality_score_mode", "dispersion") == "gaussian_ll_gain":
-                        info_lines.append(f"short seg penalty = {short_segment_penalty:.3f}")
-                    else:
-                        stage_dispersion = float(_mean_abs_centered_dispersion(vals))
+                    shared_kind = getattr(learner, "shared_param_kinds", [[None]])[stage_idx][feat_idx]
+                    shared_mode = learner._kind_to_mode(shared_kind)
+                    info_lines = [
+                        f"segment = [{s},{e}]",
+                        f"selected = {selected_mode}",
+                        f"shared = {shared_mode}",
+                    ]
+                    for mode in ("inactive", "eq", "lb", "ub"):
+                        fit = map_mode_candidates.get(mode)
+                        if fit is not None:
+                            info_lines.append(f"{mode} cost = {float(fit.cost):.2f}")
+                else:
+                    raw_score = float(stage_params.feature_scores[feat_idx])
+                    threshold = float(_score_threshold(learner, feat_idx, stage_idx=stage_idx))
+                    score_margin = threshold - raw_score
+                    weighted_cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
+                    trunc_score_mode = str(getattr(learner, "truncated_z_score_mode", "fast_fit")).lower()
+                    is_minus_baseline_score = trunc_score_mode in {
+                        "fast_fit_minus_baseline",
+                        "soft_fit_minus_baseline",
+                    }
+                    score_label = (
+                        "nll diff"
+                        if is_auto_slack_score and is_minus_baseline_score
+                        else "slack score"
+                        if is_auto_slack_score
+                        else "boundary score"
+                        if is_auto_boundary_score
+                        else (
+                            "fast-fit score"
+                            if is_truncated_z_feature and trunc_score_mode == "fast_fit"
+                            else ("nll diff" if is_truncated_z_feature and is_minus_baseline_score else "raw score")
+                        )
+                    )
+                    info_lines = [
+                        f"segment = [{s},{e}]",
+                        f"{score_label} = {raw_score:.3f}",
+                        f"margin = {score_margin:.3f}",
+                        f"weighted cost = {weighted_cost:.3f}",
+                    ]
+                    if is_equality_feature:
+                        short_segment_penalty = _short_segment_penalty_for_stage(learner, len(vals))
+                        if getattr(learner, "equality_score_mode", "dispersion") == "gaussian_ll_gain":
+                            info_lines.append(f"short seg penalty = {short_segment_penalty:.3f}")
+                        else:
+                            stage_dispersion = float(_mean_abs_centered_dispersion(vals))
                         info_lines.append(f"local dispersion = {stage_dispersion:.3f}")
                         info_lines.append(f"short seg penalty = {short_segment_penalty:.3f}")
-                    info_lines.append(f"threshold = {threshold:.3f}")
-                else:
-                    if is_truncated_z_feature:
-                        if is_auto_score:
-                            selected_kind = str(summary.get("auto_selected_kind", ""))
-                            selected_dir = "lower" if "lower" in selected_kind else ("upper" if "upper" in selected_kind else "unknown")
-                            auto_score_mode = str(summary.get("auto_score_mode", "")).lower()
-                            candidate_score_label = (
-                                "nll diff"
-                                if auto_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}
-                                else "score"
-                            )
-                            info_lines.append(f"lower {candidate_score_label} = {float(summary.get('auto_lower_score', np.nan)):.3f}")
-                            info_lines.append(f"upper {candidate_score_label} = {float(summary.get('auto_upper_score', np.nan)):.3f}")
-                            if is_auto_slack_score:
-                                selected_prefix = "lower" if selected_dir == "lower" else "upper"
-                                active_nll = float(summary.get(f"auto_{selected_prefix}_slack_nll", np.nan))
-                                baseline_nll = float(summary.get(f"auto_{selected_prefix}_baseline_nll", np.nan))
-                                if auto_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}:
-                                    info_lines.append(f"{selected_prefix} ineq logL = {-active_nll:.3f}")
-                                    info_lines.append(f"{selected_prefix} baseline logL = {-baseline_nll:.3f}")
-                                else:
-                                    info_lines.append(f"{selected_prefix} active nll = {active_nll:.3f}")
-                        else:
-                            fast_score_label = "fast-fit score" if trunc_score_mode == "fast_fit" else score_label
-                            info_lines.append(f"{fast_score_label} = {raw_score:.3f}")
-                    info_lines.append(f"threshold = {threshold:.3f}")
+                        info_lines.append(f"threshold = {threshold:.3f}")
+                    else:
+                        if is_truncated_z_feature:
+                            if is_auto_score:
+                                selected_kind = str(summary.get("auto_selected_kind", ""))
+                                selected_dir = "lower" if "lower" in selected_kind else ("upper" if "upper" in selected_kind else "unknown")
+                                auto_score_mode = str(summary.get("auto_score_mode", "")).lower()
+                                candidate_score_label = (
+                                    "nll diff"
+                                    if auto_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}
+                                    else "score"
+                                )
+                                info_lines.append(f"lower {candidate_score_label} = {float(summary.get('auto_lower_score', np.nan)):.3f}")
+                                info_lines.append(f"upper {candidate_score_label} = {float(summary.get('auto_upper_score', np.nan)):.3f}")
+                                if is_auto_slack_score:
+                                    selected_prefix = "lower" if selected_dir == "lower" else "upper"
+                                    active_nll = float(summary.get(f"auto_{selected_prefix}_slack_nll", np.nan))
+                                    baseline_nll = float(summary.get(f"auto_{selected_prefix}_baseline_nll", np.nan))
+                                    if auto_score_mode in {"fast_fit_minus_baseline", "soft_fit_minus_baseline"}:
+                                        info_lines.append(f"{selected_prefix} ineq logL = {-active_nll:.3f}")
+                                        info_lines.append(f"{selected_prefix} baseline logL = {-baseline_nll:.3f}")
+                                    else:
+                                        info_lines.append(f"{selected_prefix} active nll = {active_nll:.3f}")
+                            else:
+                                fast_score_label = "fast-fit score" if trunc_score_mode == "fast_fit" else score_label
+                                info_lines.append(f"{fast_score_label} = {raw_score:.3f}")
+                        info_lines.append(f"threshold = {threshold:.3f}")
 
                 ax.set_title(f"{scenario_label} | stage {stage_idx + 1} | {feature_names[feat_idx]}", fontsize=PAPER_TITLE_SIZE, pad=4)
                 ax.set_xlabel("standardized feature value", fontsize=PAPER_LABEL_SIZE)
@@ -3212,8 +3472,14 @@ def plot_swcl_results_4panel_overview(
     param_rows = 0 if not feature_indices else int(np.ceil(len(feature_indices) / min(4, len(feature_indices))))
     has_error_row = bool(
         isinstance(metrics, dict)
-        and np.asarray(metrics.get("ConstraintErrorMatrix", []), dtype=float).ndim == 2
-        and np.asarray(metrics.get("ConstraintErrorMatrix", []), dtype=float).size > 0
+        and np.asarray(
+            metrics.get("ParameterErrorMatrix", metrics.get("ConstraintErrorMatrix", [])),
+            dtype=float,
+        ).ndim == 2
+        and np.asarray(
+            metrics.get("ParameterErrorMatrix", metrics.get("ConstraintErrorMatrix", [])),
+            dtype=float,
+        ).size > 0
     )
     base_w, base_h = _trajectory_figsize(learner, three_row=False)
     total_rows = 4 + param_rows
@@ -3255,7 +3521,7 @@ def plot_swcl_results_4panel_overview(
     _draw_eval_metric_text(ax7, metrics)
 
     ax8 = fig.add_subplot(gs[next_row, 1])
-    _draw_constraint_error_matrix(ax8, learner, metrics) if has_error_row else ax8.axis("off")
+    _draw_parameter_error_matrix(ax8, learner, metrics) if has_error_row else ax8.axis("off")
 
     if save_name is None:
         save_name = f"training_summary_iter_{int(it):04d}.png"

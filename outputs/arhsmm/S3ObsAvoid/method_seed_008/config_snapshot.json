@@ -3,12 +3,12 @@
   "method_name": "arhsmm",
   "dataset_kwargs": {
     "n_demos": 10,
-    "seed": 125949
+    "seed": 1259149
   },
   "method_kwargs": {
     "segmenter": {
       "max_iter": 30,
-      "verbose": true,
+      "verbose": false,
       "n_stages": 3,
       "sticky": 10.0,
       "tau_init": null,
@@ -33,7 +33,8 @@
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObsAvoid/method_seed_008"
     },
     "posthoc_constraint": {
-      "verbose": true,
+      "posthoc_training_mode": "voting",
+      "verbose": false,
       "fixed_feature_mask": [
         [
           1,
@@ -72,11 +73,34 @@
         "obs_dist": "trunc_t_lower_z",
         "speed": "student_t",
         "arc_dist": "student_t",
-        "heading": "student_t",
+        "heading": "trunc_t_lower_z",
         "line_dist": "student_t",
         "noise": "student_t"
       },
-      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObsAvoid/method_seed_008"
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/arhsmm/S3ObsAvoid/method_seed_008",
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "truncated_z_half_t_scale_quantile": 0.9,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_eq_distribution": "gaussian",
+      "map_inactive_distribution": "gaussian",
+      "map_nu_eq": 3.0,
+      "map_nu_inactive": 3.0,
+      "map_nu_ineq": 3.0,
+      "map_boundary_quantile": 0.05,
+      "map_activation_prior": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "map_active_mode_prior": null,
+      "disable_plots": true
     }
   }
 }

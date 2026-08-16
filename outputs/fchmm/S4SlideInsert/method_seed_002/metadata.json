@@ -1,9 +1,10 @@
 {
-  "created_at_utc": "2026-05-15T13:34:07.639285+00:00",
+  "created_at_utc": "2026-08-15T07:08:32.799231+00:00",
   "dataset_name": "S4SlideInsert",
   "method_name": "fchmm",
   "pipeline": "sequential",
-  "dataset_seed": 12342,
+  "dataset_seed": 1342,
+  "dataset_fingerprint": "b164b34916d8e73cb2680f8a24f7d7ec4b7125cab3096fecd359d28afcaf7542",
   "method_seed": 2,
   "num_demos": 10,
   "num_stages": 4,

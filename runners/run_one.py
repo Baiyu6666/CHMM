@@ -8,7 +8,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.config_loader import deep_merge, load_experiment_config
+from experiments.config_loader import (
+    deep_merge,
+    inherit_map_posthoc_parameters,
+    load_experiment_config,
+    load_json,
+    resolve_dataset_method_override,
+)
 from experiments.artifacts import (
     apply_run_plot_dirs,
     default_method_seed,
@@ -49,7 +55,17 @@ def main():
     dataset_name = dataset_cfg.pop("name")
     method_name = method_cfg.pop("name")
     dataset_method_overrides = dict(dataset_cfg.pop("method_overrides", {}))
-    method_cfg = deep_merge(method_cfg, dataset_method_overrides.get(method_name, {}))
+    method_cfg = deep_merge(
+        method_cfg,
+        resolve_dataset_method_override(method_name, dataset_method_overrides),
+    )
+    map_config_path = Path(args.method_config).resolve().parent / "map.json"
+    method_cfg = inherit_map_posthoc_parameters(
+        method_name,
+        method_cfg,
+        load_json(map_config_path),
+        dataset_method_overrides,
+    )
 
     if args.dataset_seed is not None:
         dataset_cfg["seed"] = int(args.dataset_seed)

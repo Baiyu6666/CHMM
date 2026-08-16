@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from .wrappers.joint_map import JointMAPMethod
 from .wrappers.joint_swcl import JointSWCLMethod
 from .wrappers.sequential_baseline import SequentialBaselineSegmenter
 
-JOINT_METHODS = frozenset({"swcl"})
-SEQUENTIAL_METHODS = frozenset({"fchmm", "hmm", "arhsmm", "changepoint", "cluster"})
+MAP_METHODS = frozenset(
+    {"map", "map_pooled", "map_balanced_pooled", "map_balanced_vote"}
+)
+JOINT_METHODS = frozenset(MAP_METHODS | {"swcl"})
+SEQUENTIAL_METHODS = frozenset(
+    {"fchmm", "gmmhmm", "hmm", "arhsmm", "changepoint", "changeforest", "cluster"}
+)
 ALL_METHODS = tuple(sorted(JOINT_METHODS | SEQUENTIAL_METHODS))
 
 
@@ -31,6 +37,8 @@ def build_sequential_method(method_name: str, **kwargs: Any):
 
 
 def build_joint_method(method_name: str, **kwargs: Any):
+    if method_name in MAP_METHODS:
+        return JointMAPMethod(kwargs=kwargs)
     if method_name == "swcl":
         return JointSWCLMethod(kwargs=kwargs)
     raise ValueError(

@@ -433,6 +433,7 @@ def _compute_constraint_metrics(learner):
 
     true_active, target_matrix, semantics = _constraint_truth_matrices(learner)
     predicted_active = _predicted_constraint_active_mask(learner)
+    learned_semantics = _learned_constraint_semantics_matrix(learner, predicted_active)
     auto_mode = _is_auto_feature_mode(learner)
 
     per_demo_values = None
@@ -451,6 +452,9 @@ def _compute_constraint_metrics(learner):
             if not predicted_active[stage_idx, feat_idx]:
                 continue
 
+            if learned_semantics[stage_idx, feat_idx] != semantics[stage_idx, feat_idx]:
+                continue
+
             estimate = learned_value_matrix[stage_idx, feat_idx]
             target = target_matrix[stage_idx, feat_idx]
             if np.isfinite(estimate) and np.isfinite(target):
@@ -461,18 +465,41 @@ def _compute_constraint_metrics(learner):
 
     finite_vals = error_matrix[np.isfinite(error_matrix)]
     raw_finite_vals = raw_error_matrix[np.isfinite(raw_error_matrix)]
+    semantic_matches = true_active & predicted_active & (semantics == learned_semantics)
+    true_constraint_count = int(np.sum(true_active))
+    predicted_constraint_count = int(np.sum(predicted_active))
+    semantic_match_count = int(np.sum(semantic_matches))
+    semantic_precision = (
+        float(semantic_match_count / predicted_constraint_count)
+        if predicted_constraint_count > 0
+        else (1.0 if true_constraint_count == 0 else 0.0)
+    )
+    semantic_recall = (
+        float(semantic_match_count / true_constraint_count)
+        if true_constraint_count > 0
+        else 1.0
+    )
+    semantic_f1 = (
+        float(2.0 * semantic_precision * semantic_recall / (semantic_precision + semantic_recall))
+        if semantic_precision + semantic_recall > 0.0
+        else 0.0
+    )
     metrics = {
-        "MeanConstraintError": float(np.mean(finite_vals)) if finite_vals.size > 0 else np.nan,
-        "MeanConstraintErrorRaw": float(np.mean(raw_finite_vals)) if raw_finite_vals.size > 0 else np.nan,
-        "ConstraintErrorMatrix": error_matrix.tolist(),
-        "ConstraintErrorMatrixRaw": raw_error_matrix.tolist(),
+        "SemanticConstraintPrecision": semantic_precision,
+        "SemanticConstraintRecall": semantic_recall,
+        "SemanticConstraintF1": semantic_f1,
+        "SemanticConstraintMatchCount": semantic_match_count,
+        "TrueConstraintCount": true_constraint_count,
+        "PredictedConstraintCount": predicted_constraint_count,
+        "MeanParameterError": float(np.mean(finite_vals)) if finite_vals.size > 0 else np.nan,
+        "MeanParameterErrorRaw": float(np.mean(raw_finite_vals)) if raw_finite_vals.size > 0 else np.nan,
+        "ParameterErrorMatrix": error_matrix.tolist(),
+        "ParameterErrorMatrixRaw": raw_error_matrix.tolist(),
         "ConstraintTrueActiveMask": true_active.astype(int).tolist(),
         "ConstraintPredictedActiveMask": predicted_active.astype(int).tolist(),
         "ConstraintTargetMatrix": target_matrix.tolist(),
         "ConstraintSemanticsMatrix": semantics.tolist(),
-        "ConstraintLearnedSemanticsMatrix": _learned_constraint_semantics_matrix(
-            learner, predicted_active
-        ).tolist(),
+        "ConstraintLearnedSemanticsMatrix": learned_semantics.tolist(),
         "ConstraintFeatureNames": _selected_feature_names(learner),
         "ConstraintFeatureScales": feature_scales.tolist(),
     }

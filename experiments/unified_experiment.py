@@ -10,7 +10,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from envs import load_env
-from experiments.config_loader import deep_merge, load_json
+from experiments.config_loader import (
+    deep_merge,
+    inherit_map_posthoc_parameters,
+    load_json,
+    resolve_dataset_method_override,
+)
 from methods import ALL_METHODS, JOINT_METHODS, SEQUENTIAL_METHODS
 from pipelines import JointPipeline, SequentialPipeline
 
@@ -97,7 +102,16 @@ def main():
     dataset_kwargs = dataset_cfg
     dataset_kwargs = deep_merge(dataset_kwargs, {"n_demos": args.n_demos, "seed": args.dataset_seed})
     method_kwargs = _load_method_config(args.method)
-    method_kwargs = deep_merge(method_kwargs, dataset_method_overrides.get(args.method, {}))
+    method_kwargs = deep_merge(
+        method_kwargs,
+        resolve_dataset_method_override(args.method, dataset_method_overrides),
+    )
+    method_kwargs = inherit_map_posthoc_parameters(
+        args.method,
+        method_kwargs,
+        _load_method_config("map"),
+        dataset_method_overrides,
+    )
     if args.method in JOINT_METHODS:
         override_kwargs = {"verbose": True, "seed": args.method_seed}
         if args.max_iter is not None:

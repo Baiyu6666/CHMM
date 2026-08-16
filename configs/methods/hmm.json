@@ -26,6 +26,7 @@
     "g1_vis_alpha": 1.0
   },
   "posthoc_constraint": {
+    "posthoc_training_mode": "swcl",
     "verbose": true,
     "fixed_feature_mask": null,
     "selected_raw_feature_ids": null,

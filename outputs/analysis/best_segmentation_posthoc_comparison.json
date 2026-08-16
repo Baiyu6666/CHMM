@@ -1,0 +1,3278 @@
+{
+  "source_benchmark": "outputs/benchmark/paper1_seed_fixed/benchmark_results.json",
+  "selection_rule": {
+    "arhsmm": "maximum ModelObjectiveFinal",
+    "cluster": "minimum ModelObjectiveFinal",
+    "fchmm": "maximum ModelObjectiveFinal",
+    "map": "minimum ModelObjectiveFinal"
+  },
+  "experimental_control": "Saved best-objective baseline segmentations; same regenerated dataset fingerprint; same MAP model settings; only posthoc_training_mode differs between pooled and voting.",
+  "datasets": {
+    "S3ObsAvoid": {
+      "dataset_seed": 1259149,
+      "dataset_fingerprint": "d7d00966f24f88362dd0fc29414a194ed54f7f715af8f92a50e0130f36405183",
+      "map": {
+        "method_seed": 0,
+        "segmentation_objective": 1479.5401493544978,
+        "MeanAbsCutpointError": 0.7,
+        "MeanConstraintError": 0.005141828464728657,
+        "MeanConstraintErrorRaw": 0.003759145856091028,
+        "MeanStageSubgoalError": 0.07472849451578821,
+        "active_tp": 4,
+        "active_fp": 0,
+        "active_fn": 0,
+        "active_precision": 1.0,
+        "active_recall": 1.0,
+        "active_f1": 1.0,
+        "true_constraint_mode_correct": 4,
+        "true_constraint_mode_total": 4,
+        "true_constraint_mode_accuracy": 1.0,
+        "all_cell_mode_accuracy": 1.0,
+        "exact_constraint_structure": true,
+        "predicted_semantics": [
+          [
+            "lower_bound",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            "",
+            "target_value",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            "",
+            "target_value",
+            "target_value",
+            "",
+            "",
+            ""
+          ]
+        ],
+        "predicted_values": [
+          [
+            0.3868418718274622,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            0.05552602195147981,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            0.04621731307426349,
+            0.199864879773917,
+            NaN,
+            NaN,
+            NaN
+          ]
+        ]
+      },
+      "baselines": {
+        "arhsmm": {
+          "method_seed": 5,
+          "segmentation_objective": 1402.1038010687212,
+          "saved_stage_ends": [
+            [
+              19,
+              39,
+              103
+            ],
+            [
+              14,
+              34,
+              85
+            ],
+            [
+              20,
+              43,
+              105
+            ],
+            [
+              17,
+              33,
+              92
+            ],
+            [
+              21,
+              36,
+              86
+            ],
+            [
+              14,
+              31,
+              87
+            ],
+            [
+              20,
+              34,
+              92
+            ],
+            [
+              17,
+              30,
+              80
+            ],
+            [
+              15,
+              34,
+              90
+            ],
+            [
+              12,
+              36,
+              91
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 0.1,
+            "MeanConstraintError": 0.0026868228082220585,
+            "MeanConstraintErrorRaw": 0.0021123331145596405,
+            "MeanStageSubgoalError": 0.0747193420799277,
+            "active_tp": 4,
+            "active_fp": 0,
+            "active_fn": 0,
+            "active_precision": 1.0,
+            "active_recall": 1.0,
+            "active_f1": 1.0,
+            "true_constraint_mode_correct": 4,
+            "true_constraint_mode_total": 4,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 1.0,
+            "exact_constraint_structure": true,
+            "predicted_semantics": [
+              [
+                "lower_bound",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "target_value",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "target_value",
+                "target_value",
+                "",
+                "",
+                ""
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.39254162711952867,
+                0.0871280375624544,
+                0.44878861607549564,
+                -1.9233363624021396,
+                0.9081373989151309,
+                0.0009495591566612824
+              ],
+              [
+                1.0476006803161357,
+                0.05543545889753905,
+                0.44878861607549564,
+                -1.9233363624021396,
+                0.9081373989151309,
+                0.0009495591566612824
+              ],
+              [
+                1.0476006803161357,
+                0.04531440617718913,
+                0.199758905496961,
+                -1.9233363624021396,
+                0.9081373989151309,
+                0.0009495591566612824
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 0.1,
+              "MeanConstraintError": 0.004593307538977506,
+              "MeanConstraintErrorRaw": 0.003650513831681428,
+              "MeanStageSubgoalError": 0.0747193420799277,
+              "active_tp": 4,
+              "active_fp": 3,
+              "active_fn": 0,
+              "active_precision": 0.5714285714285714,
+              "active_recall": 1.0,
+              "active_f1": 0.7272727272727273,
+              "true_constraint_mode_correct": 4,
+              "true_constraint_mode_total": 4,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 0.8333333333333334,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "upper_bound"
+                ],
+                [
+                  "",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "upper_bound",
+                  "target_value",
+                  "target_value",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.3868418718274622,
+                  0.0871280375624544,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.3746244754198821
+                ],
+                [
+                  1.0476006803161357,
+                  0.055040945987261426,
+                  0.16064169221133967,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.4114500924133064,
+                  0.04617470031668227,
+                  0.1997717191497558,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 0.1,
+              "MeanConstraintError": 0.004593307538977506,
+              "MeanConstraintErrorRaw": 0.003650513831681428,
+              "MeanStageSubgoalError": 0.0747193420799277,
+              "active_tp": 4,
+              "active_fp": 0,
+              "active_fn": 0,
+              "active_precision": 1.0,
+              "active_recall": 1.0,
+              "active_f1": 1.0,
+              "true_constraint_mode_correct": 4,
+              "true_constraint_mode_total": 4,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 1.0,
+              "exact_constraint_structure": true,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "target_value",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "target_value",
+                  "target_value",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.3868418718274622,
+                  0.0871280375624544,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.0476006803161357,
+                  0.055040945987261426,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.0476006803161357,
+                  0.04617470031668227,
+                  0.1997717191497558,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ]
+              ]
+            }
+          }
+        },
+        "cluster": {
+          "method_seed": 6,
+          "segmentation_objective": 2353.620350138634,
+          "saved_stage_ends": [
+            [
+              18,
+              60,
+              103
+            ],
+            [
+              14,
+              51,
+              85
+            ],
+            [
+              20,
+              62,
+              105
+            ],
+            [
+              17,
+              51,
+              92
+            ],
+            [
+              20,
+              52,
+              86
+            ],
+            [
+              12,
+              49,
+              87
+            ],
+            [
+              20,
+              54,
+              92
+            ],
+            [
+              17,
+              46,
+              80
+            ],
+            [
+              15,
+              52,
+              90
+            ],
+            [
+              12,
+              54,
+              91
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 9.25,
+            "MeanConstraintError": 0.008320606389548766,
+            "MeanConstraintErrorRaw": 0.0033965765353825075,
+            "MeanStageSubgoalError": 0.1808404202602122,
+            "active_tp": 4,
+            "active_fp": 0,
+            "active_fn": 0,
+            "active_precision": 1.0,
+            "active_recall": 1.0,
+            "active_f1": 1.0,
+            "true_constraint_mode_correct": 4,
+            "true_constraint_mode_total": 4,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 1.0,
+            "exact_constraint_structure": true,
+            "predicted_semantics": [
+              [
+                "lower_bound",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "target_value",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "target_value",
+                "target_value",
+                "",
+                "",
+                ""
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.39254162711952867,
+                0.0871280375624544,
+                0.44878861607549564,
+                -1.9233363624021396,
+                0.9081373989151309,
+                0.0009495591566612824
+              ],
+              [
+                1.0476006803161357,
+                0.04948308863210037,
+                0.44878861607549564,
+                -1.9233363624021396,
+                0.9081373989151309,
+                0.0009495591566612824
+              ],
+              [
+                1.0476006803161357,
+                0.045531040055431175,
+                0.19992001816227215,
+                -1.9233363624021396,
+                0.9081373989151309,
+                0.0009495591566612824
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 9.25,
+              "MeanConstraintError": 0.021974447953874657,
+              "MeanConstraintErrorRaw": 0.007867990585534777,
+              "MeanStageSubgoalError": 0.1808404202602122,
+              "active_tp": 4,
+              "active_fp": 6,
+              "active_fn": 0,
+              "active_precision": 0.4,
+              "active_recall": 1.0,
+              "active_f1": 0.5714285714285715,
+              "true_constraint_mode_correct": 3,
+              "true_constraint_mode_total": 4,
+              "true_constraint_mode_accuracy": 0.75,
+              "all_cell_mode_accuracy": 0.6111111111111112,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "upper_bound"
+                ],
+                [
+                  "upper_bound",
+                  "lower_bound",
+                  "lower_bound",
+                  "upper_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "target_value",
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.38600900012140504,
+                  0.0871280375624544,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.37462327411249535
+                ],
+                [
+                  1.413261399675073,
+                  0.039558544505013234,
+                  0.16969990570101168,
+                  0.6127071095542493,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.0201696787451606,
+                  0.04685773480418349,
+                  0.19981822783562614,
+                  -1.9233363624021396,
+                  1.0538504956228818,
+                  0.0009495591566612824
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 9.25,
+              "MeanConstraintError": 0.021974447953874657,
+              "MeanConstraintErrorRaw": 0.007867990585534777,
+              "MeanStageSubgoalError": 0.1808404202602122,
+              "active_tp": 4,
+              "active_fp": 4,
+              "active_fn": 0,
+              "active_precision": 0.5,
+              "active_recall": 1.0,
+              "active_f1": 0.6666666666666666,
+              "true_constraint_mode_correct": 3,
+              "true_constraint_mode_total": 4,
+              "true_constraint_mode_accuracy": 0.75,
+              "all_cell_mode_accuracy": 0.7222222222222222,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "upper_bound",
+                  "lower_bound",
+                  "lower_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "target_value",
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.38600900012140504,
+                  0.0871280375624544,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.413261399675073,
+                  0.039558544505013234,
+                  0.16969990570101168,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.0201696787451606,
+                  0.04685773480418349,
+                  0.19981822783562614,
+                  -1.9233363624021396,
+                  1.0538504956228818,
+                  0.0009495591566612824
+                ]
+              ]
+            }
+          }
+        },
+        "fchmm": {
+          "method_seed": 7,
+          "segmentation_objective": -983.7107301296944,
+          "saved_stage_ends": [
+            [
+              19,
+              38,
+              103
+            ],
+            [
+              14,
+              35,
+              85
+            ],
+            [
+              20,
+              42,
+              105
+            ],
+            [
+              17,
+              33,
+              92
+            ],
+            [
+              21,
+              36,
+              86
+            ],
+            [
+              14,
+              31,
+              87
+            ],
+            [
+              20,
+              34,
+              92
+            ],
+            [
+              17,
+              29,
+              80
+            ],
+            [
+              15,
+              34,
+              90
+            ],
+            [
+              12,
+              34,
+              91
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 0.2,
+            "MeanConstraintError": 0.003514406955921947,
+            "MeanConstraintErrorRaw": 0.0028770755919590267,
+            "MeanStageSubgoalError": 0.0761171029562739,
+            "active_tp": 4,
+            "active_fp": 14,
+            "active_fn": 0,
+            "active_precision": 0.2222222222222222,
+            "active_recall": 1.0,
+            "active_f1": 0.3636363636363636,
+            "true_constraint_mode_correct": 4,
+            "true_constraint_mode_total": 4,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 0.2222222222222222,
+            "exact_constraint_structure": false,
+            "predicted_semantics": [
+              [
+                "lower_bound",
+                "target_value",
+                "target_value",
+                "lower_bound",
+                "target_value",
+                "target_value"
+              ],
+              [
+                "lower_bound",
+                "target_value",
+                "target_value",
+                "lower_bound",
+                "target_value",
+                "target_value"
+              ],
+              [
+                "lower_bound",
+                "target_value",
+                "target_value",
+                "lower_bound",
+                "target_value",
+                "target_value"
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.3895859318254501,
+                0.24676270556387786,
+                1.375222522347968,
+                -1.6718252390960882,
+                1.2294133525994213,
+                0.03830488770295058
+              ],
+              [
+                0.689130208388126,
+                0.054961908703244765,
+                0.2876128712487507,
+                -0.6691754178504961,
+                0.7746081882228782,
+                -0.0057631708561660415
+              ],
+              [
+                1.021020456585765,
+                0.04579910458884877,
+                0.19974296169231784,
+                -5.977569178244031,
+                0.8524945451269447,
+                -0.006595035091914654
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 0.2,
+              "MeanConstraintError": 0.00479421860885448,
+              "MeanConstraintErrorRaw": 0.003704043356333264,
+              "MeanStageSubgoalError": 0.07487469191474805,
+              "active_tp": 4,
+              "active_fp": 2,
+              "active_fn": 0,
+              "active_precision": 0.6666666666666666,
+              "active_recall": 1.0,
+              "active_f1": 0.8,
+              "true_constraint_mode_correct": 4,
+              "true_constraint_mode_total": 4,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 0.8888888888888888,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "upper_bound"
+                ],
+                [
+                  "",
+                  "target_value",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "upper_bound",
+                  "target_value",
+                  "target_value",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.3868418718274622,
+                  0.0871280375624544,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.3746244754198821
+                ],
+                [
+                  1.0476006803161357,
+                  0.055216539086212525,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.4111228519023478,
+                  0.0461824613860061,
+                  0.1997409552194234,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 0.2,
+              "MeanConstraintError": 0.00479421860885448,
+              "MeanConstraintErrorRaw": 0.003704043356333264,
+              "MeanStageSubgoalError": 0.07487469191474805,
+              "active_tp": 4,
+              "active_fp": 0,
+              "active_fn": 0,
+              "active_precision": 1.0,
+              "active_recall": 1.0,
+              "active_f1": 1.0,
+              "true_constraint_mode_correct": 4,
+              "true_constraint_mode_total": 4,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 1.0,
+              "exact_constraint_structure": true,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "target_value",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "target_value",
+                  "target_value",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.3868418718274622,
+                  0.0871280375624544,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.0476006803161357,
+                  0.055216539086212525,
+                  0.44878861607549564,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ],
+                [
+                  1.0476006803161357,
+                  0.0461824613860061,
+                  0.1997409552194234,
+                  -1.9233363624021396,
+                  0.9081373989151309,
+                  0.0009495591566612824
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "S4SlideInsert": {
+      "dataset_seed": 1342,
+      "dataset_fingerprint": "b164b34916d8e73cb2680f8a24f7d7ec4b7125cab3096fecd359d28afcaf7542",
+      "map": {
+        "method_seed": 0,
+        "segmentation_objective": -6596.786359716148,
+        "MeanAbsCutpointError": 0.0,
+        "MeanConstraintError": 0.010842568073098443,
+        "MeanConstraintErrorRaw": 0.0006383337837353655,
+        "MeanStageSubgoalError": 0.03589153816246936,
+        "active_tp": 13,
+        "active_fp": 2,
+        "active_fn": 0,
+        "active_precision": 0.8666666666666667,
+        "active_recall": 1.0,
+        "active_f1": 0.9285714285714286,
+        "true_constraint_mode_correct": 11,
+        "true_constraint_mode_total": 13,
+        "true_constraint_mode_accuracy": 0.8461538461538461,
+        "all_cell_mode_accuracy": 0.8571428571428571,
+        "exact_constraint_structure": false,
+        "predicted_semantics": [
+          [
+            "",
+            "",
+            "",
+            "",
+            "target_value",
+            "",
+            ""
+          ],
+          [
+            "target_value",
+            "target_value",
+            "",
+            "target_value",
+            "lower_bound",
+            "",
+            ""
+          ],
+          [
+            "target_value",
+            "target_value",
+            "upper_bound",
+            "target_value",
+            "lower_bound",
+            "",
+            ""
+          ],
+          [
+            "target_value",
+            "target_value",
+            "upper_bound",
+            "target_value",
+            "lower_bound",
+            "",
+            ""
+          ]
+        ],
+        "predicted_values": [
+          [
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            0.12652547343987486,
+            NaN,
+            NaN
+          ],
+          [
+            0.0006512378466938806,
+            6.569712240892499e-05,
+            NaN,
+            0.0010357035953841177,
+            3.999994568006018,
+            NaN,
+            NaN
+          ],
+          [
+            0.0007769918353941786,
+            0.00040062856022427375,
+            0.05700006030384846,
+            0.006869508265553063,
+            7.199994780369799,
+            NaN,
+            NaN
+          ],
+          [
+            0.0005291088076540985,
+            0.00021433920578660783,
+            0.03800012984595746,
+            0.002563439978849079,
+            9.999997177419576,
+            NaN,
+            NaN
+          ]
+        ]
+      },
+      "baselines": {
+        "arhsmm": {
+          "method_seed": 0,
+          "segmentation_objective": 4387.505232803373,
+          "saved_stage_ends": [
+            [
+              29,
+              73,
+              109,
+              126
+            ],
+            [
+              45,
+              100,
+              148,
+              168
+            ],
+            [
+              30,
+              83,
+              126,
+              155
+            ],
+            [
+              22,
+              62,
+              98,
+              120
+            ],
+            [
+              46,
+              95,
+              137,
+              164
+            ],
+            [
+              32,
+              84,
+              128,
+              152
+            ],
+            [
+              29,
+              71,
+              105,
+              127
+            ],
+            [
+              22,
+              71,
+              105,
+              125
+            ],
+            [
+              37,
+              83,
+              117,
+              131
+            ],
+            [
+              27,
+              63,
+              97,
+              114
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 11.333333333333332,
+            "MeanConstraintError": 0.010590487957551189,
+            "MeanConstraintErrorRaw": 0.0006236951024647032,
+            "MeanStageSubgoalError": 0.056104895892935616,
+            "active_tp": 13,
+            "active_fp": 0,
+            "active_fn": 0,
+            "active_precision": 1.0,
+            "active_recall": 1.0,
+            "active_f1": 1.0,
+            "true_constraint_mode_correct": 13,
+            "true_constraint_mode_total": 13,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 1.0,
+            "exact_constraint_structure": true,
+            "predicted_semantics": [
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "target_value",
+                "",
+                "",
+                "lower_bound",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "",
+                ""
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.0073846196186389485,
+                0.0027713173895587374,
+                0.0889411106581908,
+                0.007224390068768467,
+                5.717345210650845,
+                0.23125838106731644,
+                0.15758606143389087
+              ],
+              [
+                0.0005477613304864732,
+                0.0002373953871693509,
+                0.0889411106581908,
+                0.007224390068768467,
+                4.0,
+                0.23125838106731644,
+                0.15758606143389087
+              ],
+              [
+                0.0007750936252630177,
+                0.00044843031066169655,
+                0.05699999999999994,
+                0.007036203984376705,
+                7.199999999999999,
+                0.23125838106731644,
+                0.15758606143389087
+              ],
+              [
+                0.00046194016845902113,
+                0.0002437384060253807,
+                0.03799999999999981,
+                0.002650118911647341,
+                10.0,
+                0.23125838106731644,
+                0.15758606143389087
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 11.333333333333332,
+              "MeanConstraintError": 0.04452520622474851,
+              "MeanConstraintErrorRaw": 0.31477204056362607,
+              "MeanStageSubgoalError": 0.056104895892935616,
+              "active_tp": 13,
+              "active_fp": 3,
+              "active_fn": 0,
+              "active_precision": 0.8125,
+              "active_recall": 1.0,
+              "active_f1": 0.896551724137931,
+              "true_constraint_mode_correct": 8,
+              "true_constraint_mode_total": 13,
+              "true_constraint_mode_accuracy": 0.6153846153846154,
+              "all_cell_mode_accuracy": 0.7142857142857143,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "target_value",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "lower_bound",
+                  "upper_bound",
+                  "",
+                  "lower_bound"
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.12652547343987486,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007064060316868308,
+                  0.0002844814257714533,
+                  0.0889411106581908,
+                  0.007227531211171553,
+                  7.619024137063982,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0008196351734605254,
+                  0.00043330433870315604,
+                  0.05655076208367582,
+                  0.006848787179717962,
+                  7.19999744576256,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0005378427094759894,
+                  0.00020422886589101285,
+                  0.03799999711545153,
+                  0.0023336715301473963,
+                  10.463677155389721,
+                  0.23125838106731644,
+                  0.0019642435597233
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 11.333333333333332,
+              "MeanConstraintError": 0.04452520622474851,
+              "MeanConstraintErrorRaw": 0.31477204056362607,
+              "MeanStageSubgoalError": 0.056104895892935616,
+              "active_tp": 13,
+              "active_fp": 2,
+              "active_fn": 0,
+              "active_precision": 0.8666666666666667,
+              "active_recall": 1.0,
+              "active_f1": 0.9285714285714286,
+              "true_constraint_mode_correct": 8,
+              "true_constraint_mode_total": 13,
+              "true_constraint_mode_accuracy": 0.6153846153846154,
+              "all_cell_mode_accuracy": 0.75,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "target_value",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "lower_bound",
+                  "upper_bound",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.12652547343987486,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007064060316868308,
+                  0.0002844814257714533,
+                  0.0889411106581908,
+                  0.007227531211171553,
+                  7.619024137063982,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0008196351734605254,
+                  0.00043330433870315604,
+                  0.05655076208367582,
+                  0.006848787179717962,
+                  7.19999744576256,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0005378427094759894,
+                  0.00020422886589101285,
+                  0.03799999711545153,
+                  0.0023336715301473963,
+                  10.463677155389721,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ]
+              ]
+            }
+          }
+        },
+        "cluster": {
+          "method_seed": 3,
+          "segmentation_objective": 1001.7993355802299,
+          "saved_stage_ends": [
+            [
+              14,
+              29,
+              74,
+              126
+            ],
+            [
+              18,
+              41,
+              114,
+              168
+            ],
+            [
+              17,
+              30,
+              95,
+              155
+            ],
+            [
+              12,
+              22,
+              63,
+              120
+            ],
+            [
+              21,
+              46,
+              109,
+              164
+            ],
+            [
+              18,
+              32,
+              96,
+              152
+            ],
+            [
+              15,
+              29,
+              68,
+              127
+            ],
+            [
+              12,
+              22,
+              67,
+              125
+            ],
+            [
+              14,
+              37,
+              81,
+              131
+            ],
+            [
+              11,
+              27,
+              60,
+              114
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 21.999999999999996,
+            "MeanConstraintError": 0.1543413322900801,
+            "MeanConstraintErrorRaw": 0.7662500326735168,
+            "MeanStageSubgoalError": 0.08924025584524989,
+            "active_tp": 13,
+            "active_fp": 0,
+            "active_fn": 0,
+            "active_precision": 1.0,
+            "active_recall": 1.0,
+            "active_f1": 1.0,
+            "true_constraint_mode_correct": 13,
+            "true_constraint_mode_total": 13,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 1.0,
+            "exact_constraint_structure": true,
+            "predicted_semantics": [
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "target_value",
+                "",
+                "",
+                "lower_bound",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "",
+                ""
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.0073846196186389485,
+                0.0027713173895587374,
+                0.0889411106581908,
+                0.007224390068768467,
+                5.717345210650845,
+                0.23125838106731644,
+                0.15758606143389087
+              ],
+              [
+                0.012770779404026841,
+                0.004557213361683593,
+                0.0889411106581908,
+                0.007224390068768467,
+                0.10371758022801725,
+                0.23125838106731644,
+                0.15758606143389087
+              ],
+              [
+                0.0005677641388776127,
+                0.00025457948974215655,
+                0.08469986449202563,
+                0.007037369758930131,
+                4.0,
+                0.23125838106731644,
+                0.15758606143389087
+              ],
+              [
+                0.00048233545931078686,
+                0.0003158875488922727,
+                0.05699999999999994,
+                0.007036950848104322,
+                7.199999999999999,
+                0.23125838106731644,
+                0.15758606143389087
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 21.999999999999996,
+              "MeanConstraintError": 0.10877543146828432,
+              "MeanConstraintErrorRaw": 0.7114121938436127,
+              "MeanStageSubgoalError": 0.08924025584524989,
+              "active_tp": 10,
+              "active_fp": 2,
+              "active_fn": 3,
+              "active_precision": 0.8333333333333334,
+              "active_recall": 0.7692307692307693,
+              "active_f1": 0.8,
+              "true_constraint_mode_correct": 8,
+              "true_constraint_mode_total": 13,
+              "true_constraint_mode_accuracy": 0.6153846153846154,
+              "all_cell_mode_accuracy": 0.75,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "upper_bound",
+                  "lower_bound",
+                  "",
+                  "lower_bound"
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.11958752471276224,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.1321482089405528,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007469245473472183,
+                  0.0003080137487458151,
+                  0.0889411106581908,
+                  0.007220592024874408,
+                  7.6228368088777145,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007021027117034666,
+                  0.0003383038347454536,
+                  0.05700021040117676,
+                  0.007188878371632152,
+                  7.199991687141262,
+                  0.23125838106731644,
+                  0.0048298109903204545
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 21.999999999999996,
+              "MeanConstraintError": 0.10877543146828432,
+              "MeanConstraintErrorRaw": 0.7114121938436127,
+              "MeanStageSubgoalError": 0.08924025584524989,
+              "active_tp": 10,
+              "active_fp": 1,
+              "active_fn": 3,
+              "active_precision": 0.9090909090909091,
+              "active_recall": 0.7692307692307693,
+              "active_f1": 0.8333333333333333,
+              "true_constraint_mode_correct": 8,
+              "true_constraint_mode_total": 13,
+              "true_constraint_mode_accuracy": 0.6153846153846154,
+              "all_cell_mode_accuracy": 0.7857142857142857,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "upper_bound",
+                  "lower_bound",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.11958752471276224,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.1321482089405528,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007469245473472183,
+                  0.0003080137487458151,
+                  0.0889411106581908,
+                  0.007220592024874408,
+                  7.6228368088777145,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007021027117034666,
+                  0.0003383038347454536,
+                  0.05700021040117676,
+                  0.007188878371632152,
+                  7.199991687141262,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ]
+              ]
+            }
+          }
+        },
+        "fchmm": {
+          "method_seed": 3,
+          "segmentation_objective": 343.8795440410221,
+          "saved_stage_ends": [
+            [
+              27,
+              42,
+              110,
+              126
+            ],
+            [
+              43,
+              62,
+              149,
+              168
+            ],
+            [
+              28,
+              46,
+              127,
+              155
+            ],
+            [
+              21,
+              34,
+              99,
+              120
+            ],
+            [
+              43,
+              61,
+              138,
+              164
+            ],
+            [
+              30,
+              47,
+              129,
+              152
+            ],
+            [
+              26,
+              45,
+              106,
+              127
+            ],
+            [
+              21,
+              34,
+              106,
+              125
+            ],
+            [
+              33,
+              52,
+              118,
+              131
+            ],
+            [
+              24,
+              38,
+              98,
+              114
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 0.9666666666666666,
+            "MeanConstraintError": 0.03764490024933155,
+            "MeanConstraintErrorRaw": 0.2961075495683476,
+            "MeanStageSubgoalError": 0.04018330954254515,
+            "active_tp": 13,
+            "active_fp": 15,
+            "active_fn": 0,
+            "active_precision": 0.4642857142857143,
+            "active_recall": 1.0,
+            "active_f1": 0.6341463414634146,
+            "true_constraint_mode_correct": 13,
+            "true_constraint_mode_total": 13,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 0.4642857142857143,
+            "exact_constraint_structure": false,
+            "predicted_semantics": [
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound",
+                "lower_bound"
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.03062441631231991,
+                0.00889982454501472,
+                0.3603643146941158,
+                0.02423771460285181,
+                0.04599263771850648,
+                0.007052301138312095,
+                0.22816761386751938
+              ],
+              [
+                0.0007276540872054281,
+                5.328601599649974e-05,
+                0.1443575258984824,
+                0.013444707997564916,
+                0.15823085440910667,
+                0.12884697663580993,
+                0.18514966878976372
+              ],
+              [
+                0.0006788316389155441,
+                0.00038620963798731943,
+                0.05699999999999994,
+                0.0072275803575059154,
+                7.199999999999999,
+                0.1653938237079417,
+                0.029921069443177267
+              ],
+              [
+                0.00040335817636742276,
+                0.00019903089918601145,
+                0.03799999999999981,
+                0.002726952015539126,
+                10.0,
+                0.3449195381700783,
+                0.0013259955619636943
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 0.9666666666666666,
+              "MeanConstraintError": 0.010951851265100933,
+              "MeanConstraintErrorRaw": 0.0006476042532992557,
+              "MeanStageSubgoalError": 0.037051056553309716,
+              "active_tp": 12,
+              "active_fp": 3,
+              "active_fn": 1,
+              "active_precision": 0.8,
+              "active_recall": 0.9230769230769231,
+              "active_f1": 0.8571428571428571,
+              "true_constraint_mode_correct": 9,
+              "true_constraint_mode_total": 13,
+              "true_constraint_mode_accuracy": 0.6923076923076923,
+              "all_cell_mode_accuracy": 0.75,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "target_value",
+                  "",
+                  "lower_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  "lower_bound"
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.12231148097600553,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  7.758969555073277e-05,
+                  0.00011480104180539626,
+                  0.0889411106581908,
+                  0.0009017742408865305,
+                  5.717345210650845,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007754239670422899,
+                  0.0004039717749132108,
+                  0.057000140183565154,
+                  0.006868315655413248,
+                  7.199994780369799,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0005291088076540985,
+                  0.00021433920578660783,
+                  0.03800012984595746,
+                  0.002563439978849079,
+                  9.999997177419576,
+                  0.23125838106731644,
+                  0.001905538659852879
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 0.9666666666666666,
+              "MeanConstraintError": 0.012455527368429921,
+              "MeanConstraintErrorRaw": 0.0007153304582511599,
+              "MeanStageSubgoalError": 0.037051056553309716,
+              "active_tp": 12,
+              "active_fp": 2,
+              "active_fn": 1,
+              "active_precision": 0.8571428571428571,
+              "active_recall": 0.9230769230769231,
+              "active_f1": 0.888888888888889,
+              "true_constraint_mode_correct": 10,
+              "true_constraint_mode_total": 13,
+              "true_constraint_mode_accuracy": 0.7692307692307693,
+              "all_cell_mode_accuracy": 0.8214285714285714,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "target_value",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "",
+                  "lower_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "target_value",
+                  "upper_bound",
+                  "target_value",
+                  "lower_bound",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.0073846196186389485,
+                  0.0027713173895587374,
+                  0.0889411106581908,
+                  0.007224390068768467,
+                  0.12231148097600553,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0008903041549735849,
+                  0.00011480104180539626,
+                  0.0889411106581908,
+                  0.0009017742408865305,
+                  5.717345210650845,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0007754239670422899,
+                  0.0004039717749132108,
+                  0.057000140183565154,
+                  0.006868315655413248,
+                  7.199994780369799,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ],
+                [
+                  0.0005291088076540985,
+                  0.00021433920578660783,
+                  0.03800012984595746,
+                  0.002563439978849079,
+                  9.999997177419576,
+                  0.23125838106731644,
+                  0.15758606143389087
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "S5SphereInspect": {
+      "dataset_seed": 127,
+      "dataset_fingerprint": "92caa6edc1d4bf93e6be9a1610f25e850c936a36c9f95466290e1427c5583545",
+      "map": {
+        "method_seed": 0,
+        "segmentation_objective": 686.0765081146601,
+        "MeanAbsCutpointError": 0.525,
+        "MeanConstraintError": 0.010630136940166856,
+        "MeanConstraintErrorRaw": 0.00023660617428136708,
+        "MeanStageSubgoalError": 0.06422080389188091,
+        "active_tp": 5,
+        "active_fp": 0,
+        "active_fn": 0,
+        "active_precision": 1.0,
+        "active_recall": 1.0,
+        "active_f1": 1.0,
+        "true_constraint_mode_correct": 5,
+        "true_constraint_mode_total": 5,
+        "true_constraint_mode_accuracy": 1.0,
+        "all_cell_mode_accuracy": 1.0,
+        "exact_constraint_structure": true,
+        "predicted_semantics": [
+          [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            "target_value",
+            "upper_bound",
+            "upper_bound",
+            "",
+            "",
+            ""
+          ],
+          [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          [
+            "target_value",
+            "",
+            "upper_bound",
+            "",
+            "",
+            ""
+          ],
+          [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        ],
+        "predicted_values": [
+          [
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            3.1531314310304787e-05,
+            0.03961681388730461,
+            0.008523646028406346,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            0.0329405991876877,
+            NaN,
+            0.008295931771692905,
+            NaN,
+            NaN,
+            NaN
+          ],
+          [
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN,
+            NaN
+          ]
+        ]
+      },
+      "baselines": {
+        "arhsmm": {
+          "method_seed": 8,
+          "segmentation_objective": 1220.1063106497515,
+          "saved_stage_ends": [
+            [
+              26,
+              44,
+              57,
+              66,
+              76
+            ],
+            [
+              27,
+              46,
+              60,
+              68,
+              77
+            ],
+            [
+              28,
+              47,
+              59,
+              67,
+              78
+            ],
+            [
+              27,
+              44,
+              61,
+              69,
+              81
+            ],
+            [
+              26,
+              44,
+              59,
+              67,
+              79
+            ],
+            [
+              27,
+              46,
+              63,
+              71,
+              82
+            ],
+            [
+              27,
+              43,
+              59,
+              66,
+              76
+            ],
+            [
+              27,
+              44,
+              60,
+              67,
+              76
+            ],
+            [
+              27,
+              46,
+              61,
+              71,
+              81
+            ],
+            [
+              24,
+              43,
+              59,
+              67,
+              79
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 3.95,
+            "MeanConstraintError": 0.015584724901873065,
+            "MeanConstraintErrorRaw": 0.00015776478166046602,
+            "MeanStageSubgoalError": 0.06866440625599418,
+            "active_tp": 5,
+            "active_fp": 0,
+            "active_fn": 0,
+            "active_precision": 1.0,
+            "active_recall": 1.0,
+            "active_f1": 1.0,
+            "true_constraint_mode_correct": 5,
+            "true_constraint_mode_total": 5,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 1.0,
+            "exact_constraint_structure": true,
+            "predicted_semantics": [
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "",
+                "upper_bound",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.02045219957117411,
+                0.10158489238903948,
+                0.007639086684378288,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                1.8355252814454548e-06,
+                0.03960839245038118,
+                0.008416654187359943,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                0.02045219957117411,
+                0.10158489238903948,
+                0.007639086684378288,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                0.03240027265329166,
+                0.10158489238903948,
+                0.008108237632529651,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                0.02045219957117411,
+                0.10158489238903948,
+                0.007639086684378288,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 3.95,
+              "MeanConstraintError": 0.0076782356778628226,
+              "MeanConstraintErrorRaw": 0.00011556217671887283,
+              "MeanStageSubgoalError": 0.06866440625599418,
+              "active_tp": 5,
+              "active_fp": 4,
+              "active_fn": 0,
+              "active_precision": 0.5555555555555556,
+              "active_recall": 1.0,
+              "active_f1": 0.7142857142857143,
+              "true_constraint_mode_correct": 5,
+              "true_constraint_mode_total": 5,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 0.8666666666666667,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "lower_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "upper_bound",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  5.636522209251371e-07,
+                  0.01999112502601373,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  2.129722621917185e-06,
+                  0.03961538515343348,
+                  0.008486867746393314,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  1.8416027469311813e-05,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.0324001103349215,
+                  0.10158489238903948,
+                  0.008295911766908895,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.05933069332306587,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 3.95,
+              "MeanConstraintError": 0.0016589817313643232,
+              "MeanConstraintErrorRaw": 0.00010343066262581474,
+              "MeanStageSubgoalError": 0.06866440625599418,
+              "active_tp": 4,
+              "active_fp": 2,
+              "active_fn": 1,
+              "active_precision": 0.6666666666666666,
+              "active_recall": 0.8,
+              "active_f1": 0.7272727272727272,
+              "true_constraint_mode_correct": 4,
+              "true_constraint_mode_total": 5,
+              "true_constraint_mode_accuracy": 0.8,
+              "all_cell_mode_accuracy": 0.9,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  5.636522209251371e-07,
+                  0.01999112502601373,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  2.129722621917185e-06,
+                  0.03961538515343348,
+                  0.008486867746393314,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.0324001103349215,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ]
+              ]
+            }
+          }
+        },
+        "cluster": {
+          "method_seed": 9,
+          "segmentation_objective": 491.07630153664996,
+          "saved_stage_ends": [
+            [
+              15,
+              43,
+              46,
+              62,
+              76
+            ],
+            [
+              2,
+              32,
+              57,
+              60,
+              77
+            ],
+            [
+              19,
+              41,
+              44,
+              60,
+              78
+            ],
+            [
+              24,
+              35,
+              38,
+              62,
+              81
+            ],
+            [
+              2,
+              36,
+              66,
+              69,
+              79
+            ],
+            [
+              16,
+              43,
+              46,
+              72,
+              82
+            ],
+            [
+              25,
+              34,
+              37,
+              60,
+              76
+            ],
+            [
+              24,
+              27,
+              33,
+              61,
+              76
+            ],
+            [
+              2,
+              36,
+              59,
+              62,
+              81
+            ],
+            [
+              2,
+              29,
+              58,
+              61,
+              79
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 9.25,
+            "MeanConstraintError": 0.03620534835624748,
+            "MeanConstraintErrorRaw": 0.0016248154436572162,
+            "MeanStageSubgoalError": 0.07544160619267574,
+            "active_tp": 5,
+            "active_fp": 0,
+            "active_fn": 0,
+            "active_precision": 1.0,
+            "active_recall": 1.0,
+            "active_f1": 1.0,
+            "true_constraint_mode_correct": 5,
+            "true_constraint_mode_total": 5,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 1.0,
+            "exact_constraint_structure": true,
+            "predicted_semantics": [
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              [
+                "target_value",
+                "",
+                "upper_bound",
+                "",
+                "",
+                ""
+              ],
+              [
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.02045219957117411,
+                0.10158489238903948,
+                0.007639086684378288,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                3.9108851069037665e-06,
+                0.03961637364114153,
+                0.00849977862214432,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                0.02045219957117411,
+                0.10158489238903948,
+                0.007639086684378288,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                0.025083807861302453,
+                0.10158489238903948,
+                0.008079430786521158,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ],
+              [
+                0.02045219957117411,
+                0.10158489238903948,
+                0.007639086684378288,
+                0.04112343753885147,
+                0.16447107839562072,
+                0.2889733595429724
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 9.25,
+              "MeanConstraintError": 0.3092785592937053,
+              "MeanConstraintErrorRaw": 0.007857449581073773,
+              "MeanStageSubgoalError": 0.07544160619267574,
+              "active_tp": 3,
+              "active_fp": 6,
+              "active_fn": 2,
+              "active_precision": 0.3333333333333333,
+              "active_recall": 0.6,
+              "active_f1": 0.42857142857142855,
+              "true_constraint_mode_correct": 0,
+              "true_constraint_mode_total": 5,
+              "true_constraint_mode_accuracy": 0.0,
+              "all_cell_mode_accuracy": 0.6333333333333333,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "lower_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  3.8240354538823795e-07,
+                  0.013510065994855103,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  2.2798768681969728e-07,
+                  0.02086064872981555,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  5.161241751275303e-07,
+                  0.020509598584130623,
+                  0.008484134105795859,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.004027230514649954,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.032399542753527924,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 9.25,
+              "MeanConstraintError": 0.03499095296925565,
+              "MeanConstraintErrorRaw": 0.009569789628935635,
+              "MeanStageSubgoalError": 0.07544160619267574,
+              "active_tp": 2,
+              "active_fp": 5,
+              "active_fn": 3,
+              "active_precision": 0.2857142857142857,
+              "active_recall": 0.4,
+              "active_f1": 0.3333333333333333,
+              "true_constraint_mode_correct": 0,
+              "true_constraint_mode_total": 5,
+              "true_constraint_mode_accuracy": 0.0,
+              "all_cell_mode_accuracy": 0.6666666666666666,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "lower_bound",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "lower_bound",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  3.8240354538823795e-07,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  2.2798768681969728e-07,
+                  0.02086064872981555,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  5.161241751275303e-07,
+                  0.020509598584130623,
+                  0.008484134105795859,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.032399542753527924,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ]
+              ]
+            }
+          }
+        },
+        "fchmm": {
+          "method_seed": 3,
+          "segmentation_objective": -177.1808454151179,
+          "saved_stage_ends": [
+            [
+              9,
+              44,
+              56,
+              66,
+              76
+            ],
+            [
+              11,
+              46,
+              59,
+              68,
+              77
+            ],
+            [
+              10,
+              47,
+              58,
+              67,
+              78
+            ],
+            [
+              12,
+              44,
+              60,
+              69,
+              81
+            ],
+            [
+              10,
+              44,
+              58,
+              67,
+              79
+            ],
+            [
+              10,
+              46,
+              63,
+              71,
+              82
+            ],
+            [
+              12,
+              43,
+              58,
+              66,
+              76
+            ],
+            [
+              11,
+              44,
+              59,
+              67,
+              76
+            ],
+            [
+              12,
+              46,
+              60,
+              71,
+              81
+            ],
+            [
+              9,
+              43,
+              58,
+              67,
+              79
+            ]
+          ],
+          "original_benchmark_posthoc": {
+            "MeanAbsCutpointError": 0.275,
+            "MeanConstraintError": 0.009495624009831682,
+            "MeanConstraintErrorRaw": 0.0001252393818076066,
+            "MeanStageSubgoalError": 0.0692642132341149,
+            "active_tp": 5,
+            "active_fp": 25,
+            "active_fn": 0,
+            "active_precision": 0.16666666666666666,
+            "active_recall": 1.0,
+            "active_f1": 0.2857142857142857,
+            "true_constraint_mode_correct": 5,
+            "true_constraint_mode_total": 5,
+            "true_constraint_mode_accuracy": 1.0,
+            "all_cell_mode_accuracy": 0.16666666666666666,
+            "exact_constraint_structure": false,
+            "predicted_semantics": [
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound"
+              ],
+              [
+                "target_value",
+                "upper_bound",
+                "upper_bound",
+                "upper_bound",
+                "lower_bound",
+                "lower_bound"
+              ]
+            ],
+            "predicted_values": [
+              [
+                0.03454384010581897,
+                0.3478518535804499,
+                0.011920913348197034,
+                0.045407847138315666,
+                -2.7755575615628914e-17,
+                0.18188038325483805
+              ],
+              [
+                1.9562972176541404e-06,
+                0.03961376484865719,
+                0.008533823647362845,
+                0.06331553113525111,
+                0.07604436731824785,
+                0.19551222238145555
+              ],
+              [
+                0.01678156696375278,
+                0.3229162362979593,
+                0.0066517653146158,
+                0.0639151702752087,
+                0.2026760472062669,
+                0.19455258875280895
+              ],
+              [
+                0.03240011352389641,
+                0.38974077324298334,
+                0.008295931710781686,
+                0.11633807169405994,
+                0.16122265496434704,
+                0.24055358015439318
+              ],
+              [
+                0.0644169520221203,
+                0.2367943539351075,
+                0.009913575141896277,
+                0.05880848034975323,
+                0.15849888379870902,
+                0.2713363917645308
+              ]
+            ]
+          },
+          "retrained_posthoc": {
+            "pooled": {
+              "MeanAbsCutpointError": 0.275,
+              "MeanConstraintError": 0.009140504923226022,
+              "MeanConstraintErrorRaw": 0.0001231098192646475,
+              "MeanStageSubgoalError": 0.06410827711799504,
+              "active_tp": 5,
+              "active_fp": 2,
+              "active_fn": 0,
+              "active_precision": 0.7142857142857143,
+              "active_recall": 1.0,
+              "active_f1": 0.8333333333333333,
+              "true_constraint_mode_correct": 5,
+              "true_constraint_mode_total": 5,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 0.9333333333333333,
+              "exact_constraint_structure": false,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "lower_bound",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "upper_bound",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  2.3771541933816087e-06,
+                  0.03961560581616144,
+                  0.008524642085189884,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  1.8054365596750777e-05,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.03240005088761415,
+                  0.10158489238903948,
+                  0.008295915214512737,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.05933069332306587,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ]
+              ]
+            },
+            "voting": {
+              "MeanAbsCutpointError": 0.275,
+              "MeanConstraintError": 0.009140504923226022,
+              "MeanConstraintErrorRaw": 0.0001231098192646475,
+              "MeanStageSubgoalError": 0.06410827711799504,
+              "active_tp": 5,
+              "active_fp": 0,
+              "active_fn": 0,
+              "active_precision": 1.0,
+              "active_recall": 1.0,
+              "active_f1": 1.0,
+              "true_constraint_mode_correct": 5,
+              "true_constraint_mode_total": 5,
+              "true_constraint_mode_accuracy": 1.0,
+              "all_cell_mode_accuracy": 1.0,
+              "exact_constraint_structure": true,
+              "predicted_semantics": [
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "upper_bound",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "target_value",
+                  "",
+                  "upper_bound",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ]
+              ],
+              "predicted_values": [
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  2.3771541933816087e-06,
+                  0.03961560581616144,
+                  0.008524642085189884,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.03240005088761415,
+                  0.10158489238903948,
+                  0.008295915214512737,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ],
+                [
+                  0.02045219957117411,
+                  0.10158489238903948,
+                  0.007639086684378288,
+                  0.04112343753885147,
+                  0.16447107839562072,
+                  0.2889733595429724
+                ]
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

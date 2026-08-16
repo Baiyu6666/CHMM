@@ -1,0 +1,14 @@
+{
+  "created_at_utc": "2026-08-16T10:14:20.231864+00:00",
+  "dataset_name": "S3ObsAvoid",
+  "method_name": "changeforest",
+  "pipeline": "sequential",
+  "dataset_seed": 1259149,
+  "dataset_fingerprint": "d7d00966f24f88362dd0fc29414a194ed54f7f715af8f92a50e0130f36405183",
+  "method_seed": 7,
+  "num_demos": 10,
+  "num_stages": 3,
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/changeforest/S3ObsAvoid/method_seed_007",
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S3ObsAvoid.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/changeforest.json"
+}

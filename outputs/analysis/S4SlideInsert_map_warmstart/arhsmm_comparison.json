@@ -1,0 +1,542 @@
+[
+  {
+    "method": "arhsmm",
+    "label": "original",
+    "elapsed_sec": 24.986078853718936,
+    "initial_cutpoints": [
+      [
+        35,
+        79,
+        102
+      ],
+      [
+        47,
+        106,
+        136
+      ],
+      [
+        44,
+        99,
+        126
+      ],
+      [
+        33,
+        75,
+        97
+      ],
+      [
+        46,
+        104,
+        133
+      ],
+      [
+        43,
+        97,
+        124
+      ],
+      [
+        35,
+        80,
+        103
+      ],
+      [
+        35,
+        79,
+        101
+      ],
+      [
+        37,
+        83,
+        106
+      ],
+      [
+        32,
+        72,
+        92
+      ]
+    ],
+    "final_cutpoints": [
+      [
+        29,
+        73,
+        109
+      ],
+      [
+        45,
+        100,
+        148
+      ],
+      [
+        30,
+        83,
+        126
+      ],
+      [
+        22,
+        62,
+        98
+      ],
+      [
+        46,
+        95,
+        137
+      ],
+      [
+        32,
+        84,
+        128
+      ],
+      [
+        29,
+        71,
+        105
+      ],
+      [
+        22,
+        71,
+        105
+      ],
+      [
+        37,
+        83,
+        117
+      ],
+      [
+        27,
+        63,
+        97
+      ]
+    ],
+    "true_cutpoints": [
+      [
+        29,
+        42,
+        110
+      ],
+      [
+        45,
+        61,
+        149
+      ],
+      [
+        30,
+        45,
+        127
+      ],
+      [
+        22,
+        33,
+        99
+      ],
+      [
+        46,
+        60,
+        138
+      ],
+      [
+        32,
+        46,
+        129
+      ],
+      [
+        29,
+        45,
+        106
+      ],
+      [
+        22,
+        34,
+        106
+      ],
+      [
+        37,
+        51,
+        118
+      ],
+      [
+        27,
+        38,
+        98
+      ]
+    ],
+    "movement_from_initial": {
+      "moved_coordinates": 26,
+      "total_coordinates": 30,
+      "total_abs_shift": 207,
+      "mean_abs_shift": 6.9,
+      "max_abs_shift": 16,
+      "unchanged_demos": 0
+    },
+    "difference_from_map": {
+      "moved_coordinates": 20,
+      "total_coordinates": 30,
+      "total_abs_shift": 340,
+      "mean_abs_shift": 11.333333333333334,
+      "max_abs_shift": 39,
+      "unchanged_demos": 0
+    },
+    "difference_from_true": {
+      "moved_coordinates": 20,
+      "total_coordinates": 30,
+      "total_abs_shift": 340,
+      "mean_abs_shift": 11.333333333333334,
+      "max_abs_shift": 39,
+      "unchanged_demos": 0
+    },
+    "constraint_metrics": {
+      "MeanConstraintError": 0.010590487957551189,
+      "MeanConstraintErrorRaw": 0.0006236951024647032,
+      "semantic_exact_cells": 28,
+      "semantic_total_cells": 28,
+      "ConstraintPredictedActiveMask": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ]
+      ],
+      "ConstraintLearnedSemanticsMatrix": [
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "target_value",
+          "target_value",
+          "",
+          "",
+          "lower_bound",
+          "",
+          ""
+        ],
+        [
+          "target_value",
+          "target_value",
+          "upper_bound",
+          "upper_bound",
+          "lower_bound",
+          "",
+          ""
+        ],
+        [
+          "target_value",
+          "target_value",
+          "upper_bound",
+          "upper_bound",
+          "lower_bound",
+          "",
+          ""
+        ]
+      ]
+    },
+    "segmentation_metrics": {
+      "MeanAbsCutpointError": 11.333333333333332
+    }
+  },
+  {
+    "method": "arhsmm",
+    "label": "map_warm_start",
+    "elapsed_sec": 4.36400583665818,
+    "initial_cutpoints": [
+      [
+        29,
+        42,
+        110
+      ],
+      [
+        45,
+        61,
+        149
+      ],
+      [
+        30,
+        45,
+        127
+      ],
+      [
+        22,
+        33,
+        99
+      ],
+      [
+        46,
+        60,
+        138
+      ],
+      [
+        32,
+        46,
+        129
+      ],
+      [
+        29,
+        45,
+        106
+      ],
+      [
+        22,
+        34,
+        106
+      ],
+      [
+        37,
+        51,
+        118
+      ],
+      [
+        27,
+        38,
+        98
+      ]
+    ],
+    "final_cutpoints": [
+      [
+        29,
+        42,
+        110
+      ],
+      [
+        45,
+        61,
+        149
+      ],
+      [
+        30,
+        45,
+        127
+      ],
+      [
+        22,
+        33,
+        99
+      ],
+      [
+        46,
+        60,
+        138
+      ],
+      [
+        32,
+        46,
+        129
+      ],
+      [
+        29,
+        45,
+        106
+      ],
+      [
+        22,
+        34,
+        106
+      ],
+      [
+        37,
+        51,
+        118
+      ],
+      [
+        27,
+        38,
+        98
+      ]
+    ],
+    "true_cutpoints": [
+      [
+        29,
+        42,
+        110
+      ],
+      [
+        45,
+        61,
+        149
+      ],
+      [
+        30,
+        45,
+        127
+      ],
+      [
+        22,
+        33,
+        99
+      ],
+      [
+        46,
+        60,
+        138
+      ],
+      [
+        32,
+        46,
+        129
+      ],
+      [
+        29,
+        45,
+        106
+      ],
+      [
+        22,
+        34,
+        106
+      ],
+      [
+        37,
+        51,
+        118
+      ],
+      [
+        27,
+        38,
+        98
+      ]
+    ],
+    "movement_from_initial": {
+      "moved_coordinates": 0,
+      "total_coordinates": 30,
+      "total_abs_shift": 0,
+      "mean_abs_shift": 0.0,
+      "max_abs_shift": 0,
+      "unchanged_demos": 10
+    },
+    "difference_from_map": {
+      "moved_coordinates": 0,
+      "total_coordinates": 30,
+      "total_abs_shift": 0,
+      "mean_abs_shift": 0.0,
+      "max_abs_shift": 0,
+      "unchanged_demos": 10
+    },
+    "difference_from_true": {
+      "moved_coordinates": 0,
+      "total_coordinates": 30,
+      "total_abs_shift": 0,
+      "mean_abs_shift": 0.0,
+      "max_abs_shift": 0,
+      "unchanged_demos": 10
+    },
+    "constraint_metrics": {
+      "MeanConstraintError": 0.009434241723448564,
+      "MeanConstraintErrorRaw": 0.000593522396469402,
+      "semantic_exact_cells": 28,
+      "semantic_total_cells": 28,
+      "ConstraintPredictedActiveMask": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0
+        ]
+      ],
+      "ConstraintLearnedSemanticsMatrix": [
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "target_value",
+          "target_value",
+          "",
+          "",
+          "lower_bound",
+          "",
+          ""
+        ],
+        [
+          "target_value",
+          "target_value",
+          "upper_bound",
+          "upper_bound",
+          "lower_bound",
+          "",
+          ""
+        ],
+        [
+          "target_value",
+          "target_value",
+          "upper_bound",
+          "upper_bound",
+          "lower_bound",
+          "",
+          ""
+        ]
+      ]
+    },
+    "segmentation_metrics": {
+      "MeanAbsCutpointError": 0.0
+    }
+  }
+]

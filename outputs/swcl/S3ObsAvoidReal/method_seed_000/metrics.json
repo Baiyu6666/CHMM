@@ -1,15 +1,15 @@
 {
   "scalar_metrics": {
-    "MeanAbsCutpointError": 0.0,
-    "MeanStageSubgoalError": 0.007573569734063676,
-    "MeanConstraintError": 0.02449541125550559,
-    "MeanConstraintErrorRaw": 0.004817683481905883
+    "MeanAbsCutpointError": 7.75,
+    "MeanStageSubgoalError": 0.013343171478376268,
+    "MeanConstraintError": 0.022383951633274154,
+    "MeanConstraintErrorRaw": 0.004582631310753468
   },
   "all_metrics": {
-    "MeanAbsCutpointError": 0.0,
-    "MeanStageSubgoalError": 0.007573569734063676,
-    "MeanConstraintError": 0.02449541125550559,
-    "MeanConstraintErrorRaw": 0.004817683481905883,
+    "MeanAbsCutpointError": 7.75,
+    "MeanStageSubgoalError": 0.013343171478376268,
+    "MeanConstraintError": 0.022383951633274154,
+    "MeanConstraintErrorRaw": 0.004582631310753468,
     "ConstraintErrorMatrix": [
       [
         NaN,
@@ -18,7 +18,7 @@
       ],
       [
         NaN,
-        0.025219692807124258,
+        0.020996773562661383,
         NaN
       ],
       [
@@ -35,7 +35,7 @@
       ],
       [
         NaN,
-        0.002807509785030464,
+        0.0023374054427256347,
         NaN
       ],
       [
@@ -147,7 +147,7 @@
       ],
       [
         NaN,
-        0.002807509785030464,
+        0.0023374054427256347,
         NaN
       ],
       [
@@ -164,7 +164,7 @@
       ],
       [
         0.14362828531919805,
-        0.002807509785030464,
+        0.0023374054427256347,
         0.09060732593222187
       ],
       [
@@ -176,7 +176,7 @@
     "ConstraintLearnedValuePerDemo": []
   },
   "objectives": {
-    "ModelObjectiveFinal": 5.807146462942011,
-    "TrainingTotalCostFinal": 5.807146462942011
+    "ModelObjectiveFinal": -5.0272571344922525,
+    "TrainingTotalCostFinal": -5.0272571344922525
   }
 }

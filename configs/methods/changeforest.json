@@ -1,0 +1,29 @@
+{
+  "name": "changeforest",
+  "segmenter": {
+    "n_stages": 2,
+    "use_state": false,
+    "use_velocity": true,
+    "velocity_weight": 1.0,
+    "use_env_features": false,
+    "selected_raw_feature_ids": null,
+    "standardize": true,
+    "min_len": 3,
+    "method": "random_forest",
+    "seed": 0,
+    "random_forest_n_estimators": 50,
+    "random_forest_max_depth": 1,
+    "random_forest_max_features": "sqrt",
+    "random_forest_n_jobs": 1,
+    "model_selection_n_permutations": 0,
+    "verbose": true
+  },
+  "posthoc_constraint": {
+    "posthoc_training_mode": "voting",
+    "verbose": true,
+    "fixed_feature_mask": null,
+    "selected_raw_feature_ids": null,
+    "feature_model_types": null,
+    "plot_dir": "outputs/plots"
+  }
+}

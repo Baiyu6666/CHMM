@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any, Callable, Dict
 
 import numpy as np
 
 from .base import TaskBundle
-from .S3ObsAvoid import load_S3ObsAvoid
-from .S3ObsAvoidReal import load_S3ObsAvoidReal
-from .S4SlideInsert import load_S4SlideInsert
-from .S5SphereInspect import load_S5SphereInspect
+
+
+class _LazyEnvLoader:
+    def __init__(self, module_name: str, function_name: str):
+        self.module_name = str(module_name)
+        self.function_name = str(function_name)
+        self._loader = None
+
+    def __call__(self, **kwargs: Any) -> TaskBundle:
+        if self._loader is None:
+            module = import_module(self.module_name, package=__package__)
+            self._loader = getattr(module, self.function_name)
+        return self._loader(**kwargs)
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
-    "S3ObsAvoid": load_S3ObsAvoid,
-    "S3ObsAvoidReal": load_S3ObsAvoidReal,
-    "S5SphereInspect": load_S5SphereInspect,
-    "S4SlideInsert": load_S4SlideInsert,
+    "S3ObsAvoid": _LazyEnvLoader(".S3ObsAvoid", "load_S3ObsAvoid"),
+    "S3ObsAvoidReal": _LazyEnvLoader(".S3ObsAvoidReal", "load_S3ObsAvoidReal"),
+    "S5SphereInspect": _LazyEnvLoader(".S5SphereInspect", "load_S5SphereInspect"),
+    "S4SlideInsert": _LazyEnvLoader(".S4SlideInsert", "load_S4SlideInsert"),
 }
 
 

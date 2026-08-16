@@ -1,0 +1,81 @@
+{
+  "dataset_name": "S4SlideInsert",
+  "method_name": "swcl",
+  "dataset_kwargs": {
+    "n_demos": 10,
+    "seed": 1342,
+    "rollout_backend": "analytic",
+    "observation_backend": "analytic",
+    "dt": 0.4,
+    "seg_lengths": [
+      35,
+      14,
+      67,
+      21
+    ],
+    "seg_length_jitter": [
+      9,
+      3,
+      11,
+      7
+    ],
+    "normal_load_min": 4.0,
+    "normal_load_scale": 10.0
+  },
+  "method_kwargs": {
+    "max_iter": 10,
+    "verbose": false,
+    "n_stages": 4,
+    "seed": 7,
+    "selected_raw_feature_ids": [
+      "surf_dist",
+      "center_dist",
+      "orient_err",
+      "speed",
+      "normal_force",
+      "start_dist",
+      "insert_err"
+    ],
+    "feature_model_types": {
+      "surf_dist": "student_t",
+      "center_dist": "student_t",
+      "orient_err": "trunc_t_auto_z",
+      "speed": "trunc_t_auto_z",
+      "normal_force": "trunc_t_auto_z",
+      "start_dist": "trunc_t_lower_z",
+      "insert_err": "trunc_t_upper_z",
+      "noise": "student_t"
+    },
+    "fixed_feature_mask": null,
+    "lambda_eq_constraint": 1,
+    "lambda_ineq_constraint": 0.02,
+    "lambda_progress": 0.5,
+    "lambda_param_consensus": 0.5,
+    "lambda_activation_consensus": 0.5,
+    "consensus_schedule": "linear",
+    "progress_delta_scale": 20.0,
+    "duration_min": 7,
+    "duration_max": null,
+    "feature_activation_mode": "score",
+    "equality_score_mode": "dispersion",
+    "equality_dispersion_ratio_threshold": 0.075,
+    "constraint_core_trim": 0,
+    "short_segment_penalty_c": 0,
+    "stage_count_penalty": 12.0,
+    "inequality_score_activation_threshold": -0.5,
+    "truncated_inequality_z_threshold": -0.25,
+    "truncated_z_score_mode": "soft_fit_minus_baseline",
+    "truncated_z_soft_boundary_scale": 0.1,
+    "truncated_z_observation_noise_scale": 0.003,
+    "truncated_z_half_t_scale_quantile": 0.9,
+    "truncated_z_optimize": false,
+    "truncated_z_optimize_trigger_scale": 3.0,
+    "fixed_true_cutpoint_prefix": 0,
+    "fixed_true_cutpoint_indices": [],
+    "plot_every": null,
+    "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S4SlideInsert/method_seed_007",
+    "inequality_trim_fraction": 0.1,
+    "inequality_trim_min_n": 10,
+    "precompute_num_workers": 4
+  }
+}

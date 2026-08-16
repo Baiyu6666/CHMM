@@ -3,7 +3,7 @@
   "method_name": "fchmm",
   "dataset_kwargs": {
     "n_demos": 10,
-    "seed": 125949
+    "seed": 1259149
   },
   "method_kwargs": {
     "max_iter": 30,
@@ -30,7 +30,7 @@
       "obs_dist": "trunc_t_lower_z",
       "speed": "student_t",
       "arc_dist": "student_t",
-      "heading": "student_t",
+      "heading": "trunc_t_lower_z",
       "line_dist": "student_t",
       "noise": "student_t"
     },

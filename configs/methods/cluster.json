@@ -19,6 +19,7 @@
     "verbose": true
   },
   "posthoc_constraint": {
+    "posthoc_training_mode": "voting",
     "verbose": true,
     "fixed_feature_mask": null,
     "selected_raw_feature_ids": null,

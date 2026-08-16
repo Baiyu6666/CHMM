@@ -11,6 +11,7 @@
     "min_len": 1
   },
   "posthoc_constraint": {
+    "posthoc_training_mode": "swcl",
     "verbose": true,
     "fixed_feature_mask": null,
     "selected_raw_feature_ids": null,

@@ -33,11 +33,12 @@
       "n_init": 3,
       "init_mode": "random_stage_ends",
       "seed": 1,
-      "verbose": true,
+      "verbose": false,
       "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_001"
     },
     "posthoc_constraint": {
-      "verbose": true,
+      "posthoc_training_mode": "voting",
+      "verbose": false,
       "fixed_feature_mask": [
         [
           0,
@@ -96,7 +97,30 @@
         "start_dist": "trunc_t_lower_z",
         "goal_dist": "trunc_t_lower_z"
       },
-      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_001"
+      "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/cluster/S5SphereInspect/method_seed_001",
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "truncated_z_half_t_scale_quantile": 0.9,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_eq_distribution": "gaussian",
+      "map_inactive_distribution": "gaussian",
+      "map_nu_eq": 3.0,
+      "map_nu_inactive": 3.0,
+      "map_nu_ineq": 3.0,
+      "map_boundary_quantile": 0.05,
+      "map_activation_prior": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ],
+      "map_active_mode_prior": null,
+      "disable_plots": true
     }
   }
 }

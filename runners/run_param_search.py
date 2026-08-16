@@ -24,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from experiments.artifacts import apply_run_plot_dirs, save_run_artifacts, write_json
-from experiments.config_loader import deep_merge, load_json
+from experiments.config_loader import deep_merge, inherit_map_posthoc_parameters, load_json
 from experiments.unified_experiment import run_experiment
 from methods import JOINT_METHODS
 
@@ -35,6 +35,18 @@ def _split_csv(text: str) -> list[str]:
 
 def _split_int_csv(text: str) -> list[int]:
     return [int(item) for item in _split_csv(text)]
+
+
+def _parameter_error_value(mapping: dict[str, Any], suffix: str = "", default: float = math.nan) -> float:
+    value = mapping.get(
+        f"MeanParameterError{suffix}",
+        mapping.get(f"MeanConstraintError{suffix}", default),
+    )
+    try:
+        value_f = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    return value_f if np.isfinite(value_f) else float(default)
 
 
 def _load_env_config(config_root: Path, dataset_name: str) -> dict[str, Any]:
@@ -127,6 +139,10 @@ def _extract_objective_scalars(method_name: str, result: dict[str, Any]) -> dict
         history = getattr(seg_model, "objective_history_", None)
         if history:
             _append_scalar_if_finite(out, "SegmentationObjectiveFinal", history[-1])
+    elif method_name == "changeforest" and seg_model is not None:
+        history = getattr(seg_model, "objective_history_", None)
+        if history:
+            _append_scalar_if_finite(out, "SegmentationGainFinal", history[-1])
     elif method_name == "arhsmm":
         history = (seg_extras.get("segmentation_history") or {}).get("loglik")
         if history:
@@ -258,8 +274,8 @@ def _plot_search_summary(rows: list[dict[str, Any]], save_path: Path, *, top_k: 
         params = dict(row.get("params", {}))
         label = ", ".join(f"{key}={params[key]}" for key in sorted(params))
         labels.append(label)
-        means.append(float(row.get("MeanConstraintError_mean", math.nan)))
-        stds.append(float(row.get("MeanConstraintError_std", math.nan)))
+        means.append(_parameter_error_value(row, "_mean"))
+        stds.append(_parameter_error_value(row, "_std"))
 
     x = np.arange(len(top_rows), dtype=float)
     fig_h = max(3.0, 0.45 * len(top_rows) + 1.4)
@@ -276,7 +292,7 @@ def _plot_search_summary(rows: list[dict[str, Any]], save_path: Path, *, top_k: 
     ax.set_yticks(x)
     ax.set_yticklabels(labels, fontsize=8)
     ax.invert_yaxis()
-    ax.set_xlabel("MeanConstraintError", fontsize=10)
+    ax.set_xlabel("MeanParameterError", fontsize=10)
     ax.set_title("Top parameter combinations", fontsize=11, pad=6)
     ax.grid(axis="x", alpha=0.22)
     fig.tight_layout(pad=0.5)
@@ -311,7 +327,7 @@ def _plot_metric_vs_constraint(
         return None
 
     xs = np.asarray([row.get("metrics", {}).get(metric_key, np.nan) for row in rows], dtype=float)
-    ys = np.asarray([row.get("metrics", {}).get("MeanConstraintError", np.nan) for row in rows], dtype=float)
+    ys = np.asarray([_parameter_error_value(row.get("metrics", {})) for row in rows], dtype=float)
     valid = np.isfinite(xs) & np.isfinite(ys)
     xs = xs[valid]
     ys = ys[valid]
@@ -329,7 +345,7 @@ def _plot_metric_vs_constraint(
 
     corr = float(np.corrcoef(xs, ys)[0, 1]) if xs.size >= 2 else math.nan
     ax.set_xlabel(metric_key, fontsize=10)
-    ax.set_ylabel("MeanConstraintError", fontsize=10)
+    ax.set_ylabel("MeanParameterError", fontsize=10)
     ax.set_title(f"{title} (r={corr:.3f})", fontsize=11, pad=6)
     ax.grid(alpha=0.22)
     fig.tight_layout(pad=0.6)
@@ -403,6 +419,12 @@ def run_param_search(
 
     base_method_cfg = _load_method_config(config_root, method_name)
     base_method_cfg = deep_merge(base_method_cfg, dataset_method_overrides.get(method_name, {}))
+    base_method_cfg = inherit_map_posthoc_parameters(
+        method_name,
+        base_method_cfg,
+        _load_method_config(config_root, "map"),
+        dataset_method_overrides,
+    )
 
     grid_keys, grid_values = _grid_from_payload(grid_payload)
     combos = list(itertools.product(*grid_values))
@@ -457,7 +479,9 @@ def run_param_search(
         grouped.setdefault(int(row["combo_id"]), []).append(row)
     metric_keys = sorted({key for row in run_rows for key in row.get("metrics", {}).keys()})
     combo_summary = [_aggregate_combo(grouped[combo_id], metric_keys) for combo_id in sorted(grouped)]
-    combo_summary.sort(key=lambda row: (float(row.get("MeanConstraintError_mean", math.inf)), int(row["combo_id"])))
+    combo_summary.sort(
+        key=lambda row: (_parameter_error_value(row, "_mean", math.inf), int(row["combo_id"]))
+    )
 
     best = combo_summary[0] if combo_summary else None
     summary_payload = {

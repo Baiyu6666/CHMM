@@ -1,0 +1,14 @@
+{
+  "created_at_utc": "2026-08-15T08:08:24.445599+00:00",
+  "dataset_name": "S4SlideInsert",
+  "method_name": "map",
+  "pipeline": "joint",
+  "dataset_seed": 1342,
+  "dataset_fingerprint": "b164b34916d8e73cb2680f8a24f7d7ec4b7125cab3096fecd359d28afcaf7542",
+  "method_seed": 7,
+  "num_demos": 10,
+  "num_stages": 4,
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/map/S4SlideInsert/method_seed_007",
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S4SlideInsert.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/map.json"
+}

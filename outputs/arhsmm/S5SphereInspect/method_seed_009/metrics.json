@@ -2,15 +2,27 @@
   "scalar_metrics": {
     "MeanAbsCutpointError": 10.65,
     "MeanStageSubgoalError": 0.07605096300747846,
-    "MeanConstraintError": 0.23295163858652548,
-    "MeanConstraintErrorRaw": 0.037276667098851156
+    "SemanticConstraintPrecision": 0.2,
+    "SemanticConstraintRecall": 0.2,
+    "SemanticConstraintF1": 0.20000000000000004,
+    "SemanticConstraintMatchCount": 1.0,
+    "TrueConstraintCount": 5.0,
+    "PredictedConstraintCount": 5.0,
+    "MeanParameterError": 1.4813021355614479e-06,
+    "MeanParameterErrorRaw": 1.1033492150480662e-07
   },
   "all_metrics": {
     "MeanAbsCutpointError": 10.65,
     "MeanStageSubgoalError": 0.07605096300747846,
-    "MeanConstraintError": 0.23295163858652548,
-    "MeanConstraintErrorRaw": 0.037276667098851156,
-    "ConstraintErrorMatrix": [
+    "SemanticConstraintPrecision": 0.2,
+    "SemanticConstraintRecall": 0.2,
+    "SemanticConstraintF1": 0.20000000000000004,
+    "SemanticConstraintMatchCount": 1,
+    "TrueConstraintCount": 5,
+    "PredictedConstraintCount": 5,
+    "MeanParameterError": 1.4813021355614479e-06,
+    "MeanParameterErrorRaw": 1.1033492150480662e-07,
+    "ParameterErrorMatrix": [
       [
         NaN,
         NaN,
@@ -20,14 +32,6 @@
         NaN
       ],
       [
-        0.3097231849864378,
-        0.5921527473182256,
-        0.1948036246986575,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
         NaN,
         NaN,
         NaN,
@@ -36,9 +40,17 @@
         NaN
       ],
       [
-        3.660508365752342e-06,
         NaN,
-        0.0680749754209406,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        1.4813021355614479e-06,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -52,19 +64,11 @@
         NaN
       ]
     ],
-    "ConstraintErrorMatrixRaw": [
+    "ParameterErrorMatrixRaw": [
       [
         NaN,
         NaN,
         NaN,
-        NaN,
-        NaN,
-        NaN
-      ],
-      [
-        0.023069759020326295,
-        0.16195493684123655,
-        0.001006604611930955,
         NaN,
         NaN,
         NaN
@@ -78,9 +82,17 @@
         NaN
       ],
       [
-        2.726532916594304e-07,
         NaN,
-        0.00035176236747034954,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN
+      ],
+      [
+        1.1033492150480662e-07,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -142,15 +154,7 @@
         0,
         0,
         0,
-        0,
-        0
-      ],
-      [
         1,
-        1,
-        1,
-        0,
-        0,
         0
       ],
       [
@@ -163,8 +167,16 @@
       ],
       [
         1,
-        0,
         1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
         0,
         0,
         0
@@ -268,29 +280,29 @@
         "",
         "",
         "",
+        "lower_bound",
+        ""
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "lower_bound",
+        "lower_bound",
+        "upper_bound",
+        "",
         "",
         ""
       ],
       [
         "target_value",
-        "upper_bound",
-        "upper_bound",
         "",
         "",
-        ""
-      ],
-      [
-        "",
-        "",
-        "",
-        "",
-        "",
-        ""
-      ],
-      [
-        "target_value",
-        "",
-        "upper_bound",
         "",
         "",
         ""
@@ -326,15 +338,7 @@
         NaN,
         NaN,
         NaN,
-        NaN,
-        NaN
-      ],
-      [
-        0.023069759020326295,
-        0.20195493684123655,
-        0.009466604611930956,
-        NaN,
-        NaN,
+        -1.8734563794753356e-07,
         NaN
       ],
       [
@@ -346,9 +350,17 @@
         NaN
       ],
       [
-        0.03240027265329166,
+        4.9081139992177e-07,
+        0.02085384695050682,
+        0.008509077302062231,
         NaN,
-        0.008108237632529651,
+        NaN,
+        NaN
+      ],
+      [
+        0.0324001103349215,
+        NaN,
+        NaN,
         NaN,
         NaN,
         NaN
@@ -368,15 +380,7 @@
         0.10158489238903948,
         0.007639086684378288,
         0.04112343753885147,
-        0.16447107839562072,
-        0.2889733595429724
-      ],
-      [
-        0.023069759020326295,
-        0.20195493684123655,
-        0.009466604611930956,
-        0.04112343753885147,
-        0.16447107839562072,
+        -1.8734563794753356e-07,
         0.2889733595429724
       ],
       [
@@ -388,9 +392,17 @@
         0.2889733595429724
       ],
       [
-        0.03240027265329166,
+        4.9081139992177e-07,
+        0.02085384695050682,
+        0.008509077302062231,
+        0.04112343753885147,
+        0.16447107839562072,
+        0.2889733595429724
+      ],
+      [
+        0.0324001103349215,
         0.10158489238903948,
-        0.008108237632529651,
+        0.007639086684378288,
         0.04112343753885147,
         0.16447107839562072,
         0.2889733595429724
@@ -409,7 +421,7 @@
   "objectives": {
     "ModelObjectiveFinal": 1053.8558752792321,
     "SegmentationLogLikelihoodFinal": 1053.8558752792321,
-    "PosthocObjectiveFinal": -211.2409142294835,
-    "PosthocFeatureObjectiveFinal": -211.2409142294835
+    "PosthocObjectiveFinal": -2521.059491814912,
+    "PosthocFeatureObjectiveFinal": -2521.0594918149127
   }
 }

@@ -1,5 +1,5 @@
 {
-  "created_at_utc": "2026-08-12T16:01:59.729272+00:00",
+  "created_at_utc": "2026-08-13T12:29:28.697564+00:00",
   "dataset_name": "S3ObsAvoidReal",
   "method_name": "swcl",
   "pipeline": "joint",
@@ -7,7 +7,7 @@
   "method_seed": 0,
   "num_demos": 4,
   "num_stages": 3,
-  "plot_dir": "/home/baiyu/LearnStageConstraints/outputs/swcl/S3ObsAvoidReal/method_seed_000",
-  "env_config_path": "/home/baiyu/LearnStageConstraints/configs/envs/S3ObsAvoidReal.json",
-  "method_config_path": "/home/baiyu/LearnStageConstraints/configs/methods/swcl.json"
+  "plot_dir": "/home/baiyu/PycharmProjects/LearnStageConstraint/outputs/swcl/S3ObsAvoidReal/method_seed_000",
+  "env_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/envs/S3ObsAvoidReal.json",
+  "method_config_path": "/home/baiyu/PycharmProjects/LearnStageConstraint/configs/methods/swcl.json"
 }

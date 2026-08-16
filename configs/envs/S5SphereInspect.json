@@ -27,6 +27,51 @@
       "equality_dispersion_ratio_threshold": 0.06,
       "truncated_z_score_mode": "soft_fit_minus_baseline"
     },
+    "map": {
+      "n_stages": 5,
+      "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
+      "max_iter": 8,
+      "lambda_progress": 0.4,
+      "duration_min": 5,
+      "duration_max": null,
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_boundary_quantile": 0.05,
+      "fixed_true_cutpoint_indices": [],
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5 ,0.5 ,0.5]
+
+    },
+    "map_pooled": {
+      "n_stages": 5,
+      "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
+      "max_iter": 8,
+      "lambda_progress": 0.4,
+      "duration_min": 5,
+      "duration_max": null,
+      "constraint_core_trim": 0,
+      "truncated_z_soft_boundary_scale": 0.1,
+      "truncated_z_observation_noise_scale": 0.003,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_boundary_quantile": 0.05,
+      "fixed_true_cutpoint_indices": [],
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+      "map_mode_aggregation": "pooled"
+    },
+    "gmmhmm": {
+      "segmenter": {
+        "n_stages": 5,
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting"
+      }
+    },
     "fchmm": {
       "n_stages": 5,
       "feat_weight": 0.1,
@@ -94,6 +139,16 @@
           "goal_dist": "trunc_t_lower_z"
         },
         "fixed_feature_mask": [[0, 0, 0, 0, 0, 0], [1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0], [1, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0]]
+      }
+    },
+    "changeforest": {
+      "segmenter": {
+        "n_stages": 5,
+        "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting",
+        "fixed_feature_mask": null
       }
     },
     "cluster": {

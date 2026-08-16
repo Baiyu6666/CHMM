@@ -592,6 +592,19 @@ class StageWiseConstraintLearningModel:
             self.raw_id_to_local_idx[raw_id] = int(local_idx)
             self.feature_name_to_local_idx[name] = int(local_idx)
 
+    def _demo_index(self, X):
+        return next((idx for idx, demo in enumerate(self.demos) if demo is X), None)
+
+    def _features_for_demo_matrix(self, X):
+        demo_idx = self._demo_index(X)
+        if demo_idx is not None:
+            return self.standardized_features[int(demo_idx)]
+        raw_features = np.asarray(self.env.compute_all_features_matrix(X), dtype=float)
+        selected = raw_features[:, self.selected_feature_columns]
+        means = self.feat_mean[self.selected_feature_columns]
+        scales = self.feat_std[self.selected_feature_columns]
+        return (selected - means[None, :]) / scales[None, :]
+
     def _resolve_force_inactive_feature_indices(self, feature_ids):
         indices = []
         for value in feature_ids or []:

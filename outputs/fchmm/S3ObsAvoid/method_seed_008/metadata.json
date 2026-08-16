@@ -1,9 +1,10 @@
 {
-  "created_at_utc": "2026-05-15T13:33:44.771389+00:00",
+  "created_at_utc": "2026-08-15T07:07:53.485910+00:00",
   "dataset_name": "S3ObsAvoid",
   "method_name": "fchmm",
   "pipeline": "sequential",
-  "dataset_seed": 125949,
+  "dataset_seed": 1259149,
+  "dataset_fingerprint": "d7d00966f24f88362dd0fc29414a194ed54f7f715af8f92a50e0130f36405183",
   "method_seed": 8,
   "num_demos": 10,
   "num_stages": 3,

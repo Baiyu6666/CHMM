@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,8 @@ _CONSTRAINT_KEYS = (
     "ConstraintLearnedValueMatrix",
     "ConstraintLearnedRawValueMatrix",
     "ConstraintLearnedValuePerDemo",
+    "ParameterErrorMatrix",
+    "ParameterErrorMatrixRaw",
     "ConstraintErrorMatrix",
     "ConstraintErrorMatrixRaw",
     "ConstraintSemanticsMatrix",
@@ -58,6 +61,19 @@ def write_json(path: Path, payload: Mapping[str, Any]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def dataset_fingerprint(dataset: Any) -> str:
+    digest = hashlib.sha256()
+    demos = list(getattr(dataset, "demos", []))
+    cutpoints = list(getattr(dataset, "true_cutpoints", []))
+    digest.update(np.asarray([len(demos), len(cutpoints)], dtype=np.int64).tobytes())
+    for values in [*demos, *cutpoints]:
+        array = np.ascontiguousarray(np.asarray(values))
+        digest.update(str(array.dtype).encode("utf-8"))
+        digest.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+        digest.update(array.tobytes())
+    return digest.hexdigest()
 
 
 def resolve_run_dir(
@@ -183,7 +199,13 @@ def _append_scalar_if_finite(out: dict[str, Any], key: str, value: Any) -> None:
 def _extract_objectives(method_name: str, result: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
 
-    if method_name == "swcl":
+    if method_name in {
+        "swcl",
+        "map",
+        "map_pooled",
+        "map_balanced_pooled",
+        "map_balanced_vote",
+    }:
         model = result.get("joint_result", {}).get("model", None)
         if model is not None:
             history = getattr(model, "loss_total", None)
@@ -204,8 +226,18 @@ def _extract_objectives(method_name: str, result: Mapping[str, Any]) -> dict[str
         if history:
             _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
             _append_scalar_if_finite(out, "SegmentationObjectiveFinal", history[-1])
+    elif method_name == "changeforest" and seg_model is not None:
+        history = getattr(seg_model, "objective_history_", None)
+        if history:
+            _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
+            _append_scalar_if_finite(out, "SegmentationGainFinal", history[-1])
     elif method_name == "arhsmm":
         history = (seg_extras.get("segmentation_history") or {}).get("loglik")
+        if history:
+            _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
+            _append_scalar_if_finite(out, "SegmentationLogLikelihoodFinal", history[-1])
+    elif method_name == "gmmhmm" and seg_model is not None:
+        history = getattr(seg_model, "loss_loglik", None)
         if history:
             _append_scalar_if_finite(out, "ModelObjectiveFinal", history[-1])
             _append_scalar_if_finite(out, "SegmentationLogLikelihoodFinal", history[-1])
@@ -250,6 +282,7 @@ def save_run_artifacts(
         "method_name": method_name,
         "pipeline": result.get("pipeline"),
         "dataset_seed": int(dataset_kwargs.get("seed", 0)),
+        "dataset_fingerprint": dataset_fingerprint(result.get("dataset")),
         "method_seed": int(method_seed),
         "num_demos": int(len(getattr(result.get("dataset"), "demos", []))),
         "num_stages": int(

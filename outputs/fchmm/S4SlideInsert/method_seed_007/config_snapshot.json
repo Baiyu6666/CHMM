@@ -3,7 +3,7 @@
   "method_name": "fchmm",
   "dataset_kwargs": {
     "n_demos": 10,
-    "seed": 12342,
+    "seed": 1342,
     "rollout_backend": "analytic",
     "observation_backend": "analytic",
     "dt": 0.4,
@@ -19,10 +19,8 @@
       11,
       7
     ],
-    "slot_half_width": 0.032,
-    "clearance_align_max": 0.006,
-    "clearance_insert_max": 0.0035,
-    "normal_load_min": 0.4
+    "normal_load_min": 4.0,
+    "normal_load_scale": 10.0
   },
   "method_kwargs": {
     "max_iter": 30,
@@ -39,21 +37,21 @@
     "x_weight": 0.01,
     "selected_raw_feature_ids": [
       "surf_dist",
-      "centerline_dist",
+      "center_dist",
       "orient_err",
       "speed",
-      "normal_load",
+      "normal_force",
       "start_dist",
-      "insertion_err"
+      "insert_err"
     ],
     "feature_model_types": {
       "surf_dist": "student_t",
-      "centerline_dist": "student_t",
+      "center_dist": "student_t",
       "orient_err": "trunc_t_upper_z",
       "speed": "trunc_t_upper_z",
-      "normal_load": "trunc_t_lower_z",
+      "normal_force": "trunc_t_lower_z",
       "start_dist": "trunc_t_lower_z",
-      "insertion_err": "trunc_t_lower_z",
+      "insert_err": "trunc_t_lower_z",
       "noise": "student_t"
     },
     "fixed_feature_mask": [
