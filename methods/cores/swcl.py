@@ -17,6 +17,7 @@ except ModuleNotFoundError:
 
 from evaluation import evaluate_model_metrics
 from methods.base import format_training_log
+from methods.common.features import resolve_feature_matrices
 from utils.models import (
     GaussianModel,
     MarginExpLowerEmission,
@@ -299,9 +300,11 @@ class StageWiseConstraintLearningModel:
         disable_plots=False,
         eval_fn=evaluate_model_metrics,
         verbose=True,
+        precomputed_features=None,
     ):
         self.demos = [np.asarray(X, dtype=float) for X in demos]
         self.env = env
+        self.precomputed_features = precomputed_features
         self.true_cutpoints = _normalize_true_cutpoints(self.demos, true_taus=true_taus, true_cutpoints=true_cutpoints)
         self.true_taus = [
             None if cuts is None or len(cuts) != 1 else int(cuts[0])
@@ -544,9 +547,14 @@ class StageWiseConstraintLearningModel:
     def _init_feature_preprocessing(self):
         if self.env is None:
             raise ValueError("swcl requires a dataset env with feature API.")
-        raw_features = [np.asarray(self.env.compute_all_features_matrix(X), dtype=float) for X in self.demos]
+        raw_features = resolve_feature_matrices(
+            self.demos,
+            self.env,
+            self.precomputed_features,
+        )
         if not raw_features:
             raise ValueError("swcl requires at least one demo.")
+        self.raw_features = [matrix.copy() for matrix in raw_features]
         self.raw_feature_dim = int(raw_features[0].shape[1])
         schema = _feature_schema(self.env)
         if schema is None:

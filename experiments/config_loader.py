@@ -9,6 +9,7 @@ MAP_POSTHOC_PARAMETER_KEYS = (
     "selected_raw_feature_ids",
     "force_inactive_feature_ids",
     "constraint_core_trim",
+    "map_mstep_boundary_trim",
     "truncated_z_soft_boundary_scale",
     "truncated_z_observation_noise_scale",
     "truncated_z_half_t_scale_quantile",
@@ -23,6 +24,8 @@ MAP_POSTHOC_PARAMETER_KEYS = (
     "map_boundary_quantile",
     "map_activation_prior",
     "map_active_mode_prior",
+    "map_vote_prior_scope",
+    "map_refit_winning_voters",
 )
 
 MAP_JOINT_METHOD_NAMES = frozenset(

@@ -26,6 +26,7 @@ def _fit_single_swcl(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, A
     learner = StageWiseConstraintLearningModel(
         demos=dataset.demos,
         env=dataset.env,
+        precomputed_features=dataset.features,
         true_taus=dataset.true_taus,
         true_cutpoints=getattr(dataset, "true_cutpoints", None),
         n_stages=kwargs.get("n_stages", 2),

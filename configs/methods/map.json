@@ -6,8 +6,7 @@
   "seed": 0,
   "selected_raw_feature_ids": null,
   "fixed_feature_mask": null,
-  "lambda_progress": 0.5,
-  "progress_delta_scale": 20.0,
+  "map_progress_kappa": null,
   "duration_min": 3,
   "duration_max": null,
   "constraint_core_trim": 0,
@@ -30,6 +29,7 @@
   "map_mode_aggregation": "shared_vote",
   "map_convergence_tol": 1e-6,
   "map_demo_num_workers": null,
+  "map_mstep_boundary_trim": 0,
   "plot_every": null,
   "plot_dir": "outputs/plots"
 }

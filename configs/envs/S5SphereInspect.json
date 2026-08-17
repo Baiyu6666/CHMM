@@ -5,6 +5,7 @@
   "rollout_backend": "pybullet",
   "observation_backend": "pybullet",
   "cache_demos": true,
+  "goal_dist_mode": "demo_goal",
   "eval_tag": "S5SphereInspect",
   "method_overrides": {
     "swcl": {
@@ -31,7 +32,6 @@
       "n_stages": 5,
       "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
       "max_iter": 8,
-      "lambda_progress": 0.4,
       "duration_min": 5,
       "duration_max": null,
       "constraint_core_trim": 0,
@@ -49,7 +49,6 @@
       "n_stages": 5,
       "selected_raw_feature_ids": ["surf_dist", "normal_err", "speed", "ang_speed", "start_dist", "goal_dist"],
       "max_iter": 8,
-      "lambda_progress": 0.4,
       "duration_min": 5,
       "duration_max": null,
       "constraint_core_trim": 0,

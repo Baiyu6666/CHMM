@@ -290,9 +290,9 @@ def _constraint_feature_scales_raw(learner) -> np.ndarray:
     if num_features <= 0 or not demos:
         return scales
 
-    raw_mats = []
+    raw_mats = [np.asarray(matrix, dtype=float) for matrix in getattr(learner, "raw_features", [])]
     env = getattr(learner, "env", None)
-    if env is not None and hasattr(env, "compute_all_features_matrix"):
+    if not raw_mats and env is not None and hasattr(env, "compute_all_features_matrix"):
         for X in demos:
             raw_mats.append(np.asarray(env.compute_all_features_matrix(X), dtype=float))
     else:

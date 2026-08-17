@@ -1,13 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
-
-from .base import TaskBundle
-from .rendering import render_planar_episode
-
-
-
-# Integrated PyBullet backend helpers for S4SlideInsert.
 import math
 import time
 from pathlib import Path
@@ -15,7 +7,13 @@ from typing import Any
 
 import numpy as np
 
-from .rendering import _FFmpegVideoWriter, _overlay_corner_label, _save_rgb_frame, _space_was_triggered
+from .rendering import (
+    _FFmpegVideoWriter,
+    _overlay_corner_label,
+    _save_rgb_frame,
+    _space_was_triggered,
+    render_planar_episode,
+)
 from .pybullet_ur5 import _UR5PoseTracker, _quat_from_matrix, _require_pybullet
 
 try:
@@ -1877,6 +1875,7 @@ def _run_s4_torque_preload_execution(
     frame_indices_to_save: set[int],
     frame_save_dir: Path | None,
     save_frame_prefix: str,
+    admittance_mode: bool = False,
 ) -> dict[str, Any]:
     n = len(ref)
     executed = np.zeros((n, 4), dtype=float)
@@ -1931,6 +1930,11 @@ def _run_s4_torque_preload_execution(
     force_cmd_max = float(max(0.0, getattr(env, "pybullet_torque_force_command_max", 260.0)))
     adaptive_indent = 0.0
     load_feedback = 0.0
+    admittance_correction = 0.0
+    admittance_filtered_load = 0.0
+    admittance_gain = float(max(0.0, getattr(env, "pybullet_admittance_gain", 0.0015)))
+    admittance_smoothing = float(np.clip(getattr(env, "pybullet_admittance_force_smoothing", 0.80), 0.0, 0.999))
+    admittance_max_correction = float(max(0.0, getattr(env, "pybullet_admittance_max_correction", 0.004)))
     q_des_prev = q_track_cmd[0].copy()
 
     tracker.reset_joint_state(q_track_cmd[0])
@@ -1975,11 +1979,16 @@ def _run_s4_torque_preload_execution(
         qd_last = np.zeros(6, dtype=float)
         tau_last = np.zeros(6, dtype=float)
         preload = float(preload_command[i])
+        contact_threshold = float(max(0.0, getattr(env, "pybullet_admittance_contact_threshold", 0.5)))
+        force_control_active = preload > (contact_threshold if bool(admittance_mode) else 1e-8)
         force_cmd_last = 0.0
         desired_indent = float(preload_base_indent[i]) + float(adaptive_indent if preload > 1e-8 and not use_contact_proxy else 0.0)
-        preload_indent[i] = desired_indent
+        if bool(admittance_mode) and not force_control_active:
+            admittance_correction = 0.0
+            admittance_filtered_load = 0.0
+        preload_indent_samples = []
         if use_contact_proxy:
-            should_collide = bool(preload > 1e-8)
+            should_collide = bool(force_control_active)
             if should_collide:
                 _set_proxy_constraint_limit(env, tracker, slider_constraint, preload)
             if should_collide != proxy_collision_enabled:
@@ -2001,6 +2010,10 @@ def _run_s4_torque_preload_execution(
         qd_des_i = (q_des_end - q_des_start) / max(float(env.dt), 1e-12) if i > 0 else np.zeros(6, dtype=float)
         n_substeps = max(1, int(steps_per_sample))
         for substep_idx in range(n_substeps):
+            if bool(admittance_mode) and force_control_active:
+                desired_indent = float(preload_base_indent[i]) + float(admittance_correction)
+                desired_indent = float(np.clip(desired_indent, 0.0, float(preload_base_indent[i]) + admittance_max_correction))
+            preload_indent_samples.append(desired_indent)
             if interpolate_targets and i > 0:
                 alpha_sub = float(substep_idx + 1) / float(n_substeps)
                 q_des_sub = (1.0 - alpha_sub) * q_des_start + alpha_sub * q_des_end
@@ -2027,7 +2040,7 @@ def _run_s4_torque_preload_execution(
             if pin_slider_body and int(slider_constraint) < 0:
                 ee_now_pos, ee_now_quat = tracker.get_ee_pose()
                 pinned_state = _executed_slider_state_from_ee(env, tracker, ee_now_pos, ee_now_quat, float(ref[i, 3]))
-                proxy_state = _contact_proxy_state(env, pinned_state, desired_indent) if use_contact_proxy and preload > 1e-8 else pinned_state
+                proxy_state = _contact_proxy_state(env, pinned_state, desired_indent) if use_contact_proxy and force_control_active else pinned_state
                 _set_slider_pose(env, tracker, slider_body, proxy_state)
                 p.resetBaseVelocity(
                     int(slider_body),
@@ -2035,7 +2048,7 @@ def _run_s4_torque_preload_execution(
                     angularVelocity=[0.0, 0.0, 0.0],
                     physicsClientId=tracker.client_id,
                 )
-            if preload > 1e-8 and apply_external_preload:
+            if force_control_active and apply_external_preload:
                 body_pos, _body_quat = p.getBasePositionAndOrientation(slider_body, physicsClientId=tracker.client_id)
                 p.applyExternalForce(
                     int(slider_body),
@@ -2047,6 +2060,19 @@ def _run_s4_torque_preload_execution(
                 )
             p.stepSimulation(physicsClientId=tracker.client_id)
             load_feedback, _contact_surf_dist = _read_table_contact_metrics(tracker, slider_body, table_id)
+            if bool(admittance_mode) and force_control_active:
+                admittance_filtered_load = (
+                    admittance_smoothing * admittance_filtered_load
+                    + (1.0 - admittance_smoothing) * float(load_feedback)
+                )
+                force_error = float(preload) - float(admittance_filtered_load)
+                admittance_correction = float(
+                    np.clip(
+                        admittance_correction + admittance_gain * force_error * float(getattr(env, "pybullet_sim_dt", 1.0 / 120.0)),
+                        -float(preload_base_indent[i]),
+                        admittance_max_correction,
+                    )
+                )
             substep_loads.append(load_feedback)
             q_last, qd_last = tracker.get_joint_state()
         q_des_prev = q_des_end.copy()
@@ -2055,6 +2081,7 @@ def _run_s4_torque_preload_execution(
         qd_meas[i] = qd_last
         torque_cmd[i] = tau_last
         preload_force_cmd[i] = float(np.mean(substep_force_cmds)) if substep_force_cmds else 0.0
+        preload_indent[i] = float(np.mean(preload_indent_samples)) if preload_indent_samples else desired_indent
         ee_pos, ee_quat = tracker.get_ee_pose()
         realized_ee_world[i] = ee_pos
         realized_ee_quat[i] = ee_quat
@@ -2183,7 +2210,11 @@ def _run_s4_torque_preload_execution(
         'ik_position_error_world': np.linalg.norm(tracker.s5_to_world([_grasp_state(env, st)[:3] for st in executed]) - target_tip_world, axis=1),
         'sim_dt': float(getattr(env, 'pybullet_sim_dt', 1.0 / 120.0)),
         'steps_per_sample': int(steps_per_sample),
-        'robot_backend': 'ur5_pybullet_joint_torque_control_with_attached_contact_proxy',
+        'robot_backend': (
+            'ur5_pybullet_cartesian_admittance_with_measured_contact_force'
+            if bool(admittance_mode)
+            else 'ur5_pybullet_joint_torque_control_with_attached_contact_proxy'
+        ),
         'frames': int(frame_count),
         'saved_frames': saved_frame_paths,
     }
@@ -2263,7 +2294,8 @@ def simulate_s4_demo_from_reference(
         load_trace = None if normal_load_trace is None else np.asarray(normal_load_trace, dtype=float).reshape(-1)
         load_max = float(np.max(load_trace)) if load_trace is not None and load_trace.size > 0 else float(getattr(env, 'normal_load_min', 1.0))
         load_visual_ids: list[int] = []
-        if str(execution_control).strip().lower() in {"torque", "torque_preload"}:
+        control_mode = str(execution_control).strip().lower()
+        if control_mode in {"torque", "torque_preload", "admittance"}:
             return _run_s4_torque_preload_execution(
                 env,
                 tracker,
@@ -2293,6 +2325,7 @@ def simulate_s4_demo_from_reference(
                 frame_indices_to_save=frame_indices_to_save,
                 frame_save_dir=frame_save_dir,
                 save_frame_prefix=str(save_frame_prefix),
+                admittance_mode=control_mode == "admittance",
             )
         tracker.reset_joint_state(q_cmd[0])
         _close_gripper_for_visual(tracker)
@@ -2456,7 +2489,9 @@ def simulate_s4_demo_from_reference(
 
 
 
-class _S4SlideInsertBase:
+class _S4GeneratorSupport:
+    """Shared configuration and stochastic helpers for the active S4 generator."""
+
     def __init__(
         self,
         seg_lengths=(20, 8, 38, 12),
@@ -2530,78 +2565,10 @@ class _S4SlideInsertBase:
         self.seg_length_jitter = tuple(int(x) for x in seg_length_jitter)
         self.seg_length_scale_range = tuple(float(x) for x in seg_length_scale_range)
         self.dt = float(dt)
-        self.eval_tag = "S4SlideInsertBase"
         self.n_segments = 4
-        self._cached_force_traces = {}
-        self._cached_speed_traces = {}
-        self.true_constraints = self.get_true_constraints()
-        self.constraint_specs = self.get_constraint_specs()
-        self.feature_schema = self.get_feature_schema()
-        self.subgoal = np.array([self.stage2_end[0], self.stage2_end[1], self.theta_stage2_end], dtype=float)
-        self.goal = np.array([self.stage4_end[0], self.stage4_end[1], self.theta_stage4_end], dtype=float)
         self.demo_subgoals = None
         self.demo_goals = None
         self.demo_stage_lengths = None
-
-    def get_feature_schema(self):
-        return [
-            {"id": 0, "name": "surf_dist", "description": "Absolute distance to the contact surface z=0"},
-            {"id": 1, "name": "force", "description": "Contact force proxy"},
-            {"id": 2, "name": "orient_err", "description": "Absolute angle error between object and slot"},
-            {"id": 3, "name": "speed", "description": "Planar speed magnitude"},
-            {"id": 4, "name": "noise", "description": "Auxiliary irrelevant feature"},
-            {"id": 5, "name": "start_dist", "description": "Distance to the demo start pose in the x-z plane"},
-            {"id": 6, "name": "insert_err", "description": "Remaining x-direction distance to the slot target"},
-        ]
-
-    def get_true_constraints(self):
-        return {
-            "surface_target": 0.0,
-            "v2_target": float(self.v2_target),
-            "v3_target": float(self.v3_target),
-            "v4_target": float(self.v4_target),
-            "f_contact_min": float(self.f_contact_min),
-            "f_slide_min": float(self.f_slide_min),
-            "f_insert_min": float(self.f_insert_min),
-            "orient_err_max_stage3": float(self.orient_err_max_stage3),
-            "orient_err_max_stage4": float(self.orient_err_max_stage4),
-        }
-
-    def get_constraint_specs(self):
-        return [
-            {"feature_name": "surf_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_target"},
-            {"feature_name": "speed", "stage": 1, "semantics": "target_value", "oracle_key": "v2_target"},
-            {"feature_name": "force", "stage": 1, "semantics": "lower_bound", "oracle_key": "f_contact_min"},
-            {"feature_name": "surf_dist", "stage": 2, "semantics": "target_value", "oracle_key": "surface_target"},
-            {"feature_name": "speed", "stage": 2, "semantics": "target_value", "oracle_key": "v3_target"},
-            {"feature_name": "force", "stage": 2, "semantics": "lower_bound", "oracle_key": "f_slide_min"},
-            {
-                "feature_name": "orient_err",
-                "stage": 2,
-                "semantics": "upper_bound",
-                "oracle_key": "orient_err_max_stage3",
-            },
-            {"feature_name": "surf_dist", "stage": 3, "semantics": "target_value", "oracle_key": "surface_target"},
-            {"feature_name": "speed", "stage": 3, "semantics": "target_value", "oracle_key": "v4_target"},
-            {"feature_name": "force", "stage": 3, "semantics": "lower_bound", "oracle_key": "f_insert_min"},
-            {
-                "feature_name": "orient_err",
-                "stage": 3,
-                "semantics": "upper_bound",
-                "oracle_key": "orient_err_max_stage4",
-            },
-        ]
-
-    def get_observation_spec(self):
-        return {
-            "feature_schema": self.get_feature_schema(),
-            "noise_model": {
-                "position_noise_std": float(self.noise_pos),
-                "misc_noise_std": float(self.noise_misc),
-                "force_trace_source": "cached_or_state_estimated",
-                "speed_trace_source": "cached_or_finite_difference",
-            },
-        }
 
     def get_render_camera_presets(self):
         return {
@@ -2640,295 +2607,11 @@ class _S4SlideInsertBase:
             },
         }
 
-    def rollout_demo(self, scene, seed=None, rng=None, **kwargs):
-        local_seed = int(seed) if seed is not None else int((scene or {}).get("rollout_seed", 0))
-        pos, theta, labels, force, speed = self.generate_demo(seed=local_seed)
-        traj = np.c_[pos, theta]
-        cutpoints = np.where(np.diff(np.asarray(labels, dtype=int)) != 0)[0].astype(int)
-        return {
-            "trajectory": np.asarray(traj, dtype=float),
-            "true_cutpoints": np.asarray(cutpoints, dtype=int),
-            "true_labels": np.asarray(labels, dtype=int),
-            "force_trace": np.asarray(force, dtype=float),
-            "speed_trace": np.asarray(speed, dtype=float),
-        }
-
-    def compute_observation(self, latent_rollout, scene):
-        traj = np.asarray(latent_rollout["trajectory"], dtype=float)
-        force = np.asarray(latent_rollout.get("force_trace", []), dtype=float)
-        speed = np.asarray(latent_rollout.get("speed_trace", []), dtype=float)
-        if force.size > 0:
-            self.register_force_trace(traj, force)
-        if speed.size > 0:
-            self.register_speed_trace(traj, speed)
-        features = np.asarray(self.compute_all_features_matrix(traj), dtype=float)
-        return {
-            "trajectory": traj,
-            "features": features,
-            "true_cutpoints": np.asarray(latent_rollout.get("true_cutpoints", []), dtype=int),
-            "true_labels": np.asarray(latent_rollout.get("true_labels", []), dtype=int),
-            "feature_schema": self.get_feature_schema(),
-            "observation_spec": self.get_observation_spec(),
-            "scene": dict(scene or {}),
-        }
-
-    def render_episode(self, scene, trajectory, output_path, **kwargs):
-        geometry = dict((scene or {}).get("geometry", {}))
-        cutpoints = kwargs.get("cutpoints")
-        markers = [
-            {"point": [geometry.get("slot_x", self.slot_x), geometry.get("surface_z", 0.0)], "color": "#16A34A", "marker": "s", "size": 34},
-            {"point": geometry.get("stage2_end", self.stage2_end.tolist()), "color": "#F97316", "marker": "^", "size": 30},
-        ]
-        reference_lines = [
-            {
-                "point": [0.0, geometry.get("surface_z", 0.0)],
-                "direction": [1.0, 0.0],
-                "color": "#64748B",
-                "linestyle": "-",
-                "linewidth": 1.0,
-                "alpha": 0.8,
-            }
-        ]
-        return render_planar_episode(
-            trajectory=np.asarray(trajectory, dtype=float)[:, :2],
-            output_path=output_path,
-            cutpoints=cutpoints,
-            title=kwargs.get("title", "S4SlideInsert episode"),
-            obstacles=None,
-            reference_lines=reference_lines,
-            markers=markers,
-            xlabel="x",
-            ylabel="z",
-            equal_aspect=False,
-        )
-
-    def _piecewise_segment(self, start, end, length, endpoint=False):
-        x = np.linspace(float(start[0]), float(end[0]), int(length), endpoint=endpoint)
-        z = np.linspace(float(start[1]), float(end[1]), int(length), endpoint=endpoint)
-        return np.c_[x, z]
-
-    @staticmethod
-    def _smoothstep(u):
-        u = np.asarray(u, dtype=float)
-        return u * u * (3.0 - 2.0 * u)
-
-    def _smooth_segment(self, start, end, length, endpoint=False):
-        u = np.linspace(0.0, 1.0, int(length), endpoint=endpoint)
-        s = self._smoothstep(u)
-        start = np.asarray(start, dtype=float)
-        end = np.asarray(end, dtype=float)
-        return start[None, :] + s[:, None] * (end - start)[None, :]
-
-    @staticmethod
-    def _path_length(path: np.ndarray) -> float:
-        pts = np.asarray(path, dtype=float)
-        if len(pts) <= 1:
-            return 0.0
-        return float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
-
-    @staticmethod
-    def _resample_fixed_count(path: np.ndarray, num_points: int) -> np.ndarray:
-        pts = np.asarray(path, dtype=float)
-        n = int(num_points)
-        if len(pts) <= 1 or n <= 1:
-            return pts.copy()
-        seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
-        s = np.concatenate([[0.0], np.cumsum(seg)])
-        total = float(s[-1])
-        if total <= 1e-12:
-            out = np.repeat(pts[:1], n, axis=0)
-            out[0] = pts[0]
-            out[-1] = pts[-1]
-            return out
-        targets = np.linspace(0.0, total, n)
-        out = np.empty((n, pts.shape[1]), dtype=float)
-        out[0] = pts[0]
-        out[-1] = pts[-1]
-        j = 0
-        for i, target in enumerate(targets[1:-1], start=1):
-            while j + 1 < len(s) and s[j + 1] < target:
-                j += 1
-            frac = (target - s[j]) / max(s[j + 1] - s[j], 1e-12)
-            out[i] = (1.0 - frac) * pts[j] + frac * pts[j + 1]
-        return out
-
-    def _timewarp_path(
-        self,
-        path: np.ndarray,
-        strength: float,
-        rng: np.random.RandomState,
-        cycles: float = 2.0,
-    ) -> np.ndarray:
-        pts = np.asarray(path, dtype=float)
-        if len(pts) <= 2 or float(strength) <= 0.0:
-            return pts.copy()
-        s = np.linspace(0.0, 1.0, len(pts))
-        phase = float(rng.uniform(-np.pi, np.pi))
-        envelope = np.sin(np.pi * s) ** 1.1
-        weights = 1.0 + float(strength) * envelope * np.sin(float(cycles) * np.pi * s + phase)
-        weights = np.clip(weights, 0.35, None)
-        targets = np.cumsum(weights)
-        targets = (targets - targets[0]) / max(targets[-1] - targets[0], 1e-12)
-        out = np.empty_like(pts)
-        out[0] = pts[0]
-        out[-1] = pts[-1]
-        for d in range(pts.shape[1]):
-            out[:, d] = np.interp(targets, s, pts[:, d])
-        out[0] = pts[0]
-        out[-1] = pts[-1]
-        return out
-
-    def _timewarp_decelerating_path(
-        self,
-        path: np.ndarray,
-        strength: float,
-        rng: np.random.RandomState,
-        floor: float = 0.55,
-    ) -> np.ndarray:
-        pts = np.asarray(path, dtype=float)
-        if len(pts) <= 2 or float(strength) <= 0.0:
-            return pts.copy()
-        s = np.linspace(0.0, 1.0, len(pts))
-        exponent = float(rng.uniform(1.2, 1.8))
-        front_bias = 1.0 - s**exponent
-        ripple_phase = float(rng.uniform(-0.35 * np.pi, 0.35 * np.pi))
-        ripple = 0.10 * np.sin(2.2 * np.pi * s + ripple_phase) * np.sin(np.pi * s) ** 1.3
-        weights = 1.0 + float(strength) * front_bias + ripple
-        weights = np.clip(weights, float(floor), None)
-        targets = np.cumsum(weights)
-        targets = (targets - targets[0]) / max(targets[-1] - targets[0], 1e-12)
-        out = np.empty_like(pts)
-        for d in range(pts.shape[1]):
-            out[:, d] = np.interp(targets, s, pts[:, d])
-        out[0] = pts[0]
-        out[-1] = pts[-1]
-        return out
-
-    def _make_target_speed_segment(
-        self,
-        start: np.ndarray,
-        end: np.ndarray,
-        num_points: int,
-        target_speed: float,
-        rng: np.random.RandomState,
-        max_amp: float,
-        cycles: float = 1.0,
-        vertical_bias: float = 0.0,
-    ) -> np.ndarray:
-        start = np.asarray(start, dtype=float)
-        end = np.asarray(end, dtype=float)
-        n = int(num_points)
-        desired_length = max(float(target_speed) * self.dt * max(n - 1, 1), float(np.linalg.norm(end - start)))
-        u_hr = np.linspace(0.0, 1.0, 256)
-        direction = end - start
-        dist = float(np.linalg.norm(direction))
-        if dist <= 1e-12:
-            direction_unit = np.array([1.0, 0.0], dtype=float)
-        else:
-            direction_unit = direction / dist
-        normal = np.array([-direction_unit[1], direction_unit[0]], dtype=float)
-        phase = float(rng.uniform(-0.5 * np.pi, 0.5 * np.pi))
-        sign = -1.0 if rng.rand() < 0.5 else 1.0
-        envelope = np.sin(np.pi * u_hr)
-        waveform = envelope * np.sin(float(cycles) * np.pi * u_hr + phase)
-
-        def build_path(amp: float) -> np.ndarray:
-            base = start[None, :] + u_hr[:, None] * (end - start)[None, :]
-            offset = sign * float(amp) * waveform
-            path = base + offset[:, None] * normal[None, :]
-            if vertical_bias != 0.0:
-                path[:, 1] += float(vertical_bias) * envelope**2
-            path[0] = start
-            path[-1] = end
-            return path
-
-        if self._path_length(build_path(0.0)) >= desired_length - 1e-6:
-            return self._resample_fixed_count(build_path(0.0), n)
-
-        lo = 0.0
-        hi = max(float(max_amp), 1e-4)
-        for _ in range(20):
-            if self._path_length(build_path(hi)) >= desired_length:
-                break
-            hi *= 1.5
-        for _ in range(28):
-            mid = 0.5 * (lo + hi)
-            if self._path_length(build_path(mid)) < desired_length:
-                lo = mid
-            else:
-                hi = mid
-        return self._resample_fixed_count(build_path(hi), n)
-
-    def _make_surface_search_segment(
-        self,
-        start: np.ndarray,
-        end: np.ndarray,
-        num_points: int,
-        target_speed: float,
-        rng: np.random.RandomState,
-        max_x_amp: float,
-        z_amp: float,
-        cycles: float = 2.5,
-    ) -> np.ndarray:
-        start = np.asarray(start, dtype=float)
-        end = np.asarray(end, dtype=float)
-        n = int(num_points)
-        desired_length = max(float(target_speed) * self.dt * max(n - 1, 1), float(np.linalg.norm(end - start)))
-        u_hr = np.linspace(0.0, 1.0, 512)
-        phase = float(rng.uniform(-0.35 * np.pi, 0.35 * np.pi))
-        envelope = np.sin(np.pi * u_hr) ** 1.2
-        speed_wave = np.sin(float(cycles) * np.pi * u_hr + phase)
-        z_wave = np.sin((float(cycles) + 0.75) * np.pi * u_hr + 0.5 * phase)
-        x_weights = np.clip(1.0 + 0.55 * envelope * speed_wave, 0.25, None)
-        x_cum = np.cumsum(x_weights)
-        x_progress = (x_cum - x_cum[0]) / max(x_cum[-1] - x_cum[0], 1e-12)
-
-        def build_path(amp_z: float) -> np.ndarray:
-            x = start[0] + x_progress * (end[0] - start[0])
-            z = start[1] + u_hr * (end[1] - start[1]) + float(z_amp) * envelope * z_wave
-            z += float(amp_z) * envelope * np.sin((float(cycles) + 1.5) * np.pi * u_hr + phase)
-            path = np.c_[x, z]
-            path[0] = start
-            path[-1] = end
-            return path
-
-        if self._path_length(build_path(0.0)) >= desired_length - 1e-6:
-            return self._resample_fixed_count(build_path(0.0), n)
-
-        lo = 0.0
-        hi = max(float(max_x_amp) * 0.25, 1e-4)
-        for _ in range(20):
-            if self._path_length(build_path(hi)) >= desired_length:
-                break
-            hi *= 1.5
-        for _ in range(30):
-            mid = 0.5 * (lo + hi)
-            if self._path_length(build_path(mid)) < desired_length:
-                lo = mid
-            else:
-                hi = mid
-        return self._resample_fixed_count(build_path(hi), n)
-
     @staticmethod
     def _smooth_noise(rng: np.random.RandomState, length: int, scale: float, kernel_size: int = 7) -> np.ndarray:
         raw = rng.randn(int(length)) * float(scale)
         kernel = np.ones(int(kernel_size), dtype=float) / float(kernel_size)
         return np.convolve(raw, kernel, mode="same")
-
-    @staticmethod
-    def _sample_margin_excess(
-        rng: np.random.RandomState,
-        length: int,
-        scale: float,
-        max_extra: float,
-        near_boundary_prob: float = 0.82,
-    ) -> np.ndarray:
-        # Most samples stay close to the lower boundary, with a light exponential tail.
-        base = rng.exponential(scale=float(scale), size=int(length))
-        tail_mask = rng.rand(int(length)) > float(near_boundary_prob)
-        if np.any(tail_mask):
-            base[tail_mask] += rng.exponential(scale=1.8 * float(scale), size=int(tail_mask.sum()))
-        return np.clip(base, 0.0, float(max_extra))
 
     @staticmethod
     def _smooth_trace(values: np.ndarray, kernel_size: int = 7) -> np.ndarray:
@@ -2941,11 +2624,6 @@ class _S4SlideInsertBase:
         pad_right = k - 1 - pad_left
         padded = np.pad(vals, (pad_left, pad_right), mode="edge")
         return np.convolve(padded, kernel, mode="valid")
-
-    @staticmethod
-    def _smooth_positive_trace(values: np.ndarray, kernel_size: int = 7) -> np.ndarray:
-        vals = np.clip(np.asarray(values, dtype=float), 0.0, None)
-        return _S4SlideInsertBase._smooth_trace(vals, kernel_size=kernel_size)
 
     def _make_stage_force_margin_profile(
         self,
@@ -2965,66 +2643,30 @@ class _S4SlideInsertBase:
         if n <= 0:
             return np.zeros(0, dtype=float)
 
-        u = np.linspace(0.0, 1.0, n, endpoint=True)
         if int(stage_idx) == 1:
-            cycles = 2.40
-            offset = 0.028
-            amplitude = 0.070
-            margin_cap = 0.115
+            margin_q90 = 0.20
         elif int(stage_idx) == 2:
-            cycles = 3.20
-            offset = 0.034
-            amplitude = 0.082
-            margin_cap = 0.135
+            margin_q90 = 0.24
         else:
-            cycles = 2.80
-            offset = 0.032
-            amplitude = 0.105
-            margin_cap = 0.165
+            margin_q90 = 0.28
 
         amp_scale = 1.0 if latents is None else float(latents.get("force_excess_scale", 1.0))
-        amp_scale = float(np.clip(amp_scale, 0.9, 1.1))
-        base_wave = np.sin(2.0 * np.pi * float(cycles) * u - 0.5 * np.pi)
-        half_wave = np.maximum(base_wave, 0.0)
-        margin = float(amplitude) * amp_scale * half_wave - float(offset)
-        margin = self._smooth_trace(margin, kernel_size=3)
-        margin_floor = -float(offset) - 0.01
-        return np.clip(margin, float(margin_floor), float(margin_cap))
-
-    @staticmethod
-    def _sample_sparse_margin_excess(
-        rng: np.random.RandomState,
-        length: int,
-        base_scale: float,
-        base_cap: float,
-        burst_scale: float,
-        max_extra: float,
-        max_bursts: int = 2,
-        base_activation_prob: float = 0.16,
-    ) -> np.ndarray:
-        n = int(length)
-        if n <= 0:
-            return np.zeros(0, dtype=float)
-        base = np.zeros(n, dtype=float)
-        base_mask = rng.rand(n) < float(base_activation_prob)
-        if np.any(base_mask):
-            base[base_mask] = np.clip(
-                rng.exponential(scale=float(base_scale), size=int(base_mask.sum())),
-                0.0,
-                float(base_cap),
-            )
-        excess = base
-        num_bursts = int(rng.randint(1, max(int(max_bursts), 1) + 1))
-        for _ in range(num_bursts):
-            center = int(rng.randint(0, n))
-            half_width = int(rng.randint(1, 3))
-            amp = min(float(rng.exponential(scale=float(burst_scale))), 0.6 * float(max_extra))
-            left = max(0, center - half_width)
-            right = min(n, center + half_width + 1)
-            window = np.arange(left, right, dtype=float)
-            envelope = 1.0 - np.abs(window - float(center)) / float(half_width + 1)
-            excess[left:right] += amp * np.clip(envelope, 0.0, None)
-        return np.clip(excess, 0.0, float(max_extra))
+        amp_scale = float(np.clip(amp_scale, 0.75, 1.25))
+        if rng is None:
+            rng = np.random.RandomState(0)
+        control_count = int(np.clip(2 + n // 7, 4, 7))
+        control_u = np.linspace(0.0, 1.0, control_count, endpoint=True)
+        control_values = rng.standard_t(df=3.0, size=control_count)
+        profile = np.interp(np.linspace(0.0, 1.0, n, endpoint=True), control_u, control_values)
+        profile = self._smooth_trace(profile, kernel_size=min(5, max(1, n // 4 * 2 + 1)))
+        profile = self._smooth_trace(np.abs(profile - float(np.median(profile))), kernel_size=3)
+        profile -= float(np.min(profile))
+        profile = np.power(profile, 1.4)
+        q90 = float(np.quantile(profile, 0.90))
+        if q90 > 1e-12:
+            profile /= q90
+        margin_scale = float(margin_q90) * amp_scale
+        return np.clip(margin_scale * profile, 0.0, 1.6 * margin_scale)
 
     @staticmethod
     def _blend_segment_boundary(values: np.ndarray, boundary: int, half_window: int = 2) -> np.ndarray:
@@ -3060,7 +2702,7 @@ class _S4SlideInsertBase:
         return {
             "style": style,
             "phase": float(rng.uniform(0.0, 2.0 * np.pi)),
-            "force_excess_scale": float(rng.uniform(0.95, 1.12)),
+            "force_excess_scale": float(rng.uniform(0.78, 1.18)),
             "force_bias": float(rng.uniform(-0.004, 0.008)),
             "precontact_force_mean": float(rng.uniform(0.0065, 0.0095)),
             "precontact_force_sigma": float(rng.uniform(0.0010, 0.0018)),
@@ -3163,358 +2805,12 @@ class _S4SlideInsertBase:
         force_out[~constrained_mask] = np.clip(force_out[~constrained_mask] + latents["force_bias"], 0.0, 0.02)
         return force_out
 
-    def generate_demo(self, seed: int):
-        rng = np.random.RandomState(seed)
-        l1, l2, l3, l4 = self._sample_segment_lengths(rng)
-        latents = self._sample_demo_latents(rng)
-        start_local = self.start + rng.randn(2) * self.start_jitter
-        start_local[0] = float(np.clip(start_local[0], -1.65, -1.12))
-        start_local[1] = float(np.clip(start_local[1], 0.24, 0.46))
-
-        stage2_end_local = np.array(
-            [
-                rng.uniform(*self.stage2_end_x_range),
-                rng.uniform(*self.stage2_end_z_range),
-            ],
-            dtype=float,
-        )
-        stage1_end_local = self.stage1_end + rng.randn(2) * self.stage_end_jitter[0]
-        stage4_end_local = self.stage4_end + rng.randn(2) * self.stage_end_jitter[3]
-
-        stage1_end_local[0] = float(np.clip(stage2_end_local[0] - rng.uniform(0.004, 0.015), -0.82, -0.08))
-        stage1_end_local[1] = float(np.clip(rng.uniform(0.004, 0.014), 0.003, 0.020))
-        stage2_end_local[0] = float(np.clip(max(stage2_end_local[0], stage1_end_local[0] + 0.003), -0.70, 0.0))
-        stage2_end_local[1] = float(np.clip(stage2_end_local[1], *self.stage2_end_z_range))
-        stage4_end_local[0] = float(np.clip(stage4_end_local[0], 0.96, 1.03))
-        stage4_end_local[1] = float(np.clip(stage4_end_local[1], -0.008, 0.008))
-        stage3_end_local = self.stage3_end + rng.randn(2) * self.stage_end_jitter[2]
-        stage3_end_local[0] = float(np.clip(max(stage2_end_local[0] + rng.uniform(0.88, 1.10), stage4_end_local[0] - rng.uniform(0.09, 0.13)), 0.78, 0.93))
-        stage3_end_local[1] = float(np.clip(stage3_end_local[1], -0.010, 0.010))
-
-        v1_demo = self.v1_target * rng.uniform(0.94, 1.06)
-        v2_demo = self.v2_target * rng.uniform(0.98, 1.02)
-        v3_demo = self.v3_target * rng.uniform(1.08, 1.14)
-        v4_demo = self.v4_target * rng.uniform(0.98, 1.02)
-
-        seg1 = self._make_target_speed_segment(
-            start_local,
-            stage1_end_local,
-            l1 + 1,
-            v1_demo,
-            rng,
-            max_amp=0.12,
-            cycles=1.0,
-            vertical_bias=0.05,
-        )[:-1]
-
-        seg2 = self._make_target_speed_segment(
-            stage1_end_local,
-            stage2_end_local,
-            l2 + 1,
-            v2_demo,
-            rng,
-            max_amp=0.008,
-            cycles=1.0,
-            vertical_bias=-0.0015,
-        )[:-1]
-        u2 = np.linspace(0.0, 1.0, l2, endpoint=False)
-        seg2[:, 0] += 0.004 * latents["style"] * np.sin(2.0 * np.pi * u2 + latents["phase"]) * np.sin(np.pi * u2)
-        seg2[:, 1] += (
-            0.0025 * np.exp(-2.8 * u2) * np.sin(3.2 * np.pi * u2 + latents["phase"])
-            - 0.0012 * np.sin(np.pi * u2) ** 2
-        )
-        seg2 = self._resample_fixed_count(seg2, l2)
-        seg2[0] = stage1_end_local
-        seg2[-1] = stage2_end_local
-
-        seg3 = self._make_surface_search_segment(
-            stage2_end_local,
-            stage3_end_local,
-            l3 + 1,
-            v3_demo,
-            rng,
-            max_x_amp=0.13,
-            z_amp=0.005,
-            cycles=2.6,
-        )[:-1]
-        u3 = np.linspace(0.0, 1.0, l3, endpoint=False)
-        seg3[:, 1] += 0.35 * latents["surface_wobble"] * np.sin(3.0 * np.pi * u3 + 0.5 * latents["phase"]) * np.sin(np.pi * u3)
-
-        seg4 = self._make_target_speed_segment(
-            stage3_end_local,
-            stage4_end_local,
-            l4,
-            v4_demo,
-            rng,
-            max_amp=0.010,
-            cycles=1.1,
-            vertical_bias=0.0,
-        )
-        u4 = np.linspace(0.0, 1.0, l4, endpoint=True)
-        seg4[:, 1] += 0.12 * latents["surface_wobble"] * np.sin(2.0 * np.pi * u4 + latents["phase"]) * np.sin(np.pi * u4)
-
-        seg1 = self._timewarp_decelerating_path(seg1, strength=0.85, rng=rng, floor=0.46)
-        seg2 = self._timewarp_path(seg2, strength=0.05, rng=rng, cycles=1.4)
-        seg3 = self._timewarp_path(seg3, strength=0.10, rng=rng, cycles=2.0)
-        seg4 = self._timewarp_path(seg4, strength=0.04, rng=rng, cycles=1.3)
-
-        pos = np.vstack([seg1, seg2, seg3, seg4])
-        labels = np.repeat(np.arange(4), [l1, l2, l3, l4])
-        theta_start_local = self.theta_start + self.theta_start_jitter * rng.randn()
-        theta_stage1_end = self.theta_stage1_end + self.theta_end_jitter[0] * rng.randn()
-        theta_stage2_end = float(rng.uniform(*self.stage2_theta_end_range))
-        theta_stage3_end = self.theta_stage3_end + self.theta_end_jitter[2] * rng.randn()
-        theta_stage4_end = self.theta_stage4_end + self.theta_end_jitter[3] * rng.randn()
-
-        theta1 = np.linspace(theta_start_local, theta_stage1_end, l1, endpoint=False)
-        theta2 = np.linspace(theta_stage1_end, theta_stage2_end, l2, endpoint=False)
-        theta3 = np.zeros(l3, dtype=float)
-        theta4 = np.zeros(l4, dtype=float)
-        sign3 = -1.0 if float(theta_stage2_end) < 0.0 else 1.0
-        sign4 = sign3 if abs(float(theta_stage4_end)) < 1e-6 else (1.0 if float(theta_stage4_end) >= 0.0 else -1.0)
-        if l3 > 0:
-            u3_theta = np.linspace(0.0, 1.0, l3, endpoint=False)
-            half_wave3 = np.maximum(np.sin(2.35 * np.pi * u3_theta - 0.5 * np.pi + 0.20 * latents["phase"]), 0.0)
-            margin3 = 0.62 * self.orient_err_max_stage3 * half_wave3 - 0.18 * self.orient_err_max_stage3
-            abs_theta3 = np.clip(self.orient_err_max_stage3 - margin3, 0.0, 0.96 * self.orient_err_max_stage3)
-            theta3 = sign3 * self._smooth_trace(abs_theta3, kernel_size=3)
-        if l4 > 0:
-            u4_theta = np.linspace(0.0, 1.0, l4, endpoint=True)
-            half_wave4 = np.maximum(np.sin(1.95 * np.pi * u4_theta - 0.5 * np.pi + 0.16 * latents["phase"]), 0.0)
-            margin4 = 0.58 * self.orient_err_max_stage4 * half_wave4 - 0.16 * self.orient_err_max_stage4
-            abs_theta4 = np.clip(self.orient_err_max_stage4 - margin4, 0.0, 0.96 * self.orient_err_max_stage4)
-            theta4 = sign4 * self._smooth_trace(abs_theta4, kernel_size=3)
-        theta = np.concatenate([theta1, theta2, theta3, theta4])
-        theta = self._blend_segment_boundary(theta[:, None], boundary=l1 - 1, half_window=self.transition_half_window).ravel()
-        theta = self._blend_segment_boundary(theta[:, None], boundary=l1 + l2 - 1, half_window=self.transition_half_window).ravel()
-        theta = self._blend_segment_boundary(theta[:, None], boundary=l1 + l2 + l3 - 1, half_window=self.transition_half_window).ravel()
-
-        pos_noise_scale_x = np.take(np.array([1.0, 0.22, 0.32, 0.18], dtype=float), labels)
-        pos_noise_scale_z = np.take(np.array([1.0, 0.20, 0.28, 0.16], dtype=float), labels)
-        pos[:, 0] += self._smooth_noise(rng, len(pos), 1.35 * self.noise_pos, kernel_size=11) * pos_noise_scale_x
-        pos[:, 1] += self._smooth_noise(rng, len(pos), 0.95 * self.noise_pos, kernel_size=9) * pos_noise_scale_z
-        stage1_floor = np.linspace(0.045, 0.012, l1)
-        pos[:l1, 1] = np.maximum(pos[:l1, 1], stage1_floor)
-        contact_smooth = self._smooth_noise(rng, len(pos), 0.0025, kernel_size=13)
-        pos[l1:, 1] += 0.6 * contact_smooth[l1:]
-        pos[l1:, 1] = np.clip(pos[l1:, 1], -0.018, 0.018)
-        stage_bounds = [(0, l1), (l1, l1 + l2), (l1 + l2, l1 + l2 + l3), (l1 + l2 + l3, len(pos))]
-        for stage_idx in (1, 2, 3):
-            start_i, end_i = stage_bounds[stage_idx]
-            pos[start_i:end_i] = self._resample_fixed_count(pos[start_i:end_i], end_i - start_i)
-        for boundary in (l1 - 1, l1 + l2 - 1, l1 + l2 + l3 - 1):
-            pos = self._blend_segment_boundary(pos, boundary=boundary, half_window=self.transition_half_window)
-        theta_noise_scale = np.take(np.array([1.0, 0.30, 0.08, 0.05], dtype=float), labels)
-        theta += self._smooth_noise(rng, len(theta), 0.28 * self.noise_misc, kernel_size=11) * theta_noise_scale
-        theta += latents["theta_wobble"] * np.sin(np.linspace(0.0, 4.5 * np.pi, len(theta)) + latents["phase"]) * np.r_[
-            np.linspace(0.3, 1.0, l1 + l2),
-            np.linspace(0.18, 0.08, l3 + l4),
-        ] * theta_noise_scale
-        theta[l1 + l2:l1 + l2 + l3] = np.clip(
-            theta[l1 + l2:l1 + l2 + l3],
-            -0.95 * self.orient_err_max_stage3,
-            0.95 * self.orient_err_max_stage3,
-        )
-        theta[l1 + l2 + l3:] = np.clip(
-            theta[l1 + l2 + l3:],
-            -0.95 * self.orient_err_max_stage4,
-            0.95 * self.orient_err_max_stage4,
-        )
-        for boundary in (l1 - 1, l1 + l2 - 1, l1 + l2 + l3 - 1):
-            theta = self._blend_segment_boundary(theta[:, None], boundary=boundary, half_window=self.transition_half_window).ravel()
-        theta[l1 + l2:l1 + l2 + l3] = np.clip(
-            theta[l1 + l2:l1 + l2 + l3],
-            -0.98 * self.orient_err_max_stage3,
-            0.98 * self.orient_err_max_stage3,
-        )
-        theta[l1 + l2 + l3:] = np.clip(
-            theta[l1 + l2 + l3:],
-            -0.98 * self.orient_err_max_stage4,
-            0.98 * self.orient_err_max_stage4,
-        )
-
-        force = self._compute_force_signal(pos, theta, stage3_end_local[0], labels, rng, latents)
-        speed_trace = np.zeros(len(pos), dtype=float)
-        if len(pos) > 1:
-            delta = np.diff(pos, axis=0) / self.dt
-            speed_trace[1:] = np.linalg.norm(delta, axis=1)
-            speed_trace[0] = speed_trace[1]
-        stage_targets = {
-            1: 0.96 * float(self.v2_target),
-            2: 1.00 * float(self.v3_target),
-            3: 1.00 * float(self.v4_target),
-        }
-        stage_amplitudes = {
-            1: 0.10 * float(self.v2_target),
-            2: 0.10 * float(self.v3_target),
-            3: 0.08 * float(self.v4_target),
-        }
-        stage_noise = {
-            1: 0.03 * float(self.v2_target),
-            2: 0.04 * float(self.v3_target),
-            3: 0.03 * float(self.v4_target),
-        }
-        stage_bounds = [(0, l1), (l1, l1 + l2), (l1 + l2, l1 + l2 + l3), (l1 + l2 + l3, len(pos))]
-        for stage_idx, (start_i, end_i) in enumerate(stage_bounds[1:], start=1):
-            n = int(end_i - start_i)
-            if n <= 0:
-                continue
-            u = np.linspace(0.0, 1.0, n, endpoint=True)
-            profile = (
-                stage_targets[stage_idx]
-                + stage_amplitudes[stage_idx]
-                * np.sin(np.pi * u)
-                * np.sin((1.00 + 0.10 * stage_idx) * np.pi * u + float(latents["phase"]) + 0.20 * stage_idx)
-            )
-            profile += self._smooth_noise(rng, n, stage_noise[stage_idx], kernel_size=5)
-            speed_trace[start_i:end_i] = np.clip(profile, 0.0, None)
-
-        return np.asarray(pos, dtype=float), np.asarray(theta, dtype=float), np.asarray(labels, dtype=int), force, speed_trace
-
     @staticmethod
     def _wrap_to_pi(angle: np.ndarray) -> np.ndarray:
         return (np.asarray(angle, dtype=float) + np.pi) % (2.0 * np.pi) - np.pi
 
-    @staticmethod
-    def _traj_cache_key(traj: np.ndarray):
-        arr = np.ascontiguousarray(np.asarray(traj, dtype=np.float64))
-        return arr.shape, arr.tobytes()
 
-    def register_force_trace(self, traj: np.ndarray, force: np.ndarray):
-        self._cached_force_traces[self._traj_cache_key(traj)] = np.asarray(force, dtype=float).copy()
-
-    def register_speed_trace(self, traj: np.ndarray, speed: np.ndarray):
-        self._cached_speed_traces[self._traj_cache_key(traj)] = np.asarray(speed, dtype=float).copy()
-
-    def _lookup_cached_force_trace(self, traj: np.ndarray):
-        key = self._traj_cache_key(traj)
-        force = self._cached_force_traces.get(key)
-        if force is None:
-            return None
-        return np.asarray(force, dtype=float)
-
-    def _lookup_cached_speed_trace(self, traj: np.ndarray):
-        key = self._traj_cache_key(traj)
-        speed = self._cached_speed_traces.get(key)
-        if speed is None:
-            return None
-        return np.asarray(speed, dtype=float)
-
-    def _estimate_force_from_state(self, traj: np.ndarray) -> np.ndarray:
-        traj = np.asarray(traj, dtype=float)
-        pos = traj[:, :2]
-        theta = traj[:, 2]
-        T = len(pos)
-        speed = np.zeros(T, dtype=float)
-        tangential_speed = np.zeros(T, dtype=float)
-        dz = np.zeros(T, dtype=float)
-        if T > 1:
-            delta = np.diff(pos, axis=0) / self.dt
-            speed[1:] = np.linalg.norm(delta, axis=1)
-            speed[0] = speed[1]
-            tangential_speed[1:] = np.abs(delta[:, 0])
-            tangential_speed[0] = tangential_speed[1]
-            dz[1:] = np.abs(delta[:, 1])
-            dz[0] = dz[1]
-        orient_err = np.abs(self._wrap_to_pi(theta - self.slot_theta))
-        z = pos[:, 1]
-        x = pos[:, 0]
-        contact_gate = 1.0 / (1.0 + np.exp((z - 0.012) / 0.006))
-        slide_progress = 1.0 / (1.0 + np.exp(-(x - self.stage2_end[0]) / 0.055))
-        insert_progress = 1.0 / (1.0 + np.exp(-(x - self.stage3_end[0]) / 0.045))
-
-        contact_weight = np.clip(contact_gate * (1.0 - slide_progress), 0.0, 1.0)
-        slide_weight = np.clip(contact_gate * slide_progress * (1.0 - insert_progress), 0.0, 1.0)
-        insert_weight = np.clip(contact_gate * insert_progress, 0.0, 1.0)
-        weight_sum = np.maximum(contact_weight + slide_weight + insert_weight, 1e-6)
-        contact_weight = contact_weight / weight_sum
-        slide_weight = slide_weight / weight_sum
-        insert_weight = insert_weight / weight_sum
-        precontact_gate = 1.0 / (1.0 + np.exp((x - self.stage1_end[0]) / 0.05))
-        precontact_mean = 0.010
-        base_lower = (
-            contact_weight * self.f_contact_min
-            + slide_weight * self.f_slide_min
-            + insert_weight * self.f_insert_min
-        )
-        contact_margin = self._make_stage_force_margin_profile(
-            stage_idx=1,
-            z=z,
-            speed=speed,
-            tangential_speed=tangential_speed,
-            dz=dz,
-            orient_err=orient_err,
-            contact_gate=contact_gate,
-            slide_progress=slide_progress,
-            insert_progress=insert_progress,
-            rng=None,
-            latents=None,
-        )
-        slide_margin = self._make_stage_force_margin_profile(
-            stage_idx=2,
-            z=z,
-            speed=speed,
-            tangential_speed=tangential_speed,
-            dz=dz,
-            orient_err=orient_err,
-            contact_gate=contact_gate,
-            slide_progress=slide_progress,
-            insert_progress=insert_progress,
-            rng=None,
-            latents=None,
-        )
-        insert_margin = self._make_stage_force_margin_profile(
-            stage_idx=3,
-            z=z,
-            speed=speed,
-            tangential_speed=tangential_speed,
-            dz=dz,
-            orient_err=orient_err,
-            contact_gate=contact_gate,
-            slide_progress=slide_progress,
-            insert_progress=insert_progress,
-            rng=None,
-            latents=None,
-        )
-        raw_force = (
-            contact_weight * (self.f_contact_min + contact_margin)
-            + slide_weight * (self.f_slide_min + slide_margin)
-            + insert_weight * (self.f_insert_min + insert_margin)
-        )
-        force = precontact_gate * precontact_mean + (1.0 - precontact_gate) * np.maximum(base_lower, raw_force)
-        force[precontact_gate > 0.5] = np.clip(force[precontact_gate > 0.5], 0.0, 0.03)
-        return np.clip(force, 0.0, None)
-
-    def compute_all_features_matrix(self, traj: np.ndarray, feat_ids=None) -> np.ndarray:
-        traj = np.asarray(traj, dtype=float)
-        T = traj.shape[0]
-        speed_cached = self._lookup_cached_speed_trace(traj)
-        speed = np.zeros(T, dtype=float) if speed_cached is None else np.asarray(speed_cached, dtype=float)
-        if speed_cached is None and T > 1:
-            speed_edge = np.linalg.norm(np.diff(traj[:, :2], axis=0), axis=1) / self.dt
-            speed[0] = speed_edge[0]
-            speed[1:] = speed_edge
-        surf_dist = np.abs(traj[:, 1])
-        orient_err = np.abs(self._wrap_to_pi(traj[:, 2] - self.slot_theta))
-        if traj.shape[1] >= 4:
-            force = np.asarray(traj[:, 3], dtype=float)
-        else:
-            force = self._lookup_cached_force_trace(traj)
-            if force is None:
-                force = self._estimate_force_from_state(traj)
-        start_xy = np.asarray(traj[0, :2], dtype=float)
-        start_dist = np.linalg.norm(np.asarray(traj[:, :2], dtype=float) - start_xy[None, :], axis=1)
-        insert_err = float(self.slot_x) - np.asarray(traj[:, 0], dtype=float)
-        noise = 0.35 * np.sin(0.19 * np.arange(T)) + 0.15 * np.cos(0.07 * np.arange(T))
-        F = np.c_[surf_dist, force, orient_err, speed, noise, start_dist, insert_err]
-        return F if feat_ids is None else F[:, feat_ids]
-
-
-
-
-
-
-class S4SlideInsertEnv(_S4SlideInsertBase):
+class S4SlideInsertEnv(_S4GeneratorSupport):
     """Robot-friendly S4 copy with a lateral clearance dimension.
 
     State is [x, y, z, theta] in the robot-friendly units used by this task.
@@ -3559,6 +2855,10 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         pybullet_torque_preload_indent_per_newton: float = 0.0009,
         pybullet_torque_preload_adaptive_indent_gain: float = 0.0,
         pybullet_torque_preload_adaptive_indent_max: float = 0.014,
+        pybullet_admittance_gain: float = 0.0015,
+        pybullet_admittance_force_smoothing: float = 0.80,
+        pybullet_admittance_max_correction: float = 0.004,
+        pybullet_admittance_contact_threshold: float = 0.5,
         pybullet_torque_force_feedback_gain: float = 28.0,
         pybullet_torque_force_relief_max: float = 80.0,
         pybullet_torque_force_command_max: float = 260.0,
@@ -3681,6 +2981,10 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         self.pybullet_torque_preload_indent_per_newton = float(pybullet_torque_preload_indent_per_newton)
         self.pybullet_torque_preload_adaptive_indent_gain = float(pybullet_torque_preload_adaptive_indent_gain)
         self.pybullet_torque_preload_adaptive_indent_max = float(pybullet_torque_preload_adaptive_indent_max)
+        self.pybullet_admittance_gain = float(pybullet_admittance_gain)
+        self.pybullet_admittance_force_smoothing = float(pybullet_admittance_force_smoothing)
+        self.pybullet_admittance_max_correction = float(pybullet_admittance_max_correction)
+        self.pybullet_admittance_contact_threshold = float(pybullet_admittance_contact_threshold)
         self.pybullet_torque_force_feedback_gain = float(pybullet_torque_force_feedback_gain)
         self.pybullet_torque_force_relief_max = float(pybullet_torque_force_relief_max)
         self.pybullet_torque_force_command_max = float(pybullet_torque_force_command_max)
@@ -4114,6 +3418,17 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         curve[-1] = end
         return curve
 
+    @staticmethod
+    def _scale_path_length_about_end(path: np.ndarray, target_length: float) -> np.ndarray:
+        points = np.asarray(path, dtype=float)
+        path_length = float(np.linalg.norm(np.diff(points, axis=0), axis=1).sum())
+        if path_length <= 1e-12:
+            return points.copy()
+        end = points[-1].copy()
+        scaled = end[None, :] + (points - end[None, :]) * (float(target_length) / path_length)
+        scaled[-1] = end
+        return scaled
+
     def _resample_planar_segment(
         self,
         path: np.ndarray,
@@ -4121,9 +3436,14 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         stage_idx: int,
         rng: np.random.RandomState,
         phase: float,
+        edge_weights: np.ndarray | None = None,
     ) -> np.ndarray:
         n = int(num_points)
-        weights = self._speed_profile_weights(stage_idx, max(n - 1, 1), rng, phase)
+        weights = (
+            self._speed_profile_weights(stage_idx, max(n - 1, 1), rng, phase)
+            if edge_weights is None
+            else np.asarray(edge_weights, dtype=float)
+        )
         return self._sample_polyline_by_edge_weights(path, n, weights)
 
     def generate_demo(self, seed: int):
@@ -4135,8 +3455,11 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
 
         v1_demo = self.v1_target * rng.uniform(0.94, 1.06)
         v2_demo = self.v2_target * rng.uniform(0.82, 0.90)
-        v3_demo = self.v3_target * rng.uniform(0.95, 0.98)
-        v4_demo = self.v4_target * rng.uniform(0.92, 0.97)
+        constrained_speed_fraction = 0.99
+        v3_demo = self.v3_target * constrained_speed_fraction
+        v4_demo = self.v4_target * constrained_speed_fraction
+        stage3_speed_weights = self._speed_profile_weights(2, max(l3, 1), rng, phase + 0.8)
+        stage4_speed_weights = self._speed_profile_weights(3, max(l4, 1), rng, phase + 1.2)
 
         start_local = self.start + rng.randn(2) * self.start_jitter
         start_local[0] = float(np.clip(start_local[0], -0.2640, -0.1792))
@@ -4146,12 +3469,15 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         stage4_end_local[0] = float(np.clip(stage4_end_local[0], 0.1536, 0.1648))
         stage4_end_local[1] = float(np.clip(stage4_end_local[1], -0.00128, 0.00128))
 
-        seat_len = v4_demo * self.dt * max(l4 - 1, 1) * rng.uniform(0.94, 1.04)
+        seat_len = v4_demo * self.dt * float(np.sum(stage4_speed_weights) / np.max(stage4_speed_weights))
         stage3_end_local = self.stage3_end + rng.randn(2) * self.stage_end_jitter[2]
         stage3_end_local[0] = float(np.clip(stage4_end_local[0] - seat_len, 0.1248, 0.1488))
         stage3_end_local[1] = float(np.clip(stage3_end_local[1], -0.00160, 0.00160))
+        seg4_path = self._planar_curve(stage3_end_local, stage4_end_local, rng, amp=0.00055, cycles=1.2, z_bias=0.0)
+        seg4_path = self._scale_path_length_about_end(seg4_path, seat_len)
+        stage3_end_local = seg4_path[0].copy()
 
-        insert_len = v3_demo * self.dt * max(l3, 1) * rng.uniform(0.96, 1.03)
+        insert_len = v3_demo * self.dt * float(np.sum(stage3_speed_weights) / np.max(stage3_speed_weights))
         stage2_end_local = np.array(
             [
                 stage3_end_local[0] - insert_len,
@@ -4159,7 +3485,10 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
             ],
             dtype=float,
         )
-        stage2_end_local[0] = float(np.clip(stage2_end_local[0], -0.0960, 0.0060))
+        stage2_end_local[0] = float(np.clip(stage2_end_local[0], *self.stage2_end_x_range))
+        seg3_path = self._planar_curve(stage2_end_local, stage3_end_local, rng, amp=0.00120, cycles=2.3, z_bias=0.0000)
+        seg3_path = self._scale_path_length_about_end(seg3_path, insert_len)
+        stage2_end_local = seg3_path[0].copy()
 
         align_len = v2_demo * self.dt * max(l2, 1) * rng.uniform(0.92, 1.08)
         stage1_end_local = self.stage1_end + rng.randn(2) * self.stage_end_jitter[0]
@@ -4168,13 +3497,25 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
 
         seg1_path = self._planar_curve(start_local, stage1_end_local, rng, amp=0.0060, cycles=1.0, z_bias=0.0060)
         seg2_path = self._planar_curve(stage1_end_local, stage2_end_local, rng, amp=0.00025, cycles=1.1, z_bias=-0.00012)
-        seg3_path = self._planar_curve(stage2_end_local, stage3_end_local, rng, amp=0.00120, cycles=2.3, z_bias=0.0000)
-        seg4_path = self._planar_curve(stage3_end_local, stage4_end_local, rng, amp=0.00055, cycles=1.2, z_bias=0.0)
 
         seg1 = self._resample_planar_segment(seg1_path, l1, 0, rng, phase)
         seg2 = self._resample_planar_segment(seg2_path, l2 + 1, 1, rng, phase + 0.4)[1:]
-        seg3 = self._resample_planar_segment(seg3_path, l3 + 1, 2, rng, phase + 0.8)[1:]
-        seg4 = self._resample_planar_segment(seg4_path, l4 + 1, 3, rng, phase + 1.2)[1:]
+        seg3 = self._resample_planar_segment(
+            seg3_path,
+            l3 + 1,
+            2,
+            rng,
+            phase + 0.8,
+            edge_weights=stage3_speed_weights,
+        )[1:]
+        seg4 = self._resample_planar_segment(
+            seg4_path,
+            l4 + 1,
+            3,
+            rng,
+            phase + 1.2,
+            edge_weights=stage4_speed_weights,
+        )[1:]
 
         pos = np.vstack([seg1, seg2, seg3, seg4])
         labels = np.repeat(np.arange(4), [l1, l2, l3, l4])
@@ -4250,6 +3591,7 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         cutpoints = np.where(np.diff(labels) != 0)[0].astype(int)
         active_backend = str(backend or self.rollout_backend).lower()
         if active_backend == "pybullet":
+            execution_control = str(kwargs.get("execution_control", "position")).strip().lower()
             execution_normal_load, load_noise = self.apply_execution_normal_load_noise(
                 normal_load,
                 noise_std=float(kwargs.get("execution_normal_load_noise_std", 0.0)),
@@ -4276,17 +3618,33 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
                 feature_overlay_title=kwargs.get("feature_overlay_title", None),
                 playback_speed=float(kwargs.get("playback_speed", 1.0)),
                 playback_label=kwargs.get("playback_label", None),
+                execution_joint_noise_std=float(kwargs.get("execution_joint_noise_std", 0.0)),
+                execution_joint_noise_smooth=float(kwargs.get("execution_joint_noise_smooth", 0.90)),
+                execution_noise_seed=kwargs.get("execution_noise_seed", None),
+                execution_control=execution_control,
                 save_frame_indices=kwargs.get("save_frame_indices", None),
                 save_frame_dir=kwargs.get("save_frame_dir", None),
                 save_frame_prefix=str(kwargs.get("save_frame_prefix", "s4_demo")),
             )
             sim["planned_trajectory"] = traj4
-            sim["normal_force_trace"] = execution_normal_load
-            sim["normal_load_trace"] = execution_normal_load
+            if execution_control == "position":
+                sim["normal_force_trace"] = execution_normal_load
+                sim["normal_load_trace"] = execution_normal_load
+            else:
+                measured_load = np.asarray(
+                    sim.get("measured_normal_force_trace", sim.get("normal_force_trace", execution_normal_load)),
+                    dtype=float,
+                )
+                sim["normal_force_trace"] = measured_load
+                sim["normal_load_trace"] = measured_load
+                sim["measured_normal_force_trace"] = measured_load
+                sim["measured_normal_load_trace"] = measured_load
             sim["planned_normal_force_trace"] = normal_load
             sim["planned_normal_load_trace"] = normal_load
-            sim["execution_normal_force_noise"] = load_noise
-            sim["execution_normal_load_noise"] = load_noise
+            commanded_load = np.asarray(sim.get("preload_command_trace", execution_normal_load), dtype=float)
+            applied_delta = commanded_load - normal_load if commanded_load.shape == normal_load.shape else load_noise
+            sim["execution_normal_force_noise"] = applied_delta
+            sim["execution_normal_load_noise"] = applied_delta
             sim["true_labels"] = labels
             return sim
         return {
@@ -4563,47 +3921,4 @@ class S4SlideInsertEnv(_S4SlideInsertBase):
         )
 
 
-def load_S4SlideInsert(n_demos: int = 10, seed: int = 123, env_kwargs=None, demo_kwargs=None, **extra_env_kwargs):
-    env_cfg = dict(env_kwargs or {})
-    env_cfg.update(extra_env_kwargs)
-    env = S4SlideInsertEnv(**env_cfg)
-    run_kwargs = dict(demo_kwargs or {})
-    demos = []
-    labels = []
-    cutpoints = []
-    scene_specs = []
-    for i in range(int(n_demos)):
-        scene = env.sample_scene()
-        scene["demo_index"] = int(i)
-        latent = env.rollout_demo(scene, seed=int(seed) + int(i), **run_kwargs)
-        observation = env.compute_observation(latent, scene)
-        demo = np.asarray(observation["trajectory"], dtype=float)
-        demos.append(demo)
-        labels.append(np.asarray(observation["true_labels"], dtype=int))
-        cutpoints.append(np.asarray(observation["true_cutpoints"], dtype=int))
-        scene_specs.append(dict(scene))
-    env.demo_subgoals = [np.asarray(x[int(c[1]), :4], dtype=float).copy() for x, c in zip(demos, cutpoints)]
-    env.demo_goals = [np.asarray(x[-1, :4], dtype=float).copy() for x in demos]
-    env.demo_stage_lengths = [np.bincount(np.asarray(z, dtype=int), minlength=env.n_segments).astype(int) for z in labels]
-    env.subgoal = np.mean(np.stack(env.demo_subgoals, axis=0), axis=0)
-    env.goal = np.mean(np.stack(env.demo_goals, axis=0), axis=0)
-    return TaskBundle(
-        name="S4SlideInsert",
-        demos=demos,
-        env=env,
-        true_taus=None,
-        true_cutpoints=[np.asarray(c, dtype=int) for c in cutpoints],
-        true_labels=labels,
-        feature_schema=env.get_feature_schema(),
-        true_constraints=env.get_true_constraints(),
-        constraint_specs=env.get_constraint_specs(),
-        meta={
-            "seed": int(seed),
-            "cutpoints": [c.tolist() for c in cutpoints],
-            "task_name": "S4SlideInsert",
-            "scene_specs": scene_specs,
-            "observation_specs": env.get_observation_spec(),
-            "render_camera_presets": env.get_render_camera_presets(),
-            "asset_handles": env.get_asset_handles(),
-        },
-    )
+from .s4.dataset import load_S4SlideInsert

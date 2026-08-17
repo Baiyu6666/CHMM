@@ -49,7 +49,37 @@ def _validate_task_bundle(bundle: TaskBundle) -> TaskBundle:
         if len(names) != len(set(names)):
             raise ValueError(f"Duplicate feature names in dataset '{bundle.name}': {names}")
 
-        f0 = bundle.env.compute_all_features_matrix(bundle.demos[0])
+        if bundle.features is not None:
+            if len(bundle.features) != len(bundle.demos):
+                raise ValueError(
+                    f"Dataset '{bundle.name}' contains {len(bundle.features)} feature matrices "
+                    f"for {len(bundle.demos)} demos."
+                )
+            validated_features = []
+            frozen_feature_dim = None
+            for demo_idx, (demo, features) in enumerate(zip(bundle.demos, bundle.features)):
+                matrix = np.asarray(features, dtype=float)
+                if matrix.ndim != 2 or len(matrix) != len(demo):
+                    raise ValueError(
+                        f"Dataset '{bundle.name}' feature matrix {demo_idx} must be 2D and "
+                        f"aligned with its {len(demo)}-sample demo."
+                    )
+                if not np.all(np.isfinite(matrix)):
+                    raise ValueError(
+                        f"Dataset '{bundle.name}' feature matrix {demo_idx} contains non-finite values."
+                    )
+                if frozen_feature_dim is None:
+                    frozen_feature_dim = int(matrix.shape[1])
+                elif int(matrix.shape[1]) != frozen_feature_dim:
+                    raise ValueError(
+                        f"Dataset '{bundle.name}' feature matrix {demo_idx} has {matrix.shape[1]} columns; "
+                        f"expected {frozen_feature_dim}."
+                    )
+                validated_features.append(matrix)
+            bundle.features = validated_features
+            f0 = validated_features[0]
+        else:
+            f0 = bundle.env.compute_all_features_matrix(bundle.demos[0])
         num_cols = int(f0.shape[1])
         if len(schema) != num_cols:
             raise ValueError(

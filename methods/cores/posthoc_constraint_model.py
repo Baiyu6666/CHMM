@@ -5,6 +5,8 @@ from typing import Any
 
 import numpy as np
 
+from methods.common.features import resolve_feature_matrices
+
 from utils.models import (
     GaussianModel,
     MarginExpLowerEmission,
@@ -100,9 +102,11 @@ class FixedTauConstraintModel:
         plot_dir="outputs/plots",
         plot_every=None,
         eval_fn=None,
+        precomputed_features=None,
     ):
         self.demos = [np.asarray(X, dtype=float) for X in demos]
         self.env = env
+        self.precomputed_features = precomputed_features
         self.num_stages = int(num_stages)
         self.true_cutpoints = self._normalize_true_cutpoints(true_taus=true_taus, true_cutpoints=true_cutpoints)
         self.true_taus = [
@@ -124,7 +128,8 @@ class FixedTauConstraintModel:
         self.g2_hist = []
         self.stage_subgoals_hist = []
 
-        raw_features = [np.asarray(self.env.compute_all_features_matrix(X), dtype=float) for X in self.demos]
+        raw_features = resolve_feature_matrices(self.demos, self.env, self.precomputed_features)
+        self.raw_features = [matrix.copy() for matrix in raw_features]
         self.raw_feature_specs = _feature_schema(self.env) or [
             {"id": i, "column_idx": i, "name": f"f{i}"} for i in range(raw_features[0].shape[1])
         ]

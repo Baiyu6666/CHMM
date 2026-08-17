@@ -91,6 +91,7 @@ class PostHocConstraintLearner:
             learner = FixedTauConstraintModel(
                 demos=dataset.demos,
                 env=dataset.env,
+                precomputed_features=dataset.features,
                 true_taus=dataset.true_taus,
                 true_cutpoints=getattr(dataset, "true_cutpoints", None),
                 num_stages=num_stages,
@@ -109,13 +110,14 @@ class PostHocConstraintLearner:
             learner = StageWiseMAPConstraintLearningModel(
                 demos=dataset.demos,
                 env=dataset.env,
+                precomputed_features=dataset.features,
                 true_taus=dataset.true_taus,
                 true_cutpoints=getattr(dataset, "true_cutpoints", None),
                 n_stages=num_stages,
                 seed=resolved_kwargs.get("seed", 0),
                 selected_raw_feature_ids=resolved_kwargs.get("selected_raw_feature_ids"),
                 force_inactive_feature_ids=resolved_kwargs.get("force_inactive_feature_ids"),
-                lambda_progress=0.0,
+                map_progress_kappa=0.0,
                 duration_min=1,
                 constraint_core_trim=resolved_kwargs.get("constraint_core_trim", 0),
                 short_segment_penalty_c=0.0,
@@ -139,8 +141,11 @@ class PostHocConstraintLearner:
                 map_activation_prior=resolved_kwargs.get("map_activation_prior"),
                 map_active_mode_prior=resolved_kwargs.get("map_active_mode_prior"),
                 map_mode_aggregation="pooled" if training_mode == "pooled" else "shared_vote",
+                map_vote_prior_scope=resolved_kwargs.get("map_vote_prior_scope", "shared"),
+                map_refit_winning_voters=resolved_kwargs.get("map_refit_winning_voters", False),
                 map_convergence_tol=0.0,
                 map_demo_num_workers=1,
+                map_mstep_boundary_trim=resolved_kwargs.get("map_mstep_boundary_trim", 0),
             )
             gammas = learner.fit_fixed_segments(stage_ends, verbose=False)
 

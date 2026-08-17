@@ -1399,7 +1399,12 @@ def main() -> None:
     parser.add_argument("--stage-length-scale", type=float, default=1.20, help="Scale the total planned trajectory length while preserving stage ratios.")
     parser.add_argument("--visualize-normal-force", "--visualize-normal-load", dest="visualize_normal_load", type=int, default=0)
     parser.add_argument("--feature-overlay", type=int, default=1)
-    parser.add_argument("--execution-control", choices=["position", "torque_preload"], default="position", help="S4 PyBullet execution controller. torque_preload uses torque-level tracking with an attached slider and table contact normal-load measurement.")
+    parser.add_argument(
+        "--execution-control",
+        choices=["position", "torque_preload", "admittance"],
+        default="position",
+        help="S4 PyBullet execution controller. admittance closes the normal-axis loop on measured contact force.",
+    )
     parser.add_argument("--torque-kp", type=float, default=450.0)
     parser.add_argument("--torque-kd", type=float, default=70.0)
     parser.add_argument("--torque-limit", type=float, default=500.0)

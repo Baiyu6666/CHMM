@@ -5,3 +5,5 @@ __pycache__/
 
 .idea/workspace.xml
 
+# Generated experiment artifacts. Curated paper assets should live outside outputs/.
+/outputs/

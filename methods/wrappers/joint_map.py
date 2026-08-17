@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
+import numpy as np
+
 from envs.base import TaskBundle
 from evaluation import evaluate_model_metrics
 from visualization.io import plot_root, save_figure
@@ -32,17 +34,20 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
             "lambda_ineq_constraint",
             "map_inactive_weight",
             "map_active_mode_penalty",
+            "lambda_progress",
+            "progress_delta_scale",
         )
         if key in kwargs
     )
     if unsupported_weights:
         raise ValueError(
-            "MAP uses unweighted mode likelihoods; remove unsupported parameters: "
+            "MAP uses normalized likelihood costs; remove unsupported weighting parameters: "
             + ", ".join(unsupported_weights)
         )
     learner = StageWiseMAPConstraintLearningModel(
         demos=dataset.demos,
         env=dataset.env,
+        precomputed_features=dataset.features,
         true_taus=dataset.true_taus,
         true_cutpoints=getattr(dataset, "true_cutpoints", None),
         n_stages=kwargs.get("n_stages", 2),
@@ -50,8 +55,6 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
         selected_raw_feature_ids=kwargs.get("selected_raw_feature_ids"),
         fixed_feature_mask=kwargs.get("fixed_feature_mask"),
         force_inactive_feature_ids=kwargs.get("force_inactive_feature_ids"),
-        lambda_progress=kwargs.get("lambda_progress", 1.0),
-        progress_delta_scale=kwargs.get("progress_delta_scale", 20.0),
         duration_min=kwargs.get("duration_min"),
         duration_max=kwargs.get("duration_max"),
         constraint_core_trim=kwargs.get("constraint_core_trim", 0),
@@ -77,8 +80,13 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
         map_activation_prior=kwargs.get("map_activation_prior"),
         map_active_mode_prior=kwargs.get("map_active_mode_prior"),
         map_mode_aggregation=kwargs.get("map_mode_aggregation", "shared_vote"),
+        map_vote_prior_scope=kwargs.get("map_vote_prior_scope", "shared"),
+        map_refit_winning_voters=kwargs.get("map_refit_winning_voters", False),
         map_convergence_tol=kwargs.get("map_convergence_tol", 1e-6),
         map_demo_num_workers=kwargs.get("map_demo_num_workers"),
+        map_mstep_boundary_trim=kwargs.get("map_mstep_boundary_trim", 0),
+        map_progress_kappa=kwargs.get("map_progress_kappa"),
+        map_progress_kappa_max=kwargs.get("map_progress_kappa_max", 100.0),
     )
     gammas = learner.fit(
         max_iter=kwargs.get("max_iter", 30),
@@ -89,12 +97,7 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
     taus_hat: List[int] = [cuts[0] for cuts in cutpoints_hat] if learner.num_stages == 2 else []
     total_cost = float(learner.loss_total[-1]) if getattr(learner, "loss_total", None) else float("inf")
     constraint_cost = float(learner.loss_constraint[-1]) if getattr(learner, "loss_constraint", None) else 0.0
-    progress_cost = (
-        float(getattr(learner, "lambda_progress", 1.0))
-        * float(learner.loss_progress[-1])
-        if getattr(learner, "loss_progress", None)
-        else 0.0
-    )
+    progress_cost = float(learner.loss_progress[-1]) if getattr(learner, "loss_progress", None) else 0.0
     n_stages = int(learner.num_stages)
     final_plot_iter = max(len(getattr(learner, "loss_total", []) or []) - 1, 0)
     return {
@@ -117,6 +120,17 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
         "n_stages": n_stages,
         "final_plot_iter": int(final_plot_iter),
         "map_mode_aggregation": str(learner.map_mode_aggregation),
+        "map_vote_prior_scope": str(learner.map_vote_prior_scope),
+        "map_refit_winning_voters": bool(learner.map_refit_winning_voters),
+        "map_progress_kappa": (
+            None if learner.map_progress_kappa is None else float(learner.map_progress_kappa)
+        ),
+        "map_progress_kappas": np.asarray(learner.map_progress_kappas_, dtype=float).tolist(),
+        "map_progress_kappa_max": float(learner.map_progress_kappa_max),
+        "map_progress_kappa_history": [
+            np.asarray(values, dtype=float).tolist()
+            for values in getattr(learner, "map_progress_kappa_history_", [])
+        ],
         "map_shared_mode_votes": getattr(learner, "map_shared_mode_votes_", None),
     }
 

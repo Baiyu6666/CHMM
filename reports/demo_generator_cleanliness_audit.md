@@ -253,7 +253,7 @@ load_S5SphereInspect
 -> simulate_s5_demo_from_reference
 ```
 
-如果 cache hit，则直接从 `envs/demo_cache/S5SphereInspect/*.npz` 加载 demos、cutpoints、tool_axis traces。
+如果 cache hit，则直接从 `envs/demo_cache/S5SphereInspect/*.npz` 加载完整的 v20 dataset record，包括 demos、cutpoints、tool-axis、per-demo goal、timestamps、materialized features 与 reference traces。
 
 最干净的底层生成器可以理解为：
 
@@ -307,8 +307,9 @@ feature 后处理包括：
 - stage 2 surface path 使用固定 latitude/lateral trace template。  
   这让 surface trace 更规则、更可学习，而不是自由 inspect trajectory。
 
-- stage 2 和 stage 4 speed valleys 是手写的。  
-  `_make_cruise_valley_weights`、`_stage4_speed_profile_weights` 通过固定 center/width/depth 控制局部速度降低。它们不是物理必然结果。
+- stage 2 和 stage 4 Gaussian slowdown events 是显式 controlled shaping。
+  它们已迁入统一 time-parameterization 的 speed-intent 层；当前中心、宽度和深度为兼容 v20 保持不变，仍不应描述成由 controller 自然产生。
+  `gaussian_slowdown_weights` 通过配置的 center/width/depth 控制局部速度降低。它们不是物理必然结果。
 
 - stage 1 speed taper、stage 3 speed jitter、stage 4 tail stabilization。  
   这些都在塑造 speed feature 的 stage-wise distribution。
@@ -328,19 +329,19 @@ feature 后处理包括：
 - deterministic `noise` feature。  
   和 S3/S4 一样，是人为 irrelevant feature。
 
-- `goal_dist` 是 nominal goal 相关 progress feature。  
+- `goal_dist` 是到当前 demonstration 显式保存的任务 `goal_position` 的 progress feature。
   它很可能产生 monotonic 或 one-sided distribution，容易被 inequality model 吸收。
 
 #### Questionable points
 
-- `normal_err` 和 `ang_speed` 依赖 tool-axis side channel。  
-  如果没有 tool_axis，fallback 是用 sphere normal 估计 tool_axis，这会让 `normal_err` 近似 0。说明 feature matrix 不完全由 trajectory 自洽决定。
+- `normal_err` 和 `ang_speed` 依赖 position 之外的 tool-axis observation。
+  v20 dataset 已把 realized/reference tool-axis 与 materialized features 显式保存，正式训练默认读取 stored features。对任意外部 trajectory 主动调用 feature recomputation 时，缺失 tool-axis 的 fallback 仍应后续改成显式报错或要求调用者选择 approximation mode。
 
-- cache 保存了 `tool_axis`。  
-  cache hit 时会重新 register tool_axis trace；如果只看 demo trajectory 文件，会缺少重建 feature 所需的隐藏状态。
+- cache 保存了 realized/reference `tool_axis`、reference trajectory、per-demo `goal_position` 和 materialized features。
+  cache hit 时会把 stored feature trace 注册给兼容接口；训练读取 `TaskBundle.features`，不会在每次 load 时无条件重算 feature。
 
-- cache key 只包含 env/run kwargs 和 `cache_version=17`。  
-  如果 generator 代码改了但 cache version 没 bump，可能继续使用旧 demo。这对实验可复现有帮助，但对“当前 generator 到底产生什么”会造成混淆。
+- 新 cache key 包含 env/run kwargs 和 `cache_version=20`；loader 可读取 v19/v17 并迁移为 v20。
+  v20 保存完整 generation metadata、standalone manifest、features、robot observations、goal 和 reference traces。如果 generator 行为改动但 cache version 没 bump，仍可能继续使用旧 demo，因此行为改动必须升 dataset/cache version。
 
 - PyBullet IK-validity rejection sampling 会改变 demo distribution。  
   默认最多 80 次尝试；失败的 references 被丢弃。这意味着最终 demo 是“容易被 UR5 IK 跟踪”的子集，不是原始 task distribution。
@@ -360,10 +361,13 @@ S5 比 S4 更像真实机器人 demonstration，因为默认有 PyBullet executi
 
 如果要清理 S5，优先级最高的是：
 
-1. 让 feature computation 显式要求 `tool_axis`，缺失时 fail fast，而不是 fallback 到 sphere normal。
-2. 在 dataset artifact 中把 trajectory 和 tool_axis 视为共同 observation，不要只保存 trajectory。
-3. 把 speed valley、near-boundary normal_err shaping 标成 benchmark shaping，而不是 demonstration noise。
-4. 对 cache version 做严格管理，任何 generator 逻辑改动都 bump cache version。
+1. 用统一 time-parameterization 替代 speed valley、taper 与 tail speed patches。
+2. 把 tool-axis 改为独立于 true bound 的显式 orientation/demonstrator policy。
+3. 用带边界条件的 path generation 替代多轮 transition/tail repair。
+4. 将 natural controller 与 shaped benchmark 设为两个明确 preset。
+5. 对 cache version 做严格管理，任何 generator 行为改动都 bump cache version。
+
+更完整的逐项证据、整改优先级和数据重生成影响见 `reports/s5_demo_generator_refactor_audit.md`。
 
 ## 横向分类
 

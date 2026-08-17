@@ -102,8 +102,13 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         map_activation_prior=None,
         map_active_mode_prior=None,
         map_mode_aggregation: str = "shared_vote",
+        map_vote_prior_scope: str = "shared",
+        map_refit_winning_voters: bool = False,
         map_convergence_tol: float = 1e-6,
         map_demo_num_workers: int | None = None,
+        map_mstep_boundary_trim: int = 0,
+        map_progress_kappa: float | None = None,
+        map_progress_kappa_max: float = 100.0,
         **kwargs,
     ):
         kwargs = dict(kwargs)
@@ -115,16 +120,20 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 "lambda_ineq_constraint",
                 "map_inactive_weight",
                 "map_active_mode_penalty",
+                "lambda_progress",
+                "progress_delta_scale",
             )
             if key in kwargs
         )
         if unsupported_weights:
             raise ValueError(
-                "MAP uses unweighted mode likelihoods; remove unsupported parameters: "
+                "MAP uses normalized likelihood costs; remove unsupported weighting parameters: "
                 + ", ".join(unsupported_weights)
             )
+        kwargs["lambda_progress"] = 1.0
         demos = kwargs.get("demos", args[0] if args else None)
         env = kwargs.get("env", args[1] if len(args) > 1 else None)
+        precomputed_features = kwargs.get("precomputed_features")
         if demos is not None and env is not None and kwargs.get("feature_model_types") is None:
             selected = kwargs.get("selected_raw_feature_ids")
             if selected is None:
@@ -132,6 +141,8 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     num_features = len(env.get_feature_schema())
                 elif getattr(env, "feature_schema", None) is not None:
                     num_features = len(getattr(env, "feature_schema"))
+                elif precomputed_features is not None:
+                    num_features = int(np.asarray(precomputed_features[0], dtype=float).shape[1])
                 else:
                     num_features = int(np.asarray(env.compute_all_features_matrix(np.asarray(demos[0]))).shape[1])
             else:
@@ -158,7 +169,21 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         )
         self.map_active_mode_prior = self._normalize_active_mode_prior(map_active_mode_prior)
         self.map_mode_aggregation = self._normalize_map_mode_aggregation(map_mode_aggregation)
+        self.map_vote_prior_scope = self._normalize_map_vote_prior_scope(map_vote_prior_scope)
+        self.map_refit_winning_voters = bool(map_refit_winning_voters)
         self.map_convergence_tol = max(float(map_convergence_tol), 0.0)
+        self.map_mstep_boundary_trim = max(int(map_mstep_boundary_trim), 0)
+        if map_progress_kappa is not None:
+            map_progress_kappa = float(map_progress_kappa)
+            if not np.isfinite(map_progress_kappa) or map_progress_kappa < 0.0:
+                raise ValueError("map_progress_kappa must be null or a finite nonnegative scalar.")
+        self.map_progress_kappa = map_progress_kappa
+        self.map_progress_kappa_max = float(map_progress_kappa_max)
+        if not np.isfinite(self.map_progress_kappa_max) or self.map_progress_kappa_max <= 0.0:
+            raise ValueError("map_progress_kappa_max must be a finite positive scalar.")
+        initial_kappa = 0.0 if self.map_progress_kappa is None else float(self.map_progress_kappa)
+        self.map_progress_kappas_ = np.full(self.num_stages, initial_kappa, dtype=float)
+        self.map_progress_kappa_history_ = []
         if map_demo_num_workers is None:
             map_demo_num_workers = min(len(self.demos), os.cpu_count() or 1)
         if int(map_demo_num_workers) < 1:
@@ -166,7 +191,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         self.map_demo_num_workers = min(int(map_demo_num_workers), max(len(self.demos), 1))
         self.score_threshold_matrix = np.zeros((self.num_stages, self.num_features), dtype=float)
         self.has_equality_feature = True
-        self._map_free_segment_cache: dict[tuple[int, int, int], tuple[_StageParams, float, float]] = {}
+        self._map_free_segment_cache: dict[tuple[int, int, int], tuple[_StageParams, float]] = {}
         self._map_local_mode_cache: dict[tuple[int, int, int, int], Dict[str, _MAPModeFit]] = {}
         self._map_inactive_fit_cache: dict[tuple[int, int, int, int], _MAPModeFit] = {}
         self._map_interval_stats_cache: dict[tuple[int, int, int, int], dict] = {}
@@ -224,6 +249,20 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 "map_mode_aggregation must be one of: shared_vote, pooled, "
                 "demo_balanced_pooled, demo_balanced_vote."
             )
+        return aliases[text]
+
+    @staticmethod
+    def _normalize_map_vote_prior_scope(value: str) -> str:
+        text = str(value).strip().lower().replace("-", "_")
+        aliases = {
+            "shared": "shared",
+            "global": "shared",
+            "global_shared": "shared",
+            "per_demo": "per_demo",
+            "local": "per_demo",
+        }
+        if text not in aliases:
+            raise ValueError("map_vote_prior_scope must be one of: shared, per_demo.")
         return aliases[text]
 
     def _normalize_feature_probability_vector(self, value, *, default: float, name: str) -> np.ndarray:
@@ -428,7 +467,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         for demo_idx, info in enumerate(selected_infos):
             bounds = self._segment_bounds_from_stage_ends([int(x) for x in info["stage_ends"]])
             s, e = bounds[int(stage_idx)]
-            core_s, core_e = self._segment_core_bounds(int(s), int(e))
+            core_s, core_e = self._map_mstep_interval_bounds(int(s), int(e), stage_idx=int(stage_idx))
             xs = np.asarray(
                 self.standardized_features[int(demo_idx)][int(core_s) : int(core_e) + 1, int(feat_idx)],
                 dtype=float,
@@ -446,6 +485,17 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 }
             )
         return refs
+
+    def _map_mstep_interval_bounds(self, s: int, e: int, *, stage_idx: int) -> tuple[int, int]:
+        core_s, core_e = self._segment_core_bounds(int(s), int(e))
+        trim = int(self.map_mstep_boundary_trim)
+        if trim <= 0:
+            return int(core_s), int(core_e)
+        left_trim = trim if int(stage_idx) > 0 else 0
+        right_trim = trim if int(stage_idx) < int(self.num_stages) - 1 else 0
+        fit_s = min(int(core_s) + left_trim, int(core_e))
+        fit_e = max(int(fit_s), int(core_e) - right_trim)
+        return int(fit_s), int(fit_e)
 
     @staticmethod
     def _map_optimization_bounds(values: np.ndarray) -> tuple[float, float]:
@@ -661,8 +711,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         modes = ("inactive", "eq", "lb", "ub")
         order = {mode: idx for idx, mode in enumerate(modes)}
         num_demos = len(refs)
+        prior_divisor = float(max(num_demos, 1)) if self.map_vote_prior_scope == "shared" else 1.0
         prior_share = {
-            mode: float(prior_costs[mode]) / float(max(num_demos, 1))
+            mode: float(prior_costs[mode]) / prior_divisor
             for mode in modes
         }
         demo_votes = []
@@ -687,6 +738,8 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         selected_mode = majority_modes[0] if majority_modes else "inactive"
         return selected_mode, {
             "aggregation": str(aggregation),
+            "prior_scope": str(self.map_vote_prior_scope),
+            "prior_divisor": float(prior_divisor),
             "selected_mode": str(selected_mode),
             "majority_required": int(majority_required),
             "vote_counts": {mode: int(vote_counts[mode]) for mode in modes},
@@ -738,6 +791,32 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 prior_costs,
                 aggregation=aggregation,
             )
+            diagnostic["pre_refit_vector"] = (
+                None if vectors[mode] is None else np.asarray(vectors[mode], dtype=float).tolist()
+            )
+            diagnostic["refit_enabled"] = bool(self.map_refit_winning_voters)
+            diagnostic["refit_demo_indices"] = []
+            if self.map_refit_winning_voters and mode != "inactive":
+                voter_refs = [
+                    ref
+                    for ref, vote in zip(refs, diagnostic["demo_votes"])
+                    if str(vote) == str(mode)
+                ]
+                diagnostic["refit_demo_indices"] = [int(ref["demo_idx"]) for ref in voter_refs]
+                if mode == "eq":
+                    _, vectors[mode], kinds[mode] = self._pooled_eq_mstep(
+                        voter_refs,
+                        demo_balanced=demo_balanced,
+                    )
+                elif mode in {"lb", "ub"}:
+                    _, vectors[mode], kinds[mode] = self._pooled_ineq_mstep(
+                        voter_refs,
+                        mode,
+                        demo_balanced=demo_balanced,
+                    )
+            diagnostic["post_refit_vector"] = (
+                None if vectors[mode] is None else np.asarray(vectors[mode], dtype=float).tolist()
+            )
         else:
             mode = aggregate_mode
             diagnostic = {
@@ -748,6 +827,10 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 "demo_votes": [],
                 "demo_mean_nlls": [],
                 "demo_vote_scores": [],
+                "refit_enabled": False,
+                "pre_refit_vector": None,
+                "post_refit_vector": None,
+                "refit_demo_indices": [],
             }
         diagnostic["aggregate_mode"] = str(aggregate_mode)
         diagnostic["pooled_mode"] = str(aggregate_mode)
@@ -1068,6 +1151,13 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 labels["ub"],
                 "shared param",
             ]
+        shared_candidate_plot_infos = [
+            [
+                self._pooled_mode_fits_for_plot(selected_infos, int(stage_idx), int(feat_idx))
+                for feat_idx in range(self.num_features)
+            ]
+            for stage_idx in range(self.num_stages)
+        ]
         for demo_idx, info in enumerate(selected_infos):
             stage_ends = [int(x) for x in info["stage_ends"]]
             bounds = self._segment_bounds_from_stage_ends(stage_ends)
@@ -1079,8 +1169,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 squeeze=False,
             )
             for stage_idx, (s, e) in enumerate(bounds):
-                core_s, core_e = self._segment_core_bounds(int(s), int(e))
-                stage_params = info["stage_params"][stage_idx]
+                core_s, core_e = self._map_mstep_interval_bounds(int(s), int(e), stage_idx=int(stage_idx))
                 for feat_idx in range(self.num_features):
                     ax = axes[stage_idx][feat_idx]
                     xs = np.asarray(
@@ -1094,7 +1183,17 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     span = max(float(q_hi - q_lo), 1e-6)
                     lo = min(float(np.min(xs)), float(q_lo) - 0.8 * span)
                     hi = max(float(np.max(xs)), float(q_hi) + 0.8 * span)
-                    candidates = self._local_mode_candidates_cached(int(demo_idx), int(core_s), int(core_e), int(feat_idx))
+                    pooled_plot_info = shared_candidate_plot_infos[int(stage_idx)][int(feat_idx)]
+                    if pooled_plot_info is None:
+                        ax.axis("off")
+                        continue
+                    candidates = self._shared_candidate_mode_fits_for_interval(
+                        int(demo_idx),
+                        int(core_s),
+                        int(core_e),
+                        int(feat_idx),
+                        pooled_plot_info["fits"],
+                    )
                     for fit in candidates.values():
                         vec = fit.vector
                         if vec is not None:
@@ -1117,14 +1216,14 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                         alpha=0.7,
                         label="segment data",
                     )
-                    selected_mode = self._kind_to_mode(self._stage_feature_kind(stage_params, feat_idx))
+                    selected_mode = self._kind_to_mode(self.shared_param_kinds[stage_idx][feat_idx])
                     order = {"inactive": 0, "eq": 1, "lb": 2, "ub": 3}
                     best_fit = min(candidates.values(), key=lambda item: (float(item.cost), order.get(item.mode, 99)))
                     best_mode = str(best_fit.mode)
                     true_mode = self._map_true_mode(int(stage_idx), int(feat_idx))
                     hist_y_max = float(np.nanmax(hist_vals)) if np.asarray(hist_vals).size else 0.0
                     density_y_max = 0.0
-                    cost_lines = ["*=best  #=true"]
+                    cost_lines = ["*=best shared-param fit  #=true"]
                     for mode in ("inactive", "eq", "lb", "ub"):
                         fit = candidates[mode]
                         pdf = self._map_mode_fit_pdf(grid, fit)
@@ -1163,7 +1262,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                                 legend_items[text] = handle
                     title = (
                         f"s{stage_idx + 1} {self._map_feature_name(feat_idx)} "
-                        f"[{int(s)},{int(e)}] best={selected_mode} shared={shared_mode} "
+                        f"[{int(s)},{int(e)}] demo-best={best_mode} shared={shared_mode} "
                         f"true={'?' if true_mode is None else '#' + true_mode}"
                     )
                     ax.set_title(title, fontsize=8)
@@ -1211,7 +1310,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     fontsize=7,
                     frameon=False,
                 )
-            fig.suptitle(f"MAP local mode costs | demo {demo_idx} | iter {plot_it:04d}", fontsize=11, y=0.995)
+            fig.suptitle(f"MAP shared-parameter mode costs | demo {demo_idx} | iter {plot_it:04d}", fontsize=11, y=0.995)
             fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92), pad=0.7)
             save_figure(fig, out_dir / f"density_demo_{int(demo_idx):02d}_iter_{int(plot_it):04d}.png", dpi=180)
 
@@ -1717,6 +1816,41 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         order = {"inactive": 0, "eq": 1, "lb": 2, "ub": 3}
         return min(candidates.values(), key=lambda item: (float(item.cost), order.get(item.mode, 99)))
 
+    def _shared_candidate_mode_fits_for_interval(
+        self,
+        demo_idx: int,
+        core_s: int,
+        core_e: int,
+        feat_idx: int,
+        shared_candidate_fits: Dict[str, _MAPModeFit],
+    ) -> Dict[str, _MAPModeFit]:
+        xs = np.asarray(
+            self.standardized_features[int(demo_idx)][int(core_s) : int(core_e) + 1, int(feat_idx)],
+            dtype=float,
+        ).reshape(-1)
+        stats = self._interval_feature_stats_cached(int(demo_idx), int(core_s), int(core_e), int(feat_idx))
+        eq_eta = float(np.asarray(shared_candidate_fits["eq"].vector, dtype=float).reshape(-1)[0])
+        lb_eta = float(np.asarray(shared_candidate_fits["lb"].vector, dtype=float).reshape(-1)[0])
+        ub_eta = float(np.asarray(shared_candidate_fits["ub"].vector, dtype=float).reshape(-1)[0])
+        return {
+            "inactive": self._inactive_fit_cached(int(demo_idx), int(core_s), int(core_e), int(feat_idx)),
+            "eq": self._equality_fit(xs, eta=eq_eta, feat_idx=int(feat_idx)),
+            "lb": self._inequality_fit_from_stats(
+                xs,
+                mode="lb",
+                eta=lb_eta,
+                stats=stats,
+                feat_idx=int(feat_idx),
+            ),
+            "ub": self._inequality_fit_from_stats(
+                xs,
+                mode="ub",
+                eta=ub_eta,
+                stats=stats,
+                feat_idx=int(feat_idx),
+            ),
+        }
+
     def _shared_mode_fit(self, xs, *, stage_idx: int, feat_idx: int) -> _MAPModeFit:
         kind = None
         eta = None
@@ -1846,30 +1980,119 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             param_vectors=vectors,
         )
 
-    def _free_segment_fit(self, demo_idx: int, s: int, e: int) -> tuple[_StageParams, float, float]:
+    @staticmethod
+    def _map_progress_log_normalizer_ratio(kappa: float) -> float:
+        kappa = float(kappa)
+        if kappa <= 1e-6:
+            kappa_sq = kappa * kappa
+            return float(kappa_sq / 6.0 - (kappa_sq * kappa_sq) / 180.0)
+        return float(kappa + math.log1p(-math.exp(-2.0 * kappa)) - math.log(2.0 * kappa))
+
+    @staticmethod
+    def _map_progress_values(X, s: int, e: int, subgoal) -> np.ndarray:
+        if int(e) <= int(s):
+            return np.empty(0, dtype=float)
+        trajectory = np.asarray(X, dtype=float)
+        start_t = max(int(s), 0)
+        end_t = min(int(e) - 1, len(trajectory) - 2)
+        if end_t < start_t:
+            return np.empty(0, dtype=float)
+        segment = trajectory[start_t : end_t + 2]
+        steps = segment[1:] - segment[:-1]
+        step_norms = np.linalg.norm(steps, axis=1)
+        valid = step_norms > 1e-12
+        if not np.any(valid):
+            return np.empty(0, dtype=float)
+        goal = np.asarray(subgoal, dtype=float).reshape(1, -1)
+        distance_before = np.linalg.norm(segment[:-1] - goal, axis=1)
+        distance_after = np.linalg.norm(segment[1:] - goal, axis=1)
+        progress = (distance_before[valid] - distance_after[valid]) / step_norms[valid]
+        return np.clip(np.asarray(progress, dtype=float), -1.0, 1.0)
+
+    def _map_progress_cost(self, X, s: int, e: int, subgoal, stage_idx: int) -> float:
+        progress = self._map_progress_values(X, int(s), int(e), subgoal)
+        if progress.size == 0:
+            return 0.0
+        kappa = float(self.map_progress_kappas_[int(stage_idx)])
+        log_normalizer_ratio = self._map_progress_log_normalizer_ratio(kappa)
+        return float(progress.size * log_normalizer_ratio - kappa * float(np.sum(progress)))
+
+    def _fit_map_progress_kappas(self, selected_infos: Sequence[dict]) -> np.ndarray:
+        if self.map_progress_kappa is not None:
+            return np.full(self.num_stages, float(self.map_progress_kappa), dtype=float)
+
+        fitted = np.zeros(self.num_stages, dtype=float)
+        for stage_idx in range(self.num_stages):
+            stage_progress = []
+            for demo_idx, info in enumerate(selected_infos):
+                bounds = self._segment_bounds_from_stage_ends(info["stage_ends"])
+                s, e = bounds[int(stage_idx)]
+                values = self._map_progress_values(
+                    self.demos[int(demo_idx)],
+                    int(s),
+                    int(e),
+                    info["stage_params"][int(stage_idx)].subgoal,
+                )
+                if values.size:
+                    stage_progress.append(values)
+            if not stage_progress:
+                continue
+            mean_progress = float(np.mean(np.concatenate(stage_progress)))
+            if mean_progress <= 0.0:
+                continue
+
+            def objective(kappa):
+                return self._map_progress_log_normalizer_ratio(float(kappa)) - float(kappa) * mean_progress
+
+            result = minimize_scalar(
+                objective,
+                bounds=(0.0, float(self.map_progress_kappa_max)),
+                method="bounded",
+                options={"xatol": 1e-8},
+            )
+            if result.success and np.isfinite(result.x):
+                fitted[stage_idx] = float(np.clip(result.x, 0.0, self.map_progress_kappa_max))
+        return fitted
+
+    def _free_segment_fit(self, demo_idx: int, stage_idx: int, s: int, e: int) -> tuple[_StageParams, float, float]:
         key = (int(demo_idx), int(s), int(e))
         cached = self._map_free_segment_cache.get(key)
-        if cached is not None:
-            return cached
-        stage_params = self._compute_stage_feature_free_params_uncached(int(demo_idx), int(s), int(e))
-        constraint_cost = float(np.sum(stage_params.feature_constraint_costs))
-        progress_cost = self._progress_cost(self.demos[int(demo_idx)], int(s), int(e), stage_params.subgoal)
-        result = (stage_params, constraint_cost, progress_cost)
-        self._map_free_segment_cache[key] = result
-        return result
+        if cached is None:
+            stage_params = self._compute_stage_feature_free_params_uncached(int(demo_idx), int(s), int(e))
+            constraint_cost = float(np.sum(stage_params.feature_constraint_costs))
+            cached = (stage_params, constraint_cost)
+            self._map_free_segment_cache[key] = cached
+        stage_params, constraint_cost = cached
+        progress_cost = self._map_progress_cost(
+            self.demos[int(demo_idx)],
+            int(s),
+            int(e),
+            stage_params.subgoal,
+            int(stage_idx),
+        )
+        return stage_params, float(constraint_cost), float(progress_cost)
 
     def _stage_feature_free_params(self, demo_idx: int, s: int, e: int) -> _StageParams:
-        return self._free_segment_fit(int(demo_idx), int(s), int(e))[0]
+        key = (int(demo_idx), int(s), int(e))
+        cached = self._map_free_segment_cache.get(key)
+        if cached is None:
+            stage_params = self._compute_stage_feature_free_params_uncached(int(demo_idx), int(s), int(e))
+            constraint_cost = float(np.sum(stage_params.feature_constraint_costs))
+            cached = (stage_params, constraint_cost)
+            self._map_free_segment_cache[key] = cached
+        return cached[0]
 
     def _fit_segment_stage(self, demo_idx, stage_idx, s, e):
-        return self._free_segment_fit(int(demo_idx), int(s), int(e))
+        return self._free_segment_fit(int(demo_idx), int(stage_idx), int(s), int(e))
 
     def _free_interval_cost_info(self, demo_idx: int, stage_idx: int, s: int, e: int):
         stage_len = int(e - s + 1)
         if stage_len < int(self.duration_min[stage_idx]) or stage_len > int(self.duration_max[stage_idx]):
             return None
-        stage_params, constraint_cost, progress_cost = self._free_segment_fit(int(demo_idx), int(s), int(e))
-        total = float(constraint_cost + self.lambda_progress * progress_cost)
+        stage_params, constraint_cost, progress_cost = self._free_segment_fit(
+            int(demo_idx), int(stage_idx), int(s), int(e)
+        )
+        total = float(constraint_cost + progress_cost)
         return {
             "stage_idx": int(stage_idx),
             "s": int(s),
@@ -1889,8 +2112,10 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             return None
         constraint_cost = self._shared_interval_constraint_cost(int(demo_idx), int(stage_idx), int(s), int(e))
         subgoal = np.asarray(self.demos[int(demo_idx)][int(e)], dtype=float)
-        progress_cost = self._progress_cost(self.demos[int(demo_idx)], s, e, subgoal)
-        total = float(constraint_cost + self.lambda_progress * progress_cost)
+        progress_cost = self._map_progress_cost(
+            self.demos[int(demo_idx)], s, e, subgoal, int(stage_idx)
+        )
+        total = float(constraint_cost + progress_cost)
         return {
             "stage_idx": int(stage_idx),
             "s": int(s),
@@ -2076,10 +2301,26 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 shared_param_vectors[stage_idx][feat_idx] = np.asarray(vec, dtype=float)
         self.map_shared_mode_costs_ = shared_mode_costs
         self.map_shared_mode_votes_ = shared_mode_votes
-        return shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active
+        progress_kappas = self._fit_map_progress_kappas(selected_infos)
+        return shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active, progress_kappas
 
-    def _apply_map_shared_state(self, shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active):
+    def _apply_map_shared_state(
+        self,
+        shared_stage_subgoals,
+        shared_param_vectors,
+        shared_param_kinds,
+        shared_active,
+        progress_kappas,
+    ):
         self._apply_shared_state(shared_stage_subgoals, shared_param_vectors, shared_param_kinds)
+        progress_kappas = np.asarray(progress_kappas, dtype=float).reshape(-1)
+        if progress_kappas.size != self.num_stages:
+            raise ValueError(
+                f"MAP progress state must contain {self.num_stages} kappas, got {progress_kappas.size}."
+            )
+        if not np.all(np.isfinite(progress_kappas)) or np.any(progress_kappas < 0.0):
+            raise ValueError("MAP progress kappas must be finite and nonnegative.")
+        self.map_progress_kappas_ = progress_kappas.copy()
         self.shared_feature_score_mean = np.asarray(shared_active, dtype=float)
         self.r = np.rint(self.shared_feature_score_mean).astype(int)
         self.shared_activation_proto = np.asarray(self.shared_feature_score_mean, dtype=float).copy()
@@ -2107,7 +2348,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             {
                 "constraint": float(info["constraint"]),
                 "short_segment_penalty": 0.0,
-                "progress": self.lambda_progress * float(info["progress"]),
+                "progress": float(info["progress"]),
                 "param_consensus": 0.0,
                 "activation_consensus": 0.0,
                 "total": float(info["total"]),
@@ -2141,6 +2382,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         self.loss_param_consensus.append(0.0)
         self.loss_activation_consensus.append(0.0)
         self.loss_total.append(float(total_loss))
+        self.map_progress_kappa_history_.append(np.asarray(self.map_progress_kappas_, dtype=float).copy())
         self.posthoc_activation_summary_ = self._compute_posthoc_activation_summary()
 
         gammas = _hard_gammas_from_stage_ends([len(X) for X in self.demos], self.stage_ends_, self.num_stages)
@@ -2152,6 +2394,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             extras = {
                 "stage_ends": self.stage_ends_,
                 "active": int(np.sum(self.r)),
+                "progress_kappa": np.round(self.map_progress_kappas_, 4).tolist(),
             }
             print(
                 format_training_log(
@@ -2160,7 +2403,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     losses={
                         "total": float(total_loss),
                         "constraint": total_constraint,
-                        "progress": self.lambda_progress * total_progress,
+                        "progress": total_progress,
                     },
                     metrics=metrics,
                     extras=extras,
@@ -2247,16 +2490,17 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             )
             progress_cost = float(
                 sum(
-                    self._progress_cost(
+                    self._map_progress_cost(
                         X,
                         int(start),
                         int(end),
                         np.asarray(params.subgoal, dtype=float),
+                        int(stage_idx),
                     )
-                    for (start, end), params in zip(bounds, stage_params)
+                    for stage_idx, ((start, end), params) in enumerate(zip(bounds, stage_params))
                 )
             )
-            total_cost = float(constraint_cost + self.lambda_progress * progress_cost)
+            total_cost = float(constraint_cost + progress_cost)
             selected_infos.append(
                 {
                     "cutpoints": normalized_ends[:-1],
@@ -2273,6 +2517,22 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
 
         shared_state = self._shared_from_selected(selected_infos)
         self._apply_map_shared_state(*shared_state)
+        for demo_idx, info in enumerate(selected_infos):
+            bounds = self._segment_bounds_from_stage_ends(info["stage_ends"])
+            progress_cost = float(
+                sum(
+                    self._map_progress_cost(
+                        self.demos[int(demo_idx)],
+                        int(start),
+                        int(end),
+                        info["stage_params"][int(stage_idx)].subgoal,
+                        int(stage_idx),
+                    )
+                    for stage_idx, (start, end) in enumerate(bounds)
+                )
+            )
+            info["progress"] = progress_cost
+            info["total"] = float(info["constraint"] + progress_cost)
         self._record_iteration_state(
             0,
             selected_infos,
@@ -2319,18 +2579,34 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         self.map_shared_mode_costs_ = []
         self.map_shared_mode_votes_ = []
         self._map_last_mode_vote_diagnostic = {}
+        initial_kappa = 0.0 if self.map_progress_kappa is None else float(self.map_progress_kappa)
+        self.map_progress_kappas_ = np.full(self.num_stages, initial_kappa, dtype=float)
+        self.map_progress_kappa_history_ = []
 
         executor = self._create_demo_executor()
         try:
             selected_infos = self._segment_all_demos("free", executor=executor)
-            shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active = self._shared_from_selected(selected_infos)
-            self._apply_map_shared_state(shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active)
+            (
+                shared_stage_subgoals,
+                shared_param_vectors,
+                shared_param_kinds,
+                shared_active,
+                progress_kappas,
+            ) = self._shared_from_selected(selected_infos)
+            self._apply_map_shared_state(
+                shared_stage_subgoals,
+                shared_param_vectors,
+                shared_param_kinds,
+                shared_active,
+                progress_kappas,
+            )
             self._record_iteration_state(-1, selected_infos, float(sum(info["total"] for info in selected_infos)))
 
             prev_signature = (
                 [list(info["stage_ends"]) for info in selected_infos],
                 [[None if v is None else tuple(np.round(np.asarray(v, dtype=float), 8)) for v in row] for row in self.shared_param_vectors],
                 [[None if k is None else str(k) for k in row] for row in self.shared_param_kinds],
+                tuple(np.round(np.asarray(self.map_progress_kappas_, dtype=float), 8)),
             )
 
             for iteration in range(int(max_iter)):
@@ -2341,14 +2617,27 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     shared_param_vectors,
                     shared_param_kinds,
                     shared_active,
+                    progress_kappas,
                 )
                 selected_infos = self._segment_all_demos(
                     "shared",
                     executor=executor,
                     shared_state=shared_state,
                 )
-                shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active = self._shared_from_selected(selected_infos)
-                self._apply_map_shared_state(shared_stage_subgoals, shared_param_vectors, shared_param_kinds, shared_active)
+                (
+                    shared_stage_subgoals,
+                    shared_param_vectors,
+                    shared_param_kinds,
+                    shared_active,
+                    progress_kappas,
+                ) = self._shared_from_selected(selected_infos)
+                self._apply_map_shared_state(
+                    shared_stage_subgoals,
+                    shared_param_vectors,
+                    shared_param_kinds,
+                    shared_active,
+                    progress_kappas,
+                )
 
                 total_loss = float(sum(info["total"] for info in selected_infos))
                 self._record_iteration_state(iteration, selected_infos, total_loss)
@@ -2356,6 +2645,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     [list(info["stage_ends"]) for info in selected_infos],
                     [[None if v is None else tuple(np.round(np.asarray(v, dtype=float), 8)) for v in row] for row in self.shared_param_vectors],
                     [[None if k is None else str(k) for k in row] for row in self.shared_param_kinds],
+                    tuple(np.round(np.asarray(self.map_progress_kappas_, dtype=float), 8)),
                 )
                 if signature == prev_signature:
                     if self.verbose:

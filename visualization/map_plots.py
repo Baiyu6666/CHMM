@@ -148,8 +148,12 @@ def _set_compact_trajectory_limits(ax, env, data_points: np.ndarray):
     ax.set_ylim(float(lo[1] - pad), float(hi[1] + pad))
 
 
-def _legend(ax, *, outside=False):
+def _legend(ax, *, outside=False, additional_axes=()):
     handles, labels = ax.get_legend_handles_labels()
+    for additional_ax in additional_axes:
+        additional_handles, additional_labels = additional_ax.get_legend_handles_labels()
+        handles.extend(additional_handles)
+        labels.extend(additional_labels)
     by_label = {}
     for handle, label in zip(handles, labels):
         text = "" if label is None else str(label).strip()
@@ -495,7 +499,7 @@ def _draw_learning_curves(ax, learner):
         return
     ax.plot(iters, learner.loss_total, color="black", lw=1.35, label="total")
     ax.plot(iters, learner.loss_constraint, color="tab:red", lw=1.0, label="constraint")
-    progress = float(getattr(learner, "lambda_progress", 1.0)) * np.asarray(getattr(learner, "loss_progress", []), dtype=float)
+    progress = np.asarray(getattr(learner, "loss_progress", []), dtype=float)
     if progress.size == iters.size:
         ax.plot(iters, progress, color="tab:orange", lw=1.0, label="progress")
     ax.set_title("MAP objective", fontsize=PAPER_TITLE_SIZE, pad=4)
@@ -635,7 +639,7 @@ def _map_stage_loss_breakdown_for_stage_ends(learner, demo_idx: int, stage_ends)
             return None
         stage_total.append(float(info["weighted_total"]))
         stage_constraint.append(float(info["constraint"]))
-        stage_progress.append(float(getattr(learner, "lambda_progress", 1.0)) * float(info["progress"]))
+        stage_progress.append(float(info["progress"]))
     return {
         "stage_total": np.asarray(stage_total, dtype=float),
         "stage_constraint": np.asarray(stage_constraint, dtype=float),
@@ -780,30 +784,74 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, *, show_compone
 
     feature_cost_by_feat = [[] for _ in range(int(getattr(learner, "num_features", 0)))]
     total_feature_cost = []
+    progress_cost = []
     for value in candidate_values:
         candidate_cutpoints = list(learned_cutpoints)
         candidate_cutpoints[vary_index] = int(value)
         if any(candidate_cutpoints[k] >= candidate_cutpoints[k + 1] for k in range(len(candidate_cutpoints) - 1)):
             feature_costs = None
+            breakdown = None
         else:
+            candidate_stage_ends = [int(x) for x in candidate_cutpoints] + [int(T - 1)]
             feature_costs = _map_adjacent_feature_costs_for_stage_ends(
                 learner,
                 int(demo_idx),
-                [int(x) for x in candidate_cutpoints] + [int(T - 1)],
+                candidate_stage_ends,
                 vary_index,
             )
-        if feature_costs is None:
+            breakdown = _map_stage_loss_breakdown_for_stage_ends(
+                learner,
+                int(demo_idx),
+                candidate_stage_ends,
+            )
+        if feature_costs is None or breakdown is None:
             total_feature_cost.append(np.nan)
+            progress_cost.append(np.nan)
             for values in feature_cost_by_feat:
                 values.append(np.nan)
             continue
         feature_costs = np.asarray(feature_costs, dtype=float)
         total_feature_cost.append(float(np.nansum(feature_costs)))
+        progress_cost.append(float(np.sum(breakdown["stage_progress"][vary_index : vary_index + 2])))
         for feat_idx, values in enumerate(feature_cost_by_feat):
             values.append(float(feature_costs[feat_idx]) if feat_idx < feature_costs.size else np.nan)
 
-    total_arr = np.asarray(total_feature_cost, dtype=float)
-    ax.plot(candidate_values, total_arr, color="black", lw=1.35, label="sum features")
+    constraint_arr = np.asarray(total_feature_cost, dtype=float)
+    progress_arr = np.asarray(progress_cost, dtype=float)
+    total_arr = constraint_arr + progress_arr
+    current_value = int(learned_cutpoints[vary_index])
+    ax.plot(candidate_values, total_arr, color="black", lw=1.45, label="total MAP")
+    progress_ax = None
+    if show_components:
+        ax.plot(
+            candidate_values,
+            constraint_arr,
+            color="#555555",
+            linestyle="--",
+            lw=1.1,
+            alpha=0.9,
+            label="sum features",
+        )
+        current_matches = np.flatnonzero(candidate_values == current_value)
+        if current_matches.size and np.isfinite(progress_arr[int(current_matches[0])]):
+            progress_reference = float(progress_arr[int(current_matches[0])])
+        else:
+            finite_progress = progress_arr[np.isfinite(progress_arr)]
+            progress_reference = float(finite_progress[0]) if finite_progress.size else 0.0
+        progress_delta = progress_arr - progress_reference
+        progress_ax = ax.twinx()
+        progress_ax.plot(
+            candidate_values,
+            progress_delta,
+            color="#A21CAF",
+            linestyle="-.",
+            lw=1.1,
+            alpha=0.9,
+            label="progress delta (right)",
+        )
+        progress_ax.axhline(0.0, color="#A21CAF", linestyle=":", lw=0.65, alpha=0.35)
+        progress_ax.set_ylabel("progress cost delta", color="#A21CAF", fontsize=PAPER_LABEL_SIZE)
+        progress_ax.tick_params(axis="y", colors="#A21CAF", labelsize=PAPER_TICK_SIZE, pad=1.5)
     feature_colors = plt.cm.tab10(np.linspace(0.0, 1.0, max(len(feature_cost_by_feat), 1)))
     for feat_idx, values in enumerate(feature_cost_by_feat):
         feat_values = np.asarray(values, dtype=float)
@@ -818,7 +866,6 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, *, show_compone
             label=_feature_name(learner, feat_idx),
         )
 
-    current_value = int(learned_cutpoints[vary_index])
     ax.axvline(current_value, color="black", linestyle="--", lw=1.0, label="pred boundary")
     true_cutpoints = _true_cutpoints_for_demo(learner, demo_idx)
     focus_cutpoints = [current_value]
@@ -844,16 +891,17 @@ def _draw_single_cut_scan(ax, learner, demo_idx=0, vary_index=0, *, show_compone
         title += f" | fixed {fixed_label}"
     ax.set_title(title, fontsize=PAPER_TITLE_SIZE, pad=3)
     ax.set_xlabel(f"cp{vary_index + 1} index", fontsize=PAPER_LABEL_SIZE)
-    ax.set_ylabel("feature MAP NLL cost", fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel("adjacent-stage MAP cost", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE, pad=1.5)
     ax.grid(axis="y", color="#cfcfcf", linewidth=0.55, alpha=0.18)
     _set_cut_scan_ylim(
         ax,
         candidate_values,
-        [total_arr] + [np.asarray(values, dtype=float) for values in feature_cost_by_feat],
+        [total_arr, constraint_arr]
+        + [np.asarray(values, dtype=float) for values in feature_cost_by_feat],
         focus_cutpoints,
     )
-    _legend(ax)
+    _legend(ax, additional_axes=(() if progress_ax is None else (progress_ax,)))
 
 
 def _draw_metrics(ax, metrics):

@@ -7,6 +7,7 @@
 
 import numpy as np
 from evaluation import evaluate_model_metrics
+from methods.common.features import resolve_feature_matrices
 from utils.models import (
     GaussianModel,
     MarginExpLowerEmission,
@@ -63,9 +64,11 @@ class FCHMM:
         q_high=0.9,
 
         g1_vis_alpha=1.0,
+        precomputed_features=None,
     ):
         self.demos = list(demos)
         self.env = env
+        self.precomputed_features = precomputed_features
         self.num_stages = int(n_stages)
         if self.num_stages < 2:
             raise ValueError("FCHMM requires at least 2 stages.")
@@ -352,13 +355,17 @@ class FCHMM:
         )
 
     def _compute_all_features_raw(self, X):
+        demo_idx = next((idx for idx, demo in enumerate(self.demos) if demo is X), None)
+        if demo_idx is not None and self.precomputed_features is not None:
+            return np.asarray(self.precomputed_features[int(demo_idx)], dtype=float)
         return np.asarray(self.env.compute_all_features_matrix(np.asarray(X, float)), float)
 
     def _init_feature_preprocessing(self):
+        feature_matrices = resolve_feature_matrices(self.demos, self.env, self.precomputed_features)
+        self.raw_features = [matrix.copy() for matrix in feature_matrices]
         all_env = []
         m_env = None
-        for X in self.demos:
-            F_env = self._compute_all_features_raw(X)
+        for F_env in feature_matrices:
             if m_env is None:
                 m_env = F_env.shape[1]
             all_env.append(F_env)

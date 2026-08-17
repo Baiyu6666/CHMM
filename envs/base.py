@@ -10,6 +10,7 @@ import numpy as np
 class TaskBundle:
     name: str
     demos: List[np.ndarray]
+    features: Optional[List[np.ndarray]] = None
     env: Optional[Any] = None
     true_taus: Optional[List[int]] = None
     true_cutpoints: Optional[List[np.ndarray]] = None

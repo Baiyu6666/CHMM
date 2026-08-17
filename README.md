@@ -123,7 +123,10 @@ Important MAP config fields:
 - `map_balanced_pooled` and `map_balanced_vote` inherit each dataset's `map` override automatically and change only the M-step aggregation.
 - `map_activation_prior`: feature-wise vector of `P(active)` values, shared by all stages; its mode cost is split evenly across demo vote scores under voting aggregation and applied once under direct pooled/balanced aggregation
 - `map_active_mode_prior`: `eq`, `lb`, and `ub` feature-wise vectors for `P(mode | active)`; the three probabilities for each feature must sum to one
+- `map_mstep_boundary_trim`: samples removed on both sides of each internal recovered stage boundary only when fitting/voting shared MAP modes and parameters; DP segmentation still scores the full intervals
 - `map_demo_num_workers`: number of MAP demo-segmentation worker processes; `null` uses up to one worker per demo, while `1` disables multiprocessing
+- `map_progress_kappa`: `null` fits one nonnegative goal-progress concentration per stage; a nonnegative scalar fixes the same concentration for every stage and demo; `0` disables MAP progress
+- `map_progress_kappa_max`: numerical upper bound used only while fitting stage-wise progress concentrations
 - MAP uses unweighted likelihoods; SWCL's equality/inequality weights do not apply to MAP
 
 Important post-hoc constraint config fields for `gmmhmm`, `hmm`, `arhsmm`, `changepoint`, `changeforest`, and `cluster`:
@@ -289,6 +292,34 @@ python experiments/render_s5_planned_trajectory.py \
   --planner optimizer \
   --gui 1 \
   --outdir outputs/swcl/videos/s5_planned_render
+```
+
+S5 cache files with `cache_version >= 20` are self-describing standalone NPZ datasets. They can be read without importing this project:
+
+```python
+import json
+import numpy as np
+
+with np.load("seed_127_....npz", allow_pickle=False) as data:
+    manifest = json.loads(str(data["dataset_manifest_json"].item()))
+    demo_index = 0
+    position = data[f"position_{demo_index:03d}"]
+    tool_axis = data[f"tool_axis_{demo_index:03d}"]
+    goal_position = data[f"goal_position_{demo_index:03d}"]
+    timestamps = data[f"timestamps_{demo_index:03d}"]
+    features = data[f"features_{demo_index:03d}"]
+    stage_labels = data[f"stage_labels_{demo_index:03d}"]
+    cutpoints = data[f"cutpoints_{demo_index:03d}"]
+```
+
+The manifest records units, coordinate frame, stage semantics, feature schema and extractor version, constraints, required fields, and optional robot-state fields. Training uses the materialized `features` arrays by default; recomputation is reserved for explicit dataset migration or verification. Per-demo sampling and PyBullet acceptance metadata are stored in `demo_metadata_json`.
+
+The S5 implementation is split by responsibility under `envs/s5/`: `task.py`, `generator.py`, `time_parameterization.py`, `execution.py`, `planner.py`, `features.py`, `dataset.py`, and `rendering.py`. Geometry is supplied to one fixed-step time-parameterizer; stage taper, correlated variation, and the existing Gaussian valleys are explicit speed-intent inputs. The valleys are retained as deliberate slowdown events rather than being embedded implicitly in geometry generation. `envs/S5SphereInspect.py` remains a compatibility import façade. Formal loader defaults come from the single `S5_SYNTHETIC_V23` dataclass preset in `envs/s5/config.py`. Its stage-2 tool-normal error uses randomly spaced control points plus smoothing, then quantile-matches the v20 near-bound marginal distribution. Subsequent orientation stages sample after their shared boundary pose, matching the position concatenation semantics and avoiding artificial zero angular-speed samples. `S5_SYNTHETIC_V20`, `S5_SYNTHETIC_V21`, and `S5_SYNTHETIC_V22` remain available for frozen and intermediate regression.
+
+Verify the time-parameterization semantics and confirm that the frozen v20 dataset plus analytic generator retain their expected fingerprints:
+
+```bash
+python experiments/check_s5_v20_regression.py
 ```
 
 ### GUI Modes

@@ -1,0 +1,8 @@
+{
+  "task": "S4SlideInsert",
+  "seed": 1342,
+  "n_demos": 10,
+  "array_count": 40,
+  "demo_lengths": [127, 169, 156, 121, 165, 153, 128, 126, 132, 115],
+  "sha256": "6005f8f103cf3bc1afc2f18f2fc5e19650d59d5168a17879e33d1aa2fac55165"
+}

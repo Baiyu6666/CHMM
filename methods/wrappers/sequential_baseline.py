@@ -63,6 +63,7 @@ class SequentialBaselineSegmenter:
             model = FCHMM(
                 demos=dataset.demos,
                 env=dataset.env,
+                precomputed_features=dataset.features,
                 true_taus=dataset.true_taus,
                 true_cutpoints=getattr(dataset, "true_cutpoints", None),
                 n_stages=resolved_kwargs.get("n_stages", 2),
