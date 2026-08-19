@@ -40,6 +40,7 @@ Typical workflow:
   - `methods/cores/posthoc_constraint_model.py`: post-hoc constraint learner
   - `methods/wrappers/`: joint and sequential method wrappers
 - `envs/`: benchmark environments and feature APIs
+  - `BarInsepect`: 4-stage real-task prototype for obstacle-aware bar inspection
   - `S3ObsAvoid`: 3-stage obstacle-avoidance task
   - `S4SlideInsert`: 4-stage slide-and-insert task
   - `S5SphereInspect`: 5-stage sphere-inspection task
@@ -97,9 +98,29 @@ Supported method names are:
 - `cluster`
 
 Supported dataset names are:
+- `BarInsepect`
 - `S3ObsAvoid`
 - `S4SlideInsert`
 - `S5SphereInspect`
+
+`BarInsepect` is the four-stage prototype for the physical steel-bar task. Its
+default learner uses obstacle clearance, EE-to-calibrated-table distance, tool pitch,
+and tool-axis plane error. Motion/bar-axis alignment, lateral centerline offset,
+speed, and angular speed are diagnostic columns only. The pose state
+uses `[x, y, z, qx, qy, qz, qw]`; the feature extractor can additionally bind
+time-aligned `baiyu_bar` and `baiyu_obs_ball` OptiTrack pose traces. The former
+provides the bar-local `+X` direction, while the latter supplies the center of a
+0.10 m-diameter infinite vertical obstacle cylinder at every sample. The
+checked-in synthetic demonstrations exercise the API
+until recorded demonstrations are converted into the same pose/OptiTrack
+representation.
+
+Convert a recorded BarInsepect bag into synchronized EE, bar, obstacle, and
+feature arrays with:
+
+```bash
+python experiments/extract_bar_inspection_rosbag.py INPUT.bag OUTPUT.npz
+```
 
 Important SWCL config fields:
 - `n_stages`: number of task stages

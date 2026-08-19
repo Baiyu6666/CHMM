@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="robot_name" default="iiwa14"/>
+  <arg name="config" default="$(find inspection_virtual_fixture)/config/inspection_virtual_fixture_iiwa14.yaml"/>
+
+  <group ns="/$(arg robot_name)">
+    <node name="demo_virtual_fixture"
+          pkg="inspection_virtual_fixture"
+          type="inspection_virtual_fixture"
+          output="screen"
+          required="true">
+      <rosparam file="$(arg config)" command="load"/>
+    </node>
+  </group>
+</launch>

@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>stage_demo_gui</name>
+  <version>0.1.0</version>
+  <description>Small web console for assisted iiwa14 demonstration collection.</description>
+  <maintainer email="baiyu@example.com">Baiyu</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>rospy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>iiwa_description</exec_depend>
+  <exec_depend>inspection_virtual_fixture</exec_depend>
+  <exec_depend>stage_demo_recorder</exec_depend>
+  <exec_depend>stage_optitrack</exec_depend>
+</package>

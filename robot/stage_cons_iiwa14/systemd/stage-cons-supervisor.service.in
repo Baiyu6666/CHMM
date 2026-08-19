@@ -1,0 +1,17 @@
+[Unit]
+Description=Stage Constraint host workstation supervisor
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=@PYTHON_EXECUTABLE@ @PROJECT_ROOT@/host_gui/supervisor.py
+Restart=on-failure
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+Environment=DOCKER_BUILDKIT=1
+PassEnvironment=DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS SSH_AUTH_SOCK
+
+[Install]
+WantedBy=default.target

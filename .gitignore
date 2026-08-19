@@ -7,3 +7,14 @@ __pycache__/
 
 # Generated experiment artifacts. Curated paper assets should live outside outputs/.
 /outputs/
+
+# Independent ROS/Docker workspace artifacts and local robot-network settings.
+/robot/stage_cons_iiwa14/.env
+/robot/stage_cons_iiwa14/ros_ws/build/
+/robot/stage_cons_iiwa14/ros_ws/devel/
+/robot/stage_cons_iiwa14/ros_ws/log/
+/robot/stage_cons_iiwa14/data/demos/*
+/robot/stage_cons_iiwa14/data/models/*
+/robot/stage_cons_iiwa14/host_gui/__pycache__/
+!/robot/stage_cons_iiwa14/data/demos/.gitkeep
+!/robot/stage_cons_iiwa14/data/models/.gitkeep

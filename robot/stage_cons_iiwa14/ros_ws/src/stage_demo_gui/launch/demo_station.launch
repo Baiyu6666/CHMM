@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="optitrack_server" default="128.178.145.104"/>
+  <arg name="optitrack_base" default="iiwa14"/>
+  <arg name="optitrack_object" default="baiyu_bar"/>
+  <arg name="optitrack_obstacle" default="baiyu_obs_ball"/>
+  <arg name="gui_host" default="127.0.0.1"/>
+  <arg name="gui_port" default="8080"/>
+
+  <!-- The Demo station must be able to start before the FRI driver. Upload
+       only the kinematic model needed by the virtual fixture; this launches
+       no hardware, controller, or robot-state publisher process. -->
+  <group ns="/iiwa14">
+    <include file="$(find iiwa_description)/launch/iiwa14_upload.launch">
+      <arg name="hardware_interface" value="EffortJointInterface"/>
+      <arg name="robot_name" value="iiwa14"/>
+    </include>
+  </group>
+
+  <include file="$(find stage_demo_recorder)/launch/demo_collection.launch">
+    <arg name="start_optitrack" value="true"/>
+    <arg name="optitrack_server" value="$(arg optitrack_server)"/>
+    <arg name="optitrack_base" value="$(arg optitrack_base)"/>
+    <arg name="optitrack_object" value="$(arg optitrack_object)"/>
+    <arg name="optitrack_obstacle" value="$(arg optitrack_obstacle)"/>
+  </include>
+
+  <include file="$(find inspection_virtual_fixture)/launch/inspection_virtual_fixture_iiwa14.launch"/>
+
+  <include file="$(find stage_demo_gui)/launch/demo_gui.launch">
+    <arg name="host" value="$(arg gui_host)"/>
+    <arg name="port" value="$(arg gui_port)"/>
+  </include>
+</launch>

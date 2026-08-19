@@ -1,0 +1,10 @@
+.git
+.env
+data
+host_gui
+systemd
+scripts
+config
+ros_ws/build
+ros_ws/devel
+ros_ws/log

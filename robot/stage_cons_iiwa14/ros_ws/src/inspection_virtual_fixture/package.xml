@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>inspection_virtual_fixture</name>
+  <version>0.1.0</version>
+  <description>Task-space virtual fixture for kinesthetic iiwa14 inspection demonstrations.</description>
+  <maintainer email="baiyu@example.com">Baiyu</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>kdl_parser</depend>
+  <depend>orocos_kdl</depend>
+  <depend>roscpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>urdf</depend>
+</package>

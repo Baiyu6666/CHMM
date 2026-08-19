@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="host" default="127.0.0.1"/>
+  <arg name="port" default="8080"/>
+  <arg name="root_frame" default="iiwa14_link_0"/>
+  <arg name="ee_frame" default="iiwa14_link_ee"/>
+
+  <node pkg="stage_demo_gui"
+        type="demo_gui.py"
+        name="stage_demo_gui"
+        output="screen"
+        required="true">
+    <param name="host" value="$(arg host)"/>
+    <param name="port" value="$(arg port)"/>
+    <param name="root_frame" value="$(arg root_frame)"/>
+    <param name="ee_frame" value="$(arg ee_frame)"/>
+    <param name="gui_file" value="$(find stage_demo_gui)/web/index.html"/>
+    <rosparam param="optitrack_to_robot_rotation">[[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]</rosparam>
+    <rosparam param="optitrack_to_robot_translation">[0.0, 0.0, 0.0]</rosparam>
+    <rosparam param="bar_outline_u">[-0.11177, 0.18629]</rosparam>
+    <rosparam param="bar_outline_v">[-0.01787, 0.04452]</rosparam>
+    <param name="obstacle_radius" value="0.05"/>
+  </node>
+</launch>

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>stage_optitrack</name>
+  <version>0.1.0</version>
+  <description>VRPN client launch and rigid-body poses expressed in the iiwa base frame.</description>
+  <maintainer email="baiyu@example.com">Baiyu</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>geometry_msgs</depend>
+  <depend>roscpp</depend>
+  <exec_depend>vrpn_client_ros</exec_depend>
+</package>

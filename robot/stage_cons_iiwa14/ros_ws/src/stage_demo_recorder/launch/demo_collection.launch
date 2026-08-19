@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="start_optitrack" default="true"/>
+  <arg name="optitrack_server" default="128.178.145.104"/>
+  <arg name="optitrack_base" default="iiwa14"/>
+  <arg name="optitrack_object" default="baiyu_bar"/>
+  <arg name="optitrack_obstacle" default="baiyu_obs_ball"/>
+  <arg name="config" default="$(find stage_demo_recorder)/config/demo_topics.yaml"/>
+
+  <include if="$(arg start_optitrack)" file="$(find stage_optitrack)/launch/optitrack.launch">
+    <arg name="server" value="$(arg optitrack_server)"/>
+    <arg name="base_name" value="$(arg optitrack_base)"/>
+    <arg name="object_name" value="$(arg optitrack_object)"/>
+    <arg name="obstacle_name" value="$(arg optitrack_obstacle)"/>
+  </include>
+
+  <node pkg="stage_demo_recorder"
+        type="demo_recorder.py"
+        name="demo_recorder"
+        output="screen"
+        required="true">
+    <rosparam file="$(arg config)" command="load"/>
+    <param name="optitrack_server" value="$(arg optitrack_server)"/>
+    <param name="optitrack_base" value="$(arg optitrack_base)"/>
+    <param name="optitrack_object" value="$(arg optitrack_object)"/>
+    <param name="optitrack_obstacle" value="$(arg optitrack_obstacle)"/>
+  </node>
+</launch>

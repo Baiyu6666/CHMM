@@ -7,6 +7,8 @@ from .registry import ENV_REGISTRY, load_env
 
 
 _LAZY_EXPORTS = {
+    "BarInsepectEnv": (".BarInsepect", "BarInsepectEnv"),
+    "load_BarInsepect": (".BarInsepect", "load_BarInsepect"),
     "S3ObsAvoidEnv": (".S3ObsAvoid", "S3ObsAvoidEnv"),
     "load_S3ObsAvoid": (".S3ObsAvoid", "load_S3ObsAvoid"),
     "S3ObsAvoidRealEnv": (".S3ObsAvoidReal", "S3ObsAvoidRealEnv"),
@@ -29,12 +31,14 @@ def __getattr__(name):
 
 
 __all__ = [
+    "BarInsepectEnv",
     "ENV_REGISTRY",
     "S3ObsAvoidEnv",
     "S3ObsAvoidRealEnv",
     "S4SlideInsertEnv",
     "S5SphereInspectEnv",
     "TaskBundle",
+    "load_BarInsepect",
     "load_S3ObsAvoid",
     "load_S3ObsAvoidReal",
     "load_S4SlideInsert",

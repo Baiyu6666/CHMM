@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>iiwa Stage Demo Console</title>
+  <style>
+    :root { color-scheme:dark; --bg:#0c1118; --panel:#151d28; --line:#2c394a;
+      --text:#edf3fa; --muted:#91a1b5; --blue:#62b1ff; --green:#52d88a;
+      --amber:#ffbd61; --red:#ff6c73; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at 15% 0,#142338 0,var(--bg) 38%);
+      color:var(--text); font:14px/1.5 system-ui,-apple-system,sans-serif; min-height:100vh; }
+    header { padding:20px 24px; border-bottom:1px solid var(--line); display:flex;
+      align-items:center; justify-content:space-between; gap:16px; }
+    h1 { margin:0; font-size:21px; letter-spacing:.2px; }
+    .subtitle { color:var(--muted); margin-top:3px; }
+    main { max-width:1260px; margin:auto; padding:20px; display:grid;
+      grid-template-columns:minmax(390px,.82fr) minmax(520px,1.18fr); gap:16px; }
+    .stack { display:grid; gap:16px; align-content:start; }
+    .panel { background:rgba(21,29,40,.96); border:1px solid var(--line);
+      border-radius:12px; padding:17px; box-shadow:0 12px 35px #0003; }
+    h2 { font-size:15px; margin:0 0 13px; }
+    .badge { padding:6px 11px; border-radius:99px; background:#253143;
+      color:var(--muted); font-weight:700; white-space:nowrap; }
+    .badge.ready,.badge.active { color:var(--green); }
+    .badge.warning { color:var(--amber); }
+    .badge.failed { color:var(--red); }
+    .connections { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
+    .conn { padding:9px; border:1px solid var(--line); background:#101722;
+      border-radius:8px; color:var(--muted); text-align:center; font-size:12px; }
+    .lamp { display:block; width:9px; height:9px; margin:0 auto 5px; border-radius:50%; background:#667386; }
+    .lamp.on { background:var(--green); box-shadow:0 0 8px #52d88a99; }
+    .lamp.off { background:var(--red); }
+    button { border:1px solid transparent; border-radius:8px; padding:11px 14px;
+      color:#07111c; font-weight:750; cursor:pointer; transition:transform .08s,opacity .15s; }
+    button:active { transform:translateY(1px); }
+    button:disabled { opacity:.32; cursor:not-allowed; }
+    .primary { background:var(--green); }
+    .orientation { background:var(--blue); }
+    .vertical { background:var(--amber); }
+    .record { background:var(--red); color:white; }
+    .secondary { background:#273548; color:var(--text); border-color:#3b4b61; }
+    button.enabled { box-shadow:0 0 0 2px #fff2 inset,0 0 16px currentColor; }
+    .controls { display:grid; gap:10px; }
+    .assist-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    label { display:grid; gap:5px; color:var(--muted); }
+    input,textarea { width:100%; padding:9px 10px; color:var(--text); background:#0e1620;
+      border:1px solid var(--line); border-radius:7px; resize:vertical; }
+    .record-fields { display:grid; grid-template-columns:1fr 1.5fr; gap:10px; }
+    .status-list { display:grid; grid-template-columns:130px 1fr; gap:7px 10px; margin-top:14px; }
+    .status-list div:nth-child(odd) { color:var(--muted); }
+    #message { min-height:42px; margin-top:12px; padding:10px 12px; border-radius:8px;
+      color:var(--muted); background:#0f1721; border-left:3px solid #46586f; overflow-wrap:anywhere; }
+    #message.success { color:var(--green); border-color:var(--green); }
+    #message.failed { color:var(--red); border-color:var(--red); }
+    .warning-box { margin-top:13px; color:var(--amber); border-left:3px solid var(--amber); padding-left:10px; }
+    canvas { width:100%; height:auto; display:block; background:#0a1017;
+      border:1px solid var(--line); border-radius:9px; }
+    .plot-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+    .legend { color:var(--muted); margin-top:9px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+    @media(max-width:900px){main{grid-template-columns:1fr}.connections{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:540px){.assist-grid,.record-fields{grid-template-columns:1fr}.connections{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<header>
+  <div><h1>iiwa Stage-Constraint Demo Console</h1><div class="subtitle">OptiTrack · Assisted Kinesthetic Demonstration · ROS Bag</div></div>
+  <span id="overallBadge" class="badge">连接中</span>
+</header>
+<main>
+  <section class="stack">
+    <div class="panel">
+      <h2>系统连接</h2>
+      <div class="connections">
+        <div class="conn"><i id="jointLamp" class="lamp"></i>Joint State</div>
+        <div class="conn"><i id="tfLamp" class="lamp"></i>EE TF</div>
+        <div class="conn"><i id="barLamp" class="lamp"></i>baiyu_bar</div>
+        <div class="conn"><i id="obstacleLamp" class="lamp"></i>baiyu_obs_ball</div>
+        <div class="conn"><i id="fixtureLamp" class="lamp"></i>Fixture</div>
+        <div class="conn"><i id="recorderLamp" class="lamp"></i>Recorder</div>
+        <div class="conn"><i id="commandingLamp" class="lamp"></i>FRI Active</div>
+        <div class="conn"><i id="torqueModeLamp" class="lamp"></i>Torque Mode</div>
+        <div class="conn"><i id="motionGateLamp" class="lamp"></i>Motion Gate</div>
+      </div>
+      <div class="controls">
+        <button id="modeBtn" class="primary">激活 Demo 采集模式</button>
+        <div class="assist-grid">
+          <button id="orientationBtn" class="orientation" disabled>开启 Orientation 保持</button>
+          <button id="verticalBtn" class="vertical" disabled>开启竖直阻尼</button>
+        </div>
+      </div>
+      <div class="status-list">
+        <div>Robot state</div><div id="modeState">保持模式</div>
+        <div>Orientation</div><div id="orientationState">关闭</div>
+        <div>Vertical damping</div><div id="verticalState">关闭</div>
+        <div>辅助输出</div><div id="assistState">未激活</div>
+      </div>
+      <div class="warning-box">实验性 FRI position-reference hold 已因硬件测试中的异常回位力而禁用；非 Demo 状态目前不会机械锁定机器人。网页不会启动 FRI 或绕过 SmartPAD。</div>
+    </div>
+
+    <div class="panel">
+      <h2>ROS Bag Demonstration</h2>
+      <div class="record-fields">
+        <label>Demo label<input id="labelInput" value="demo_01" maxlength="60"></label>
+        <label>Notes<input id="notesInput" placeholder="可选：方向、材料、辅助设置"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:11px">
+        <button id="recordBtn" class="record" disabled>开始 Record Demo</button>
+        <button id="clearBtn" class="secondary">清空 XY</button>
+      </div>
+      <div class="status-list">
+        <div>Recorder</div><div id="recorderState">等待</div>
+        <div>Session</div><div id="sessionState">—</div>
+        <div>保存位置</div><div>host: data/demos/</div>
+      </div>
+      <div id="message">等待系统状态……</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="plot-head"><h2 style="margin:0">End-Effector XY 轨迹</h2><span id="pointCount" class="badge">0 samples</span></div>
+    <canvas id="xyCanvas" width="760" height="600"></canvas>
+    <div class="legend">
+      <span><i class="dot" style="background:#62b1ff"></i>Demo-mode trace</span>
+      <span><i class="dot" style="background:#ffbd61"></i>Current EE</span>
+      <span><i class="dot" style="background:#ef6b73"></i>Obstacle cylinder</span>
+      <span><i class="dot" style="background:#b9c4d2"></i>Tracked bar</span>
+      <span id="eeValue">EE: —</span>
+    </div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id); let state=null,busy=false;
+const canvas=$('xyCanvas'),ctx=canvas.getContext('2d');
+function lamp(id,on){$(id).className='lamp '+(on?'on':'off')}
+function message(text,ok){$('message').textContent=text;$('message').className=ok===true?'success':ok===false?'failed':''}
+async function post(path,body){busy=true;try{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.ok)throw Error(data.message||response.statusText);message(data.message,true);return data}catch(error){message(error.message,false);throw error}finally{busy=false}}
+function draw(){
+  const trace=state?.trace||[],current=state?.current_ee,scene=state?.scene_geometry||{},m=52,w=canvas.width,h=canvas.height;
+  ctx.clearRect(0,0,w,h);ctx.fillStyle='#0a1017';ctx.fillRect(0,0,w,h);
+  let points=trace.slice();if(current)points.push([current.x,current.y]);
+  let barCorners=[];
+  if(scene.bar){
+    const [cx,cy]=scene.bar.pivot,[ax,ay]=scene.bar.axis,[umin,umax]=scene.bar.outline_u,[vmin,vmax]=scene.bar.outline_v;
+    const lx=-ay,ly=ax;
+    barCorners=[[umin,vmin],[umax,vmin],[umax,vmax],[umin,vmax]].map(([u,v])=>[cx+u*ax+v*lx,cy+u*ay+v*ly]);
+    points.push(...barCorners,[cx,cy]);
+  }
+  if(scene.obstacle){
+    const [cx,cy]=scene.obstacle.center,r=scene.obstacle.radius;
+    points.push([cx-r,cy-r],[cx+r,cy+r]);
+  }
+  let xmin=.45,xmax=.85,ymin=-.3,ymax=.3;
+  if(points.length){
+    xmin=Math.min(...points.map(p=>p[0]));xmax=Math.max(...points.map(p=>p[0]));ymin=Math.min(...points.map(p=>p[1]));ymax=Math.max(...points.map(p=>p[1]));
+    let dx=Math.max(xmax-xmin,.08),dy=Math.max(ymax-ymin,.08);const cx=.5*(xmin+xmax),cy=.5*(ymin+ymax),aspect=(w-2*m)/(h-2*m);
+    dx*=1.24;dy*=1.24;if(dx/dy>aspect)dy=dx/aspect;else dx=dy*aspect;xmin=cx-.5*dx;xmax=cx+.5*dx;ymin=cy-.5*dy;ymax=cy+.5*dy;
+  }
+  const px=x=>m+(x-xmin)/(xmax-xmin)*(w-2*m),py=y=>h-m-(y-ymin)/(ymax-ymin)*(h-2*m);
+  ctx.strokeStyle='#253345';ctx.lineWidth=1;ctx.fillStyle='#8191a6';ctx.font='12px system-ui';
+  for(let i=0;i<=5;i++){const x=xmin+i*(xmax-xmin)/5,y=ymin+i*(ymax-ymin)/5;ctx.beginPath();ctx.moveTo(px(x),m);ctx.lineTo(px(x),h-m);ctx.stroke();ctx.fillText(x.toFixed(3),px(x)-18,h-24);ctx.beginPath();ctx.moveTo(m,py(y));ctx.lineTo(w-m,py(y));ctx.stroke();ctx.fillText(y.toFixed(3),8,py(y)+4)}
+  ctx.fillStyle='#aab7c7';ctx.fillText('X (m)',w/2-15,h-6);ctx.save();ctx.translate(14,h/2);ctx.rotate(-Math.PI/2);ctx.fillText('Y (m)',0,0);ctx.restore();
+  if(scene.obstacle){
+    const [cx,cy]=scene.obstacle.center,r=scene.obstacle.radius,pr=Math.abs(px(cx+r)-px(cx));
+    ctx.fillStyle='rgba(239,107,115,.18)';ctx.strokeStyle='#ef6b73';ctx.lineWidth=2;ctx.beginPath();ctx.arc(px(cx),py(cy),pr,0,2*Math.PI);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#ef6b73';ctx.beginPath();ctx.arc(px(cx),py(cy),3.5,0,2*Math.PI);ctx.fill();
+  }
+  if(scene.bar&&barCorners.length===4){
+    ctx.fillStyle='rgba(185,196,210,.22)';ctx.strokeStyle='#b9c4d2';ctx.lineWidth=2;ctx.beginPath();barCorners.forEach((p,i)=>i?ctx.lineTo(px(p[0]),py(p[1])):ctx.moveTo(px(p[0]),py(p[1])));ctx.closePath();ctx.fill();ctx.stroke();
+    const [cx,cy]=scene.bar.pivot,[ax,ay]=scene.bar.axis;ctx.strokeStyle='#f5f7fa';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px(cx)-6,py(cy));ctx.lineTo(px(cx)+6,py(cy));ctx.moveTo(px(cx),py(cy)-6);ctx.lineTo(px(cx),py(cy)+6);ctx.stroke();
+    ctx.strokeStyle='#8fd3ff';ctx.beginPath();ctx.moveTo(px(cx),py(cy));ctx.lineTo(px(cx+.06*ax),py(cy+.06*ay));ctx.stroke();
+  }
+  if(trace.length>1){ctx.strokeStyle='#62b1ff';ctx.lineWidth=2.5;ctx.beginPath();trace.forEach((p,i)=>i?ctx.lineTo(px(p[0]),py(p[1])):ctx.moveTo(px(p[0]),py(p[1])));ctx.stroke()}
+  if(current){ctx.fillStyle='#ffbd61';ctx.beginPath();ctx.arc(px(current.x),py(current.y),6,0,2*Math.PI);ctx.fill();$('eeValue').textContent=`EE: x=${current.x.toFixed(4)}, y=${current.y.toFixed(4)}, z=${current.z.toFixed(4)} m`}else $('eeValue').textContent='EE: —';
+  $('pointCount').textContent=`${trace.length} samples`;
+}
+function render(){if(!state)return;const d=state.dependencies;lamp('jointLamp',d.joint_state);lamp('tfLamp',d.ee_tf);lamp('barLamp',d.optitrack_bar);lamp('obstacleLamp',d.optitrack_obstacle);lamp('fixtureLamp',d.fixture);lamp('recorderLamp',d.recorder);lamp('commandingLamp',d.fri_commanding);lamp('torqueModeLamp',d.fri_torque_mode);lamp('motionGateLamp',d.motion_gate);$('overallBadge').textContent=state.ready?'系统 Ready':'等待数据';$('overallBadge').className='badge '+(state.ready?'ready':'warning');$('modeState').textContent=state.mode_active?'Demo：可拖动':(state.position_hold_enabled?'保持：当前位置锁定':'非 Demo：机械保持已禁用');$('orientationState').textContent=state.orientation_requested?'开启':'关闭';$('verticalState').textContent=state.vertical_requested?'开启':'关闭';$('assistState').textContent=state.assistance_active?'输出有效':'无辅助输出';$('recorderState').textContent=state.recorder_state;$('sessionState').textContent=state.recorder_session||'—';$('modeBtn').textContent=state.mode_active?(state.position_hold_enabled?'退出 Demo 并保持当前位置':'退出 Demo'):'进入 Demo 采集模式';$('modeBtn').classList.toggle('enabled',state.mode_active);$('orientationBtn').textContent=state.orientation_requested?'关闭 Orientation 保持':'开启 Orientation 保持';$('verticalBtn').textContent=state.vertical_requested?'关闭竖直阻尼':'开启竖直阻尼';$('orientationBtn').classList.toggle('enabled',state.orientation_requested);$('verticalBtn').classList.toggle('enabled',state.vertical_requested);$('recordBtn').textContent=state.recording?'停止并保存 Rosbag':'开始 Record Demo';$('recordBtn').classList.toggle('enabled',state.recording);$('orientationBtn').disabled=busy||!state.mode_active;$('verticalBtn').disabled=busy||!state.mode_active;$('recordBtn').disabled=busy||!state.mode_active;$('modeBtn').disabled=busy||(!state.mode_active&&!state.ready);draw()}
+async function poll(){try{const response=await fetch('/api/state',{cache:'no-store'});state=await response.json();render()}catch(error){$('overallBadge').textContent='GUI disconnected';$('overallBadge').className='badge failed';message(error.message,false)}}
+$('modeBtn').onclick=async()=>{await post('/api/demo_mode',{enabled:!state.mode_active});await poll()};
+$('orientationBtn').onclick=async()=>{await post('/api/assistance/orientation',{enabled:!state.orientation_requested});await poll()};
+$('verticalBtn').onclick=async()=>{await post('/api/assistance/vertical',{enabled:!state.vertical_requested});await poll()};
+$('recordBtn').onclick=async()=>{await post('/api/record',{enabled:!state.recording,label:$('labelInput').value.trim()||'demo',notes:$('notesInput').value.trim()});await poll()};
+$('clearBtn').onclick=async()=>{await post('/api/trace/reset',{});await poll()};
+setInterval(poll,250);poll();
+</script>
+</body>
+</html>

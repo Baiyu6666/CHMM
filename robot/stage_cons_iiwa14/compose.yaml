@@ -1,0 +1,27 @@
+name: stage_cons_iiwa14
+
+services:
+  iiwa14:
+    image: baiyu/stage_cons_iiwa14:noetic
+    build:
+      context: .
+      dockerfile: Dockerfile
+      ssh:
+        - default
+      args:
+        USER_UID: ${USER_UID:-1000}
+        KUKA_FRI_REF: ${KUKA_FRI_REF:-59af82a8524b37e08a1424a50605e7fe70f11ec9}
+    container_name: stage_cons_iiwa14
+    hostname: stage-cons-iiwa14
+    init: true
+    privileged: true
+    tty: true
+    stdin_open: true
+    network_mode: host
+    environment:
+      ROS_IP: 127.0.0.1
+      ROS_MASTER_URI: http://127.0.0.1:11311
+      DISABLE_ROS1_EOL_WARNINGS: "1"
+    volumes:
+      - ./data/demos:/data/demos
+      - ./data/models:/models:ro

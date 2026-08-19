@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Stage Constraint Workstation</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c1117;--panel:#151c25;--line:#2c3948;--text:#e8eef5;--muted:#94a5b7;--green:#55d68b;--amber:#f0b65d;--red:#ff6b72;--blue:#68a9ff}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}
+    main{max-width:1280px;margin:auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}
+    h1{font-size:22px;margin:0}.badge{padding:7px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:370px 1fr;gap:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+    h2{font-size:15px;margin:0 0 13px}.status{display:grid;grid-template-columns:1fr auto;gap:8px 12px;margin-bottom:15px}.value{font-weight:650}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+    button{width:100%;padding:11px 12px;margin:5px 0;border:1px solid var(--line);border-radius:8px;background:#202a36;color:var(--text);font-weight:650;cursor:pointer}
+    button.primary{background:#174d39;border-color:#2b8a61}button.danger{background:#54252a;border-color:#9b3d46}button:disabled{opacity:.45;cursor:not-allowed}
+    .hint{color:var(--muted);font-size:13px;margin:6px 0 12px}.message{min-height:44px;padding:10px;border-radius:8px;border:1px solid var(--line);margin-top:10px}.message.error{color:var(--red);border-color:var(--red)}
+    pre{height:270px;overflow:auto;white-space:pre-wrap;background:#090d12;border:1px solid var(--line);border-radius:8px;padding:10px;color:#b9c7d5}
+    iframe{width:100%;height:760px;border:1px solid var(--line);border-radius:10px;background:#0a0e13}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}iframe{height:680px}}
+  </style>
+</head>
+<body><main>
+  <div class="top"><h1>Stage Constraint Workstation</h1><div id="busy" class="badge">正在连接…</div></div>
+  <div class="grid">
+    <div>
+      <section class="panel">
+        <h2>系统状态</h2>
+        <div class="status">
+          <span>Docker</span><span id="container" class="value">—</span>
+          <span>Robot network</span><span id="network" class="value">—</span>
+          <span>iiwa_driver</span><span id="driver" class="value">—</span>
+          <span>Demo station</span><span id="demo" class="value">—</span>
+        </div>
+        <button id="build" class="primary">构建并启动工作站</button>
+        <button id="startDemo">启动 Demo 面板</button>
+        <div class="hint">构建和启动容器不会自动连接或驱动机器人。</div>
+        <button id="networkButton">配置机器人网络</button>
+        <div class="hint">仅在需要连接真机时点击；系统会弹出管理员授权窗口，但不启动 driver。</div>
+        <button id="startDriver">启动 iiwa_driver（需二次确认）</button>
+        <div class="hint">点击后会弹出确认框；仅在机器人无 fault、关节远离限位、急停可触及时确认启动。</div>
+        <button id="stopDriver">停止 iiwa_driver</button>
+        <button id="stopAll" class="danger">停止整个工作站</button>
+        <div id="message" class="message">等待状态…</div>
+      </section>
+      <section class="panel" style="margin-top:16px">
+        <h2>运行日志</h2><pre id="logs"></pre>
+      </section>
+    </div>
+    <section class="panel">
+      <h2>Demo 采集面板</h2>
+      <div class="hint">工作站启动后在这里完成 Demo、辅助开关、Rosbag 和轨迹查看。</div>
+      <iframe id="demoFrame" title="Demo collection panel"></iframe>
+    </section>
+  </div>
+</main>
+<script>
+let token='',state=null,lastDemoRunning=false,localMessageUntil=0;
+const $=id=>document.getElementById(id);
+function flag(el,on,yes,no){el.textContent=on?yes:no;el.className='value '+(on?'ok':'warn')}
+function showError(text){localMessageUntil=Date.now()+12000;$('message').textContent=text;$('message').className='message error'}
+async function poll(){try{const r=await fetch('/api/state',{cache:'no-store'});state=await r.json();token=state.token;render()}catch(e){$('message').textContent=e.message}}
+function render(){flag($('container'),state.container_running,'运行中','已停止');flag($('driver'),state.driver_running,'运行中','已停止');flag($('demo'),state.demo_running,'运行中','已停止');flag($('network'),state.robot_network.configured,'已配置','未配置');const b=state.job.busy;$('busy').textContent=b?state.job.name:'Ready';$('busy').className='badge '+(b?'warn':'ok');if(Date.now()>=localMessageUntil){$('message').textContent=state.job.message;$('message').className='message'}$('logs').textContent=state.logs.join('\n');$('logs').scrollTop=$('logs').scrollHeight;for(const id of ['build','startDemo','networkButton','startDriver','stopDriver','stopAll'])$(id).disabled=b;if(state.demo_running&&!lastDemoRunning)$('demoFrame').src=state.demo_url+'/?reload='+Date.now();lastDemoRunning=state.demo_running}
+async function action(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Stage-Token':token},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.message);await poll()}
+$('build').onclick=()=>action('/api/build-start').catch(e=>showError(e.message));
+$('startDemo').onclick=()=>action('/api/start-demo').catch(e=>showError(e.message));
+$('networkButton').onclick=()=>action('/api/configure-network').catch(e=>showError(e.message));
+$('startDriver').onclick=()=>{
+  const confirmed=window.confirm('确认启动 iiwa_driver？\n\n启动后 ROS 将连接真实机器人并加载力矩控制器。请确认机器人无 fault、关节远离限位，并且急停可触及。');
+  if(!confirmed)return;
+  action('/api/start-driver',{confirmed:true}).catch(e=>showError(e.message));
+};
+$('stopDriver').onclick=()=>action('/api/stop-driver').catch(e=>showError(e.message));
+$('stopAll').onclick=()=>action('/api/stop-all').catch(e=>showError(e.message));
+poll();setInterval(poll,2000);
+</script></body></html>

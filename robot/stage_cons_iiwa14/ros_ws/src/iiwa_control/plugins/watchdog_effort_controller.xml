@@ -1,0 +1,10 @@
+<library path="lib/libiiwa_safe_effort_controller">
+  <class
+      name="iiwa_control/WatchdogEffortController"
+      type="iiwa_control::WatchdogEffortController"
+      base_class_type="controller_interface::ControllerBase">
+    <description>
+      Effort controller with stale-command, finite-value, amplitude, and joint-position guards.
+    </description>
+  </class>
+</library>

@@ -1,0 +1,58 @@
+# Inputs and coordinate conventions.
+bar_pose_topic: /vrpn_client_node/baiyu_bar/pose_from_iiwa14
+expected_bar_frame: base
+root_link: world
+end_effector: iiwa14_link_ee
+torque_controller_name: SafeTorqueController
+demo_mode_topic: /iiwa14/demo_mode_active
+demo_mode_timeout: 0.5
+
+# Use the live OptiTrack rigid-body orientation for assistance.
+use_static_bar_axis: false
+static_bar_axis_base: [0.0, 1.0, 0.0]
+
+# The baiyu_bar rigid body's local +X axis is defined as the bar direction.
+bar_axis_local: [1.0, 0.0, 0.0]
+table_normal_base: [0.0, 0.0, 1.0]
+
+# Tool coordinates. tool_axis_local points from the EE toward the inspected surface.
+# tool_lateral_axis_local is held parallel to table_normal x bar_direction.
+tool_axis_local: [0.0, 0.0, 1.0]
+tool_lateral_axis_local: [0.0, 1.0, 0.0]
+
+# Offset from iiwa14_link_ee to the hand-guiding point, expressed in link_ee.
+# The current gripper is held about 8 cm outward along the flange's local +Z.
+tcp_offset_local: [0.0, 0.0, 0.08]
+
+control_rate: 200.0
+joint_state_timeout: 0.10
+bar_pose_timeout: 0.20
+bar_axis_filter_alpha: 0.15
+twist_filter_alpha: 0.15
+
+# One-DOF orientation manifold: pitch about the horizontal axis perpendicular
+# to the bar remains free. Other orientation components are restored/damped.
+orientation_stiffness: 1.0       # task-space moment per radian
+orientation_damping: 1.0         # task-space angular damping
+max_orientation_recovery_speed_deg_s: 10.0  # soft recovery-speed target
+min_tilt_deg: -80.0
+max_tilt_deg: 80.0
+
+# Pure vertical velocity damping. There is deliberately no height reference,
+# target, deadband, or allowed height interval.
+# High slope makes slow hand-guiding motion clearly resistive; the independent
+# force and joint-torque limits below still bound the physical output.
+vertical_damping: 2000.0         # force per m/s
+
+# Commissioned second-stage limits after verifying the TCP, wrench direction,
+# proportional torque scaling, and reversal behavior on the real robot.
+max_orientation_moment: 0.5
+max_vertical_force: 20.0
+max_joint_assist_torque: 6.0
+max_joint_torque_rate: 5.0
+joint_limit_stop_margin_deg: 5.0
+enable_ramp_time: 2.0
+
+# Keep both false until bar/tool axes have been verified from diagnostics.
+start_orientation_enabled: false
+start_vertical_damping_enabled: false

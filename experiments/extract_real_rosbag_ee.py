@@ -4,6 +4,7 @@
 import argparse
 import csv
 import math
+import re
 
 import numpy as np
 import rosbag
@@ -42,17 +43,40 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("bag")
     parser.add_argument("output")
+    parser.add_argument(
+        "--robot-name",
+        help="TF link prefix, for example iiwa14. By default it is detected from /tf.",
+    )
     args = parser.parse_args()
     rows = []
     first_stamp = None
+    robot_name = args.robot_name
     with rosbag.Bag(args.bag) as bag:
         for _, message, bag_stamp in bag.read_messages(topics=["/tf"]):
             links = {item.child_frame_id: item for item in message.transforms}
-            if not all(f"iiwa_link_{index}" in links for index in range(1, 8)):
+            if robot_name is None:
+                candidates = sorted(
+                    match.group(1)
+                    for name in links
+                    for match in [re.fullmatch(r"(.+)_link_1", name)]
+                    if match is not None
+                    and all(
+                        f"{match.group(1)}_link_{index}" in links
+                        for index in range(1, 8)
+                    )
+                )
+                if not candidates:
+                    continue
+                robot_name = candidates[0]
+            if not all(
+                f"{robot_name}_link_{index}" in links for index in range(1, 8)
+            ):
                 continue
             matrix = np.eye(4)
             for index in range(1, 8):
-                matrix = matrix @ transform_matrix(links[f"iiwa_link_{index}"])
+                matrix = matrix @ transform_matrix(
+                    links[f"{robot_name}_link_{index}"]
+                )
             stamp = message.transforms[0].header.stamp.to_sec() or bag_stamp.to_sec()
             first_stamp = stamp if first_stamp is None else first_stamp
             rows.append([stamp - first_stamp, *matrix[:3, 3], *rotation_quaternion(matrix[:3, :3])])
@@ -60,8 +84,15 @@ def main():
         writer = csv.writer(stream)
         writer.writerow(["time_s", "x_m", "y_m", "z_m", "qx", "qy", "qz", "qw"])
         writer.writerows(rows)
+    if not rows:
+        requested = args.robot_name or "an auto-detected *_link_1 ... *_link_7 chain"
+        raise RuntimeError(f"No complete {requested} transforms found in /tf")
     times = np.asarray(rows)[:, 0]
-    print(f"frames={len(rows)} duration={times[-1]:.3f}s median_dt={np.median(np.diff(times)):.6f}s")
+    median_dt = float(np.median(np.diff(times))) if len(times) > 1 else float("nan")
+    print(
+        f"robot_name={robot_name} frames={len(rows)} duration={times[-1]:.3f}s "
+        f"median_dt={median_dt:.6f}s"
+    )
 
 
 if __name__ == "__main__":

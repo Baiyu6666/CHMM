@@ -1,0 +1,214 @@
+{
+  "name": "BarInsepect",
+  "n_demos": 5,
+  "processed_demo_path": "robot/stage_cons_iiwa14/data/processed/demo_01_10hz_coarse.npz",
+  "seed": 2026,
+  "dt": 0.1,
+  "seg_lengths": [38, 32, 32, 28],
+  "seg_length_jitter": [5, 4, 4, 5],
+  "stage2_scan_distance": 0.15,
+  "stage3_scan_distance": 0.15,
+  "scan_standoff": 0.08,
+  "table_surface_point": [0.0, 0.0, 0.14584],
+  "table_normal": [0.0, 0.0, 1.0],
+  "obstacle_radius": 0.05,
+  "stage2_pitch_deg": 90.0,
+  "stage3_pitch_deg": 30.0,
+  "bar_axis_local": [1.0, 0.0, 0.0],
+  "bar_surface_offset_local": [0.0, 0.0, 0.0],
+  "optitrack_to_robot_rotation": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+  "optitrack_to_robot_translation": [0.0, 0.0, 0.0],
+  "bar_outline_u": [-0.11177, 0.18629],
+  "bar_outline_v": [-0.01787, 0.04452],
+  "bar_height": 0.0278,
+  "tcp_offset_local": [0.0, 0.0, 0.0],
+  "method_overrides": {
+    "swcl": {
+      "n_stages": 4,
+      "selected_raw_feature_ids": [
+        "obstacle_clearance",
+        "surface_dist",
+        "tool_pitch",
+        "tool_plane_err"
+      ],
+      "feature_model_types": {
+        "obstacle_clearance": "trunc_t_lower_z",
+        "surface_dist": "student_t",
+        "tool_pitch": "student_t",
+        "tool_plane_err": "student_t"
+      },
+      "max_iter": 10,
+      "duration_min": 8,
+      "duration_max": null,
+      "fixed_true_cutpoint_indices": [],
+      "lambda_activation_consensus": 0.75,
+      "lambda_param_consensus": 0.5,
+      "lambda_ineq_constraint": 0.02,
+      "truncated_inequality_z_threshold": -0.2,
+      "truncated_z_score_mode": "soft_fit_minus_baseline",
+      "equality_dispersion_ratio_threshold": 0.06
+    },
+    "map": {
+      "n_stages": 4,
+      "selected_raw_feature_ids": [
+        "obstacle_clearance",
+        "surface_dist",
+        "tool_pitch",
+        "tool_plane_err"
+      ],
+      "max_iter": 8,
+      "duration_min": 8,
+      "duration_max": null,
+      "fixed_true_cutpoint_indices": [0, 1, 2],
+      "constraint_core_trim": 0,
+      "map_eq_sigma": 0.32,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_boundary_quantile": 0.05,
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5],
+      "map_active_mode_prior": null
+    },
+    "map_pooled": {
+      "n_stages": 4,
+      "selected_raw_feature_ids": [
+        "obstacle_clearance",
+        "surface_dist",
+        "tool_pitch",
+        "tool_plane_err"
+      ],
+      "max_iter": 8,
+      "duration_min": 8,
+      "duration_max": null,
+      "fixed_true_cutpoint_indices": [],
+      "constraint_core_trim": 0,
+      "map_eq_sigma": 0.05,
+      "map_c_bg": 5.0,
+      "map_c_ineq": 5.0,
+      "map_boundary_quantile": 0.05,
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5],
+      "map_active_mode_prior": {
+        "eq": [0.0, 1.0, 1.0, 1.0],
+        "lb": [1.0, 0.0, 0.0, 0.0],
+        "ub": [0.0, 0.0, 0.0, 0.0]
+      },
+      "map_mode_aggregation": "pooled"
+    },
+    "gmmhmm": {
+      "segmenter": {
+        "n_stages": 4,
+        "selected_raw_feature_ids": [
+          "obstacle_clearance",
+          "surface_dist",
+          "tool_pitch",
+          "tool_plane_err"
+        ]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting"
+      }
+    },
+    "fchmm": {
+      "n_stages": 4,
+      "selected_raw_feature_ids": [
+        "obstacle_clearance",
+        "surface_dist",
+        "tool_pitch",
+        "tool_plane_err"
+      ],
+      "feature_model_types": {
+        "obstacle_clearance": "trunc_t_lower_z",
+        "surface_dist": "student_t",
+        "tool_pitch": "student_t",
+        "tool_plane_err": "student_t"
+      },
+      "fixed_feature_mask": [
+        [1, 0, 0, 0],
+        [0, 1, 1, 1],
+        [0, 1, 1, 1],
+        [0, 0, 0, 0]
+      ],
+      "feat_weight": 0.2
+    },
+    "hmm": {
+      "segmenter": {
+        "n_stages": 4,
+        "selected_raw_feature_ids": [
+          "obstacle_clearance",
+          "surface_dist",
+          "tool_pitch",
+          "tool_plane_err"
+        ]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting",
+        "fixed_feature_mask": null
+      }
+    },
+    "arhsmm": {
+      "segmenter": {
+        "n_stages": 4,
+        "selected_raw_feature_ids": [
+          "obstacle_clearance",
+          "surface_dist",
+          "tool_pitch",
+          "tool_plane_err"
+        ]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting",
+        "fixed_feature_mask": null
+      }
+    },
+    "changepoint": {
+      "segmenter": {
+        "n_stages": 4,
+        "selected_raw_feature_ids": [
+          "obstacle_clearance",
+          "surface_dist",
+          "tool_pitch",
+          "tool_plane_err"
+        ]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting",
+        "fixed_feature_mask": null
+      }
+    },
+    "changeforest": {
+      "segmenter": {
+        "n_stages": 4,
+        "selected_raw_feature_ids": [
+          "obstacle_clearance",
+          "surface_dist",
+          "tool_pitch",
+          "tool_plane_err"
+        ]
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting",
+        "fixed_feature_mask": null
+      }
+    },
+    "cluster": {
+      "segmenter": {
+        "n_stages": 4,
+        "selected_raw_feature_ids": [
+          "obstacle_clearance",
+          "surface_dist",
+          "tool_pitch",
+          "tool_plane_err"
+        ],
+        "use_state": true,
+        "use_velocity": false,
+        "use_env_features": true,
+        "feature_distance_weight": 0.3,
+        "min_len": 4,
+        "init_mode": "random_stage_ends"
+      },
+      "posthoc_constraint": {
+        "posthoc_training_mode": "voting",
+        "fixed_feature_mask": null
+      }
+    }
+  }
+}

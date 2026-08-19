@@ -1,0 +1,18 @@
+fri:
+  port: 30200
+  robot_ip: $(arg robot_ip)
+  robot_description: /$(arg robot_name)/robot_description
+
+hardware_interface:
+  control_freq: 200 # in Hz
+  # Demo is a logical acquisition/assistance gate only. The driver always sends
+  # measured joints as the FRI position reference; no mechanical hold exists.
+  demo_heartbeat_timeout: 0.5
+  joints:
+    - $(arg robot_name)_joint_1
+    - $(arg robot_name)_joint_2
+    - $(arg robot_name)_joint_3
+    - $(arg robot_name)_joint_4
+    - $(arg robot_name)_joint_5
+    - $(arg robot_name)_joint_6
+    - $(arg robot_name)_joint_7

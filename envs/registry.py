@@ -21,6 +21,7 @@ class _LazyEnvLoader:
         return self._loader(**kwargs)
 
 ENV_REGISTRY: Dict[str, Callable[..., TaskBundle]] = {
+    "BarInsepect": _LazyEnvLoader(".BarInsepect", "load_BarInsepect"),
     "S3ObsAvoid": _LazyEnvLoader(".S3ObsAvoid", "load_S3ObsAvoid"),
     "S3ObsAvoidReal": _LazyEnvLoader(".S3ObsAvoidReal", "load_S3ObsAvoidReal"),
     "S5SphereInspect": _LazyEnvLoader(".S5SphereInspect", "load_S5SphereInspect"),

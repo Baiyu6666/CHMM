@@ -4,7 +4,7 @@
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S3ObsAvoid,S4SlideInsert,S5SphereInspect  \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -14,7 +14,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 
 ```
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S4SlideInsert  \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -23,7 +23,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --n-demos 10
 
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S3ObsAvoid  \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -32,7 +32,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --n-demos 10
 
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S5SphereInspect  \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -42,7 +42,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 
 
 python runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S3ObsAvoidReal \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -52,7 +52,7 @@ python runners/run_benchmark.py \
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods fchmm,arhsmm,cluster \
+  --methods changeforest,arhsmm,cluster,gmmhmm \
   --datasets S3ObsAvoid,S4SlideInsert,S5SphereInspect  \
   --method-seeds 0,1,2,3,4,5,6,7,8,9 \
   --dataset-seed 0 \
@@ -62,12 +62,12 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 ## Benchmarks: S5SphereInspect
 
 ```bash
-python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py   --methods fchmm --datasets S5SphereInspect   --method-seeds 0   --dataset-seed 0   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1   --n_demos 1   --plot_every 10
+python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py   --methods gmmhmm --datasets S5SphereInspect   --method-seeds 0   --dataset-seed 0   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1   --n_demos 1   --plot_every 10
 ```
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods fchmm,arhsmm,cluster \
+  --methods changeforest,arhsmm,cluster,gmmhmm \
   --datasets S5SphereInspect \
   --method-seeds 0,1,2,3,4,5,6,7,8,9 \
   --dataset-seed 0 \
@@ -76,7 +76,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S5SphereInspect \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -89,7 +89,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods fchmm,arhsmm,cluster \
+  --methods changeforest,arhsmm,cluster,gmmhmm \
   --datasets S4SlideInsert \
   --method-seeds 0,1,2,3,4,5,6,7,8,9 \
   --dataset-seed 0 \
@@ -98,7 +98,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
-  --methods swcl \
+  --methods map \
   --datasets S4SlideInsert \
   --method-seeds 0 \
   --dataset-seed 0 \
@@ -114,26 +114,22 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/experiments/plot_benchma
   --input /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1/benchmark_results.json
 ```
 
-```bash
-python experiments/collect_swcl_paper_figures.py  --demo-map S3ObsAvoid:7,S4SlideInsert:2,S5SphereInspect:5
-```
-
 ## S5 Render
 
 ```bash
-python experiments/render_s5_demonstrations.py   --n-demos 5   --seed 127   --gui 1   --fps 10 --width 1360 --height 900 --outdir outputs/swcl/videos/s5_demonstrations --playback-speed 1.5   --render-frame-stride 1 
+python experiments/render_s5_demonstrations.py   --n-demos 5   --seed 127   --gui 1   --fps 10 --width 1360 --height 900 --outdir outputs/map/videos/s5_demonstrations --playback-speed 1.5   --render-frame-stride 1 
 
 ```
 
 ```bash
 python experiments/render_s5_planned_trajectory.py \
-  --constraints-json outputs/swcl/S5SphereInspect/method_seed_000/constraints.json \
+  --constraints-json outputs/map/S5SphereInspect/method_seed_000/constraints.json \
   --constraint-source learned \
   --gui 1 \
   --fps 10 \
   --width 1360 \
   --height 900 \
-  --outdir outputs/swcl/videos/s5_planned_render \
+  --outdir outputs/map/videos/s5_planned_render \
   --render-frame-stride 1 \
   --feature-overlay 1 \
   --n-plans 2 \
@@ -145,19 +141,19 @@ python experiments/render_s5_planned_trajectory.py \
 ## S4 Demonstration Render
 
 ```bash
-python experiments/render_s4_demonstrations.py   --n-demos 2   --seed 7   --outdir outputs/swcl/videos/s4_demonstrations   --gui 1   --fps 20   --camera-target 0.72,0.14,0.54   --feature-overlay 1 
+python experiments/render_s4_demonstrations.py   --n-demos 2   --seed 7   --outdir outputs/map/videos/s4_demonstrations   --gui 1   --fps 20   --camera-target 0.72,0.14,0.54   --feature-overlay 1 
 
 ```
 
 ```bash
-python experiments/render_s4_planned_trajectory.py   --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json    --planner optimizer   --gui 1   --fps 20   --outdir outputs/swcl/video/s4_optimizer_gt_gui2   --constraint-source learned
+python experiments/render_s4_planned_trajectory.py   --constraints-json outputs/map/S4SlideInsert/method_seed_000/constraints.json    --planner optimizer   --gui 1   --fps 20   --outdir outputs/map/video/s4_optimizer_gt_gui2   --constraint-source learned
 ```
 
 ## S4 Transfer Render
 
 ```bash
 python experiments/render_s4_planned_trajectory.py \
-  --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json \
+  --constraints-json outputs/map/S4SlideInsert/method_seed_000/constraints.json \
   --constraint-source learned \
   --rail-shape sine \
   --rail-bend-amp 0.03 \
@@ -166,7 +162,7 @@ python experiments/render_s4_planned_trajectory.py \
   --width 1360 \
   --height 900 \
   --camera-target 0.72,0.14,0.54 \
-  --outdir outputs/swcl/videos/s4_transfer_curve_guide \
+  --outdir outputs/map/videos/s4_transfer_curve_guide \
   --output-prefix s4_curve_guide \
   --video-filename s4_curve_guide.mp4 \
   --feature-overlay 1 \
@@ -179,13 +175,13 @@ python experiments/render_s4_planned_trajectory.py \
 
 ```bash
 python experiments/render_s4_planned_trajectory.py \
-  --constraints-json outputs/swcl/S4SlideInsert/method_seed_000/constraints.json \
+  --constraints-json outputs/map/S4SlideInsert/method_seed_000/constraints.json \
   --constraint-source learned \
   --rail-shape straight \
   --surface-tilt-x 0.2 \
   --gui 1 \
   --fps 20 \
-  --outdir outputs/swcl/videos/s4_transfer_tilted_table \
+  --outdir outputs/map/videos/s4_transfer_tilted_table \
   --output-prefix s4_tilted_table \
   --video-filename tilted_table.mp4 \
   --feature-overlay 1 \

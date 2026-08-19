@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="frame_id" default="iiwa14_link_0"/>
+  <arg name="sample_spacing" default="0.01"/>
+
+  <node pkg="stage_placeholder_planner"
+        type="straight_line_planner.py"
+        name="straight_line_planner"
+        output="screen"
+        required="true">
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="sample_spacing" value="$(arg sample_spacing)"/>
+  </node>
+</launch>
