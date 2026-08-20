@@ -1,0 +1,64 @@
+{
+  "bag_file": "demo.bag",
+  "experiment": "stage_constraint",
+  "finished_at_utc": "2026-08-19T14:33:42.783036+00:00",
+  "label": "bar_size_scan",
+  "operator_notes": "",
+  "optional_topics": [
+    "/tf_static",
+    "/iiwa14/additional_outputs",
+    "/iiwa14/commanding_status",
+    "/iiwa14/SafeTorqueController/command",
+    "/iiwa14/demo_virtual_fixture/status",
+    "/vrpn_client_node/iiwa14/pose",
+    "/vrpn_client_node/baiyu_bar/pose",
+    "/stage_cons/plan"
+  ],
+  "optitrack": {
+    "base_rigid_body": "iiwa14",
+    "object_rigid_body": "baiyu_bar",
+    "server": "128.178.145.104"
+  },
+  "recorded_topics": [
+    "/iiwa14/joint_states",
+    "/tf",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
+    "/tf_static",
+    "/iiwa14/additional_outputs",
+    "/iiwa14/commanding_status",
+    "/iiwa14/SafeTorqueController/command",
+    "/iiwa14/demo_virtual_fixture/status",
+    "/vrpn_client_node/iiwa14/pose",
+    "/vrpn_client_node/baiyu_bar/pose",
+    "/stage_cons/plan",
+    "/stage_cons/demo_marker"
+  ],
+  "recording_state": "completed",
+  "required_topics": [
+    "/iiwa14/joint_states",
+    "/tf",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14"
+  ],
+  "robot": {
+    "name": "iiwa14"
+  },
+  "rosbag_pid": 10616,
+  "rosbag_return_code": 0,
+  "schema_version": 1,
+  "session_id": "20260819T143251_463797Z_bar_size_scan",
+  "started_at_utc": "2026-08-19T14:32:51.463797+00:00",
+  "topic_types_at_start": {
+    "/iiwa14/SafeTorqueController/command": "std_msgs/Float64MultiArray",
+    "/iiwa14/additional_outputs": "iiwa_driver/AdditionalOutputs",
+    "/iiwa14/commanding_status": "std_msgs/Bool",
+    "/iiwa14/demo_virtual_fixture/status": "std_msgs/Float64MultiArray",
+    "/iiwa14/joint_states": "sensor_msgs/JointState",
+    "/stage_cons/demo_marker": "std_msgs/String",
+    "/stage_cons/plan": null,
+    "/tf": "tf2_msgs/TFMessage",
+    "/tf_static": "tf2_msgs/TFMessage",
+    "/vrpn_client_node/baiyu_bar/pose": "geometry_msgs/PoseStamped",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14": "geometry_msgs/PoseStamped",
+    "/vrpn_client_node/iiwa14/pose": "geometry_msgs/PoseStamped"
+  }
+}
