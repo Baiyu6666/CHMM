@@ -148,6 +148,7 @@ Important MAP config fields:
 - `map_demo_num_workers`: number of MAP demo-segmentation worker processes; `null` uses up to one worker per demo, while `1` disables multiprocessing
 - `map_progress_kappa`: `null` fits one nonnegative goal-progress concentration per stage; a nonnegative scalar fixes the same concentration for every stage and demo; `0` disables MAP progress
 - `map_progress_kappa_max`: numerical upper bound used only while fitting stage-wise progress concentrations
+- `save_paper_figures`: MAP-only boolean switch for optional paper figures. MAP diagnostics are final-only; `false` still saves the final summary and density diagnostics unless `disable_plots=true`.
 - MAP uses unweighted likelihoods; SWCL's equality/inequality weights do not apply to MAP
 
 Important post-hoc constraint config fields for `gmmhmm`, `hmm`, `arhsmm`, `changepoint`, `changeforest`, and `cluster`:

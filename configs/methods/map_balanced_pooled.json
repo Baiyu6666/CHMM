@@ -30,6 +30,6 @@
   "map_convergence_tol": 1e-6,
   "map_demo_num_workers": null,
   "map_mstep_boundary_trim": 0,
-  "plot_every": null,
+  "save_paper_figures": false,
   "plot_dir": "outputs/plots"
 }

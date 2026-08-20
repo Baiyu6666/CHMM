@@ -31,6 +31,34 @@ MODE_LABEL = {"inactive": "inactive", "eq": "eq", "lb": "lb", "ub": "ub"}
 MODE_COLOR = {"inactive": "#6B7280", "eq": "#2563EB", "lb": "#059669", "ub": "#DC2626"}
 
 
+def clear_map_plot_outputs(model) -> None:
+    """Remove MAP plots from an earlier run before writing final-only outputs."""
+    out_dir = learner_plot_dir(model)
+    root_patterns = (
+        "pooled_density.png",
+        "pooled_density_iter_*.png",
+        "density_demo_*.png",
+        "map_mstep_summary.png",
+        "map_mstep_summary_iter_*.png",
+        "summary.png",
+        "summary_iter_*.png",
+        "DP_demo_*.png",
+    )
+    for pattern in root_patterns:
+        for path in out_dir.glob(pattern):
+            if path.is_file():
+                path.unlink()
+    paper_dir = out_dir / "paper_figures"
+    if paper_dir.is_dir():
+        for path in paper_dir.glob("paper_map_*.png"):
+            if path.is_file():
+                path.unlink()
+        try:
+            paper_dir.rmdir()
+        except OSError:
+            pass
+
+
 def _stage_colors(n):
     return [STAGE_COLORS[i % len(STAGE_COLORS)] for i in range(max(int(n), 1))]
 
@@ -1038,7 +1066,7 @@ def plot_map_demo_summary(learner, it, demo_idx=0):
         ax = fig.add_subplot(gs[total_rows - 1, 1])
         ax.axis("off")
     fig.tight_layout(pad=0.34, h_pad=0.48, w_pad=0.34)
-    return save_figure(fig, learner_plot_dir(learner) / f"DP_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png", dpi=220)
+    return save_figure(fig, learner_plot_dir(learner) / f"DP_demo_{int(demo_idx):02d}.png", dpi=220)
 
 
 def plot_map_results_overview(learner, it, *, metrics=None, plot_dir=None, save_name=None):
@@ -1059,7 +1087,7 @@ def plot_map_results_overview(learner, it, *, metrics=None, plot_dir=None, save_
     ax6 = fig.add_subplot(gs[3, 1])
     _draw_parameter_error_matrix(ax6, learner, metrics)
     fig.tight_layout(pad=0.5, h_pad=0.62, w_pad=0.48)
-    path = learner_plot_dir(learner, plot_dir=plot_dir) / (str(save_name) if save_name is not None else f"summary_iter_{int(it):04d}.png")
+    path = learner_plot_dir(learner, plot_dir=plot_dir) / (str(save_name) if save_name is not None else "summary.png")
     return save_figure(fig, path, dpi=220)
 
 
@@ -1069,16 +1097,14 @@ def plot_map_final_outputs(model, it: int) -> None:
     final_gammas = _hard_gammas_from_stage_ends([len(X) for X in model.demos], model.stage_ends_, model.num_stages)
     metrics = _map_learned_constraint_payload(model, evaluate_model_metrics(model, final_gammas, None))
     try:
-        plot_learned_constraints_matrix_paper(metrics, save_path=paper_dir / f"paper_map_learned_constraints_iter_{int(it):04d}.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
-        plot_true_constraints_matrix_paper(metrics, save_path=paper_dir / f"paper_map_true_constraint_active_iter_{int(it):04d}.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
-        plot_true_vs_learned_constraints_matrix_paper(metrics, save_path=paper_dir / f"paper_map_true_vs_learned_constraints_iter_{int(it):04d}.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
+        plot_learned_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_learned_constraints.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
+        plot_true_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_true_constraint_active.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
+        plot_true_vs_learned_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_true_vs_learned_constraints.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
     except Exception as exc:
         if getattr(model, "verbose", False):
             print(f"[MAP] constraint matrix plot skipped: {exc}")
-    plot_map_shared_modes_paper(model, save_path=paper_dir / f"paper_map_shared_modes_iter_{int(it):04d}.png")
+    plot_map_shared_modes_paper(model, save_path=paper_dir / "paper_map_shared_modes.png")
     for demo_idx in range(len(model.demos)):
-        plot_map_true_cutpoint_trajectory_paper(model, demo_idx=demo_idx, save_path=paper_dir / f"paper_map_trajectory_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png")
-        plot_map_key_feature_traces_paper(model, demo_idx=demo_idx, save_path=paper_dir / f"paper_map_key_feature_traces_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png")
-        plot_map_mode_costs_paper(model, demo_idx=demo_idx, save_path=paper_dir / f"paper_map_mode_costs_demo_{int(demo_idx):02d}_iter_{int(it):04d}.png")
-        if getattr(model, "plot_every", None) is not None:
-            plot_map_demo_summary(model, it, demo_idx=demo_idx)
+        plot_map_true_cutpoint_trajectory_paper(model, demo_idx=demo_idx, save_path=paper_dir / f"paper_map_trajectory_demo_{int(demo_idx):02d}.png")
+        plot_map_key_feature_traces_paper(model, demo_idx=demo_idx, save_path=paper_dir / f"paper_map_key_feature_traces_demo_{int(demo_idx):02d}.png")
+        plot_map_mode_costs_paper(model, demo_idx=demo_idx, save_path=paper_dir / f"paper_map_mode_costs_demo_{int(demo_idx):02d}.png")

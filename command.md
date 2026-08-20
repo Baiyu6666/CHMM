@@ -19,7 +19,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --method-seeds 0 \
   --dataset-seed 0 \
   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
-  --plot_every 10 \
+  --method-param save_paper_figures=true \
   --n-demos 10
 
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
@@ -28,7 +28,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --method-seeds 0 \
   --dataset-seed 0 \
   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
-  --plot_every 10 \
+  --method-param save_paper_figures=true \
   --n-demos 10
 
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \
@@ -37,7 +37,7 @@ python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py
   --method-seeds 0 \
   --dataset-seed 0 \
   --outdir /home/baiyu/PycharmProjects/LearnStageConstraint/outputs/benchmark/paper1 \
-  --plot_every 10 \
+  --method-param save_paper_figures=true \
   --n-demos 10
 
 
@@ -48,7 +48,7 @@ python runners/run_benchmark.py \
   --dataset-seed 0 \
   --outdir outputs/benchmark/s3_real_restore \
   --n-demos 4 \
-  --plot-every 10
+  --method-param save_paper_figures=true
 
 ```bash
 python /home/baiyu/PycharmProjects/LearnStageConstraint/runners/run_benchmark.py \

@@ -8,7 +8,11 @@ import numpy as np
 from envs.base import TaskBundle
 from evaluation import evaluate_model_metrics
 from visualization.io import plot_root, save_figure
-from visualization.map_plots import _map_learned_constraint_payload, plot_map_results_overview
+from visualization.map_plots import (
+    _map_learned_constraint_payload,
+    plot_map_final_outputs,
+    plot_map_results_overview,
+)
 
 from ..cores.map import StageWiseMAPConstraintLearningModel
 
@@ -64,7 +68,7 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
         truncated_z_half_t_scale_quantile=kwargs.get("truncated_z_half_t_scale_quantile", 0.9),
         fixed_true_cutpoint_prefix=kwargs.get("fixed_true_cutpoint_prefix", 0),
         fixed_true_cutpoint_indices=kwargs.get("fixed_true_cutpoint_indices"),
-        plot_every=kwargs.get("plot_every"),
+        save_paper_figures=kwargs.get("save_paper_figures", False),
         plot_dir=kwargs.get("plot_dir", "outputs/plots"),
         disable_plots=kwargs.get("disable_plots", False),
         verbose=kwargs.get("verbose", True),
@@ -119,6 +123,7 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
         "stage_averaged_cost": float(constraint_cost + progress_cost),
         "n_stages": n_stages,
         "final_plot_iter": int(final_plot_iter),
+        "save_paper_figures": bool(learner.save_paper_figures),
         "map_mode_aggregation": str(learner.map_mode_aggregation),
         "map_vote_prior_scope": str(learner.map_vote_prior_scope),
         "map_refit_winning_voters": bool(learner.map_refit_winning_voters),
@@ -172,7 +177,7 @@ class JointMAPMethod:
             for n_stages in stage_candidates:
                 run_kwargs = dict(self.kwargs)
                 run_kwargs["n_stages"] = int(n_stages)
-                run_kwargs["plot_every"] = None
+                run_kwargs["save_paper_figures"] = False
                 single_result = _fit_single_map(run_kwargs, dataset)
                 single_result["stage_count_penalty"] = stage_count_penalty
                 single_result["penalized_stage_cost"] = float(
@@ -191,6 +196,14 @@ class JointMAPMethod:
                 _plot_stage_sweep_cost(sweep_results, plot_dir=self.kwargs.get("plot_dir", "outputs/plots"))
             best_result = min(sweep_results, key=lambda item: (float(item["total_cost"]), int(item["n_stages"])))
             best_result = dict(best_result)
+            if (
+                bool(self.kwargs.get("save_paper_figures", False))
+                and not bool(self.kwargs.get("disable_plots", False))
+            ):
+                plot_map_final_outputs(
+                    best_result["model"],
+                    int(best_result.get("final_plot_iter", 0)),
+                )
             best_result["stage_count_sweep"] = [
                 {
                     "n_stages": int(item["n_stages"]),

@@ -31,7 +31,7 @@ from methods.cores.swcl import (
     _hard_gammas_from_stage_ends,
 )
 from visualization.io import learner_plot_dir, save_figure
-from visualization.map_plots import plot_map_final_outputs
+from visualization.map_plots import clear_map_plot_outputs, plot_map_final_outputs
 
 
 _MAP_DEMO_MODEL = None
@@ -109,9 +109,16 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         map_mstep_boundary_trim: int = 0,
         map_progress_kappa: float | None = None,
         map_progress_kappa_max: float = 100.0,
+        save_paper_figures: bool = False,
         **kwargs,
     ):
         kwargs = dict(kwargs)
+        legacy_plot_every = kwargs.pop("plot_every", None)
+        if legacy_plot_every is not None:
+            raise ValueError(
+                "MAP no longer supports periodic plot_every. "
+                "Use save_paper_figures=true/false; final diagnostics are always saved when plots are enabled."
+            )
         unsupported_weights = sorted(
             key
             for key in (
@@ -131,6 +138,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 + ", ".join(unsupported_weights)
             )
         kwargs["lambda_progress"] = 1.0
+        kwargs["plot_every"] = None
         demos = kwargs.get("demos", args[0] if args else None)
         env = kwargs.get("env", args[1] if len(args) > 1 else None)
         precomputed_features = kwargs.get("precomputed_features")
@@ -178,6 +186,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             if not np.isfinite(map_progress_kappa) or map_progress_kappa < 0.0:
                 raise ValueError("map_progress_kappa must be null or a finite nonnegative scalar.")
         self.map_progress_kappa = map_progress_kappa
+        self.save_paper_figures = bool(save_paper_figures)
         self.map_progress_kappa_max = float(map_progress_kappa_max)
         if not np.isfinite(self.map_progress_kappa_max) or self.map_progress_kappa_max <= 0.0:
             raise ValueError("map_progress_kappa_max must be a finite positive scalar.")
@@ -457,10 +466,10 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         return f"{arr[0]:.3f}"
 
     def _map_should_plot_iteration(self, iteration: int) -> tuple[bool, int]:
-        plot_it = max(int(iteration) + 1, 0)
-        if self.disable_plots or self.plot_every is None or plt is None:
-            return False, plot_it
-        return (plot_it % int(self.plot_every) == 0), plot_it
+        # MAP diagnostics are deliberately final-only.  Keep this helper so
+        # internal diagnostic methods cannot accidentally re-enable periodic
+        # plotting during optimization.
+        return False, max(int(iteration), 0)
 
     def _map_stage_interval_refs(self, selected_infos: Sequence[dict], stage_idx: int, feat_idx: int):
         refs = []
@@ -944,11 +953,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         }
 
     def _plot_map_pooled_mode_density_diagnostics(self, iteration: int, selected_infos: Sequence[dict], *, force: bool = False) -> None:
-        should_plot, plot_it = self._map_should_plot_iteration(int(iteration))
+        should_plot, _ = self._map_should_plot_iteration(int(iteration))
         if not force and not should_plot:
             return
-        if force:
-            plot_it = max(int(iteration), 0)
         out_dir = learner_plot_dir(self)
         colors = {
             "inactive": "#6B7280",
@@ -1103,9 +1110,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 fontsize=7,
                 frameon=False,
             )
-        fig.suptitle(f"MAP pooled shared mode fits | iter {plot_it:04d}", fontsize=12, y=0.995)
+        fig.suptitle("MAP pooled shared mode fits | final", fontsize=12, y=0.995)
         fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92), pad=0.7)
-        save_figure(fig, out_dir / f"pooled_density_iter_{int(plot_it):04d}.png", dpi=180)
+        save_figure(fig, out_dir / "pooled_density.png", dpi=180)
 
     def _plot_map_mode_density_diagnostics(
         self,
@@ -1114,11 +1121,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         *,
         force: bool = False,
     ) -> None:
-        should_plot, plot_it = self._map_should_plot_iteration(int(iteration))
+        should_plot, _ = self._map_should_plot_iteration(int(iteration))
         if not force and not should_plot:
             return
-        if force:
-            plot_it = max(int(iteration), 0)
         out_dir = learner_plot_dir(self)
         colors = {
             "inactive": "#6B7280",
@@ -1310,9 +1315,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     fontsize=7,
                     frameon=False,
                 )
-            fig.suptitle(f"MAP shared-parameter mode costs | demo {demo_idx} | iter {plot_it:04d}", fontsize=11, y=0.995)
+            fig.suptitle(f"MAP shared-parameter mode costs | demo {demo_idx} | final", fontsize=11, y=0.995)
             fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92), pad=0.7)
-            save_figure(fig, out_dir / f"density_demo_{int(demo_idx):02d}_iter_{int(plot_it):04d}.png", dpi=180)
+            save_figure(fig, out_dir / f"density_demo_{int(demo_idx):02d}.png", dpi=180)
 
     def _plot_map_vote_summary(
         self,
@@ -1322,11 +1327,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         *,
         force: bool = False,
     ) -> None:
-        should_plot, plot_it = self._map_should_plot_iteration(int(iteration))
+        should_plot, _ = self._map_should_plot_iteration(int(iteration))
         if not force and not should_plot:
             return
-        if force:
-            plot_it = max(int(iteration), 0)
         out_dir = learner_plot_dir(self)
         n_demos = len(selected_infos)
         col_labels = [f"d{idx}" for idx in range(n_demos)] + ["shared"]
@@ -1406,9 +1409,9 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 else:
                     cell.set_facecolor("white")
             ax.set_title(f"stage {stage_idx + 1}", fontsize=10, pad=8)
-        fig.suptitle(f"MAP M-step summary | iter {plot_it:04d} | total={float(total_loss):.3f}", fontsize=12)
+        fig.suptitle(f"MAP M-step summary | final | total={float(total_loss):.3f}", fontsize=12)
         fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94), pad=0.6)
-        save_figure(fig, out_dir / f"map_mstep_summary_iter_{int(plot_it):04d}.png", dpi=190)
+        save_figure(fig, out_dir / "map_mstep_summary.png", dpi=190)
 
     def _plot_map_diagnostics(self, iteration: int, selected_infos: Sequence[dict], total_loss: float) -> None:
         try:
@@ -2665,8 +2668,10 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         if not self.disable_plots:
             try:
                 final_plot_iter = max(len(self.loss_total) - 1, 0)
+                clear_map_plot_outputs(self)
                 self._plot_map_final_pooled_diagnostics(final_plot_iter, selected_infos)
-                plot_map_final_outputs(self, final_plot_iter)
+                if self.save_paper_figures:
+                    plot_map_final_outputs(self, final_plot_iter)
             except Exception as exc:
                 if self.verbose:
                     print(f"[MAP] final plots skipped: {exc}")
