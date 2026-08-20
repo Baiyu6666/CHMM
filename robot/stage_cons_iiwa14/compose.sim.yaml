@@ -1,0 +1,16 @@
+services:
+  iiwa14:
+    container_name: stage_cons_iiwa14_sim
+    hostname: stage-cons-iiwa14-sim
+    privileged: false
+    network_mode: bridge
+    command:
+      - roslaunch
+      - stage_iiwa_sim
+      - sim_station.launch
+      - gui:=${SIM_GUI:-false}
+      - auto_plan:=${SIM_AUTO_PLAN:-true}
+      - record:=${SIM_RECORD:-true}
+      - render_video:=${SIM_RENDER_VIDEO:-true}
+    volumes:
+      - ./data/sim_runs:/data/sim_runs

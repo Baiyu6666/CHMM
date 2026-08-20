@@ -15,6 +15,7 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        build-essential \
        ca-certificates \
        curl \
+       ffmpeg \
        git \
        iproute2 \
        iputils-ping \
@@ -22,8 +23,11 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        libeigen3-dev \
        liborocos-kdl-dev \
        python-is-python3 \
+       python3-pip \
+       ros-noetic-actionlib \
        ros-noetic-controller-interface \
        ros-noetic-controller-manager \
+       ros-noetic-control-msgs \
        ros-noetic-control-toolbox \
        ros-noetic-geometry-msgs \
        ros-noetic-hardware-interface \
@@ -32,6 +36,7 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        ros-noetic-kdl-parser \
        ros-noetic-nav-msgs \
        ros-noetic-pluginlib \
+       ros-noetic-position-controllers \
        ros-noetic-rosbag \
        ros-noetic-realtime-tools \
        ros-noetic-robot-state-publisher \
@@ -41,10 +46,18 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        ros-noetic-std-srvs \
        ros-noetic-tf \
        ros-noetic-tf2-ros \
+       ros-noetic-trajectory-msgs \
        ros-noetic-urdf \
        ros-noetic-vrpn-client-ros \
        ros-noetic-xacro \
     && rm -rf /var/lib/apt/lists/*
+
+# Keep the Noetic/Python 3.8 environment small and deterministic.  The
+# repository's learning requirements target a newer host Python and are not
+# installed wholesale in this ROS image.
+RUN python3 -m pip install --no-cache-dir \
+      numpy==1.24.4 \
+      pybullet==3.2.7
 
 # The FRI client is not vendored here. BuildKit forwards the user's SSH agent
 # only for this layer, so private-repository credentials are not stored.

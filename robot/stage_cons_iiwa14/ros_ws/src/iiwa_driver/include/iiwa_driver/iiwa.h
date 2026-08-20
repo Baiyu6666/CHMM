@@ -102,7 +102,10 @@ namespace iiwa_ros {
         void _update_demo_motion_gate();
         bool _set_demo_mode(std_srvs::SetBool::Request& request,
             std_srvs::SetBool::Response& response);
+        bool _set_position_commanding(std_srvs::SetBool::Request& request,
+            std_srvs::SetBool::Response& response);
         void _demo_heartbeat(const std_msgs::Empty::ConstPtr& message);
+        void _position_command_heartbeat(const std_msgs::Empty::ConstPtr& message);
         void _on_fri_state_change(kuka::fri::ESessionState old_state, kuka::fri::ESessionState current_state) {}
 
         // External torque publisher
@@ -151,6 +154,11 @@ namespace iiwa_ros {
         std::atomic<double> _last_demo_heartbeat_wall_sec;
         bool _demo_mode_active;
         double _demo_heartbeat_timeout;
+        std::atomic<bool> _position_command_enabled;
+        std::atomic<bool> _position_arm_requested;
+        std::atomic<double> _last_position_heartbeat_wall_sec;
+        double _position_arm_tolerance;
+        double _position_heartbeat_timeout;
 
         int _port;
         std::string _remote_host;
@@ -163,6 +171,8 @@ namespace iiwa_ros {
         ros::Publisher _commanding_status_pub;
         ros::Publisher _demo_mode_status_pub;
         ros::Publisher _client_command_mode_pub;
+        ros::ServiceServer _position_command_service;
+        ros::Subscriber _position_heartbeat_sub;
         ros::Subscriber _demo_heartbeat_sub;
         ros::ServiceServer _demo_mode_service;
         double _control_freq;

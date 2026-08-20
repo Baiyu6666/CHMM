@@ -15,3 +15,20 @@ SafeTorqueController:
     - $(arg robot_name)_joint_5
     - $(arg robot_name)_joint_6
     - $(arg robot_name)_joint_7
+
+PositionTrajectoryController:
+  type: position_controllers/JointTrajectoryController
+  joints:
+    - $(arg robot_name)_joint_1
+    - $(arg robot_name)_joint_2
+    - $(arg robot_name)_joint_3
+    - $(arg robot_name)_joint_4
+    - $(arg robot_name)_joint_5
+    - $(arg robot_name)_joint_6
+    - $(arg robot_name)_joint_7
+  constraints:
+    goal_time: 1.0
+    stopped_velocity_tolerance: 0.02
+  state_publish_rate: 50
+  action_monitor_rate: 20
+  stop_trajectory_duration: 0.5

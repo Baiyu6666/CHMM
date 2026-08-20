@@ -8,6 +8,9 @@ does not provide a shell endpoint and never starts the robot driver on login.
 from __future__ import annotations
 
 import json
+import csv
+import io
+import math
 import os
 import secrets
 import signal
@@ -25,6 +28,7 @@ from typing import Dict, List, Optional
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 CONTAINER = "stage_cons_iiwa14"
+SIM_CONTAINER = "stage_cons_iiwa14_sim"
 HOST = "127.0.0.1"
 PORT = 8080
 DEMO_PORT = 8081
@@ -40,6 +44,15 @@ class Supervisor:
         self._job_message = "Ready"
         self._logs: deque[str] = deque(maxlen=500)
         self._children: Dict[str, subprocess.Popen[str]] = {}
+        self._task_abort = threading.Event()
+        self._task_state: Dict[str, object] = {
+            "mode": "simulator",
+            "phase": "idle",
+            "record": True,
+            "message": "No task has been started",
+            "run_directory": None,
+            "video_available": False,
+        }
 
     def log(self, text: str) -> None:
         stamp = time.strftime("%H:%M:%S")
@@ -59,12 +72,16 @@ class Supervisor:
         *,
         check: bool = True,
         timeout: Optional[float] = None,
+        env_overrides: Optional[Dict[str, str]] = None,
     ) -> subprocess.CompletedProcess[str]:
         self.log("$ " + " ".join(command))
+        env = self._env()
+        if env_overrides:
+            env.update(env_overrides)
         result = subprocess.run(
             command,
             cwd=str(PROJECT_ROOT),
-            env=self._env(),
+            env=env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -80,8 +97,12 @@ class Supervisor:
         return result
 
     def _container_running(self) -> bool:
+        return self._named_container_running(CONTAINER)
+
+    @staticmethod
+    def _named_container_running(container: str) -> bool:
         result = subprocess.run(
-            ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER],
+            ["docker", "inspect", "-f", "{{.State.Running}}", container],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -141,7 +162,11 @@ class Supervisor:
                 stderr=subprocess.DEVNULL,
                 check=False,
             )
-            if "roslaunch iiwa_driver" in top.stdout or "iiwa14_bringup.launch" in top.stdout:
+            if (
+                "roslaunch iiwa_driver" in top.stdout
+                or "iiwa14_bringup.launch" in top.stdout
+                or "/iiwa_driver/iiwa_driver" in top.stdout
+            ):
                 conflicts.append(container)
         return conflicts
 
@@ -196,6 +221,12 @@ class Supervisor:
                 "container_running": self._container_running(),
                 "driver_running": "/iiwa14/iiwa_driver" in nodes,
                 "demo_running": "/stage_demo_gui" in nodes,
+                "simulator_running": self._named_container_running(SIM_CONTAINER),
+                "task": {
+                    **self._task_state,
+                    "video_available": self._task_state.get("phase") == "complete"
+                    and self.task_video_path() is not None,
+                },
                 "job": {
                     "busy": busy,
                     "name": self._job_name,
@@ -206,6 +237,384 @@ class Supervisor:
                 "demo_url": f"http://127.0.0.1:{DEMO_PORT}",
                 "logs": list(self._logs)[-120:],
             }
+
+    @staticmethod
+    def _validated_pose(name: str, value: object) -> Dict[str, float]:
+        if not isinstance(value, dict):
+            raise ValueError(f"{name} pose must be an object")
+        keys = ("x", "y", "z", "qx", "qy", "qz", "qw")
+        try:
+            pose = {key: float(value[key]) for key in keys}
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"{name} pose must contain seven numeric values") from error
+        if not all(math.isfinite(number) for number in pose.values()):
+            raise ValueError(f"{name} pose contains a non-finite value")
+        norm = math.sqrt(sum(pose[key] ** 2 for key in ("qx", "qy", "qz", "qw")))
+        if norm < 1e-8:
+            raise ValueError(f"{name} quaternion cannot be zero")
+        for key in ("qx", "qy", "qz", "qw"):
+            pose[key] /= norm
+        return pose
+
+    @staticmethod
+    def _pose_message(pose: Dict[str, float]) -> str:
+        return json.dumps(
+            {
+                "header": {"frame_id": "iiwa14_link_0"},
+                "pose": {
+                    "position": {key: pose[key] for key in ("x", "y", "z")},
+                    "orientation": {
+                        axis: pose["q" + axis] for axis in ("x", "y", "z", "w")
+                    },
+                },
+            },
+            separators=(",", ":"),
+        )
+
+    def _sim_compose(self, *arguments: str) -> List[str]:
+        return [
+            "docker",
+            "compose",
+            "-p",
+            "stage_cons_iiwa14_sim",
+            "-f",
+            "compose.yaml",
+            "-f",
+            "compose.sim.yaml",
+            *arguments,
+        ]
+
+    def _wait_for_simulator(self, timeout: float = 30.0) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._named_container_running(SIM_CONTAINER):
+                result = subprocess.run(
+                    ["docker", "exec", SIM_CONTAINER, "/entrypoint.sh", "rosnode", "list"],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                if result.returncode == 0 and "/iiwa14/pybullet_sim" in result.stdout.splitlines():
+                    return
+            time.sleep(0.5)
+        raise RuntimeError("PyBullet simulator did not become ready within 30 s")
+
+    def _sim_ros(self, *arguments: str, timeout: float = 10.0) -> subprocess.CompletedProcess[str]:
+        return self._run(
+            ["docker", "exec", SIM_CONTAINER, "/entrypoint.sh", *arguments],
+            timeout=timeout,
+        )
+
+    def _read_sim_status(self) -> Dict[str, object]:
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                SIM_CONTAINER,
+                "/entrypoint.sh",
+                "rostopic",
+                "echo",
+                "-n",
+                "1",
+                "-p",
+                "/iiwa14/sim/status",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("Could not read simulator status")
+        data_line = self._string_message_from_csv(result.stdout)
+        try:
+            return json.loads(data_line)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Simulator returned an invalid status message") from error
+
+    @staticmethod
+    def _string_message_from_csv(output: str) -> str:
+        rows = list(csv.reader(io.StringIO(output)))
+        for row in rows:
+            if row and not row[0].startswith("%") and len(row) >= 2:
+                return ",".join(row[1:]).strip()
+        return ""
+
+    def _real_ros(
+        self, *arguments: str, timeout: float = 10.0
+    ) -> subprocess.CompletedProcess[str]:
+        return self._run(
+            ["docker", "exec", CONTAINER, "/entrypoint.sh", *arguments],
+            timeout=timeout,
+        )
+
+    def _read_real_status(self) -> Dict[str, object]:
+        result = subprocess.run(
+            [
+                "docker", "exec", CONTAINER, "/entrypoint.sh",
+                "rostopic", "echo", "-n", "1", "-p",
+                "/iiwa14/real_executor/status",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("Could not read real-executor status")
+        try:
+            return json.loads(self._string_message_from_csv(result.stdout))
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Real executor returned an invalid status message") from error
+
+    def _wait_for_real_station(
+        self, child: subprocess.Popen[str], timeout: float = 20.0
+    ) -> None:
+        required = {"/iiwa14/iiwa_driver", "/iiwa14/real_executor", "/straight_line_planner"}
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if child.poll() is not None:
+                raise RuntimeError(
+                    "Real station exited during startup; inspect the supervisor log"
+                )
+            if required.issubset(set(self._ros_nodes())):
+                return
+            time.sleep(0.5)
+        raise RuntimeError("Real station did not become ready within 20 s")
+
+    def _start_real_station(self) -> None:
+        nodes = set(self._ros_nodes())
+        if "/iiwa14/real_executor" in nodes:
+            return
+        if "/iiwa14/iiwa_driver" in nodes:
+            raise RuntimeError(
+                "A non-real-task iiwa_driver is already running. Stop it before switching "
+                "to PositionTrajectoryController."
+            )
+        conflicts = self._driver_process_containers()
+        if conflicts:
+            raise RuntimeError(
+                "Another iiwa driver is already running in: " + ", ".join(conflicts)
+            )
+        child = self._spawn(
+            "real",
+            [
+                "docker", "exec", CONTAINER, "/entrypoint.sh",
+                "roslaunch", "stage_real_executor", "real_station.launch",
+            ],
+        )
+        self._wait_for_real_station(child)
+
+    def _execute_real_task(
+        self, start: Dict[str, float], goal: Dict[str, float], record: bool
+    ) -> None:
+        if not self._container_running():
+            raise RuntimeError("Start the workstation container first")
+        if not self._robot_iface_state()["configured"]:
+            raise RuntimeError("Robot network interface is not configured")
+        if self._named_container_running(SIM_CONTAINER):
+            raise RuntimeError("Stop the PyBullet simulator before real-robot execution")
+        self._task_abort.clear()
+        self._set_task_state(
+            mode="real", phase="starting", record=record, start=start, goal=goal,
+            message="Starting the iiwa14 position-control station",
+            run_directory=None, video_available=False,
+        )
+        self._start_real_station()
+        self._real_ros(
+            "rosservice", "call", "/iiwa14/real_executor/set_recording",
+            "data: {}".format("true" if record else "false"),
+        )
+        for topic, pose in (
+            ("/stage_cons/planner/start", start),
+            ("/stage_cons/planner/goal", goal),
+        ):
+            self._real_ros(
+                "rostopic", "pub", "-1", topic, "geometry_msgs/PoseStamped",
+                self._pose_message(pose),
+            )
+        response = self._real_ros(
+            "rosservice", "call", "/straight_line_planner/plan", timeout=10.0
+        )
+        if "success: True" not in response.stdout:
+            raise RuntimeError("Planner rejected the real task")
+        self._set_task_state(
+            phase="preparing", message="Solving continuous IK and validating the joint trajectory"
+        )
+        response = self._real_ros(
+            "rosservice", "call", "/iiwa14/real_executor/prepare", timeout=60.0
+        )
+        if "success: True" not in response.stdout:
+            raise RuntimeError("Real executor rejected the trajectory: " + response.stdout.strip())
+        if self._task_abort.is_set():
+            self._set_task_state(phase="aborted", message="Real task aborted before execution")
+            return
+        response = self._real_ros(
+            "rosservice", "call", "/iiwa14/real_executor/execute", timeout=10.0
+        )
+        if "success: True" not in response.stdout:
+            raise RuntimeError("Real executor refused to start: " + response.stdout.strip())
+
+        deadline = time.monotonic() + 600.0
+        last_phase = ""
+        while time.monotonic() < deadline:
+            if self._task_abort.is_set():
+                self._set_task_state(phase="aborted", message="Real task aborted by user")
+                return
+            status = self._read_real_status()
+            phase = str(status.get("phase", "unknown"))
+            if phase != last_phase:
+                self.log("Real task phase: " + phase)
+                last_phase = phase
+            message = str(status.get("message", phase))
+            self._set_task_state(
+                phase=phase,
+                message=message,
+                run_directory=status.get("run_directory"),
+                video_available=False,
+            )
+            if phase == "complete":
+                return
+            if phase in ("failed", "rejected", "protective_stop"):
+                raise RuntimeError(message)
+            if phase == "aborted":
+                return
+            time.sleep(0.25)
+        raise RuntimeError("Real task exceeded the 600 s timeout")
+
+    def _set_task_state(self, **values: object) -> None:
+        with self._lock:
+            self._task_state.update(values)
+
+    def execute_task(self, payload: Dict[str, object]) -> None:
+        mode = str(payload.get("mode", "simulator"))
+        if mode not in ("simulator", "real"):
+            raise ValueError("mode must be simulator or real")
+        start = self._validated_pose("start", payload.get("start"))
+        goal = self._validated_pose("goal", payload.get("goal"))
+        record = payload.get("record", True) is True
+
+        if mode == "real":
+            if payload.get("confirmed") is not True:
+                raise RuntimeError("Real-robot execution requires explicit confirmation")
+            self._start_job(
+                "Execute real task", lambda: self._execute_real_task(start, goal, record)
+            )
+            return
+
+        def task() -> None:
+            if self._driver_process_containers():
+                raise RuntimeError("Stop every real-robot iiwa driver before starting simulation")
+            self._task_abort.clear()
+            self._set_task_state(
+                mode=mode,
+                phase="starting",
+                record=record,
+                start=start,
+                goal=goal,
+                message="Building and starting the isolated simulator",
+                run_directory=None,
+                video_available=False,
+            )
+            environment = {
+                "SIM_AUTO_PLAN": "false",
+                "SIM_RECORD": "false",
+                "SIM_RENDER_VIDEO": "true" if record else "false",
+            }
+            self._run(self._sim_compose("build"), env_overrides=environment)
+            self._run(
+                self._sim_compose("up", "-d", "--force-recreate"),
+                env_overrides=environment,
+            )
+            self._wait_for_simulator()
+            self._sim_ros(
+                "rosservice",
+                "call",
+                "/iiwa14/sim/set_task_recording",
+                "data: {}".format("true" if record else "false"),
+            )
+            for topic, pose in (
+                ("/stage_cons/planner/start", start),
+                ("/stage_cons/planner/goal", goal),
+            ):
+                self._sim_ros(
+                    "rostopic",
+                    "pub",
+                    "-1",
+                    topic,
+                    "geometry_msgs/PoseStamped",
+                    self._pose_message(pose),
+                )
+            response = self._sim_ros(
+                "rosservice", "call", "/straight_line_planner/plan", timeout=10.0
+            )
+            if "success: True" not in response.stdout:
+                raise RuntimeError("Planner rejected the task")
+
+            deadline = time.monotonic() + 300.0
+            last_phase = ""
+            while time.monotonic() < deadline:
+                if self._task_abort.is_set():
+                    self._set_task_state(phase="aborted", message="Task aborted by user")
+                    return
+                status = self._read_sim_status()
+                phase = str(status.get("controller", "unknown"))
+                if phase != last_phase:
+                    self.log(f"Simulation task phase: {phase}")
+                    last_phase = phase
+                run_directory = status.get("run_directory")
+                self._set_task_state(
+                    phase=phase,
+                    message={
+                        "moving_to_start": "Moving robot to the task start",
+                        "executing": "Executing planner path",
+                        "complete": "Task completed and data finalized",
+                    }.get(phase, phase),
+                    run_directory=run_directory,
+                    video_available=bool(run_directory and record and phase == "complete"),
+                )
+                if phase == "complete":
+                    return
+                if phase == "failed":
+                    raise RuntimeError(str(status.get("message", "Simulator failed to reach task start")))
+                time.sleep(0.5)
+            raise RuntimeError("Simulation task exceeded the 300 s timeout")
+
+        self._start_job("Execute simulation task", task)
+
+    def abort_task(self) -> None:
+        self._task_abort.set()
+        with self._lock:
+            mode = self._task_state.get("mode")
+        if mode == "real" and self._container_running():
+            self._run(
+                [
+                    "docker", "exec", CONTAINER, "/entrypoint.sh", "rosservice",
+                    "call", "/iiwa14/real_executor/abort",
+                ],
+                check=False,
+                timeout=5,
+            )
+            self._set_task_state(
+                phase="aborted", message="Real trajectory cancelled; position controller remains active"
+            )
+        else:
+            self._run(self._sim_compose("stop"), check=False, timeout=20)
+            self._set_task_state(phase="aborted", message="Task aborted; simulator stopped")
+
+    def task_video_path(self) -> Optional[Path]:
+        with self._lock:
+            run_directory = self._task_state.get("run_directory")
+        if not isinstance(run_directory, str):
+            return None
+        run_name = Path(run_directory).name
+        if not run_name or run_name in (".", ".."):
+            return None
+        path = PROJECT_ROOT / "data" / "sim_runs" / run_name / "goal_reaching.mp4"
+        return path if path.is_file() else None
 
     def _start_job(self, name: str, target) -> None:
         with self._lock:
@@ -223,6 +632,8 @@ class Supervisor:
                     with self._lock:
                         self._job_ok = False
                         self._job_message = str(error)
+                        if name in ("Execute simulation task", "Execute real task") and not self._task_abort.is_set():
+                            self._task_state.update(phase="failed", message=str(error))
                 else:
                     with self._lock:
                         self._job_ok = True
@@ -468,6 +879,7 @@ class Supervisor:
                 os.killpg(child.pid, signal.SIGTERM)
 
     def _stop_driver_process(self) -> None:
+        self._signal_child("real")
         self._signal_child("driver")
         if self._container_running():
             self._run(
@@ -477,6 +889,7 @@ class Supervisor:
                     CONTAINER,
                     "bash",
                     "-lc",
+                    "pkill -INT -f '[r]oslaunch stage_real_executor real_station.launch' || true; "
                     "pkill -INT -f '[r]oslaunch iiwa_driver .*iiwa14_bringup.launch' || true",
                 ],
                 check=False,
@@ -515,6 +928,8 @@ class Supervisor:
 
     def stop_all(self) -> None:
         def task() -> None:
+            self._task_abort.set()
+            self._run(self._sim_compose("stop"), check=False, timeout=20)
             if self._container_running():
                 self._run(
                     [
@@ -563,10 +978,17 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/" or self.path == "/index.html":
+        request_path = self.path.partition("?")[0]
+        if request_path == "/" or request_path == "/index.html":
             self._file(WEB_ROOT / "index.html", "text/html; charset=utf-8")
-        elif self.path == "/api/state":
+        elif request_path == "/api/state":
             self._json(HTTPStatus.OK, SUPERVISOR.state())
+        elif request_path == "/api/task/video":
+            video = SUPERVISOR.task_video_path()
+            if video is None:
+                self.send_error(HTTPStatus.NOT_FOUND, "No completed task video")
+            else:
+                self._file(video, "video/mp4")
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -591,6 +1013,10 @@ class Handler(BaseHTTPRequestHandler):
                 SUPERVISOR.stop_driver()
             elif self.path == "/api/stop-all":
                 SUPERVISOR.stop_all()
+            elif self.path == "/api/task/execute":
+                SUPERVISOR.execute_task(payload)
+            elif self.path == "/api/task/abort":
+                SUPERVISOR.abort_task()
             else:
                 self._json(HTTPStatus.NOT_FOUND, {"ok": False, "message": "Not found"})
                 return

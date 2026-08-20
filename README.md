@@ -53,6 +53,37 @@ Typical workflow:
 - `utils/`: feature-emission and constraint models
 - `visualization/`: plotting and rendering helpers
 - `outputs/`: generated results, plots, videos, and benchmark summaries
+- `robot/stage_cons_iiwa14/`: self-contained ROS Noetic/Docker workspace for
+  demonstration collection, PyBullet deployment, and guarded iiwa14 task execution
+
+## Robot workspace
+
+The current robot integration lives in
+[`robot/stage_cons_iiwa14`](robot/stage_cons_iiwa14/README.md). The laboratory
+computer and laptop use the same Git revision, Dockerfile, ROS workspace, and
+planner interface. Machine-local robot networking remains in an ignored `.env`
+file.
+
+The deployment boundary is:
+
+```text
+Start/Goal from web GUI
+        -> Cartesian nav_msgs/Path planner
+        -> shared continuous IK and time parameterization
+        -> PyBullet joint-position backend or iiwa14 joint-trajectory backend
+```
+
+The shared compiler uses position + Tool-Z orientation, starts from the current
+joint state, validates joint limits, continuity, self-collision, and Jacobian
+singularity, and produces separate approach and recorded task segments. The
+PyBullet path has passed end-to-end offline testing. The real-robot backend has
+passed offline validation but has not yet been physically executed; treat it as
+unvalidated experimental robot-control software until staged on-site testing is
+complete.
+
+For the current cross-session implementation state, safety boundaries, test
+results, and recommended next steps, read [`CONTEXT.md`](CONTEXT.md) before
+continuing robot work.
 
 ## Environment
 

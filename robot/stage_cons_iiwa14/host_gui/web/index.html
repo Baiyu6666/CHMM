@@ -9,14 +9,17 @@
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}
     main{max-width:1280px;margin:auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}
     h1{font-size:22px;margin:0}.badge{padding:7px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
-    .grid{display:grid;grid-template-columns:370px 1fr;gap:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+    .grid{display:grid;grid-template-columns:370px 1fr;gap:16px}.stack{display:grid;gap:16px;align-content:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
     h2{font-size:15px;margin:0 0 13px}.status{display:grid;grid-template-columns:1fr auto;gap:8px 12px;margin-bottom:15px}.value{font-weight:650}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
     button{width:100%;padding:11px 12px;margin:5px 0;border:1px solid var(--line);border-radius:8px;background:#202a36;color:var(--text);font-weight:650;cursor:pointer}
     button.primary{background:#174d39;border-color:#2b8a61}button.danger{background:#54252a;border-color:#9b3d46}button:disabled{opacity:.45;cursor:not-allowed}
     .hint{color:var(--muted);font-size:13px;margin:6px 0 12px}.message{min-height:44px;padding:10px;border-radius:8px;border:1px solid var(--line);margin-top:10px}.message.error{color:var(--red);border-color:var(--red)}
     pre{height:270px;overflow:auto;white-space:pre-wrap;background:#090d12;border:1px solid var(--line);border-radius:8px;padding:10px;color:#b9c7d5}
-    iframe{width:100%;height:760px;border:1px solid var(--line);border-radius:10px;background:#0a0e13}
-    @media(max-width:900px){.grid{grid-template-columns:1fr}iframe{height:680px}}
+    input,select{width:100%;padding:9px;color:var(--text);background:#0d131b;border:1px solid var(--line);border-radius:7px}
+    label{display:grid;gap:5px;color:var(--muted);font-size:13px}.pose{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}.pose-title{display:flex;justify-content:space-between;align-items:center;margin:13px 0 7px}.pose-title strong{font-size:13px}.pose-title span{color:var(--muted);font-size:12px}
+    .task-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:9px}.check{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:7px;padding:9px}.check input{width:auto}.task-actions{display:grid;grid-template-columns:1fr 150px;gap:9px;margin-top:12px}.task-status{display:grid;grid-template-columns:115px 1fr;gap:7px 12px;margin-top:13px}.task-status span:nth-child(odd){color:var(--muted)}
+    video{display:none;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:#000}iframe{width:100%;height:680px;border:1px solid var(--line);border-radius:10px;background:#0a0e13}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}.pose{grid-template-columns:repeat(4,1fr)}iframe{height:680px}}@media(max-width:560px){.pose{grid-template-columns:repeat(2,1fr)}.task-options,.task-actions{grid-template-columns:1fr}}
   </style>
 </head>
 <body><main>
@@ -30,6 +33,7 @@
           <span>Robot network</span><span id="network" class="value">—</span>
           <span>iiwa_driver</span><span id="driver" class="value">—</span>
           <span>Demo station</span><span id="demo" class="value">—</span>
+          <span>Simulator</span><span id="simulator" class="value">—</span>
         </div>
         <button id="build" class="primary">构建并启动工作站</button>
         <button id="startDemo">启动 Demo 面板</button>
@@ -46,20 +50,42 @@
         <h2>运行日志</h2><pre id="logs"></pre>
       </section>
     </div>
-    <section class="panel">
-      <h2>Demo 采集面板</h2>
-      <div class="hint">工作站启动后在这里完成 Demo、辅助开关、Rosbag 和轨迹查看。</div>
-      <iframe id="demoFrame" title="Demo collection panel"></iframe>
-    </section>
+    <div class="stack">
+      <section class="panel">
+        <h2>Task 执行</h2>
+        <div class="hint">设置 Cartesian 起点和终点。机器人先移动到起点（不记录），随后执行 planner 路径，到达终点后自动停止并保存。</div>
+        <div class="task-options">
+          <label>执行环境<select id="taskMode"><option value="simulator">PyBullet simulator</option><option value="real">Real iiwa14</option></select></label>
+          <label class="check"><input id="taskRecord" type="checkbox" checked>记录 task 数据与仿真视频</label>
+        </div>
+        <div id="realNotice" class="hint">Simulator 使用 bridge 网络和非 privileged 容器，不会连接 FRI 真机。</div>
+        <div class="pose-title"><strong>Start pose</strong><span>frame: iiwa14_link_0 · metre / quaternion</span></div>
+        <div class="pose" id="startPose">
+          <label>x<input data-key="x" type="number" step="0.001" value="-0.63"></label><label>y<input data-key="y" type="number" step="0.001" value="0"></label><label>z<input data-key="z" type="number" step="0.001" value="0.286"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
+        </div>
+        <div class="pose-title"><strong>Goal pose</strong><span>placeholder planner: Cartesian straight line</span></div>
+        <div class="pose" id="goalPose">
+          <label>x<input data-key="x" type="number" step="0.001" value="-0.48"></label><label>y<input data-key="y" type="number" step="0.001" value="0"></label><label>z<input data-key="z" type="number" step="0.001" value="0.286"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
+        </div>
+        <div class="task-actions"><button id="taskRun" class="primary">执行 Task</button><button id="taskAbort" class="danger">停止 Task</button></div>
+        <div class="task-status"><span>Mode</span><span id="taskModeState">—</span><span>Phase</span><span id="taskPhase">idle</span><span>Recording</span><span id="taskRecording">—</span><span>Output</span><span id="taskOutput">—</span></div>
+        <video id="taskVideo" controls preload="metadata"></video>
+      </section>
+      <section class="panel">
+        <h2>Demo 采集面板</h2>
+        <div class="hint">工作站启动后在这里完成 Demo、辅助开关、Rosbag 和轨迹查看。</div>
+        <iframe id="demoFrame" title="Demo collection panel"></iframe>
+      </section>
+    </div>
   </div>
 </main>
 <script>
-let token='',state=null,lastDemoRunning=false,localMessageUntil=0;
+let token='',state=null,lastDemoRunning=false,videoLoaded=false,localMessageUntil=0;
 const $=id=>document.getElementById(id);
 function flag(el,on,yes,no){el.textContent=on?yes:no;el.className='value '+(on?'ok':'warn')}
 function showError(text){localMessageUntil=Date.now()+12000;$('message').textContent=text;$('message').className='message error'}
 async function poll(){try{const r=await fetch('/api/state',{cache:'no-store'});state=await r.json();token=state.token;render()}catch(e){$('message').textContent=e.message}}
-function render(){flag($('container'),state.container_running,'运行中','已停止');flag($('driver'),state.driver_running,'运行中','已停止');flag($('demo'),state.demo_running,'运行中','已停止');flag($('network'),state.robot_network.configured,'已配置','未配置');const b=state.job.busy;$('busy').textContent=b?state.job.name:'Ready';$('busy').className='badge '+(b?'warn':'ok');if(Date.now()>=localMessageUntil){$('message').textContent=state.job.message;$('message').className='message'}$('logs').textContent=state.logs.join('\n');$('logs').scrollTop=$('logs').scrollHeight;for(const id of ['build','startDemo','networkButton','startDriver','stopDriver','stopAll'])$(id).disabled=b;if(state.demo_running&&!lastDemoRunning)$('demoFrame').src=state.demo_url+'/?reload='+Date.now();lastDemoRunning=state.demo_running}
+function render(){flag($('container'),state.container_running,'运行中','已停止');flag($('driver'),state.driver_running,'运行中','已停止');flag($('demo'),state.demo_running,'运行中','已停止');flag($('simulator'),state.simulator_running,'运行中','已停止');flag($('network'),state.robot_network.configured,'已配置','未配置');const b=state.job.busy,t=state.task||{};$('busy').textContent=b?state.job.name:'Ready';$('busy').className='badge '+(b?'warn':'ok');if(Date.now()>=localMessageUntil){$('message').textContent=state.job.message;$('message').className='message'}$('logs').textContent=state.logs.join('\n');$('logs').scrollTop=$('logs').scrollHeight;for(const id of ['build','startDemo','networkButton','startDriver','stopDriver','stopAll','taskRun'])$(id).disabled=b;$('taskAbort').disabled=!['starting','preparing','prepared','moving_to_start','executing'].includes(t.phase);$('taskModeState').textContent=t.mode||'—';$('taskPhase').textContent=t.message||t.phase||'idle';$('taskRecording').textContent=t.record?'开启':'关闭';$('taskOutput').textContent=t.run_directory?t.run_directory.replace('/data/',state.project_root+'/data/'):'—';if(t.video_available&&!videoLoaded){$('taskVideo').style.display='block';$('taskVideo').src='/api/task/video?v='+Date.now();videoLoaded=true}if(t.phase==='starting')videoLoaded=false;if(state.demo_running&&!lastDemoRunning)$('demoFrame').src=state.demo_url+'/?reload='+Date.now();lastDemoRunning=state.demo_running}
 async function action(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Stage-Token':token},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.message);await poll()}
 $('build').onclick=()=>action('/api/build-start').catch(e=>showError(e.message));
 $('startDemo').onclick=()=>action('/api/start-demo').catch(e=>showError(e.message));
@@ -71,5 +97,9 @@ $('startDriver').onclick=()=>{
 };
 $('stopDriver').onclick=()=>action('/api/stop-driver').catch(e=>showError(e.message));
 $('stopAll').onclick=()=>action('/api/stop-all').catch(e=>showError(e.message));
+function readPose(id){const pose={};document.querySelectorAll('#'+id+' input').forEach(input=>pose[input.dataset.key]=Number(input.value));return pose}
+$('taskMode').onchange=()=>{$('realNotice').textContent=$('taskMode').value==='real'?'Real 使用裸机法兰 iiwa14_link_7 的位置 + Tool-Z 连续 IK，并通过 PositionTrajectoryController 执行。请先停止 Demo 的 SafeTorqueController driver。':'Simulator 使用 bridge 网络和非 privileged 容器，不会连接 FRI 真机。'};
+$('taskRun').onclick=()=>{const mode=$('taskMode').value;let confirmed=false;if(mode==='real'){confirmed=window.confirm('确认请求真机执行？\n\n系统将启动 FRI POSITION 模式和 PositionTrajectoryController，读取真机当前关节角，完成连续 IK 与安全检查后，先移动到 Start，再执行 task。\n\n请确认：SmartPAD 已选择 POSITION FRIOverlay、机器人无 fault、工作空间无人、低 stiffness 已设置且急停可触及。');if(!confirmed)return}action('/api/task/execute',{mode,record:$('taskRecord').checked,start:readPose('startPose'),goal:readPose('goalPose'),confirmed}).catch(e=>showError(e.message))};
+$('taskAbort').onclick=()=>action('/api/task/abort').catch(e=>showError(e.message));
 poll();setInterval(poll,2000);
 </script></body></html>

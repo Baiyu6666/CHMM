@@ -15,6 +15,7 @@
   <depend>std_msgs</depend>
   <depend>urdf</depend>
   <exec_depend>joint_state_controller</exec_depend>
+  <exec_depend>position_controllers</exec_depend>
 
   <export>
     <controller_interface plugin="${prefix}/plugins/watchdog_effort_controller.xml"/>

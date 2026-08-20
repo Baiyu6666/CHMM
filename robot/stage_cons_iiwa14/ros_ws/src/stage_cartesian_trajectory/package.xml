@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>stage_cartesian_trajectory</name>
+  <version>0.1.0</version>
+  <description>Shared Cartesian Path to timed iiwa joint trajectory compiler.</description>
+  <maintainer email="baiyu@example.com">Baiyu</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <exec_depend>python3-numpy</exec_depend>
+</package>

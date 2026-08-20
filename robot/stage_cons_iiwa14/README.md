@@ -14,10 +14,16 @@ It contains:
 - the lab `iiwa14`/`baiyu_bar` OptiTrack-to-base transform in the same
   container;
 - a validated, service-controlled rosbag demonstration recorder;
-- a local web console for demo-mode checks, assistance toggles, rosbag control,
-  and a live end-effector XY trace;
-- a non-executing Cartesian straight-line placeholder planner;
-- one dedicated Docker Compose service using host networking for Motive/VRPN.
+- a local web console for complete simulator/real task requests, demo-mode
+  checks, assistance toggles, rosbag control, and a live end-effector XY trace;
+- a Cartesian straight-line placeholder planner that never commands hardware
+  directly;
+- a shared continuous-IK and time-parameterization package used by both the
+  PyBullet and real-robot executors;
+- an isolated PyBullet execution/recording backend and an explicitly armed,
+  service-controlled iiwa14 joint-trajectory backend;
+- a host-networked real-workstation Compose mode and an isolated bridge-network
+  PyBullet override.
 
 ## Repository and runtime layers
 
@@ -151,6 +157,8 @@ git lfs track "*.pt"
 git lfs track "*.pth"
 git lfs track "*.ckpt"
 git lfs track "*.onnx"
+git lfs track "robot/stage_cons_iiwa14/data/sim_runs/**/trajectory.csv"
+git lfs track "robot/stage_cons_iiwa14/data/sim_runs/**/goal_reaching.mp4"
 
 git add .gitattributes
 git add robot/stage_cons_iiwa14/data/demos
@@ -170,10 +178,176 @@ base-image tag or package repository can change. If byte-identical deployment
 later becomes necessary, build once, push the image to a registry, and make
 both workstations pull an image pinned by digest.
 
-When laptop simulation is added, keep one shared Dockerfile and image. Put only
-the runtime differences into Compose profiles or overrides, and expose two
-small entry points such as `./scripts/start.sh real` and `./scripts/start.sh
-sim`; the Git pull/build workflow should remain unchanged.
+The PyBullet mode uses the same Dockerfile and image as the laboratory mode.
+Only its Compose override and launch command differ, so the same Git
+pull/build workflow applies on the laptop and laboratory workstation.
+
+## Run the PyBullet simulation
+
+The simulation is independent of the real-robot runtime. It uses bridge
+networking without privileged mode and does not start the FRI driver,
+OptiTrack, virtual-fixture, or demonstration recorder. The simulated workcell
+contains the iiwa14, the calibrated `0.14584 m` table surface, the bar, and the
+spherical obstacle. The current placeholder planner publishes a Cartesian
+goal-reaching path. `stage_cartesian_trajectory` first compiles the complete
+path into continuous, validated, time-parameterized `approach` and `task` joint
+segments. The PyBullet node then interpolates those joint targets by timestamp
+and executes them with joint position control. The real executor uses the same
+compiler; only the final execution backend differs.
+
+Run all three commands from this directory:
+
+```bash
+cd /home/baiyu/LearnStageConstraints/robot/stage_cons_iiwa14
+```
+
+Build the shared image and start the simulation in the background:
+
+```bash
+./scripts/start_sim.sh
+```
+
+`start_sim.sh` runs the Compose build and start operations. The first build can
+take several minutes; later builds reuse Docker's layer cache. Each start
+creates a new timestamped run, automatically invokes the placeholder planner,
+records the trajectory, and renders a headless PyBullet video. Rendering does
+not require an X server or an open PyBullet GUI.
+
+Follow the simulator, planner, controller, and video-encoder logs with:
+
+```bash
+./scripts/logs_sim.sh
+```
+
+The log stream remains attached until `Ctrl+C` is pressed. Pressing `Ctrl+C`
+here only closes the log viewer; it does not stop the simulation. A completed
+automatic run reports both:
+
+```text
+Shared joint trajectory execution complete
+Goal-reaching video complete
+```
+
+After inspecting the run, stop the simulation cleanly:
+
+```bash
+./scripts/stop_sim.sh
+```
+
+`stop_sim.sh` closes the CSV and MP4 encoder and removes the simulation
+container. It does not delete the Docker image or any recorded result. A normal
+session therefore looks like:
+
+```bash
+./scripts/start_sim.sh
+./scripts/logs_sim.sh
+# Press Ctrl+C after the completion messages.
+./scripts/stop_sim.sh
+```
+
+Every run is saved on the host under:
+
+```text
+data/sim_runs/<UTC timestamp>/
+├── metadata.json
+├── trajectory.csv
+├── goal_reaching.mp4
+└── video_ffmpeg.log
+```
+
+`trajectory.csv` contains actual joint position/velocity, the shared
+trajectory's seven `q_target` values, end-effector and target pose, controller
+state, and per-object collision counts. `metadata.json` records compiler
+metrics, including trajectory duration, IK errors, maximum joint step, and
+minimum Jacobian singular value. `goal_reaching.mp4` is a 640x480 H.264 preview.
+The preview is slowed down at encoding time so fast placeholder motions remain
+visible; the simulation controller itself is not changed.
+Trajectory CSV files and rendered MP4 files in this directory are configured
+for Git LFS and can be committed with the normal `git add`, `git commit`, and
+`git push` workflow.
+
+## Execute a task from the unified web GUI
+
+Open <http://127.0.0.1:8080> and use the Task panel to enter Start and Goal as
+`x y z qx qy qz qw`, select the execution mode, and choose whether the task
+segment should be recorded. In both modes the sequence is:
+
+1. publish Start and Goal;
+2. call the planner, which publishes `/stage_cons/plan`;
+3. compile the Cartesian path into shared `approach` and `task` joint
+   trajectories using position + Tool-Z orientation;
+4. move from the current joint state to Start without recording;
+5. start recording if requested and execute the task trajectory;
+6. stop and finalize data after Goal, or report `failed`/`aborted`.
+
+The shared compiler checks IK accuracy, Tool-Z accuracy, joint limits, maximum
+joint step, self-collision, velocity, acceleration, and Jacobian singularity.
+These checks are research-software guards, not certified collision or robot
+safety functions.
+
+### PyBullet task
+
+Choose **PyBullet simulator** and click the Task execute control. The supervisor
+builds and force-recreates the isolated simulation container with automatic
+planning disabled, publishes the GUI poses, runs the planner, and monitors the
+simulator through `planning`, `moving_to_start`, `executing`, and `complete`.
+If recording is selected, only the Start-to-Goal task segment is written and
+the finished MP4 is available from the GUI.
+
+### Real iiwa14 task
+
+The real backend uses:
+
+- namespace `/iiwa14`;
+- bare flange `iiwa14_link_7` with no force sensor or grabber;
+- position + Tool-Z orientation;
+- the latest real `/iiwa14/joint_states` as the IK seed and first trajectory
+  sample;
+- `/iiwa14/PositionTrajectoryController/follow_joint_trajectory` as the final
+  execution action.
+
+Receiving `/stage_cons/plan` never moves the robot. The executor requires an
+explicit prepare followed by execute, and the browser requires a separate
+real-hardware confirmation. Prepare requires fresh joint state, FRI
+`POSITION` mode, `COMMANDING_ACTIVE`, and an available trajectory action
+server. Execute rejects a plan if the robot moved more than the configured
+start-drift tolerance after preparation.
+
+Before using **Real iiwa14**:
+
+1. stop any existing SafeTorque/demo iiwa driver and stop the simulation
+   container;
+2. configure and verify the dedicated robot network;
+3. confirm that the robot is correctly mastered and fault-free;
+4. start the compatible SmartPAD `POSITION`/FRIOverlay application with the
+   approved low-stiffness commissioning settings;
+5. clear the physical workspace and keep the E-stop accessible;
+6. select **Real iiwa14**, verify Start/Goal and recording, then read and accept
+   the GUI confirmation;
+7. after execution, stop the real station/driver before returning to Demo mode.
+
+The real executor synchronizes the trajectory controller to the measured
+joints before opening the driver position-command gate. While armed it sends a
+20 Hz heartbeat; a heartbeat older than 0.2 seconds, loss of POSITION mode, FRI
+state loss, abort, or execution failure closes the gate and returns the driver
+to measured-position commands. Repeated external-torque threshold violations
+latch a protective stop and require inspection plus a real-station restart.
+
+The main services are:
+
+```text
+/iiwa14/real_executor/validate
+/iiwa14/real_executor/prepare
+/iiwa14/real_executor/execute
+/iiwa14/real_executor/abort
+/iiwa14/real_executor/set_recording
+```
+
+`validate` is offline and does not arm or command hardware. `prepare` and
+`execute` are the hardware path. The current implementation has passed Docker,
+catkin, PyBullet end-to-end, and standalone real-executor offline validation;
+it has **not yet been physically executed on the iiwa14**. Perform staged
+on-site commissioning before treating this path as validated.
 
 ## Collect a demonstration
 
@@ -221,13 +395,15 @@ cd /home/baiyu/LearnStageConstraints/robot/stage_cons_iiwa14
 5. Click **停止并保存 Rosbag**, then click **退出 Demo 采集模式**. Exiting
    disables both assistance channels and stops an unfinished recording.
 
-**Position-reference hold has been removed.** Its hardware tests produced a
-strong return force toward an unexpected pose with the installed Sunrise
-impedance application. The driver now unconditionally keeps the FRI position
-reference at the measured joints in both GUI states; there is no configuration
-switch that can restore the old behavior. Demo mode is only a gate for
+**The old Demo position-reference hold has been removed.** Its hardware tests
+produced a strong return force toward an unexpected pose with the installed
+Sunrise impedance application. In the SafeTorque/Demo station the driver keeps
+the FRI position reference at the measured joints. Demo mode is only a gate for
 recording, tracing, and optional assistance and does not mechanically lock the
-arm outside Demo mode.
+arm outside Demo mode. The separately gated position commands used by
+`stage_real_executor` are available only in the real task station, after
+controller synchronization, explicit confirmation, and heartbeat monitoring;
+they cannot be enabled from Demo mode.
 
 Both pages bind to loopback only. The host supervisor is on port 8080 and the
 container Demo page is on port 8081. Neither bypasses SmartPAD safety state.
@@ -411,6 +587,13 @@ time parameterization, controller switching, or hardware execution. Keeping
 this boundary non-executing prevents a placeholder from accidentally becoming
 a robot command path.
 
+Both execution backends subscribe to this path, but the behavior remains
+separated. PyBullet compiles and executes it inside the isolated simulator. The
+real executor invalidates any previously prepared trajectory when a new path
+arrives and still requires explicit `prepare` and `execute` service calls. The
+shared `stage_cartesian_trajectory` package owns continuous IK, validation, and
+time parameterization; the planner never imports controller or driver code.
+
 The intended later data/model boundary is similarly explicit: training remains
 in the host `LearnStageConstraints` environment, and a reviewed deployment
 bundle is exported to `data/models/`, mounted read-only at `/models` in the
@@ -470,9 +653,18 @@ The 13 status entries are, in order:
 - `ros_ws/src/stage_demo_recorder` owns only acquisition and recording. It does
   not infer task stages; the operator's marker events are recorded verbatim.
 - `ros_ws/src/stage_placeholder_planner` publishes visualization/integration
-  paths only and has no execution connection.
+  paths only and never commands a controller directly.
+- `ros_ws/src/stage_cartesian_trajectory` is the shared position + Tool-Z,
+  continuous-IK, validation, and time-parameterization library.
+- `ros_ws/src/stage_iiwa_sim` executes the shared joint trajectory in PyBullet
+  and owns simulation-only CSV/video recording.
+- `ros_ws/src/stage_real_executor` owns explicit preparation, arming,
+  FollowJointTrajectory execution, abort handling, and real-task rosbag
+  recording.
 - KUKA FRI is not vendored. Its own license and distribution terms apply to the
   source fetched during the Docker build.
 
-The resulting Docker image is `baiyu/stage_cons_iiwa14:noetic`, and the only
-container created by this project is `stage_cons_iiwa14`.
+The resulting Docker image is `baiyu/stage_cons_iiwa14:noetic`. The laboratory
+Compose mode uses `stage_cons_iiwa14`; the isolated simulation project uses
+`stage_cons_iiwa14_sim`. The supervisor refuses real task execution while the
+simulation container is active.

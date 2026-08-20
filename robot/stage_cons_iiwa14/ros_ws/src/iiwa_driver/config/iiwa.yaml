@@ -5,9 +5,13 @@ fri:
 
 hardware_interface:
   control_freq: 200 # in Hz
-  # Demo is a logical acquisition/assistance gate only. The driver always sends
-  # measured joints as the FRI position reference; no mechanical hold exists.
+  # Demo is a logical acquisition/assistance gate only. Position commands are
+  # used only when the position hardware interface/controller is selected.
   demo_heartbeat_timeout: 0.5
+  # Position targets remain gated to measured joints until the real executor
+  # synchronizes the trajectory controller and explicitly arms the driver.
+  position_arm_tolerance: 0.00872664626  # 0.5 degree
+  position_heartbeat_timeout: 0.2
   joints:
     - $(arg robot_name)_joint_1
     - $(arg robot_name)_joint_2

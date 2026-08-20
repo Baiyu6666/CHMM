@@ -33,6 +33,7 @@
 // FRI Headers
 #include <kuka/fri/ClientData.h>
 
+#include <algorithm>
 #include <cmath>
 #include <thread>
 
@@ -62,6 +63,9 @@ namespace iiwa_ros {
         _demo_mode_requested.store(false);
         _last_demo_heartbeat_wall_sec.store(0.0);
         _demo_mode_active = false;
+        _position_command_enabled.store(false);
+        _position_arm_requested.store(false);
+        _last_position_heartbeat_wall_sec.store(0.0);
         _nh = nh;
         _ns = nh.getNamespace();
         _load_params(); // load parameters
@@ -72,6 +76,11 @@ namespace iiwa_ros {
         _client_command_mode_pub = _nh.advertise<std_msgs::Int32>(_ns+"/fri_command_mode", 10, true);
         _demo_mode_service = _nh.advertiseService(
             "iiwa_driver/set_demo_mode", &Iiwa::_set_demo_mode, this);
+        _position_command_service = _nh.advertiseService(
+            "iiwa_driver/set_position_commanding", &Iiwa::_set_position_commanding, this);
+        _position_heartbeat_sub = _nh.subscribe<std_msgs::Empty>(
+            "iiwa_driver/position_command_heartbeat", 1,
+            &Iiwa::_position_command_heartbeat, this);
         _demo_heartbeat_sub = _nh.subscribe<std_msgs::Empty>(
             "iiwa_driver/demo_mode_heartbeat", 1, &Iiwa::_demo_heartbeat, this);
         _controller_manager.reset(new controller_manager::ControllerManager(this, _nh));
@@ -285,6 +294,36 @@ namespace iiwa_ros {
         return true;
     }
 
+    bool Iiwa::_set_position_commanding(std_srvs::SetBool::Request& request,
+        std_srvs::SetBool::Response& response)
+    {
+        if (!request.data) {
+            _position_arm_requested.store(false);
+            _position_command_enabled.store(false);
+            response.success = true;
+            response.message = "FRI position commands disabled; measured joints are the reference.";
+            return true;
+        }
+        _position_arm_requested.store(true);
+        _last_position_heartbeat_wall_sec.store(ros::WallTime::now().toSec());
+        const ros::WallTime deadline = ros::WallTime::now() + ros::WallDuration(0.25);
+        while (ros::WallTime::now() < deadline && !_position_command_enabled.load()) {
+            ros::WallDuration(0.005).sleep();
+        }
+        response.success = _position_command_enabled.load();
+        response.message = response.success
+            ? "FRI position commands armed."
+            : "FRI position arm request was rejected or timed out.";
+        if (!response.success)
+            _position_arm_requested.store(false);
+        return true;
+    }
+
+    void Iiwa::_position_command_heartbeat(const std_msgs::Empty::ConstPtr&)
+    {
+        _last_position_heartbeat_wall_sec.store(ros::WallTime::now().toSec());
+    }
+
     void Iiwa::_demo_heartbeat(const std_msgs::Empty::ConstPtr&)
     {
         if (_demo_mode_requested.load()) {
@@ -331,9 +370,22 @@ namespace iiwa_ros {
         n_p.param(_ns + "/iiwa_driver/hardware_interface/control_freq", _control_freq, 200.);
         n_p.param(_ns + "/iiwa_driver/hardware_interface/demo_heartbeat_timeout",
             _demo_heartbeat_timeout, 0.5);
+        n_p.param(_ns + "/iiwa_driver/hardware_interface/position_arm_tolerance",
+            _position_arm_tolerance, 0.00872664626);
+        n_p.param(_ns + "/iiwa_driver/hardware_interface/position_heartbeat_timeout",
+            _position_heartbeat_timeout, 0.2);
         if (!std::isfinite(_demo_heartbeat_timeout) || _demo_heartbeat_timeout <= 0.0) {
             ROS_WARN("Invalid demo heartbeat timeout; using 0.5 s.");
             _demo_heartbeat_timeout = 0.5;
+        }
+        if (!std::isfinite(_position_arm_tolerance) || _position_arm_tolerance <= 0.0) {
+            ROS_WARN("Invalid position arm tolerance; using 0.5 degree.");
+            _position_arm_tolerance = 0.00872664626;
+        }
+        if (!std::isfinite(_position_heartbeat_timeout)
+            || _position_heartbeat_timeout <= 0.0) {
+            ROS_WARN("Invalid position heartbeat timeout; using 0.2 s.");
+            _position_heartbeat_timeout = 0.2;
         }
 
         if(n_p.getParam(_ns + "/iiwa_driver/hardware_interface/joints", _joint_names)){
@@ -353,9 +405,15 @@ namespace iiwa_ros {
             _idle = true;
             _commanding = false;
             _client_command_mode = 0;
+            _position_arm_requested.store(false);
+            _position_command_enabled.store(false);
             return;
         }
         _client_command_mode = static_cast<int>(_robot_state.getClientCommandMode());
+        if (_client_command_mode != static_cast<int>(kuka::fri::POSITION)) {
+            _position_arm_requested.store(false);
+            _position_command_enabled.store(false);
+        }
 
         switch (fri_state) {
         case kuka::fri::MONITORING_WAIT:
@@ -363,6 +421,8 @@ namespace iiwa_ros {
         case kuka::fri::COMMANDING_WAIT:
             _idle = false;
             _commanding = false;
+            _position_arm_requested.store(false);
+            _position_command_enabled.store(false);
             break;
         case kuka::fri::COMMANDING_ACTIVE:
             _idle = false;
@@ -372,6 +432,8 @@ namespace iiwa_ros {
         default:
             _idle = true;
             _commanding = false;
+            _position_arm_requested.store(false);
+            _position_command_enabled.store(false);
             return;
         }
 
@@ -382,8 +444,13 @@ namespace iiwa_ros {
             _joint_position[i] = _robot_state.getMeasuredJointPosition()[i];
             _joint_velocity[i] = filters::exponentialSmoothing((_joint_position[i] - _joint_position_prev[i]) / elapsed_time.toSec(), _joint_velocity[i], 0.2);
             _joint_effort[i] = _robot_state.getMeasuredTorque()[i];
+            // A newly connected or non-commanding FRI session must never retain
+            // a stale/zero position target. The trajectory controller may
+            // overwrite this after read() once COMMANDING_ACTIVE is reached.
+            if (!_commanding || !was_commanding) {
+                _joint_position_command[i] = _joint_position[i];
+            }
         }
-        (void)was_commanding;
     }
 
     void Iiwa::_write(ros::Duration elapsed_time)
@@ -406,8 +473,42 @@ namespace iiwa_ros {
             _robot_command.setTorque(_joint_effort_command.data());
             _robot_command.setJointPosition(_joint_position.data());
         }
-        else if (_robot_state.getClientCommandMode() == kuka::fri::POSITION)
-            _robot_command.setJointPosition(_joint_position.data());
+        else if (_robot_state.getClientCommandMode() == kuka::fri::POSITION) {
+            if (_position_command_enabled.load()) {
+                const double heartbeat_age = ros::WallTime::now().toSec()
+                    - _last_position_heartbeat_wall_sec.load();
+                if (heartbeat_age < 0.0 || heartbeat_age > _position_heartbeat_timeout) {
+                    _position_arm_requested.store(false);
+                    _position_command_enabled.store(false);
+                    ROS_ERROR_STREAM_THROTTLE(1.0,
+                        "Position executor heartbeat expired after " << heartbeat_age
+                        << " s; measured joints are the FRI reference.");
+                }
+            }
+            if (_position_arm_requested.load() && !_position_command_enabled.load()) {
+                double maximum_error = 0.0;
+                bool finite = true;
+                for (int i = 0; i < _num_joints; ++i) {
+                    finite = finite && std::isfinite(_joint_position_command[i]);
+                    maximum_error = std::max(maximum_error,
+                        std::abs(_joint_position_command[i] - _joint_position[i]));
+                }
+                if (finite && _commanding && maximum_error <= _position_arm_tolerance) {
+                    _position_command_enabled.store(true);
+                    ROS_INFO("FRI position command gate armed after controller synchronization.");
+                }
+                else {
+                    _position_arm_requested.store(false);
+                    ROS_ERROR_STREAM_THROTTLE(1.0,
+                        "Refusing position command arm: synchronized error is "
+                        << maximum_error << " rad, commanding=" << _commanding << ".");
+                }
+            }
+            if (_position_command_enabled.load())
+                _robot_command.setJointPosition(_joint_position_command.data());
+            else
+                _robot_command.setJointPosition(_joint_position.data());
+        }
         // else ERROR
 
         _write_fri();

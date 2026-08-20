@@ -1,0 +1,30 @@
+<launch>
+  <arg name="robot_name" default="iiwa14"/>
+  <arg name="robot_ip" default="192.170.10.4"/>
+  <arg name="output_root" default="/data/demos"/>
+
+  <include file="$(find iiwa_driver)/launch/iiwa14_bringup.launch">
+    <arg name="robot_name" value="$(arg robot_name)"/>
+    <arg name="controller" value="PositionTrajectoryController"/>
+    <arg name="robot_ip" value="$(arg robot_ip)"/>
+  </include>
+
+  <group ns="$(arg robot_name)">
+    <node pkg="stage_real_executor"
+          type="real_executor.py"
+          name="real_executor"
+          output="screen"
+          required="true">
+      <param name="base_frame" value="$(arg robot_name)_link_0"/>
+      <param name="tip_link" value="$(arg robot_name)_link_7"/>
+      <param name="controller_action"
+             value="/$(arg robot_name)/PositionTrajectoryController/follow_joint_trajectory"/>
+      <param name="output_root" value="$(arg output_root)"/>
+    </node>
+  </group>
+
+  <include file="$(find stage_placeholder_planner)/launch/straight_line_planner.launch">
+    <arg name="frame_id" value="$(arg robot_name)_link_0"/>
+    <arg name="sample_spacing" value="0.01"/>
+  </include>
+</launch>
