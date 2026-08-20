@@ -96,6 +96,85 @@ Stop the stack with:
 ./scripts/stop.sh
 ```
 
+## Two-workstation Git workflow
+
+The simplest workflow is to keep the Docker definition, ROS source, recorded
+demonstrations, and exported models in this repository. Each workstation pulls
+the same Git revision and rebuilds the image locally. Docker reuses cached
+layers, so running the build command after every pull does not reinstall the
+whole environment when the relevant inputs have not changed.
+
+Keep `.env` local to each workstation. The lab workstation needs its real
+robot-facing interface and OptiTrack addresses, while the laptop can keep
+simulation or loopback-oriented values. Do not copy the lab `.env` to the
+laptop merely to make the Git trees match.
+
+Before starting work on either workstation, first commit or stash any local
+code changes. Then, from the repository root, run:
+
+```bash
+git pull --rebase
+./robot/stage_cons_iiwa14/scripts/start.sh
+```
+
+`start.sh` runs `docker compose build` followed by `docker compose up -d`.
+Compose reuses the existing build cache and recreates the service only when
+needed. It is not necessary to run `docker compose down` before every rebuild.
+
+At the end of a work session, stop the stack, commit the relevant code and data,
+and push before moving to the other workstation:
+
+```bash
+./robot/stage_cons_iiwa14/scripts/stop.sh
+
+git status
+git add <files-produced-or-modified-in-this-session>
+git commit -m "describe the code, demo, or model change"
+git push
+```
+
+The next session on the other workstation begins with the same `git pull
+--rebase` and `start.sh` commands. Git is the hand-off point: work that has not
+been committed and pushed is not available on the other workstation.
+
+### Large demonstrations and models
+
+Use Git LFS for rosbag files and exported model binaries. This preserves the
+normal `git pull`/`git push` workflow without putting every large binary version
+directly into the ordinary Git object database. Git LFS must be installed on
+both workstations. Before the first data commit, configure the repository once:
+
+```bash
+git lfs install
+git lfs track "*.bag"
+git lfs track "*.pt"
+git lfs track "*.pth"
+git lfs track "*.ckpt"
+git lfs track "*.onnx"
+
+git add .gitattributes
+git add robot/stage_cons_iiwa14/data/demos
+git add robot/stage_cons_iiwa14/data/models
+git commit -m "track robot data and models with Git LFS"
+git push
+```
+
+Commit `.gitattributes` so fresh clones automatically know which files use
+LFS. Do not make the first rosbag commit with ordinary Git and migrate it later;
+large objects remain in repository history even after a normal deletion.
+
+This local-build workflow gives both workstations the same source and build
+definition, which is the lowest-maintenance option during development. Two
+independent builds are not guaranteed to have the same image digest because a
+base-image tag or package repository can change. If byte-identical deployment
+later becomes necessary, build once, push the image to a registry, and make
+both workstations pull an image pinned by digest.
+
+When laptop simulation is added, keep one shared Dockerfile and image. Put only
+the runtime differences into Compose profiles or overrides, and expose two
+small entry points such as `./scripts/start.sh real` and `./scripts/start.sh
+sim`; the Git pull/build workflow should remain unchanged.
+
 ## Collect a demonstration
 
 The copied lab configuration is:
@@ -220,8 +299,9 @@ docker compose exec iiwa14 rosservice call /demo_recorder/stop
 Every run is written on the host under `data/demos/<timestamp>_<label>/` as
 `demo.bag` plus `metadata.json`. The recorder refuses to start if joint states,
 TF, or the relative `baiyu_bar` pose is missing, and it also checks free disk
-space. Raw bags and exported models are ignored by Git; only code and configs
-are versioned.
+space. Raw bags and exported models should be versioned through Git LFS as
+described in the two-workstation workflow above; `.env` and generated Catkin
+products remain local to each workstation.
 
 Change the label or experiment notes before the next run with ROS parameters:
 

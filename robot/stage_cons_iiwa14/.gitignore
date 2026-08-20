@@ -13,12 +13,6 @@ ros_ws/build/
 ros_ws/devel/
 ros_ws/log/
 
-# Experiment artifacts (keep directory placeholders)
-data/demos/*
-data/models/*
-!data/demos/.gitkeep
-!data/models/.gitkeep
-
 # Local logs and temporary files
 *.log
 *.tmp
