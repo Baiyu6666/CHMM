@@ -31,7 +31,11 @@ from methods.cores.swcl import (
     _hard_gammas_from_stage_ends,
 )
 from visualization.io import learner_plot_dir, save_figure
-from visualization.map_plots import clear_map_plot_outputs, plot_map_final_outputs
+from visualization.map_plots import (
+    clear_map_plot_outputs,
+    plot_map_demo_summary,
+    plot_map_final_outputs,
+)
 
 
 _MAP_DEMO_MODEL = None
@@ -91,6 +95,8 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         self,
         *args,
         map_eq_sigma: float = 0.05,
+        map_eq_sigma_mode: str = "fixed",
+        map_active_sigma_floor: float = 0.003,
         map_c_bg: float = 2.0,
         map_c_ineq: float = 0.0,
         map_eq_distribution: str = "gaussian",
@@ -113,6 +119,10 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         **kwargs,
     ):
         kwargs = dict(kwargs)
+        if "truncated_z_observation_noise_scale" in kwargs:
+            raise ValueError(
+                "MAP uses map_active_sigma_floor; remove truncated_z_observation_noise_scale."
+            )
         legacy_plot_every = kwargs.pop("plot_every", None)
         if legacy_plot_every is not None:
             raise ValueError(
@@ -162,6 +172,8 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
 
         self.method_name = "map"
         self.map_eq_sigma = max(float(map_eq_sigma), 1e-9)
+        self.map_eq_sigma_mode = self._normalize_map_eq_sigma_mode(map_eq_sigma_mode)
+        self.map_active_sigma_floor = max(float(map_active_sigma_floor), 1e-9)
         self.map_c_bg = max(float(map_c_bg), 1.0 + 1e-9)
         self.map_c_ineq = max(float(map_c_ineq), 0.0)
         self.map_eq_distribution = self._normalize_map_distribution(map_eq_distribution)
@@ -236,6 +248,13 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         if text not in aliases:
             raise ValueError("MAP distribution must be one of: student_t, gaussian.")
         return aliases[text]
+
+    @staticmethod
+    def _normalize_map_eq_sigma_mode(value: str) -> str:
+        text = str(value).strip().lower().replace("-", "_")
+        if text not in {"fixed", "profiled_upper_bound"}:
+            raise ValueError("map_eq_sigma_mode must be one of: fixed, profiled_upper_bound.")
+        return text
 
     @staticmethod
     def _normalize_map_mode_aggregation(value: str) -> str:
@@ -476,7 +495,12 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         for demo_idx, info in enumerate(selected_infos):
             bounds = self._segment_bounds_from_stage_ends([int(x) for x in info["stage_ends"]])
             s, e = bounds[int(stage_idx)]
-            core_s, core_e = self._map_mstep_interval_bounds(int(s), int(e), stage_idx=int(stage_idx))
+            core_s, core_e = self._map_mstep_interval_bounds(
+                int(s),
+                int(e),
+                stage_idx=int(stage_idx),
+                feat_idx=int(feat_idx),
+            )
             xs = np.asarray(
                 self.standardized_features[int(demo_idx)][int(core_s) : int(core_e) + 1, int(feat_idx)],
                 dtype=float,
@@ -495,13 +519,26 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             )
         return refs
 
-    def _map_mstep_interval_bounds(self, s: int, e: int, *, stage_idx: int) -> tuple[int, int]:
+    def _map_mstep_interval_bounds(
+        self,
+        s: int,
+        e: int,
+        *,
+        stage_idx: int,
+        feat_idx: int | None = None,
+    ) -> tuple[int, int]:
         core_s, core_e = self._segment_core_bounds(int(s), int(e))
         trim = int(self.map_mstep_boundary_trim)
-        if trim <= 0:
-            return int(core_s), int(core_e)
         left_trim = trim if int(stage_idx) > 0 else 0
+        if (
+            int(stage_idx) > 0
+            and feat_idx is not None
+            and str(self.feature_specs[int(feat_idx)].get("temporal_alignment", "")).lower() == "backward_edge"
+        ):
+            left_trim = max(left_trim, 1)
         right_trim = trim if int(stage_idx) < int(self.num_stages) - 1 else 0
+        if left_trim <= 0 and right_trim <= 0:
+            return int(core_s), int(core_e)
         fit_s = min(int(core_s) + left_trim, int(core_e))
         fit_e = max(int(fit_s), int(core_e) - right_trim)
         return int(fit_s), int(fit_e)
@@ -594,7 +631,13 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         total, eta = self._map_minimize_scalar(objective, bounds)
         if not np.isfinite(total):
             return float("inf"), None, None
-        vec = np.asarray([float(eta), math.log(float(self.map_eq_sigma))], dtype=float)
+        scales = [
+            self._eq_profile_scale(np.asarray(ref["xs"], dtype=float).reshape(-1), eta=float(eta))
+            for ref in refs
+            if np.asarray(ref["xs"]).size
+        ]
+        scale = float(np.median(scales)) if scales else float(self.map_eq_sigma)
+        vec = np.asarray([float(eta), math.log(scale)], dtype=float)
         return float(total), vec, self._mode_to_kind("eq")
 
     def _pooled_ineq_mstep(
@@ -663,7 +706,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                     centers.append(float(vec[1]))
                     scales.append(float(np.exp(vec[2])))
         center = float(np.median(centers)) if centers else float(np.median(pooled))
-        scale_floor = max(float(self._truncated_z_scale_floor()), float(self.map_c_ineq * self.map_eq_sigma))
+        scale_floor = self._ineq_scale_floor()
         scale = float(np.median(scales)) if scales else float(scale_floor)
         scale = max(scale, float(scale_floor), 1e-6)
         vec = np.asarray([float(eta), center, math.log(scale)], dtype=float)
@@ -895,8 +938,10 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             vector=None,
         )
         if vectors["eq"] is not None:
-            eta = float(np.asarray(vectors["eq"], dtype=float).reshape(-1)[0])
-            eq_display = self._equality_fit(pooled, eta=eta, feat_idx=int(feat_idx))
+            eq_vector = np.asarray(vectors["eq"], dtype=float).reshape(-1)
+            eta = float(eq_vector[0])
+            scale = float(np.exp(eq_vector[1])) if eq_vector.size >= 2 else None
+            eq_display = self._equality_fit(pooled, eta=eta, sigma=scale, feat_idx=int(feat_idx))
             fits["eq"] = _MAPModeFit(
                 mode="eq",
                 kind=kinds["eq"],
@@ -925,7 +970,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 "sigma": float(scale),
                 "nu": float(self.map_nu_ineq),
                 "soft_boundary_scale": float(self.truncated_z_soft_boundary_scale),
-                "ineq_sigma_min": float(self.map_c_ineq * self.map_eq_sigma),
+                "ineq_sigma_min": self._ineq_scale_floor(),
                 "boundary_quantile": float(self.map_boundary_quantile if mode == "lb" else 1.0 - self.map_boundary_quantile),
             }
             fits[mode] = _MAPModeFit(
@@ -1174,8 +1219,13 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 squeeze=False,
             )
             for stage_idx, (s, e) in enumerate(bounds):
-                core_s, core_e = self._map_mstep_interval_bounds(int(s), int(e), stage_idx=int(stage_idx))
                 for feat_idx in range(self.num_features):
+                    core_s, core_e = self._map_mstep_interval_bounds(
+                        int(s),
+                        int(e),
+                        stage_idx=int(stage_idx),
+                        feat_idx=int(feat_idx),
+                    )
                     ax = axes[stage_idx][feat_idx]
                     xs = np.asarray(
                         self.standardized_features[int(demo_idx)][int(core_s) : int(core_e) + 1, int(feat_idx)],
@@ -1500,15 +1550,50 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         z = (xs - float(mu)) / sigma
         return np.asarray(0.5 * z * z + math.log(sigma) + 0.5 * math.log(2.0 * math.pi), dtype=float)
 
-    def _eq_sum_nll(self, xs, *, eta: float) -> float:
-        if self.map_eq_distribution == "gaussian":
-            return self._gaussian_sum_nll(xs, mu=float(eta), sigma=float(self.map_eq_sigma))
-        return self._student_t_sum_nll(xs, mu=float(eta), sigma=float(self.map_eq_sigma), nu=float(self.map_nu_eq))
+    def _eq_scale_floor(self) -> float:
+        return min(float(self.map_active_sigma_floor), float(self.map_eq_sigma))
 
-    def _eq_nll_values(self, xs, *, eta: float) -> np.ndarray:
+    def _ineq_scale_floor(self) -> float:
+        return max(float(self.map_active_sigma_floor), float(self.map_c_ineq * self.map_eq_sigma))
+
+    def _eq_profile_scale(self, xs, *, eta: float) -> float:
+        if self.map_eq_sigma_mode == "fixed":
+            return float(self.map_eq_sigma)
+        xs = np.asarray(xs, dtype=float).reshape(-1)
+        xs = xs[np.isfinite(xs)]
+        lower = self._eq_scale_floor()
+        upper = float(self.map_eq_sigma)
+        if xs.size == 0 or upper <= lower:
+            return float(upper)
         if self.map_eq_distribution == "gaussian":
-            return self._gaussian_nll_values(xs, mu=float(eta), sigma=float(self.map_eq_sigma))
-        return self._student_t_nll_values(xs, mu=float(eta), sigma=float(self.map_eq_sigma), nu=float(self.map_nu_eq))
+            rms = float(np.sqrt(np.mean(np.square(xs - float(eta)))))
+            return float(np.clip(rms, lower, upper))
+
+        log_lower = math.log(lower)
+        log_upper = math.log(upper)
+
+        def objective(log_sigma: float) -> float:
+            return self._student_t_sum_nll(
+                xs,
+                mu=float(eta),
+                sigma=math.exp(float(log_sigma)),
+                nu=float(self.map_nu_eq),
+            )
+
+        _, log_sigma = self._map_minimize_scalar(objective, (log_lower, log_upper))
+        return float(np.clip(math.exp(float(log_sigma)), lower, upper))
+
+    def _eq_sum_nll(self, xs, *, eta: float, sigma: float | None = None) -> float:
+        scale = self._eq_profile_scale(xs, eta=float(eta)) if sigma is None else float(sigma)
+        if self.map_eq_distribution == "gaussian":
+            return self._gaussian_sum_nll(xs, mu=float(eta), sigma=scale)
+        return self._student_t_sum_nll(xs, mu=float(eta), sigma=scale, nu=float(self.map_nu_eq))
+
+    def _eq_nll_values(self, xs, *, eta: float, sigma: float | None = None) -> np.ndarray:
+        scale = self._eq_profile_scale(xs, eta=float(eta)) if sigma is None else float(sigma)
+        if self.map_eq_distribution == "gaussian":
+            return self._gaussian_nll_values(xs, mu=float(eta), sigma=scale)
+        return self._student_t_nll_values(xs, mu=float(eta), sigma=scale, nu=float(self.map_nu_eq))
 
     def _inactive_fit(self, xs, *, feat_idx: int | None = None) -> _MAPModeFit:
         xs = np.asarray(xs, dtype=float).reshape(-1)
@@ -1582,10 +1667,19 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             vector=None,
         )
 
-    def _equality_fit(self, xs, *, eta: float | None = None, feat_idx: int | None = None) -> _MAPModeFit:
+    def _equality_fit(
+        self,
+        xs,
+        *,
+        eta: float | None = None,
+        sigma: float | None = None,
+        feat_idx: int | None = None,
+    ) -> _MAPModeFit:
         xs = np.asarray(xs, dtype=float).reshape(-1)
         eta_hat = float(np.median(xs)) if eta is None and xs.size else float(0.0 if eta is None else eta)
-        nll = self._eq_sum_nll(xs, eta=eta_hat)
+        scale = self._eq_profile_scale(xs, eta=eta_hat) if sigma is None else float(sigma)
+        scale = float(np.clip(scale, self._eq_scale_floor(), self.map_eq_sigma))
+        nll = self._eq_sum_nll(xs, eta=eta_hat, sigma=scale)
         prior_cost = self._mode_prior_cost("eq", feat_idx)
         cost = float(nll + prior_cost)
         kind = self._mode_to_kind("eq")
@@ -1594,20 +1688,21 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             "distribution": self.map_eq_distribution,
             "mode": "eq",
             "mu": float(eta_hat),
-            "sigma": float(self.map_eq_sigma),
+            "sigma": scale,
+            "sigma_mode": self.map_eq_sigma_mode,
+            "sigma_upper_bound": float(self.map_eq_sigma),
             "nu": float(self.map_nu_eq),
-            "L": float(eta_hat - self.map_eq_sigma),
-            "U": float(eta_hat + self.map_eq_sigma),
+            "L": float(eta_hat - scale),
+            "U": float(eta_hat + scale),
             "nll": float(nll),
             "prior_nll": float(prior_cost),
-            "fixed_sigma": float(self.map_eq_sigma),
         }
-        vector = np.asarray([float(eta_hat), math.log(float(self.map_eq_sigma))], dtype=float)
+        vector = np.asarray([float(eta_hat), math.log(scale)], dtype=float)
         return _MAPModeFit(
             mode="eq",
             kind=kind,
             eta=float(eta_hat),
-            scale=float(self.map_eq_sigma),
+            scale=scale,
             cost=cost,
             summary=summary,
             vector=vector,
@@ -1628,7 +1723,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         signed = self._signed_slack(xs, mode=mode, eta=float(eta))
         feasible_slack = np.maximum(np.asarray(signed, dtype=float), 0.0)
         scale, _ = self._half_t_quantile_profile_params(feasible_slack, nu=self.map_nu_ineq)
-        scale_floor = max(float(self._truncated_z_scale_floor()), float(self.map_c_ineq * self.map_eq_sigma))
+        scale_floor = self._ineq_scale_floor()
         return max(float(scale), float(scale_floor), 1e-6)
 
     def _inequality_sum_nll(self, xs, *, mode: str, eta: float, scale: float) -> float:
@@ -1670,7 +1765,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             "nll": float(nll),
             "prior_nll": float(prior_cost),
             "soft_boundary_scale": float(self.truncated_z_soft_boundary_scale),
-            "ineq_sigma_min": float(self.map_c_ineq * self.map_eq_sigma),
+            "ineq_sigma_min": self._ineq_scale_floor(),
             "boundary_quantile": float(self.map_boundary_quantile if mode_l == "lb" else 1.0 - self.map_boundary_quantile),
         }
         vector = np.asarray([float(eta_hat), float(q50), math.log(float(scale))], dtype=float)
@@ -1708,7 +1803,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             slack_q = max(eta_hat - float(stats["q_scale_low"]), 0.0)
         unit_q = self._student_t_ppf(0.5 + 0.5 * q_scale, self.map_nu_ineq)
         scale = slack_q / max(float(unit_q), 1e-12)
-        scale_floor = max(float(self._truncated_z_scale_floor()), float(self.map_c_ineq * self.map_eq_sigma))
+        scale_floor = self._ineq_scale_floor()
         scale = max(float(scale), float(scale_floor), 1e-6)
         nll = self._inequality_sum_nll(xs, mode=mode_l, eta=eta_hat, scale=scale)
         prior_cost = self._mode_prior_cost(mode_l, feat_idx)
@@ -1724,7 +1819,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             "nll": float(nll),
             "prior_nll": float(prior_cost),
             "soft_boundary_scale": float(self.truncated_z_soft_boundary_scale),
-            "ineq_sigma_min": float(self.map_c_ineq * self.map_eq_sigma),
+            "ineq_sigma_min": self._ineq_scale_floor(),
             "boundary_quantile": float(self.map_boundary_quantile if mode_l == "lb" else 1.0 - self.map_boundary_quantile),
         }
         vector = np.asarray([float(eta_hat), float(stats["q50"]), math.log(float(scale))], dtype=float)
@@ -1911,8 +2006,12 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
 
         eta = float(np.asarray(vec, dtype=float).reshape(-1)[0])
         if mode == "eq":
-            prefix = self._shared_eq_prefix(int(demo_idx), int(feat_idx), float(eta))
-            return self._prefix_interval_sum(prefix, int(core_s), int(core_e))
+            if self.map_eq_sigma_mode == "fixed":
+                prefix = self._shared_eq_prefix(int(demo_idx), int(feat_idx), float(eta))
+                return self._prefix_interval_sum(prefix, int(core_s), int(core_e))
+            xs = self.standardized_features[int(demo_idx)][int(core_s) : int(core_e) + 1, int(feat_idx)]
+            fit = self._equality_fit(xs, eta=float(eta))
+            return self._mode_fit_likelihood_cost(fit)
 
         if mode in {"lb", "ub"}:
             xs = self.standardized_features[int(demo_idx)][int(core_s) : int(core_e) + 1, int(feat_idx)]
@@ -2670,6 +2769,8 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 final_plot_iter = max(len(self.loss_total) - 1, 0)
                 clear_map_plot_outputs(self)
                 self._plot_map_final_pooled_diagnostics(final_plot_iter, selected_infos)
+                for demo_idx in range(len(self.demos)):
+                    plot_map_demo_summary(self, final_plot_iter, demo_idx=demo_idx)
                 if self.save_paper_figures:
                     plot_map_final_outputs(self, final_plot_iter)
             except Exception as exc:

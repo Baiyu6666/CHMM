@@ -35,7 +35,7 @@ _LOADER_DEFAULT_FIELDS = (
     "stage345_top_theta_pull",
     "stage345_top_theta_jitter",
     "stage2_surface_detour_angle",
-    "stage4_shell_detour_angle",
+    "stage4_trace_angle_range",
     "stage2_length_scale_range",
     "stage4_length_scale_range",
     "stage1_speed_taper_fraction",
@@ -49,9 +49,9 @@ _LOADER_DEFAULT_FIELDS = (
     "stage3_speed_jitter_std",
     "stage3_speed_jitter_clip",
     "stage3_speed_jitter_kernel",
-    "stage4_speed_valley_depth",
-    "stage4_speed_valley_center",
-    "stage4_speed_valley_width",
+    "stage4_speed_valley_depths",
+    "stage4_speed_valley_centers",
+    "stage4_speed_valley_widths",
     "noise_std",
     "stage2_noise_scale",
     "stage4_noise_scale",
@@ -91,7 +91,7 @@ class S5PathConfig:
     stage345_top_phi_range: tuple[float, float] = (0.10 * np.pi, 0.18 * np.pi)
     stage345_top_theta_pull: float = 0.45
     stage345_top_theta_jitter: float = 0.10 * np.pi
-    stage4_shell_detour_angle: float = 0.10
+    stage4_trace_angle_range: tuple[float, float] = (0.52, 0.66)
 
 
 @dataclass(frozen=True)
@@ -118,9 +118,9 @@ class S5TimingConfig:
     stage3_speed_jitter_std: float = 0.04
     stage3_speed_jitter_clip: float = 0.09
     stage3_speed_jitter_kernel: int = 5
-    stage4_speed_valley_depth: float = 0.08
-    stage4_speed_valley_center: float = 0.54
-    stage4_speed_valley_width: float = 0.025
+    stage4_speed_valley_depths: tuple[float, float] = (0.20, 0.10)
+    stage4_speed_valley_centers: tuple[float, float] = (0.35, 0.72)
+    stage4_speed_valley_widths: tuple[float, float] = (0.055, 0.045)
     segment_count_slack: float = 0.35
 
 

@@ -156,7 +156,12 @@ class FixedTauConstraintModel:
             if col_idx in selected_column_to_local:
                 self.raw_id_to_local_idx[raw_id] = int(selected_column_to_local[col_idx])
                 self.feature_specs.append(
-                    {"name": str(spec.get("name", f"f{selected_column_to_local[col_idx]}")), "column_idx": col_idx, "raw_id": raw_id}
+                    {
+                        "name": str(spec.get("name", f"f{selected_column_to_local[col_idx]}")),
+                        "column_idx": col_idx,
+                        "raw_id": raw_id,
+                        "temporal_alignment": spec.get("temporal_alignment"),
+                    }
                 )
 
         self.feature_model_types = self._normalize_feature_model_types(feature_model_types)

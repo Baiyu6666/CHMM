@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from collections import deque
 from datetime import datetime, timezone
 from xml.etree import ElementTree
 
@@ -30,10 +31,11 @@ from stage_cartesian_trajectory import (
     TrajectoryValidationError,
 )
 from std_msgs.msg import String
-from std_srvs.srv import SetBool, SetBoolResponse, Trigger
+from std_srvs.srv import SetBool, SetBoolResponse, Trigger, TriggerResponse
 
 
 class IiwaPyBulletSim:
+    TASK_IDS = {"BarInspect", "BarClean"}
     JOINT_NAMES = ["iiwa14_joint_{}".format(index) for index in range(1, 8)]
     LOG_FIELDS = (
         ["wall_time_utc", "ros_time", "sim_time", "controller_state", "path_index"]
@@ -51,6 +53,7 @@ class IiwaPyBulletSim:
     )
 
     def __init__(self):
+        self._task_id = "BarInspect"
         self.frame_id = rospy.get_param("~frame_id", "iiwa14_link_0")
         self.physics_hz = float(rospy.get_param("~physics_hz", 240.0))
         self.publish_hz = float(rospy.get_param("~publish_hz", 60.0))
@@ -61,13 +64,23 @@ class IiwaPyBulletSim:
         self.segment_settle_timeout = float(
             rospy.get_param("~segment_settle_timeout", 3.0)
         )
+        self.motion_speed_scale = float(rospy.get_param("~motion_speed_scale", 1.5))
+        if not math.isfinite(self.motion_speed_scale) or self.motion_speed_scale <= 0.0:
+            raise ValueError("motion_speed_scale must be positive and finite")
         self.max_joint_step = float(rospy.get_param("~max_joint_step_rad", 0.15))
-        self.velocity_scale = float(rospy.get_param("~velocity_scale", 0.10))
-        self.acceleration_limit = float(
+        self.velocity_scale = self.motion_speed_scale * float(
+            rospy.get_param("~velocity_scale", 0.10)
+        )
+        self.acceleration_limit = self.motion_speed_scale ** 2 * float(
             rospy.get_param("~acceleration_limit_rad_s2", 0.25)
         )
-        self.approach_speed = float(rospy.get_param("~approach_speed_mps", 0.04))
-        self.task_speed = float(rospy.get_param("~task_speed_mps", 0.025))
+        self.approach_speed = self.motion_speed_scale * float(
+            rospy.get_param("~approach_speed_mps", 0.04)
+        )
+        self.minimum_approach_z = float(rospy.get_param("~minimum_approach_z", 0.20))
+        self.task_speed = self.motion_speed_scale * float(
+            rospy.get_param("~task_speed_mps", 0.025)
+        )
         if self.joint_settle_tolerance <= 0.0 or self.segment_settle_timeout <= 0.0:
             raise ValueError("joint settle tolerance and timeout must be positive")
         self.gui = bool(rospy.get_param("~gui", False))
@@ -80,19 +93,17 @@ class IiwaPyBulletSim:
         if self.video_fps <= 0 or len(self.video_size) != 2 or min(self.video_size) <= 0:
             raise ValueError("video_fps and video_size must be positive")
 
-        self.table_top_z = float(rospy.get_param("~table_top_z", 0.14584))
-        self.table_size = self._vector_param("~table_size", [0.8, 0.8, 0.05], 3)
-        self.table_center_xy = self._vector_param("~table_center_xy", [-0.60, 0.0], 2)
-        self.bar_size = self._vector_param("~bar_size", [0.29806, 0.06239, 0.06], 3)
-        self.bar_size[2] = float(rospy.get_param("~bar_height", self.bar_size[2]))
-        self.bar_center_xy = self._vector_param("~bar_center_xy", [-0.50, 0.0], 2)
-        self.bar_yaw = float(rospy.get_param("~bar_yaw", 0.0))
-        self.obstacle_center = self._vector_param(
-            "~obstacle_center", [-0.285, -0.090, self.table_top_z + 0.05], 3
+        self.scene_config_path = rospy.get_param(
+            "~scene_config",
+            os.path.join(
+                rospkg.RosPack().get_path("stage_iiwa_sim"),
+                "config",
+                "demo_scene.json",
+            ),
         )
-        self.obstacle_radius = float(rospy.get_param("~obstacle_radius", 0.05))
+        self._load_demo_scene(self.scene_config_path)
         self.scan_standoff = float(rospy.get_param("~scan_standoff", 0.08))
-        self.placeholder_distance = float(rospy.get_param("~placeholder_distance", 0.15))
+        self.auto_goal_distance = float(rospy.get_param("~auto_goal_distance", 0.15))
 
         self._path_lock = threading.Lock()
         self._pending_path = None
@@ -102,6 +113,8 @@ class IiwaPyBulletSim:
         self._active_segment = None
         self._segment_started = 0.0
         self._controller_state = "idle"
+        self._task_sequence = 0
+        self._abort_requested = False
         self._status_message = "Simulator ready"
         self._target_pose = None
         self._sim_time = 0.0
@@ -109,6 +122,11 @@ class IiwaPyBulletSim:
         self._last_status = -math.inf
         self._closed = False
         self._goal_marker_id = None
+        self._visualization_trace = deque(maxlen=4000)
+        self._feature_trace = deque(maxlen=2400)
+        self._feature_started = None
+        self._last_feature_sample = -math.inf
+        self._feature_terminal_captured = False
 
         connection_mode = bullet.GUI if self.gui else bullet.DIRECT
         self.client = bullet.connect(connection_mode)
@@ -146,6 +164,13 @@ class IiwaPyBulletSim:
             acceleration_limit=self.acceleration_limit,
             approach_speed=self.approach_speed,
             task_speed=self.task_speed,
+            minimum_approach_z=self.minimum_approach_z,
+            approach_clearance_z=float(
+                rospy.get_param(
+                    "~approach_clearance_z",
+                    self.table_top_z + 2.0 * self.obstacle_radius + 0.08,
+                )
+            ),
         )
         self.table_id, self.bar_id, self.obstacle_id = self._create_workcell()
         self._move_to_scan_start()
@@ -164,6 +189,9 @@ class IiwaPyBulletSim:
         self.goal_publisher = rospy.Publisher(
             "/stage_cons/planner/goal", PoseStamped, queue_size=1, latch=True
         )
+        rospy.Subscriber(
+            "/stage_cons/planner/task", String, self._task_callback, queue_size=1
+        )
         self.path_subscriber = rospy.Subscriber(
             "/stage_cons/plan", Path, self._path_callback, queue_size=1
         )
@@ -171,6 +199,7 @@ class IiwaPyBulletSim:
         self.task_recording_service = rospy.Service(
             "sim/set_task_recording", SetBool, self._set_task_recording
         )
+        self.abort_service = rospy.Service("sim/abort", Trigger, self._abort_task)
 
         self._log_file = None
         self._log_writer = None
@@ -182,29 +211,206 @@ class IiwaPyBulletSim:
         self._video_active = False
         self._video_finished = False
         self._video_complete_time = None
+        self._video_next_frame_time = None
         self._task_record_requested = bool(rospy.get_param("~record", True))
 
         rospy.on_shutdown(self.close)
         if self.auto_plan:
             self._auto_plan_timer = rospy.Timer(
-                rospy.Duration(2.0), self._publish_placeholder_request, oneshot=True
+                rospy.Duration(2.0), self._publish_auto_plan_request, oneshot=True
             )
 
         rospy.loginfo(
-            "PyBullet iiwa14 ready (%s); table top %.5f m, bar %.3f x %.3f x %.3f m",
+            "PyBullet iiwa14 ready (%s); Demo scene bar=(%.3f, %.3f) yaw=%.1f deg, obstacle=(%.3f, %.3f)",
             "GUI" if self.gui else "DIRECT",
-            self.table_top_z,
-            self.bar_size[0],
-            self.bar_size[1],
-            self.bar_size[2],
+            self.bar_reference_xy[0],
+            self.bar_reference_xy[1],
+            math.degrees(self.bar_yaw),
+            self.obstacle_center[0],
+            self.obstacle_center[1],
         )
 
     @staticmethod
-    def _vector_param(name, default, length):
-        values = [float(value) for value in rospy.get_param(name, default)]
-        if len(values) != length:
-            raise ValueError("{} must contain {} values".format(name, length))
-        return values
+    def _rotation_from_quaternion(quaternion):
+        values = np.asarray(quaternion, dtype=float)
+        if values.shape != (4,) or not np.all(np.isfinite(values)):
+            raise ValueError("Scene quaternion must contain four finite values")
+        norm = float(np.linalg.norm(values))
+        if norm <= 1e-12:
+            raise ValueError("Scene quaternion cannot be zero")
+        x, y, z, w = values / norm
+        return np.asarray([
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ])
+
+    @staticmethod
+    def _quaternion_from_rotation(matrix):
+        matrix = np.asarray(matrix, dtype=float).reshape(3, 3)
+        trace = float(np.trace(matrix))
+        if trace > 0.0:
+            scale = math.sqrt(trace + 1.0) * 2.0
+            values = [
+                (matrix[2, 1] - matrix[1, 2]) / scale,
+                (matrix[0, 2] - matrix[2, 0]) / scale,
+                (matrix[1, 0] - matrix[0, 1]) / scale,
+                0.25 * scale,
+            ]
+        else:
+            index = int(np.argmax(np.diag(matrix)))
+            if index == 0:
+                scale = math.sqrt(1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2]) * 2.0
+                values = [
+                    0.25 * scale,
+                    (matrix[0, 1] + matrix[1, 0]) / scale,
+                    (matrix[0, 2] + matrix[2, 0]) / scale,
+                    (matrix[2, 1] - matrix[1, 2]) / scale,
+                ]
+            elif index == 1:
+                scale = math.sqrt(1.0 + matrix[1, 1] - matrix[0, 0] - matrix[2, 2]) * 2.0
+                values = [
+                    (matrix[0, 1] + matrix[1, 0]) / scale,
+                    0.25 * scale,
+                    (matrix[1, 2] + matrix[2, 1]) / scale,
+                    (matrix[0, 2] - matrix[2, 0]) / scale,
+                ]
+            else:
+                scale = math.sqrt(1.0 + matrix[2, 2] - matrix[0, 0] - matrix[1, 1]) * 2.0
+                values = [
+                    (matrix[0, 2] + matrix[2, 0]) / scale,
+                    (matrix[1, 2] + matrix[2, 1]) / scale,
+                    0.25 * scale,
+                    (matrix[1, 0] - matrix[0, 1]) / scale,
+                ]
+        values = np.asarray(values, dtype=float)
+        return (values / np.linalg.norm(values)).tolist()
+
+    def _load_demo_scene(self, path):
+        with open(path, "r") as handle:
+            config = json.load(handle)
+        transform = config["optitrack_to_robot"]
+        rotation = np.asarray(transform["rotation"], dtype=float)
+        translation = np.asarray(transform["translation"], dtype=float)
+        if rotation.shape != (3, 3) or translation.shape != (3,):
+            raise ValueError("Demo scene transform has invalid dimensions")
+
+        table = config["table"]
+        bar = config["bar"]
+        obstacle = config["obstacle"]
+        bar_pose = np.asarray(bar["locked_pose_optitrack"], dtype=float)
+        obstacle_pose = np.asarray(obstacle["locked_pose_optitrack"], dtype=float)
+        if bar_pose.shape != (7,) or obstacle_pose.shape != (7,):
+            raise ValueError("Demo scene object poses must contain seven values")
+
+        bar_reference = rotation @ bar_pose[:3] + translation
+        obstacle_reference = rotation @ obstacle_pose[:3] + translation
+        tracker_rotation = self._rotation_from_quaternion(bar_pose[3:])
+        obstacle_tracker_rotation = self._rotation_from_quaternion(obstacle_pose[3:])
+        self.bar_reference_position = bar_reference.tolist()
+        self.bar_reference_orientation = self._quaternion_from_rotation(
+            rotation @ tracker_rotation
+        )
+        self.obstacle_reference_position = obstacle_reference.tolist()
+        self.obstacle_reference_orientation = self._quaternion_from_rotation(
+            rotation @ obstacle_tracker_rotation
+        )
+        axis_local = np.asarray(bar["axis_local"], dtype=float)
+        bar_axis = rotation @ tracker_rotation @ axis_local
+        bar_axis[2] = 0.0
+        axis_norm = float(np.linalg.norm(bar_axis[:2]))
+        if axis_norm <= 1e-12:
+            raise ValueError("Demo bar axis is vertical in the robot frame")
+        bar_axis /= axis_norm
+
+        self.scene_source = dict(config["source"])
+        self.scene_locked_bar_pose = bar_pose.tolist()
+        self.scene_locked_obstacle_pose = obstacle_pose.tolist()
+        self.table_top_z = float(table["top_z"])
+        self.table_size = [float(value) for value in table["size"]]
+        self.bar_reference_xy = bar_reference[:2].tolist()
+        self.bar_axis_xy = bar_axis[:2].tolist()
+        self.bar_lateral_xy = [-self.bar_axis_xy[1], self.bar_axis_xy[0]]
+        self.bar_outline_u = [float(value) for value in bar["outline_u"]]
+        self.bar_outline_v = [float(value) for value in bar["outline_v"]]
+        middle_u = 0.5 * sum(self.bar_outline_u)
+        middle_v = 0.5 * sum(self.bar_outline_v)
+        self.bar_center_xy = [
+            self.bar_reference_xy[index]
+            + middle_u * self.bar_axis_xy[index]
+            + middle_v * self.bar_lateral_xy[index]
+            for index in range(2)
+        ]
+        self.bar_yaw = math.atan2(self.bar_axis_xy[1], self.bar_axis_xy[0])
+        self.bar_size = [
+            self.bar_outline_u[1] - self.bar_outline_u[0],
+            self.bar_outline_v[1] - self.bar_outline_v[0],
+            float(bar["height"]),
+        ]
+        self.obstacle_radius = float(obstacle["radius"])
+        self.obstacle_center = [
+            float(obstacle_reference[0]),
+            float(obstacle_reference[1]),
+            self.table_top_z + self.obstacle_radius,
+        ]
+        self.table_center_xy = [
+            0.5 * (self.bar_center_xy[index] + self.obstacle_center[index])
+            for index in range(2)
+        ]
+        self.initial_ik_seed = [float(value) for value in config["initial_ik_seed"]]
+        if len(self.initial_ik_seed) != 7:
+            raise ValueError("Demo scene initial IK seed must contain seven joints")
+
+        feature_definition = config["feature_definition"]
+        self._feature_definitions = {
+            "BarInspect": feature_definition,
+            "BarClean": config["bar_clean_feature_definition"],
+        }
+        self.feature_definition_source = str(feature_definition["source"])
+        self.feature_sample_hz = float(feature_definition["sample_hz"])
+        self.feature_table_surface_point = np.asarray(
+            feature_definition["table_surface_point"], dtype=float
+        )
+        self.feature_table_normal = np.asarray(
+            feature_definition["table_normal"], dtype=float
+        )
+        self.feature_tool_axis_local = np.asarray(
+            feature_definition["tool_axis_local"], dtype=float
+        )
+        if (
+            self.feature_table_surface_point.shape != (3,)
+            or self.feature_table_normal.shape != (3,)
+            or self.feature_tool_axis_local.shape != (3,)
+            or self.feature_sample_hz <= 0.0
+        ):
+            raise ValueError("Demo feature definition has invalid dimensions")
+        self.feature_table_normal /= np.linalg.norm(self.feature_table_normal)
+        self.feature_tool_axis_local /= np.linalg.norm(self.feature_tool_axis_local)
+        self._apply_task_feature_definition(self._task_id)
+        self.bar_axis_local = axis_local
+
+    def _apply_task_feature_definition(self, task_id):
+        definition = self._feature_definitions[task_id]
+        self.feature_definition_source = str(definition["source"])
+        self.feature_schema = [dict(value) for value in definition["schema"]]
+        self.feature_true_constraints = dict(definition["true_constraints"])
+        self.feature_constraint_specs = [
+            dict(value) for value in definition["constraint_specs"]
+        ]
+
+    def _task_callback(self, message):
+        task_id = str(message.data).strip()
+        if task_id not in self.TASK_IDS:
+            rospy.logerr("Ignoring unknown task id %s", task_id)
+            return
+        with self._path_lock:
+            if self._controller_state in ("planning", "moving_to_start", "executing"):
+                rospy.logerr("Ignoring task switch to %s during simulation execution", task_id)
+                return
+            self._task_id = task_id
+            self._apply_task_feature_definition(task_id)
+            self._feature_trace.clear()
+        rospy.loginfo("Simulation task selected: %s", task_id)
 
     def _load_robot(self):
         description = rospy.get_param("robot_description")
@@ -340,13 +546,15 @@ class IiwaPyBulletSim:
         )
 
     def _scan_pose(self, at_end=False):
-        half_length = self.bar_size[0] / 2.0
-        local_x = half_length - 0.01 if at_end else -half_length + 0.01
-        cosine = math.cos(self.bar_yaw)
-        sine = math.sin(self.bar_yaw)
+        local_u = self.bar_outline_u[1] - 0.01 if at_end else self.bar_outline_u[0] + 0.01
+        local_v = 0.5 * sum(self.bar_outline_v)
         position = [
-            self.bar_center_xy[0] + cosine * local_x,
-            self.bar_center_xy[1] + sine * local_x,
+            self.bar_reference_xy[0]
+            + self.bar_axis_xy[0] * local_u
+            + self.bar_lateral_xy[0] * local_v,
+            self.bar_reference_xy[1]
+            + self.bar_axis_xy[1] * local_u
+            + self.bar_lateral_xy[1] * local_v,
             self.table_top_z + self.bar_size[2] + self.scan_standoff,
         ]
         orientation = bullet.getQuaternionFromEuler([0.0, math.pi, self.bar_yaw])
@@ -370,9 +578,7 @@ class IiwaPyBulletSim:
 
     def _move_to_scan_start(self):
         position, orientation = self._scan_pose(at_end=False)
-        # A non-singular seed makes the elbow side deterministic across computers.
-        seed = [0.0, -0.65, 0.0, 1.35, 0.0, -0.75, 0.0]
-        for joint_index, value in zip(self.joint_indices, seed):
+        for joint_index, value in zip(self.joint_indices, self.initial_ik_seed):
             bullet.resetJointState(self.robot_id, joint_index, value, physicsClientId=self.client)
         target = self._ik(position, orientation)
         for joint_index, value in zip(self.joint_indices, target):
@@ -416,6 +622,12 @@ class IiwaPyBulletSim:
                 rospy.logwarn("Ignoring a new path while a simulation task is active")
                 return
             self._pending_path = message
+            self._visualization_trace.clear()
+            self._feature_trace.clear()
+            self._feature_started = None
+            self._last_feature_sample = -math.inf
+            self._feature_terminal_captured = False
+            self._task_sequence += 1
             self._controller_state = "planning"
             self._status_message = "Compiling shared joint trajectory"
         rospy.loginfo("Queued %d Cartesian planner waypoints", len(message.poses))
@@ -461,13 +673,13 @@ class IiwaPyBulletSim:
             len(prepared["task"]["position"]),
         )
 
-    def _publish_placeholder_request(self, _event):
+    def _publish_auto_plan_request(self, _event):
         if rospy.is_shutdown():
             return
         start_position, start_orientation = self._end_effector_pose()
         goal_position = [
-            start_position[0] + math.cos(self.bar_yaw) * self.placeholder_distance,
-            start_position[1] + math.sin(self.bar_yaw) * self.placeholder_distance,
+            start_position[0] + math.cos(self.bar_yaw) * self.auto_goal_distance,
+            start_position[1] + math.sin(self.bar_yaw) * self.auto_goal_distance,
             start_position[2],
         ]
         # Use the pose actually reached by the initialized robot.  This keeps
@@ -480,14 +692,14 @@ class IiwaPyBulletSim:
         self.start_publisher.publish(start)
         self.goal_publisher.publish(goal)
         try:
-            rospy.wait_for_service("/straight_line_planner/plan", timeout=5.0)
-            response = rospy.ServiceProxy("/straight_line_planner/plan", Trigger)()
+            rospy.wait_for_service("/stage_constraint_planner/plan", timeout=10.0)
+            response = rospy.ServiceProxy("/stage_constraint_planner/plan", Trigger)()
             if not response.success:
-                rospy.logerr("Placeholder planner rejected the request: %s", response.message)
+                rospy.logerr("Stage constraint planner rejected the request: %s", response.message)
             else:
-                rospy.loginfo("Placeholder planner: %s", response.message)
+                rospy.loginfo("Stage constraint planner: %s", response.message)
         except (rospy.ROSException, rospy.ServiceException) as error:
-            rospy.logerr("Could not run placeholder planner: %s", error)
+            rospy.logerr("Could not run stage constraint planner: %s", error)
 
     def _pose_message(self, position, orientation):
         message = PoseStamped()
@@ -513,8 +725,24 @@ class IiwaPyBulletSim:
 
     def _control_step(self):
         with self._path_lock:
+            abort_requested = self._abort_requested
+            self._abort_requested = False
+            if abort_requested:
+                self._pending_path = None
             pending = self._pending_path
             self._pending_path = None
+        if abort_requested:
+            current = self._joint_positions()
+            self._prepared_plan = None
+            self._active_segment = None
+            self._path_index = -1
+            self._target_pose = None
+            self._controller_state = "aborted"
+            self._status_message = "Task aborted; holding current joint position"
+            self._hold(current)
+            self._stop_recording(status="aborted")
+            rospy.logwarn(self._status_message)
+            return
         if pending is not None:
             self._compile_pending_path(pending)
 
@@ -565,6 +793,11 @@ class IiwaPyBulletSim:
                 self._active_segment = self._prepared_plan["task"]
                 self._segment_started = self._sim_time
                 self._path_index = 0
+                self._visualization_trace.clear()
+                self._feature_trace.clear()
+                self._feature_started = self._sim_time
+                self._last_feature_sample = -math.inf
+                self._feature_terminal_captured = False
                 self._controller_state = "executing"
                 self._status_message = "Executing shared task joint trajectory"
                 self._target_pose = self._task_path[0]
@@ -589,23 +822,135 @@ class IiwaPyBulletSim:
         joint_state.effort = [state[3] for state in states]
         self.joint_publisher.publish(joint_state)
 
-        bar_position, bar_orientation = bullet.getBasePositionAndOrientation(
-            self.bar_id, physicsClientId=self.client
+        bar_message = self._pose_message(
+            self.bar_reference_position, self.bar_reference_orientation
         )
-        obstacle_position, obstacle_orientation = bullet.getBasePositionAndOrientation(
-            self.obstacle_id, physicsClientId=self.client
-        )
-        bar_message = self._pose_message(bar_position, bar_orientation)
         bar_message.header.stamp = now
-        obstacle_message = self._pose_message(obstacle_position, obstacle_orientation)
+        obstacle_message = self._pose_message(
+            self.obstacle_reference_position, self.obstacle_reference_orientation
+        )
         obstacle_message.header.stamp = now
         self.bar_publisher.publish(bar_message)
         self.obstacle_publisher.publish(obstacle_message)
+        bar_body_position, bar_body_orientation = bullet.getBasePositionAndOrientation(
+            self.bar_id, physicsClientId=self.client
+        )
+        obstacle_body_position, _obstacle_body_orientation = bullet.getBasePositionAndOrientation(
+            self.obstacle_id, physicsClientId=self.client
+        )
+
+        ee_state = bullet.getLinkState(
+            self.robot_id,
+            self.ee_link_index,
+            computeForwardKinematics=True,
+            physicsClientId=self.client,
+        )
+        ee_position = ee_state[4]
+        ee_orientation = ee_state[5]
+        if self._controller_state == "executing":
+            xy = [float(ee_position[0]), float(ee_position[1])]
+            if not self._visualization_trace or math.dist(self._visualization_trace[-1], xy) >= 1e-4:
+                self._visualization_trace.append(xy)
+
+        active_feature_trace = self._controller_state == "executing"
+        terminal_feature_sample = (
+            self._controller_state in ("complete", "failed", "aborted")
+            and not self._feature_terminal_captured
+            and self._feature_started is not None
+        )
+        feature_due = (
+            self._sim_time - self._last_feature_sample + 0.5 / self.physics_hz
+            >= 1.0 / self.feature_sample_hz
+        )
+        if (active_feature_trace and feature_due) or terminal_feature_sample:
+            bar_rotation_matrix = np.asarray(
+                bullet.getMatrixFromQuaternion(self.bar_reference_orientation), dtype=float
+            ).reshape(3, 3)
+            ee_rotation_matrix = np.asarray(
+                bullet.getMatrixFromQuaternion(ee_orientation), dtype=float
+            ).reshape(3, 3)
+            bar_axis_3d = bar_rotation_matrix @ self.bar_axis_local
+            bar_axis_3d -= self.feature_table_normal * float(
+                bar_axis_3d @ self.feature_table_normal
+            )
+            bar_axis_3d /= np.linalg.norm(bar_axis_3d)
+            bar_lateral_3d = np.cross(self.feature_table_normal, bar_axis_3d)
+            bar_lateral_3d /= np.linalg.norm(bar_lateral_3d)
+            tool_axis = ee_rotation_matrix @ self.feature_tool_axis_local
+            relative_obstacle = np.asarray(ee_position) - np.asarray(obstacle_body_position)
+            obstacle_radial = relative_obstacle - self.feature_table_normal * float(
+                relative_obstacle @ self.feature_table_normal
+            )
+            obstacle_clearance = float(np.linalg.norm(obstacle_radial) - self.obstacle_radius)
+            surface_dist = float(
+                (np.asarray(ee_position) - self.feature_table_surface_point)
+                @ self.feature_table_normal
+            )
+            bar_lateral_offset = float(
+                (np.asarray(ee_position) - np.asarray(self.bar_reference_position))
+                @ bar_lateral_3d
+            )
+            down_component = -float(tool_axis @ self.feature_table_normal)
+            forward_component = float(tool_axis @ bar_axis_3d)
+            tool_pitch = math.atan2(down_component, forward_component)
+            tool_plane_err = math.asin(
+                float(np.clip(tool_axis @ bar_lateral_3d, -1.0, 1.0))
+            )
+            bar_axial_offset = float(
+                (np.asarray(ee_position) - np.asarray(self.bar_reference_position))
+                @ bar_axis_3d
+                - float(
+                    self.feature_true_constraints.get(
+                        "bar_axial_offset_reference", 0.0
+                    )
+                )
+            )
+            feature_values = {
+                "obstacle_clearance": obstacle_clearance,
+                "surface_dist": surface_dist,
+                "bar_lateral_offset": bar_lateral_offset,
+                "tool_pitch": tool_pitch,
+                "tool_plane_err": tool_plane_err,
+                "bar_axial_offset": bar_axial_offset,
+            }
+            self._feature_trace.append(
+                [
+                    float(self._sim_time - self._feature_started),
+                    *[
+                        feature_values[str(spec["name"])]
+                        for spec in self.feature_schema
+                    ],
+                ]
+            )
+            self._last_feature_sample = self._sim_time
+            if terminal_feature_sample:
+                self._feature_terminal_captured = True
 
         if self._sim_time - self._last_status >= 0.1:
+            bar_rotation = bullet.getMatrixFromQuaternion(bar_body_orientation)
+            bar_axis_norm = math.hypot(bar_rotation[0], bar_rotation[3])
+            bar_axis = (
+                [
+                    float(bar_rotation[0]) / bar_axis_norm,
+                    float(bar_rotation[3]) / bar_axis_norm,
+                ]
+                if bar_axis_norm > 1e-12
+                else [1.0, 0.0]
+            )
+            bar_lateral = [-bar_axis[1], bar_axis[0]]
+            middle_u = 0.5 * sum(self.bar_outline_u)
+            middle_v = 0.5 * sum(self.bar_outline_v)
+            bar_pivot = [
+                float(bar_body_position[index])
+                - middle_u * bar_axis[index]
+                - middle_v * bar_lateral[index]
+                for index in range(2)
+            ]
             status = {
                 "mode": "pybullet",
+                "task_id": self._task_id,
                 "controller": self._controller_state,
+                "task_sequence": self._task_sequence,
                 "message": self._status_message,
                 "path_index": self._path_index,
                 "path_length": len(self._task_path),
@@ -613,9 +958,44 @@ class IiwaPyBulletSim:
                     self._prepared_plan["metrics"] if self._prepared_plan else None
                 ),
                 "recording": self._recording,
+                "render_video": self.render_video,
                 "run_directory": self._run_directory,
                 "video_path": self._video_path,
                 "sim_time": self._sim_time,
+                "trace": list(self._visualization_trace),
+                "feature_series": {
+                    "source": self.feature_definition_source,
+                    "schema": self.feature_schema,
+                    "true_constraints": self.feature_true_constraints,
+                    "constraint_specs": self.feature_constraint_specs,
+                    "samples": list(self._feature_trace),
+                },
+                "current_ee": {
+                    "x": float(ee_position[0]),
+                    "y": float(ee_position[1]),
+                    "z": float(ee_position[2]),
+                    "qx": float(ee_orientation[0]),
+                    "qy": float(ee_orientation[1]),
+                    "qz": float(ee_orientation[2]),
+                    "qw": float(ee_orientation[3]),
+                },
+                "scene_geometry": {
+                    "bar": {
+                        "pivot": bar_pivot,
+                        "axis": bar_axis,
+                        "outline_u": list(self.bar_outline_u),
+                        "outline_v": list(self.bar_outline_v),
+                        "live": True,
+                    },
+                    "obstacle": {
+                        "center": [
+                            float(obstacle_body_position[0]),
+                            float(obstacle_body_position[1]),
+                        ],
+                        "radius": self.obstacle_radius,
+                        "live": True,
+                    },
+                },
             }
             self.status_publisher.publish(String(data=json.dumps(status, sort_keys=True)))
             self._last_status = self._sim_time
@@ -628,7 +1008,7 @@ class IiwaPyBulletSim:
             return
         output_root = os.path.abspath(os.path.expanduser(rospy.get_param("~output_root", "/data/sim_runs")))
         run_name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-        self._run_directory = os.path.join(output_root, run_name)
+        self._run_directory = os.path.join(output_root, self._task_id, run_name)
         os.makedirs(self._run_directory, exist_ok=False)
         self._log_file = open(os.path.join(self._run_directory, "trajectory.csv"), "w", newline="")
         self._log_writer = csv.DictWriter(self._log_file, fieldnames=self.LOG_FIELDS)
@@ -637,6 +1017,7 @@ class IiwaPyBulletSim:
         self._recording = True
         self._video_finished = False
         self._video_complete_time = None
+        self._video_next_frame_time = None
         self._video_path = None
         self._write_metadata("running")
         rospy.loginfo("Recording simulation data in %s", self._run_directory)
@@ -644,7 +1025,7 @@ class IiwaPyBulletSim:
     def _camera_rgb(self):
         width, height = self.video_size
         view = bullet.computeViewMatrixFromYawPitchRoll(
-            cameraTargetPosition=[-0.42, 0.0, 0.42],
+            cameraTargetPosition=[self.table_center_xy[0], self.table_center_xy[1], 0.42],
             distance=1.25,
             yaw=38.0,
             pitch=-24.0,
@@ -717,6 +1098,7 @@ class IiwaPyBulletSim:
             stderr=self._video_log_file,
         )
         self._video_active = True
+        self._video_next_frame_time = self._sim_time
         first_frame = self._camera_rgb()
         for _ in range(max(1, int(round(self.video_initial_hold * self.video_fps)))):
             self._video_process.stdin.write(first_frame)
@@ -731,8 +1113,11 @@ class IiwaPyBulletSim:
                 return
         if not self._video_active:
             return
+        if self._sim_time + 0.5 / self.physics_hz < self._video_next_frame_time:
+            return
         try:
             self._video_process.stdin.write(self._camera_rgb())
+            self._video_next_frame_time += 1.0 / self.video_fps
         except (BrokenPipeError, OSError) as error:
             rospy.logerr("Video encoder stopped unexpectedly: %s", error)
             self._finish_video()
@@ -750,6 +1135,7 @@ class IiwaPyBulletSim:
         self._video_process = None
         self._video_active = False
         self._video_finished = True
+        self._video_next_frame_time = None
         try:
             try:
                 process.stdin.close()
@@ -791,35 +1177,66 @@ class IiwaPyBulletSim:
     def _set_task_recording(self, request):
         if self._controller_state in ("planning", "moving_to_start", "executing"):
             return SetBoolResponse(False, "Cannot change recording during a task")
-        self._task_record_requested = bool(request.data)
+        with self._path_lock:
+            self._task_record_requested = bool(request.data)
+            self._pending_path = None
+            self._prepared_plan = None
+            self._active_segment = None
+            self._task_path = []
+            self._path_index = -1
+            self._target_pose = None
+            self._visualization_trace.clear()
+            self._controller_state = "idle"
+            self._status_message = "Ready for the next task"
+        self._run_directory = None
+        self._video_path = None
         return SetBoolResponse(
             True,
             "Task recording enabled" if self._task_record_requested else "Task recording disabled",
         )
+
+    def _abort_task(self, _request):
+        with self._path_lock:
+            if self._controller_state not in ("planning", "moving_to_start", "executing"):
+                return TriggerResponse(True, "No simulation task is active")
+            self._abort_requested = True
+        return TriggerResponse(True, "Simulation task abort requested")
 
     def _write_metadata(self, status):
         metadata = {
             "status": status,
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "simulator": "pybullet",
+            "task_id": self._task_id,
             "pybullet_api_version": bullet.getAPIVersion(),
             "frame_id": self.frame_id,
             "physics_hz": self.physics_hz,
             "publish_hz": self.publish_hz,
+            "motion_speed_scale": self.motion_speed_scale,
+            "velocity_scale": self.velocity_scale,
+            "acceleration_limit_rad_s2": self.acceleration_limit,
+            "approach_speed_mps": self.approach_speed,
+            "task_speed_mps": self.task_speed,
             "render_video": self.render_video,
             "video_fps": self.video_fps,
             "video_size": self.video_size,
-            "video_slowdown": self.physics_hz / float(self.video_fps),
+            "video_slowdown": 1.0,
             "video_path": self._video_path,
             "table_top_z": self.table_top_z,
             "table_size": self.table_size,
+            "table_center_xy": self.table_center_xy,
+            "scene_config": self.scene_config_path,
+            "scene_source": self.scene_source,
+            "scene_locked_bar_pose": self.scene_locked_bar_pose,
+            "scene_locked_obstacle_pose": self.scene_locked_obstacle_pose,
             "bar_size": self.bar_size,
+            "bar_reference_xy": self.bar_reference_xy,
             "bar_center_xy": self.bar_center_xy,
             "bar_yaw": self.bar_yaw,
             "obstacle_center": self.obstacle_center,
             "obstacle_radius": self.obstacle_radius,
-            "placeholder_distance": self.placeholder_distance,
-            "planner": "stage_placeholder_planner/straight_line_planner",
+            "auto_goal_distance": self.auto_goal_distance,
+            "planner": "stage_constraint_planner/task_planner",
             "trajectory_compiler": "stage_cartesian_trajectory/CartesianTrajectoryCompiler",
             "orientation_control": "position_plus_tool_z",
             "trajectory_metrics": (
@@ -885,7 +1302,10 @@ class IiwaPyBulletSim:
             bullet.stepSimulation(physicsClientId=self.client)
             self._sim_time += 1.0 / self.physics_hz
             self._capture_video()
-            if self._sim_time - self._last_publish >= 1.0 / self.publish_hz:
+            if (
+                self._sim_time - self._last_publish + 0.5 / self.physics_hz
+                >= 1.0 / self.publish_hz
+            ):
                 self._publish_state()
                 self._last_publish = self._sim_time
             rate.sleep()

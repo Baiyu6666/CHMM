@@ -7,99 +7,217 @@
   <style>
     :root{color-scheme:dark;--bg:#0c1117;--panel:#151c25;--line:#2c3948;--text:#e8eef5;--muted:#94a5b7;--green:#55d68b;--amber:#f0b65d;--red:#ff6b72;--blue:#68a9ff}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}
-    main{max-width:1280px;margin:auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}
+    main{max-width:1380px;margin:auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}
     h1{font-size:22px;margin:0}.badge{padding:7px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
-    .grid{display:grid;grid-template-columns:370px 1fr;gap:16px}.stack{display:grid;gap:16px;align-content:start}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
-    h2{font-size:15px;margin:0 0 13px}.status{display:grid;grid-template-columns:1fr auto;gap:8px 12px;margin-bottom:15px}.value{font-weight:650}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+    .workspace{display:grid;gap:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+    h2{font-size:15px;margin:0 0 13px}.system-panel{margin-bottom:16px}.system-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}.system-head h2{margin:0}.status-strip{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr));gap:10px}.status-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:#101720;border:1px solid var(--line);border-radius:8px}.status-item span:first-child{color:var(--muted)}.value{font-weight:650}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
     button{width:100%;padding:11px 12px;margin:5px 0;border:1px solid var(--line);border-radius:8px;background:#202a36;color:var(--text);font-weight:650;cursor:pointer}
     button.primary{background:#174d39;border-color:#2b8a61}button.danger{background:#54252a;border-color:#9b3d46}button:disabled{opacity:.45;cursor:not-allowed}
-    .hint{color:var(--muted);font-size:13px;margin:6px 0 12px}.message{min-height:44px;padding:10px;border-radius:8px;border:1px solid var(--line);margin-top:10px}.message.error{color:var(--red);border-color:var(--red)}
+    .hint{color:var(--muted);font-size:13px;margin:6px 0 12px}.message{min-width:300px;padding:8px 11px;border-radius:8px;border:1px solid var(--line)}.message.error{color:var(--red);border-color:var(--red)}
     pre{height:270px;overflow:auto;white-space:pre-wrap;background:#090d12;border:1px solid var(--line);border-radius:8px;padding:10px;color:#b9c7d5}
     input,select{width:100%;padding:9px;color:var(--text);background:#0d131b;border:1px solid var(--line);border-radius:7px}
     label{display:grid;gap:5px;color:var(--muted);font-size:13px}.pose{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}.pose-title{display:flex;justify-content:space-between;align-items:center;margin:13px 0 7px}.pose-title strong{font-size:13px}.pose-title span{color:var(--muted);font-size:12px}
-    .task-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:9px}.check{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:7px;padding:9px}.check input{width:auto}.task-actions{display:grid;grid-template-columns:1fr 150px;gap:9px;margin-top:12px}.task-status{display:grid;grid-template-columns:115px 1fr;gap:7px 12px;margin-top:13px}.task-status span:nth-child(odd){color:var(--muted)}
-    video{display:none;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:#000}iframe{width:100%;height:680px;border:1px solid var(--line);border-radius:10px;background:#0a0e13}
-    @media(max-width:900px){.grid{grid-template-columns:1fr}.pose{grid-template-columns:repeat(4,1fr)}iframe{height:680px}}@media(max-width:560px){.pose{grid-template-columns:repeat(2,1fr)}.task-options,.task-actions{grid-template-columns:1fr}}
+    .task-options{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:10px;margin-bottom:9px}.check{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:7px;padding:9px}.check input{width:auto}.task-actions{display:grid;grid-template-columns:1fr 150px;gap:9px;margin-top:12px}.task-status{display:grid;grid-template-columns:115px 1fr;gap:7px 12px;margin-top:13px}.task-status span:nth-child(odd){color:var(--muted)}
+    .task-visual{margin:14px 0;padding:12px;background:#0d141d;border:1px solid var(--line);border-radius:10px}.plot-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}.plot-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}.plot-tools button{width:auto;margin:0;padding:8px 12px}.plot-tools button.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset;background:#173454}.plot-tools .hint{margin:0 0 0 auto}.task-legend{display:flex;gap:13px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:8px}.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}.legend-line{display:inline-block;width:20px;border-top:2px solid currentColor;margin:0 5px 3px 0}.legend-line.dashed{border-top-style:dashed}#taskCanvas{width:100%;height:auto;display:block;background:#091019;border:1px solid var(--line);border-radius:8px;cursor:crosshair;touch-action:none}
+    .feature-section{margin:14px 0;padding:12px;background:#0d141d;border:1px solid var(--line);border-radius:10px}.feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.feature-card{padding:10px;background:#091019;border:1px solid var(--line);border-radius:8px}.feature-card-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:6px}.feature-card-head span{color:var(--muted);font-size:12px}.feature-card canvas{display:block;width:100%;height:auto}
+    .demo-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:12px 0}.demo-controls button{height:100%;margin:0}.demo-notes{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}.demo-notes .hint{margin:0;padding:10px;background:#101720;border-radius:8px}.advanced-controls{margin:0 0 12px}.advanced-controls summary,.log-panel summary{cursor:pointer;font-weight:650}.advanced-controls button{max-width:280px}.log-panel pre{margin-bottom:0}
+    video{display:none;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:#000}iframe{width:100%;height:720px;border:1px solid var(--line);border-radius:10px;background:#0a0e13}
+    @media(max-width:1000px){.status-strip{grid-template-columns:repeat(3,1fr)}.demo-controls{grid-template-columns:repeat(3,1fr)}.pose{grid-template-columns:repeat(4,1fr)}}@media(max-width:700px){.system-head{align-items:stretch;flex-direction:column}.message{min-width:0}.status-strip,.demo-controls,.demo-notes,.feature-grid{grid-template-columns:1fr}.pose{grid-template-columns:repeat(2,1fr)}.task-options,.task-actions{grid-template-columns:1fr}iframe{height:680px}}
   </style>
 </head>
 <body><main>
   <div class="top"><h1>Stage Constraint Workstation</h1><div id="busy" class="badge">正在连接…</div></div>
-  <div class="grid">
-    <div>
-      <section class="panel">
-        <h2>系统状态</h2>
-        <div class="status">
-          <span>Docker</span><span id="container" class="value">—</span>
-          <span>Robot network</span><span id="network" class="value">—</span>
-          <span>iiwa_driver</span><span id="driver" class="value">—</span>
-          <span>Demo station</span><span id="demo" class="value">—</span>
-          <span>Simulator</span><span id="simulator" class="value">—</span>
-        </div>
-        <button id="build" class="primary">构建并启动工作站</button>
-        <button id="startDemo">启动 Demo 面板</button>
-        <div class="hint">构建和启动容器不会自动连接或驱动机器人。</div>
-        <button id="networkButton">配置机器人网络</button>
-        <div class="hint">仅在需要连接真机时点击；系统会弹出管理员授权窗口，但不启动 driver。</div>
-        <button id="startDriver">启动 iiwa_driver（需二次确认）</button>
-        <div class="hint">点击后会弹出确认框；仅在机器人无 fault、关节远离限位、急停可触及时确认启动。</div>
-        <button id="stopDriver">停止 iiwa_driver</button>
-        <button id="stopAll" class="danger">停止整个工作站</button>
-        <div id="message" class="message">等待状态…</div>
-      </section>
-      <section class="panel" style="margin-top:16px">
-        <h2>运行日志</h2><pre id="logs"></pre>
-      </section>
+  <section class="panel system-panel">
+    <div class="system-head"><h2>系统状态</h2><div id="message" class="message">等待状态…</div></div>
+    <div class="status-strip">
+      <div class="status-item"><span>Docker</span><span id="container" class="value">—</span></div>
+      <div class="status-item"><span>Robot network</span><span id="network" class="value">—</span></div>
+      <div class="status-item"><span>iiwa_driver</span><span id="driver" class="value">—</span></div>
+      <div class="status-item"><span>Demo station</span><span id="demo" class="value">—</span></div>
+      <div class="status-item"><span>Simulator</span><span id="simulator" class="value">—</span></div>
     </div>
-    <div class="stack">
+  </section>
+  <div class="workspace">
       <section class="panel">
         <h2>Task 执行</h2>
-        <div class="hint">设置 Cartesian 起点和终点。机器人先移动到起点（不记录），随后执行 planner 路径，到达终点后自动停止并保存。</div>
+        <div class="hint">选择任务并设置 Cartesian 起点和终点。机器人先移动到起点（不记录），随后执行对应的多阶段 planner 路径。</div>
         <div class="task-options">
+          <label>任务<select id="taskType"><option value="BarInspect">Bar Inspect</option><option value="BarClean">Bar Clean</option></select></label>
           <label>执行环境<select id="taskMode"><option value="simulator">PyBullet simulator</option><option value="real">Real iiwa14</option></select></label>
           <label class="check"><input id="taskRecord" type="checkbox" checked>记录 task 数据与仿真视频</label>
         </div>
+        <div id="taskStages" class="hint">S1 Approach · S2 Vertical scan · S3 Oblique scan · S4 Depart</div>
         <div id="realNotice" class="hint">Simulator 使用 bridge 网络和非 privileged 容器，不会连接 FRI 真机。</div>
+        <div class="task-visual">
+          <div class="plot-head"><strong>Task XY 轨迹与场景</strong><span id="sceneSource" class="badge">固定参考</span></div>
+          <div class="plot-tools">
+            <span id="pointTarget" class="badge">下一次点击：Start</span>
+            <span class="hint">依次点击设置 Start、Goal；第三次点击重新设置 Start。只修改 x / y，z 与姿态保持不变。</span>
+          </div>
+          <canvas id="taskCanvas" width="820" height="480"></canvas>
+          <div class="task-legend">
+            <span><i class="legend-dot" style="background:#55d68b"></i>Start</span>
+            <span><i class="legend-dot" style="background:#ff6b72"></i>Goal</span>
+            <span id="stageColorLegend"><i class="legend-line dashed" style="color:#c69cff"></i>Stage-colored plan</span>
+            <span><i class="legend-line" style="color:#68a9ff"></i>Executed trajectory</span>
+            <span><i class="legend-dot" style="background:#f0b65d"></i>Current EE</span>
+            <span><i class="legend-line dashed" style="color:#b9c4d2"></i>虚线表示固定回退对象</span>
+            <span id="taskEeValue">EE: —</span><span id="traceCount">0 points</span>
+          </div>
+        </div>
+        <div class="feature-section">
+          <div class="plot-head"><strong>True Constraint Relevant Features</strong><span class="hint">紫色虚线：Plan · 彩色实线：Executed · 橙色虚线：真约束 · 竖虚线：Stage 切换</span></div>
+          <div class="feature-grid">
+            <div class="feature-card"><div class="feature-card-head"><strong>Obstacle clearance</strong><span id="featureObstacleValue">—</span></div><canvas id="featureObstacle" width="580" height="220"></canvas></div>
+            <div class="feature-card"><div class="feature-card-head"><strong>Surface distance</strong><span id="featureSurfaceValue">—</span></div><canvas id="featureSurface" width="580" height="220"></canvas></div>
+            <div class="feature-card"><div class="feature-card-head"><strong>Bar lateral offset</strong><span id="featureBarLateralValue">—</span></div><canvas id="featureBarLateral" width="580" height="220"></canvas></div>
+            <div class="feature-card"><div class="feature-card-head"><strong>Tool pitch</strong><span id="featurePitchValue">—</span></div><canvas id="featurePitch" width="580" height="220"></canvas></div>
+            <div class="feature-card"><div class="feature-card-head"><strong>Tool plane error</strong><span id="featurePlaneValue">—</span></div><canvas id="featurePlane" width="580" height="220"></canvas></div>
+            <div id="featureAxialCard" class="feature-card" style="display:none"><div class="feature-card-head"><strong>Bar axial offset (task x)</strong><span id="featureAxialValue">—</span></div><canvas id="featureAxial" width="580" height="220"></canvas></div>
+          </div>
+        </div>
         <div class="pose-title"><strong>Start pose</strong><span>frame: iiwa14_link_0 · metre / quaternion</span></div>
         <div class="pose" id="startPose">
-          <label>x<input data-key="x" type="number" step="0.001" value="-0.63"></label><label>y<input data-key="y" type="number" step="0.001" value="0"></label><label>z<input data-key="z" type="number" step="0.001" value="0.286"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
+          <label>x<input data-key="x" type="number" step="0.001" value="0.6183"></label><label>y<input data-key="y" type="number" step="0.001" value="-0.1613"></label><label>z<input data-key="z" type="number" step="0.001" value="0.2536"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
         </div>
-        <div class="pose-title"><strong>Goal pose</strong><span>placeholder planner: Cartesian straight line</span></div>
+        <div class="pose-title"><strong>Goal pose</strong><span id="plannerStageCount">4-stage constraint planner</span></div>
         <div class="pose" id="goalPose">
-          <label>x<input data-key="x" type="number" step="0.001" value="-0.48"></label><label>y<input data-key="y" type="number" step="0.001" value="0"></label><label>z<input data-key="z" type="number" step="0.001" value="0.286"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
+          <label>x<input data-key="x" type="number" step="0.001" value="0.6286"></label><label>y<input data-key="y" type="number" step="0.001" value="-0.4392"></label><label>z<input data-key="z" type="number" step="0.001" value="0.2536"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
         </div>
         <div class="task-actions"><button id="taskRun" class="primary">执行 Task</button><button id="taskAbort" class="danger">停止 Task</button></div>
-        <div class="task-status"><span>Mode</span><span id="taskModeState">—</span><span>Phase</span><span id="taskPhase">idle</span><span>Recording</span><span id="taskRecording">—</span><span>Output</span><span id="taskOutput">—</span></div>
+        <div class="task-status"><span>Task</span><span id="taskIdState">BarInspect</span><span>Mode</span><span id="taskModeState">—</span><span>Phase</span><span id="taskPhase">idle</span><span>Recording</span><span id="taskRecording">—</span><span>Output</span><span id="taskOutput">—</span></div>
         <video id="taskVideo" controls preload="metadata"></video>
       </section>
       <section class="panel">
-        <h2>Demo 采集面板</h2>
-        <div class="hint">工作站启动后在这里完成 Demo、辅助开关、Rosbag 和轨迹查看。</div>
+        <h2>Demo Collect</h2>
+        <div class="hint">Demo 面板随真机工作站自动启动。日常启动不会重新构建镜像，也不会自动连接机器人。</div>
+        <div class="demo-controls">
+          <button id="startWorkstation" class="primary">启动真机 / Demo 工作站</button>
+          <button id="startDriver">启动 iiwa_driver（需二次确认）</button>
+          <button id="stopDriver">停止 iiwa_driver</button>
+          <button id="stopAll" class="danger">停止整个工作站</button>
+        </div>
+        <div class="demo-notes">
+          <div class="hint">工作站启动后会启动 OptiTrack、Demo recorder、virtual fixture 和 Demo GUI。</div>
+          <div class="hint">启动 driver 前确认机器人无 fault、关节远离限位且急停可触及。</div>
+        </div>
+        <details class="advanced-controls"><summary>高级操作</summary><button id="rebuildImage">重新构建工作站镜像</button><div class="hint">仅在 ROS 代码、依赖或 Dockerfile 发生变化后使用；构建完成后再启动工作站以应用新镜像。</div></details>
         <iframe id="demoFrame" title="Demo collection panel"></iframe>
       </section>
-    </div>
+      <details class="panel log-panel"><summary>运行日志</summary><pre id="logs"></pre></details>
   </div>
 </main>
 <script>
-let token='',state=null,lastDemoRunning=false,videoLoaded=false,localMessageUntil=0;
 const $=id=>document.getElementById(id);
-function flag(el,on,yes,no){el.textContent=on?yes:no;el.className='value '+(on?'ok':'warn')}
+const taskCanvas=$('taskCanvas'),taskContext=taskCanvas.getContext('2d');
+let token='',state=null,lastDemoRunning=false,videoLoaded=false,localMessageUntil=0;
+let visualization={trace:[],planned_trace:[],current_ee:null,scene_geometry:{},source:'fallback',feature_series:{samples:[]},planned_feature_series:{samples:[]},stage_boundary_indices:[],stage_boundary_times:[],stage_transition_end_times:[]};
+let pointTarget='start',goalPending=false,plotTransform=null;
+const featurePlots=[
+  {name:'obstacle_clearance',canvas:'featureObstacle',value:'featureObstacleValue',color:'#ff8a91'},
+  {name:'surface_dist',canvas:'featureSurface',value:'featureSurfaceValue',color:'#68a9ff'},
+  {name:'bar_lateral_offset',canvas:'featureBarLateral',value:'featureBarLateralValue',color:'#4fd1c5'},
+  {name:'tool_pitch',canvas:'featurePitch',value:'featurePitchValue',color:'#55d68b'},
+  {name:'tool_plane_err',canvas:'featurePlane',value:'featurePlaneValue',color:'#c69cff'},
+  {name:'bar_axial_offset',canvas:'featureAxial',value:'featureAxialValue',color:'#f0b65d'}
+];
+const taskProfiles={BarInspect:{count:4,stages:['Approach','Vertical scan','Oblique scan','Depart'],goal:{x:.6286,y:-.4392,z:.2536,qx:0,qy:1,qz:0,qw:0}},BarClean:{count:5,stages:['Approach','Longitudinal clean','Free reposition','Right-to-left discharge','Depart'],goal:{x:.45,y:-.44,z:.34,qx:0,qy:1,qz:0,qw:0}}};
+const stageColors=['#55d68b','#68a9ff','#c69cff','#f0b65d','#ff7f6e','#4fd1c5'];
+
+function flag(element,on,yes,no){element.textContent=on?yes:no;element.className='value '+(on?'ok':'warn')}
 function showError(text){localMessageUntil=Date.now()+12000;$('message').textContent=text;$('message').className='message error'}
-async function poll(){try{const r=await fetch('/api/state',{cache:'no-store'});state=await r.json();token=state.token;render()}catch(e){$('message').textContent=e.message}}
-function render(){flag($('container'),state.container_running,'运行中','已停止');flag($('driver'),state.driver_running,'运行中','已停止');flag($('demo'),state.demo_running,'运行中','已停止');flag($('simulator'),state.simulator_running,'运行中','已停止');flag($('network'),state.robot_network.configured,'已配置','未配置');const b=state.job.busy,t=state.task||{};$('busy').textContent=b?state.job.name:'Ready';$('busy').className='badge '+(b?'warn':'ok');if(Date.now()>=localMessageUntil){$('message').textContent=state.job.message;$('message').className='message'}$('logs').textContent=state.logs.join('\n');$('logs').scrollTop=$('logs').scrollHeight;for(const id of ['build','startDemo','networkButton','startDriver','stopDriver','stopAll','taskRun'])$(id).disabled=b;$('taskAbort').disabled=!['starting','preparing','prepared','moving_to_start','executing'].includes(t.phase);$('taskModeState').textContent=t.mode||'—';$('taskPhase').textContent=t.message||t.phase||'idle';$('taskRecording').textContent=t.record?'开启':'关闭';$('taskOutput').textContent=t.run_directory?t.run_directory.replace('/data/',state.project_root+'/data/'):'—';if(t.video_available&&!videoLoaded){$('taskVideo').style.display='block';$('taskVideo').src='/api/task/video?v='+Date.now();videoLoaded=true}if(t.phase==='starting')videoLoaded=false;if(state.demo_running&&!lastDemoRunning)$('demoFrame').src=state.demo_url+'/?reload='+Date.now();lastDemoRunning=state.demo_running}
-async function action(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Stage-Token':token},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.message);await poll()}
-$('build').onclick=()=>action('/api/build-start').catch(e=>showError(e.message));
-$('startDemo').onclick=()=>action('/api/start-demo').catch(e=>showError(e.message));
-$('networkButton').onclick=()=>action('/api/configure-network').catch(e=>showError(e.message));
-$('startDriver').onclick=()=>{
-  const confirmed=window.confirm('确认启动 iiwa_driver？\n\n启动后 ROS 将连接真实机器人并加载力矩控制器。请确认机器人无 fault、关节远离限位，并且急停可触及。');
-  if(!confirmed)return;
-  action('/api/start-driver',{confirmed:true}).catch(e=>showError(e.message));
-};
-$('stopDriver').onclick=()=>action('/api/stop-driver').catch(e=>showError(e.message));
-$('stopAll').onclick=()=>action('/api/stop-all').catch(e=>showError(e.message));
 function readPose(id){const pose={};document.querySelectorAll('#'+id+' input').forEach(input=>pose[input.dataset.key]=Number(input.value));return pose}
+function writePose(id,pose){document.querySelectorAll('#'+id+' input').forEach(input=>input.value=Number(pose[input.dataset.key]).toFixed(4))}
+function writePoseXY(id,x,y){document.querySelector(`#${id} input[data-key="x"]`).value=x.toFixed(4);document.querySelector(`#${id} input[data-key="y"]`).value=y.toFixed(4)}
+function applyTaskDefaults(taskId){const profile=taskProfiles[taskId];if(profile?.goal)writePose('goalPose',profile.goal);goalPending=false;setPointTarget('start');drawTaskPlot()}
+function setPointTarget(target){pointTarget=target;$('pointTarget').textContent=`下一次点击：${target==='start'?'Start':'Goal'}`;$('taskRun').disabled=Boolean(state?.job?.busy)||goalPending}
+function sceneLabel(source){return source==='simulation'?'PyBullet 实时':source==='optitrack'?'OptiTrack 实时':'固定参考'}
+function poseMatches(first,second){return first&&second&&['x','y','z','qx','qy','qz','qw'].every(key=>Math.abs(Number(first[key])-Number(second[key]))<1e-6)}
+function planMatchesSelection(){return poseMatches(state?.task?.start,readPose('startPose'))&&poseMatches(state?.task?.goal,readPose('goalPose'))}
+function directionArrow(context,points,color){if(points.length<2)return;const lengths=[];let total=0;for(let index=1;index<points.length;index++){const length=Math.hypot(points[index][0]-points[index-1][0],points[index][1]-points[index-1][1]);lengths.push(length);total+=length}if(total<8)return;let target=total*.58,segment=0;while(segment<lengths.length-1&&target>lengths[segment]){target-=lengths[segment];segment++}const first=points[segment],second=points[segment+1],length=Math.max(lengths[segment],1e-9),phase=Math.min(1,Math.max(0,target/length)),x=first[0]+phase*(second[0]-first[0]),y=first[1]+phase*(second[1]-first[1]),angle=Math.atan2(second[1]-first[1],second[0]-first[0]),size=9;context.fillStyle=color;context.beginPath();context.moveTo(x+size*Math.cos(angle),y+size*Math.sin(angle));context.lineTo(x+size*Math.cos(angle+2.55),y+size*Math.sin(angle+2.55));context.lineTo(x+size*Math.cos(angle-2.55),y+size*Math.sin(angle-2.55));context.closePath();context.fill()}
+
+function featureReferences(series,name){
+  const constraints=series.true_constraints||{},groups=new Map();
+  for(const spec of series.constraint_specs||[]){
+    const value=Number.isFinite(Number(constraints[spec.oracle_key]))?Number(constraints[spec.oracle_key]):Number(spec.value);if(spec.feature_name!==name||!Number.isFinite(value))continue;
+    const key=`${spec.semantics}:${value}`,entry=groups.get(key)||{value,semantics:spec.semantics,stages:[]};
+    entry.stages.push(Number(spec.stage)+1);groups.set(key,entry);
+  }
+  return [...groups.values()].map(entry=>({...entry,label:`${entry.semantics==='lower_bound'?'lower bound':'S'+entry.stages.join('/S')+' target'} ${entry.value.toFixed(3)}`}));
+}
+
+function featureTick(value,span){return span<.001?value.toExponential(1):span<.02?value.toFixed(4):value.toFixed(3)}
+
+function drawFeaturePlots(){
+  const series=visualization.feature_series||{},plannedSeries=planMatchesSelection()?(visualization.planned_feature_series||{}):{},schema=Array.isArray(series.schema)?series.schema:[],samples=Array.isArray(series.samples)?series.samples:[],plannedSchema=Array.isArray(plannedSeries.schema)?plannedSeries.schema:[],plannedSamples=Array.isArray(plannedSeries.samples)?plannedSeries.samples:[],boundaries=planMatchesSelection()&&Array.isArray(visualization.stage_boundary_times)?visualization.stage_boundary_times.filter(Number.isFinite):[],transitionEnds=planMatchesSelection()&&Array.isArray(visualization.stage_transition_end_times)?visualization.stage_transition_end_times.filter(Number.isFinite):[];
+  for(const plot of featurePlots){
+    const canvas=$(plot.canvas),context=canvas.getContext('2d'),width=canvas.width,height=canvas.height,left=54,right=14,top=16,bottom=32,index=schema.findIndex(value=>value.name===plot.name),plannedIndex=plannedSchema.findIndex(value=>value.name===plot.name),unit=index>=0?schema[index].unit:plannedIndex>=0?plannedSchema[plannedIndex].unit:'';
+    context.clearRect(0,0,width,height);context.fillStyle='#091019';context.fillRect(0,0,width,height);
+    const valid=index<0?[]:samples.filter(sample=>Array.isArray(sample)&&Number.isFinite(sample[0])&&Number.isFinite(sample[index+1]));
+    const plannedValid=plannedIndex<0?[]:plannedSamples.filter(sample=>Array.isArray(sample)&&Number.isFinite(sample[0])&&Number.isFinite(sample[plannedIndex+1]));
+    const referenceSeries=plannedValid.length?plannedSeries:series,references=featureReferences(referenceSeries,plot.name);if(!valid.length&&!plannedValid.length){context.fillStyle='#8191a6';context.font='13px system-ui';context.fillText('等待 Planner 特征数据',left,Math.round(height/2));$(plot.value).textContent='—';continue}
+    const times=valid.map(sample=>Number(sample[0])),plannedTimes=plannedValid.map(sample=>Number(sample[0])),values=valid.map(sample=>Number(sample[index+1])),plannedValues=plannedValid.map(sample=>Number(sample[plannedIndex+1])),referenceValues=references.map(value=>value.value),tmax=Math.max(1,...times,...plannedTimes,...boundaries,...transitionEnds);
+    let ymin=Math.min(...values,...plannedValues,...referenceValues),ymax=Math.max(...values,...plannedValues,...referenceValues),span=ymax-ymin;if(span<1e-6){span=Math.max(.02,Math.abs(ymax)*.2);ymin-=span/2;ymax+=span/2}else{ymin-=span*.12;ymax+=span*.12}
+    const px=time=>left+time/tmax*(width-left-right),py=value=>height-bottom-(value-ymin)/(ymax-ymin)*(height-top-bottom);
+    boundaries.forEach((time,boundaryIndex)=>{const end=transitionEnds[boundaryIndex];if(Number.isFinite(end)&&end>time){context.fillStyle='rgba(198,156,255,.10)';context.fillRect(px(time),top,px(end)-px(time),height-top-bottom)}});
+    context.strokeStyle='#253343';context.lineWidth=1;context.fillStyle='#8191a6';context.font='11px system-ui';
+    for(let step=0;step<=4;step++){const y=ymin+step*(ymax-ymin)/4,x=step*tmax/4;context.beginPath();context.moveTo(left,py(y));context.lineTo(width-right,py(y));context.stroke();context.fillText(featureTick(y,ymax-ymin),4,py(y)+4);context.fillText(x.toFixed(1),px(x)-8,height-9)}
+    context.fillText('time (s)',width-60,top+10);
+    references.forEach((reference,referenceIndex)=>{context.setLineDash([7,5]);context.strokeStyle='#f0b65d';context.lineWidth=1.5;context.beginPath();context.moveTo(left,py(reference.value));context.lineTo(width-right,py(reference.value));context.stroke();context.setLineDash([]);context.fillStyle='#f0b65d';context.fillText(reference.label,left+6,py(reference.value)-5-12*referenceIndex)});
+    boundaries.forEach((time,boundaryIndex)=>{context.setLineDash([3,5]);context.strokeStyle='#91a0b4';context.lineWidth=1.2;context.beginPath();context.moveTo(px(time),top);context.lineTo(px(time),height-bottom);context.stroke();context.setLineDash([]);context.fillStyle='#91a0b4';context.fillText(`S${boundaryIndex+2}`,px(time)+3,top+11)});
+    if(plannedValid.length){context.setLineDash([7,5]);context.strokeStyle='#c69cff';context.lineWidth=2;context.beginPath();plannedValid.forEach((sample,sampleIndex)=>sampleIndex?context.lineTo(px(sample[0]),py(sample[plannedIndex+1])):context.moveTo(px(sample[0]),py(sample[plannedIndex+1])));context.stroke();context.setLineDash([])}
+    if(valid.length){context.strokeStyle=plot.color;context.lineWidth=2.5;context.beginPath();valid.forEach((sample,sampleIndex)=>sampleIndex?context.lineTo(px(sample[0]),py(sample[index+1])):context.moveTo(px(sample[0]),py(sample[index+1])));context.stroke()}
+    const latest=valid.length?values[values.length-1]:plannedValues[plannedValues.length-1],prefix=valid.length?'':'Plan ';
+    $(plot.value).textContent=`${prefix}${latest.toFixed(4)} ${unit}`;
+  }
+}
+
+function drawTaskPlot(){
+  const context=taskContext,canvas=taskCanvas,width=canvas.width,height=canvas.height,margin=48;
+  const trace=visualization.trace||[],plannedTrace=planMatchesSelection()?(visualization.planned_trace||[]):[],current=visualization.current_ee,scene=visualization.scene_geometry||{};
+  const start=readPose('startPose'),goal=readPose('goalPose');
+  const points=[[start.x,start.y],...plannedTrace,...trace];if(!goalPending)points.push([goal.x,goal.y]);if(current)points.push([current.x,current.y]);
+  let barCorners=[];
+  if(scene.bar){const [cx,cy]=scene.bar.pivot,[ax,ay]=scene.bar.axis,[umin,umax]=scene.bar.outline_u,[vmin,vmax]=scene.bar.outline_v,lx=-ay,ly=ax;barCorners=[[umin,vmin],[umax,vmin],[umax,vmax],[umin,vmax]].map(([u,v])=>[cx+u*ax+v*lx,cy+u*ay+v*ly]);points.push(...barCorners)}
+  if(scene.obstacle){const [cx,cy]=scene.obstacle.center,r=scene.obstacle.radius;points.push([cx-r,cy-r],[cx+r,cy+r])}
+  let xmin=.30,xmax=.85,ymin=-.55,ymax=.25;
+  if(points.length){xmin=Math.min(xmin,...points.map(point=>point[0]));xmax=Math.max(xmax,...points.map(point=>point[0]));ymin=Math.min(ymin,...points.map(point=>point[1]));ymax=Math.max(ymax,...points.map(point=>point[1]));const centerX=.5*(xmin+xmax),centerY=.5*(ymin+ymax);let spanX=Math.max(.12,(xmax-xmin)*1.15),spanY=Math.max(.12,(ymax-ymin)*1.15),aspect=(width-2*margin)/(height-2*margin);if(spanX/spanY>aspect)spanY=spanX/aspect;else spanX=spanY*aspect;xmin=centerX-.5*spanX;xmax=centerX+.5*spanX;ymin=centerY-.5*spanY;ymax=centerY+.5*spanY}
+  const px=x=>margin+(x-xmin)/(xmax-xmin)*(width-2*margin),py=y=>height-margin-(y-ymin)/(ymax-ymin)*(height-2*margin);
+  plotTransform={xmin,xmax,ymin,ymax,margin,width,height};context.clearRect(0,0,width,height);context.fillStyle='#091019';context.fillRect(0,0,width,height);
+  context.strokeStyle='#263444';context.lineWidth=1;context.fillStyle='#8191a6';context.font='12px system-ui';
+  for(let index=0;index<=6;index++){const x=xmin+index*(xmax-xmin)/6,y=ymin+index*(ymax-ymin)/6;context.beginPath();context.moveTo(px(x),margin);context.lineTo(px(x),height-margin);context.stroke();context.fillText(x.toFixed(3),px(x)-18,height-20);context.beginPath();context.moveTo(margin,py(y));context.lineTo(width-margin,py(y));context.stroke();context.fillText(y.toFixed(3),6,py(y)+4)}
+  context.fillStyle='#aab7c7';context.fillText('X (m)',width/2-15,height-5);context.save();context.translate(13,height/2);context.rotate(-Math.PI/2);context.fillText('Y (m)',0,0);context.restore();
+  if(!goalPending&&!plannedTrace.length){context.setLineDash([7,6]);context.strokeStyle='#64748a';context.lineWidth=1.5;context.beginPath();context.moveTo(px(start.x),py(start.y));context.lineTo(px(goal.x),py(goal.y));context.stroke();context.setLineDash([])}
+  if(scene.obstacle){const [cx,cy]=scene.obstacle.center,r=scene.obstacle.radius,live=scene.obstacle.live!==false,screenRadius=Math.abs(px(cx+r)-px(cx));context.setLineDash(live?[]:[8,6]);context.fillStyle=live?'rgba(239,107,115,.18)':'rgba(239,107,115,.05)';context.strokeStyle='#ef6b73';context.lineWidth=2;context.beginPath();context.arc(px(cx),py(cy),screenRadius,0,2*Math.PI);context.fill();context.stroke();context.setLineDash([])}
+  if(scene.bar&&barCorners.length===4){const live=scene.bar.live!==false;context.setLineDash(live?[]:[8,6]);context.fillStyle=live?'rgba(185,196,210,.20)':'rgba(185,196,210,.04)';context.strokeStyle='#b9c4d2';context.lineWidth=2;context.beginPath();barCorners.forEach((point,index)=>index?context.lineTo(px(point[0]),py(point[1])):context.moveTo(px(point[0]),py(point[1])));context.closePath();context.fill();context.stroke();context.setLineDash([])}
+  const profile=taskProfiles[$('taskType').value],rawBoundaries=planMatchesSelection()&&Array.isArray(visualization.stage_boundary_indices)?visualization.stage_boundary_indices:[],validBoundaries=rawBoundaries.length===profile.count&&rawBoundaries.every((value,index)=>Number.isInteger(value)&&value>=0&&value<plannedTrace.length&&(index===0||value>rawBoundaries[index-1]));let stageSegments=[];
+  if(plannedTrace.length>1){if(validBoundaries){stageSegments=rawBoundaries.map((end,index)=>({index,points:plannedTrace.slice(index===0?0:rawBoundaries[index-1],end+1)}))}else stageSegments=[{index:0,points:plannedTrace}];context.setLineDash([8,5]);stageSegments.forEach(segment=>{const color=stageColors[segment.index%stageColors.length],screenPoints=segment.points.map(point=>[px(point[0]),py(point[1])]);context.strokeStyle=color;context.lineWidth=3;context.beginPath();screenPoints.forEach((point,index)=>index?context.lineTo(point[0],point[1]):context.moveTo(point[0],point[1]));context.stroke();directionArrow(context,screenPoints,color)});context.setLineDash([]);if(validBoundaries){rawBoundaries.forEach((boundary,index)=>{const point=plannedTrace[boundary],color=stageColors[index%stageColors.length];context.fillStyle='#091019';context.strokeStyle=color;context.lineWidth=2;context.beginPath();context.arc(px(point[0]),py(point[1]),8,0,2*Math.PI);context.fill();context.stroke();context.fillStyle=color;context.font='bold 10px system-ui';context.fillText(`S${index+1}`,px(point[0])-6,py(point[1])-11)})}}
+  if(trace.length>1){context.strokeStyle='#68a9ff';context.lineWidth=3;context.beginPath();trace.forEach((point,index)=>index?context.lineTo(px(point[0]),py(point[1])):context.moveTo(px(point[0]),py(point[1])));context.stroke()}
+  const marker=(pose,color,label)=>{context.fillStyle=color;context.beginPath();context.arc(px(pose.x),py(pose.y),7,0,2*Math.PI);context.fill();context.fillStyle='#07111c';context.font='bold 10px system-ui';context.fillText(label,px(pose.x)-3.5,py(pose.y)+3.5)};
+  marker(start,'#55d68b','S');if(!goalPending)marker(goal,'#ff6b72','G');
+  if(current){context.fillStyle='#f0b65d';context.beginPath();context.arc(px(current.x),py(current.y),6,0,2*Math.PI);context.fill();$('taskEeValue').textContent=`EE: x=${current.x.toFixed(4)}, y=${current.y.toFixed(4)}, z=${current.z.toFixed(4)} m`}else $('taskEeValue').textContent='EE: —';
+  $('stageColorLegend').innerHTML=profile.stages.map((name,index)=>`<i class="legend-line dashed" style="color:${stageColors[index%stageColors.length]}"></i>S${index+1} ${name}`).join(' · ');$('traceCount').textContent=`Plan ${plannedTrace.length} · Executed ${trace.length} points`;$('sceneSource').textContent=sceneLabel(visualization.source);drawFeaturePlots();
+}
+
+async function poll(){try{const response=await fetch('/api/state',{cache:'no-store'});state=await response.json();token=state.token;render()}catch(error){$('message').textContent=error.message}}
+async function pollVisualization(){try{const response=await fetch('/api/task/visualization',{cache:'no-store'});if(response.ok){visualization=await response.json();drawTaskPlot()}}catch(error){}finally{setTimeout(pollVisualization,250)}}
+function render(){
+  flag($('container'),state.container_running,'运行中','已停止');flag($('driver'),state.driver_running,'运行中','已停止');flag($('demo'),state.demo_running,'运行中','已停止');flag($('simulator'),state.simulator_running,'运行中','已停止');flag($('network'),state.robot_network.configured,'已配置','未配置');
+  const busy=state.job.busy,task=state.task||{};$('busy').textContent=busy?state.job.name:'Ready';$('busy').className='badge '+(busy?'warn':'ok');if(Date.now()>=localMessageUntil){$('message').textContent=state.job.message;$('message').className='message'}$('logs').textContent=state.logs.join('\n');$('logs').scrollTop=$('logs').scrollHeight;
+  for(const id of ['startWorkstation','rebuildImage','startDriver','stopDriver','stopAll'])$(id).disabled=busy;$('taskRun').disabled=busy||goalPending;$('taskType').disabled=busy||['starting','preparing','prepared','moving_to_start','executing'].includes(task.phase);$('taskAbort').disabled=!['starting','preparing','prepared','moving_to_start','executing'].includes(task.phase);if(task.task_id&&$('taskType').value!==task.task_id){$('taskType').value=task.task_id;applyTaskDefaults(task.task_id)}const profile=taskProfiles[$('taskType').value];$('taskStages').textContent=profile.stages.map((name,index)=>`S${index+1} ${name}`).join(' · ');$('plannerStageCount').textContent=`${profile.count}-stage constraint planner`;$('featureAxialCard').style.display=$('taskType').value==='BarClean'?'block':'none';$('taskIdState').textContent=task.task_id||'—';$('taskModeState').textContent=task.mode||'—';$('taskPhase').textContent=task.message||task.phase||'idle';$('taskRecording').textContent=task.record?'开启':'关闭';$('taskOutput').textContent=task.run_directory?task.run_directory.replace('/data/',state.project_root+'/data/'):'—';
+  if(task.video_available&&!videoLoaded){$('taskVideo').style.display='block';$('taskVideo').src='/api/task/video?v='+Date.now();videoLoaded=true}if(task.phase==='starting')videoLoaded=false;if(state.demo_running&&!lastDemoRunning)$('demoFrame').src=state.demo_url+'/?reload='+Date.now();lastDemoRunning=state.demo_running;drawTaskPlot();
+}
+async function action(path,body={}){const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Stage-Token':token},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.message);await poll()}
+
+taskCanvas.addEventListener('click',event=>{if(state?.job?.busy){showError('Task 运行期间不能修改起点或终点');return}if(!plotTransform)return;const rectangle=taskCanvas.getBoundingClientRect(),canvasX=(event.clientX-rectangle.left)*taskCanvas.width/rectangle.width,canvasY=(event.clientY-rectangle.top)*taskCanvas.height/rectangle.height,{xmin,xmax,ymin,ymax,margin,width,height}=plotTransform;if(canvasX<margin||canvasX>width-margin||canvasY<margin||canvasY>height-margin)return;const x=xmin+(canvasX-margin)/(width-2*margin)*(xmax-xmin),y=ymax-(canvasY-margin)/(height-2*margin)*(ymax-ymin),target=pointTarget;writePoseXY(target==='start'?'startPose':'goalPose',x,y);goalPending=target==='start';setPointTarget(target==='start'?'goal':'start');drawTaskPlot()});
+document.querySelectorAll('#startPose input,#goalPose input').forEach(input=>input.addEventListener('input',drawTaskPlot));
+$('startWorkstation').onclick=()=>action('/api/start-workstation').catch(error=>showError(error.message));$('rebuildImage').onclick=()=>action('/api/rebuild-image').catch(error=>showError(error.message));
+$('startDriver').onclick=()=>{const confirmed=window.confirm('确认启动 iiwa_driver？\n\n启动后 ROS 将连接真实机器人并加载力矩控制器。请确认机器人无 fault、关节远离限位，并且急停可触及。');if(confirmed)action('/api/start-driver',{confirmed:true}).catch(error=>showError(error.message))};
+$('stopDriver').onclick=()=>action('/api/stop-driver').catch(error=>showError(error.message));$('stopAll').onclick=()=>action('/api/stop-all').catch(error=>showError(error.message));
 $('taskMode').onchange=()=>{$('realNotice').textContent=$('taskMode').value==='real'?'Real 使用裸机法兰 iiwa14_link_7 的位置 + Tool-Z 连续 IK，并通过 PositionTrajectoryController 执行。请先停止 Demo 的 SafeTorqueController driver。':'Simulator 使用 bridge 网络和非 privileged 容器，不会连接 FRI 真机。'};
-$('taskRun').onclick=()=>{const mode=$('taskMode').value;let confirmed=false;if(mode==='real'){confirmed=window.confirm('确认请求真机执行？\n\n系统将启动 FRI POSITION 模式和 PositionTrajectoryController，读取真机当前关节角，完成连续 IK 与安全检查后，先移动到 Start，再执行 task。\n\n请确认：SmartPAD 已选择 POSITION FRIOverlay、机器人无 fault、工作空间无人、低 stiffness 已设置且急停可触及。');if(!confirmed)return}action('/api/task/execute',{mode,record:$('taskRecord').checked,start:readPose('startPose'),goal:readPose('goalPose'),confirmed}).catch(e=>showError(e.message))};
-$('taskAbort').onclick=()=>action('/api/task/abort').catch(e=>showError(e.message));
-poll();setInterval(poll,2000);
+$('taskType').onchange=()=>{applyTaskDefaults($('taskType').value);action('/api/task/select',{task_id:$('taskType').value}).catch(error=>{showError(error.message);poll()})};
+window.addEventListener('message',event=>{if(event.origin!==window.location.origin||event.data?.type!=='stage-task-select')return;action('/api/task/select',{task_id:event.data.task_id}).catch(error=>{showError(error.message);poll()})});
+$('taskRun').onclick=()=>{const mode=$('taskMode').value;let confirmed=false;if(mode==='real'){confirmed=window.confirm(`确认请求真机执行 ${$('taskType').value}？\n\n系统将启动 FRI POSITION 模式和 PositionTrajectoryController，读取真机当前关节角，完成连续 IK、碰撞、奇异性和轨迹连续性检查后，先移动到 Start，再执行 task。\n\n请确认：SmartPAD 已选择 POSITION FRIOverlay、机器人无 fault、工作空间无人、低 stiffness 已设置且急停可触及。`);if(!confirmed)return}action('/api/task/execute',{task_id:$('taskType').value,mode,record:$('taskRecord').checked,start:readPose('startPose'),goal:readPose('goalPose'),confirmed}).catch(error=>showError(error.message))};
+$('taskAbort').onclick=()=>action('/api/task/abort').catch(error=>showError(error.message));
+drawTaskPlot();poll();pollVisualization();setInterval(poll,2000);
 </script></body></html>

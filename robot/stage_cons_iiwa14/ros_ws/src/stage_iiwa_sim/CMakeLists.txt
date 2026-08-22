@@ -21,10 +21,12 @@ catkin_package(CATKIN_DEPENDS
   std_srvs
 )
 
-catkin_install_python(PROGRAMS scripts/iiwa_pybullet_sim.py
+catkin_install_python(PROGRAMS
+  scripts/iiwa_pybullet_sim.py
+  scripts/submit_sim_task.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-install(DIRECTORY launch
+install(DIRECTORY config launch
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

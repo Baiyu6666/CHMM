@@ -106,11 +106,12 @@ class DemoRecorder:
                 return TriggerResponse(False, message)
 
             now = self._utc_now()
+            task_id = self._safe_label(rospy.get_param("~task_id", "BarInspect"))
             label = self._safe_label(rospy.get_param("~label", "demo"))
             session_name = "{}_{}".format(now.strftime("%Y%m%dT%H%M%S_%fZ"), label)
-            self._session_dir = self._output_root / session_name
+            self._session_dir = self._output_root / task_id / session_name
             try:
-                self._session_dir.mkdir(parents=False, exist_ok=False)
+                self._session_dir.mkdir(parents=True, exist_ok=False)
             except OSError as error:
                 message = "Could not create session directory: {}".format(error)
                 self._publish_status("blocked", reason=message)
@@ -125,6 +126,7 @@ class DemoRecorder:
                 "schema_version": 1,
                 "session_id": session_name,
                 "experiment": rospy.get_param("~experiment", "stage_constraint"),
+                "task_id": task_id,
                 "label": label,
                 "operator_notes": rospy.get_param("~operator_notes", ""),
                 "started_at_utc": now.isoformat(),

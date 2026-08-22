@@ -14,7 +14,7 @@
   <depend>rospy</depend>
   <depend>sensor_msgs</depend>
   <depend>stage_cartesian_trajectory</depend>
-  <depend>stage_placeholder_planner</depend>
+  <depend>stage_constraint_planner</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
   <exec_depend>python3-rospkg</exec_depend>

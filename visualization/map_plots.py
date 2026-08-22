@@ -19,6 +19,10 @@ from visualization.learned_constraints_matrix import (
     plot_true_constraints_matrix_paper,
     plot_true_vs_learned_constraints_matrix_paper,
 )
+from visualization.top_view_scene import (
+    draw_top_view_scene,
+    top_view_scene_limit_points,
+)
 
 
 PAPER_TITLE_SIZE = 9
@@ -105,7 +109,13 @@ def _xy_point(point):
     return np.asarray(point, dtype=float).reshape(-1)[:2]
 
 
-def _draw_obstacles(ax, env):
+def _draw_obstacles(ax, env, demo_index=None, all_demos=False):
+    draw_top_view_scene(
+        ax,
+        env,
+        demo_index=demo_index,
+        all_demos=all_demos,
+    )
     if hasattr(env, "obs_center") and hasattr(env, "obs_radius"):
         center = _xy_point(getattr(env, "obs_center"))
         ax.add_patch(plt.Circle((center[0], center[1]), float(env.obs_radius), fill=False, color="gray", lw=1.0, label="obstacle"))
@@ -128,7 +138,12 @@ def _draw_obstacles(ax, env):
             )
 
 
-def _nearby_obstacle_limit_points(env, data_points: np.ndarray) -> list[np.ndarray]:
+def _nearby_obstacle_limit_points(
+    env,
+    data_points: np.ndarray,
+    demo_index=None,
+    all_demos=False,
+) -> list[np.ndarray]:
     data_points = np.asarray(data_points, dtype=float)
     if data_points.ndim != 2 or data_points.shape[1] < 2 or data_points.size == 0:
         return []
@@ -141,6 +156,13 @@ def _nearby_obstacle_limit_points(env, data_points: np.ndarray) -> list[np.ndarr
     span = np.maximum(hi - lo, 1e-6)
     guard = np.maximum(0.55 * span, 0.015)
     out = []
+    scene_points = top_view_scene_limit_points(
+        env,
+        demo_index=demo_index,
+        all_demos=all_demos,
+    )
+    if len(scene_points):
+        out.append(scene_points)
 
     def maybe_add_circle(center, radius):
         center_xy = _xy_point(center)
@@ -158,12 +180,25 @@ def _nearby_obstacle_limit_points(env, data_points: np.ndarray) -> list[np.ndarr
     return out
 
 
-def _set_compact_trajectory_limits(ax, env, data_points: np.ndarray):
+def _set_compact_trajectory_limits(
+    ax,
+    env,
+    data_points: np.ndarray,
+    demo_index=None,
+    all_demos=False,
+):
     data_points = np.asarray(data_points, dtype=float)
     if data_points.ndim != 2 or data_points.shape[1] < 2 or data_points.size == 0:
         return
     limit_parts = [data_points[:, :2]]
-    limit_parts.extend(_nearby_obstacle_limit_points(env, data_points))
+    limit_parts.extend(
+        _nearby_obstacle_limit_points(
+            env,
+            data_points,
+            demo_index=demo_index,
+            all_demos=all_demos,
+        )
+    )
     xy = np.vstack(limit_parts)
     xy = xy[np.all(np.isfinite(xy), axis=1)]
     if xy.size == 0:
@@ -509,14 +544,25 @@ def _draw_trajectory(ax, learner, it, demo_idx=0, *, overview=False):
         for cp_idx, cp in enumerate(_true_cutpoints_for_demo(learner, i if overview else demo_idx)):
             if 0 <= int(cp) < len(X):
                 ax.scatter(X[int(cp), 0], X[int(cp), 1], color=colors[cp_idx % len(colors)], marker="x", s=24, lw=1.3, label="true boundary" if i == 0 and cp_idx == 0 else "")
-    _draw_obstacles(ax, learner.env)
+    _draw_obstacles(
+        ax,
+        learner.env,
+        demo_index=None if overview else demo_idx,
+        all_demos=overview,
+    )
     ax.set_title(f"Iter {int(it)}: MAP trajectories" if overview else f"Iter {int(it)}: demo {int(demo_idx)} trajectory", fontsize=PAPER_TITLE_SIZE, pad=4)
     ax.set_xlabel("x", fontsize=PAPER_LABEL_SIZE)
     ax.set_ylabel("y", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     ax.set_aspect("equal", adjustable="box")
     if limit_points:
-        _set_compact_trajectory_limits(ax, learner.env, np.vstack(limit_points))
+        _set_compact_trajectory_limits(
+            ax,
+            learner.env,
+            np.vstack(limit_points),
+            demo_index=None if overview else demo_idx,
+            all_demos=overview,
+        )
     _legend(ax)
 
 
@@ -624,6 +670,86 @@ def _draw_cutpoint_evolution(ax, learner):
     ax.set_ylabel("cutpoint index", fontsize=PAPER_LABEL_SIZE)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     _legend(ax)
+
+
+def _draw_per_demo_cutpoint_comparison(ax, learner):
+    stage_ends_all = [list(map(int, ends)) for ends in getattr(learner, "stage_ends_", [])]
+    num_demos = min(len(getattr(learner, "demos", [])), len(stage_ends_all))
+    num_cutpoints = max(int(getattr(learner, "num_stages", 1)) - 1, 0)
+    if num_demos <= 0 or num_cutpoints <= 0:
+        ax.axis("off")
+        return
+
+    colors = _stage_colors(num_cutpoints)
+    absolute_errors = []
+    comparable_demos = 0
+    for demo_idx in range(num_demos):
+        length = int(len(learner.demos[demo_idx]))
+        denominator = float(max(length - 1, 1))
+        predicted = np.asarray(stage_ends_all[demo_idx][:-1], dtype=float)
+        true = np.asarray(_true_cutpoints_for_demo(learner, demo_idx), dtype=float)
+        pair_count = min(num_cutpoints, predicted.size, true.size)
+        y = float(demo_idx)
+
+        ax.hlines(y, 0.0, 1.0, color="#D1D5DB", linewidth=0.55, zorder=0)
+        if pair_count > 0:
+            comparable_demos += 1
+            absolute_errors.extend(np.abs(predicted[:pair_count] - true[:pair_count]).tolist())
+        for cut_idx in range(pair_count):
+            true_position = float(true[cut_idx] / denominator)
+            predicted_position = float(predicted[cut_idx] / denominator)
+            color = colors[cut_idx]
+            ax.plot(
+                [true_position, predicted_position],
+                [y, y],
+                color=color,
+                linewidth=1.25,
+                alpha=0.72,
+                zorder=2,
+            )
+            ax.scatter(
+                [true_position],
+                [y],
+                marker="o",
+                s=25,
+                facecolors="white",
+                edgecolors=color,
+                linewidths=1.15,
+                zorder=3,
+                label="true" if demo_idx == 0 and cut_idx == 0 else "",
+            )
+            ax.scatter(
+                [predicted_position],
+                [y],
+                marker="x",
+                s=27,
+                color=color,
+                linewidths=1.3,
+                zorder=4,
+                label="learned" if demo_idx == 0 and cut_idx == 0 else "",
+            )
+
+    for cut_idx, color in enumerate(colors):
+        ax.scatter([], [], marker="s", s=18, color=color, label=f"cut {cut_idx + 1}")
+
+    title = "Per-demo true vs learned cutpoints"
+    if absolute_errors:
+        title += f" | MAE={float(np.mean(absolute_errors)):.2f} samples"
+    elif comparable_demos == 0:
+        title += " | true cutpoints unavailable"
+    ax.set_title(title, fontsize=PAPER_TITLE_SIZE, pad=4)
+    ax.set_xlabel("normalized trajectory progress", fontsize=PAPER_LABEL_SIZE)
+    ax.set_ylabel("demo", fontsize=PAPER_LABEL_SIZE)
+    ax.set_xlim(-0.015, 1.015)
+    ax.set_ylim(-0.65, float(num_demos) - 0.35)
+    ax.set_xticks(np.linspace(0.0, 1.0, 5))
+    ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.set_yticks(np.arange(num_demos, dtype=float))
+    ax.set_yticklabels([str(idx + 1) for idx in range(num_demos)])
+    ax.invert_yaxis()
+    ax.grid(axis="x", color="#D1D5DB", linewidth=0.55, alpha=0.72)
+    ax.tick_params(labelsize=PAPER_TICK_SIZE)
+    _legend(ax, outside=True)
 
 
 def _scan_cutpoint_range(learner, T: int, fixed_cutpoints, vary_index: int) -> np.ndarray:
@@ -1072,8 +1198,8 @@ def plot_map_demo_summary(learner, it, demo_idx=0):
 def plot_map_results_overview(learner, it, *, metrics=None, plot_dir=None, save_name=None):
     if plt is None:
         return None
-    fig = plt.figure(figsize=(9.0, 11.2))
-    gs = fig.add_gridspec(4, 2, height_ratios=[1.0, 1.18, 1.18, 1.02])
+    fig = plt.figure(figsize=(9.0, 13.2))
+    gs = fig.add_gridspec(5, 2, height_ratios=[1.0, 1.18, 1.18, 1.02, 1.15])
     ax1 = fig.add_subplot(gs[0, 0])
     _draw_trajectory(ax1, learner, it, overview=True)
     ax2 = fig.add_subplot(gs[0, 1])
@@ -1086,6 +1212,8 @@ def plot_map_results_overview(learner, it, *, metrics=None, plot_dir=None, save_
     _draw_cutpoint_evolution(ax5, learner)
     ax6 = fig.add_subplot(gs[3, 1])
     _draw_parameter_error_matrix(ax6, learner, metrics)
+    ax7 = fig.add_subplot(gs[4, :])
+    _draw_per_demo_cutpoint_comparison(ax7, learner)
     fig.tight_layout(pad=0.5, h_pad=0.62, w_pad=0.48)
     path = learner_plot_dir(learner, plot_dir=plot_dir) / (str(save_name) if save_name is not None else "summary.png")
     return save_figure(fig, path, dpi=220)

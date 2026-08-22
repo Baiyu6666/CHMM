@@ -18,6 +18,7 @@ except ModuleNotFoundError:
     Axes3D = None
 
 from .io import learner_plot_dir, save_figure
+from .top_view_scene import draw_top_view_scene, top_view_scene_limit_points
 
 PAPER_FIGSIZE = (7.2, 5.2)
 PAPER_TITLE_SIZE = 9
@@ -810,7 +811,10 @@ def _set_axes_equal_3d_from_xyz(ax, xyz):
 
 
 def _env_has_xy_obstacle(env) -> bool:
-    return hasattr(env, "obs_center") and hasattr(env, "obs_radius")
+    return (
+        hasattr(env, "get_top_view_scene_geometry")
+        or (hasattr(env, "obs_center") and hasattr(env, "obs_radius"))
+    )
 
 
 def _env_has_3d_obstacle(env) -> bool:
@@ -818,6 +822,7 @@ def _env_has_3d_obstacle(env) -> bool:
 
 
 def _draw_env_xy_obstacles(ax, env):
+    draw_top_view_scene(ax, env, all_demos=True)
     if hasattr(env, "stage1_aux_obstacle_centers") and hasattr(env, "stage1_aux_obstacle_radii"):
         cx, cy = np.asarray(env.obs_center, dtype=float).reshape(-1)[:2]
         ax.add_patch(plt.Circle((cx, cy), float(env.obs_radius), color='gray', fill=False, linestyle='-', label='obstacle'))
@@ -833,7 +838,7 @@ def _draw_env_xy_obstacles(ax, env):
                     alpha=0.95,
                 )
             )
-    elif _env_has_xy_obstacle(env):
+    elif hasattr(env, "obs_center") and hasattr(env, "obs_radius"):
         cx, cy = env.obs_center
         r = env.obs_radius
         ax.add_patch(plt.Circle((cx, cy), r, color='gray', fill=False, linestyle='-', label='obstacle'))
@@ -918,6 +923,9 @@ def _trajectory_legend_kwargs(env):
 
 def _configure_2d_trajectory_axes(ax, env, pts):
     pts = np.asarray(pts, dtype=float)
+    scene_points = top_view_scene_limit_points(env, all_demos=True)
+    if len(scene_points):
+        pts = np.vstack([pts, scene_points])
     xmin, ymin = pts.min(axis=0)
     xmax, ymax = pts.max(axis=0)
     dx = float(max(xmax - xmin, 1e-6))

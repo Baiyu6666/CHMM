@@ -1,101 +1,60 @@
 #!/usr/bin/env python3
-"""Convert one BarInsepect ROS1 bag into synchronized poses and features."""
+"""Build a BarInspect training dataset from one ROS1 recording."""
 
 from __future__ import annotations
 
 import argparse
-import math
+import json
 import sys
 from pathlib import Path
 
 import numpy as np
-import rosbag
+from scipy.spatial.transform import Rotation
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from envs.BarInsepect import BarInsepectEnv  # noqa: E402
+from envs.BarInspect import BarInspectEnv, BarInspectScene  # noqa: E402
+from experiments.bar_inspect_processing import (  # noqa: E402
+    annotation_arrays,
+    dominant_static_pose_cluster,
+    downsample_processed_arrays,
+    load_cutpoint_annotations,
+    nearest_indices,
+    robust_static_pose,
+)
 
 
+JOINT_TOPIC = "/iiwa14/joint_states"
 BAR_TOPIC = "/vrpn_client_node/baiyu_bar/pose_from_iiwa14"
 OBSTACLE_TOPIC = "/vrpn_client_node/baiyu_obs_ball/pose_from_iiwa14"
-
-
-def transform_matrix(transform):
-    q = transform.transform.rotation
-    p = transform.transform.translation
-    x, y, z, w = q.x, q.y, q.z, q.w
-    rotation = np.array(
-        [
-            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-        ],
-        dtype=float,
-    )
-    matrix = np.eye(4)
-    matrix[:3, :3] = rotation
-    matrix[:3, 3] = [p.x, p.y, p.z]
-    return matrix
-
-
-def rotation_quaternion(rotation):
-    """Return a numerically stable XYZW quaternion for a rotation matrix."""
-    matrix = np.asarray(rotation, dtype=float)
-    trace = float(np.trace(matrix))
-    if trace > 0.0:
-        scale = 2.0 * math.sqrt(trace + 1.0)
-        quaternion = np.array(
-            [
-                (matrix[2, 1] - matrix[1, 2]) / scale,
-                (matrix[0, 2] - matrix[2, 0]) / scale,
-                (matrix[1, 0] - matrix[0, 1]) / scale,
-                0.25 * scale,
-            ]
-        )
-    else:
-        index = int(np.argmax(np.diag(matrix)))
-        if index == 0:
-            scale = 2.0 * math.sqrt(max(0.0, 1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2]))
-            quaternion = np.array(
-                [
-                    0.25 * scale,
-                    (matrix[0, 1] + matrix[1, 0]) / scale,
-                    (matrix[0, 2] + matrix[2, 0]) / scale,
-                    (matrix[2, 1] - matrix[1, 2]) / scale,
-                ]
-            )
-        elif index == 1:
-            scale = 2.0 * math.sqrt(max(0.0, 1.0 + matrix[1, 1] - matrix[0, 0] - matrix[2, 2]))
-            quaternion = np.array(
-                [
-                    (matrix[0, 1] + matrix[1, 0]) / scale,
-                    0.25 * scale,
-                    (matrix[1, 2] + matrix[2, 1]) / scale,
-                    (matrix[0, 2] - matrix[2, 0]) / scale,
-                ]
-            )
-        else:
-            scale = 2.0 * math.sqrt(max(0.0, 1.0 + matrix[2, 2] - matrix[0, 0] - matrix[1, 1]))
-            quaternion = np.array(
-                [
-                    (matrix[0, 2] + matrix[2, 0]) / scale,
-                    (matrix[1, 2] + matrix[2, 1]) / scale,
-                    0.25 * scale,
-                    (matrix[1, 0] - matrix[0, 1]) / scale,
-                ]
-            )
-    norm = float(np.linalg.norm(quaternion))
-    if not np.isfinite(norm) or norm <= 1e-12:
-        raise ValueError("Could not convert an EE rotation to a finite quaternion")
-    return quaternion / norm
-
-
-def message_stamp(message, bag_stamp):
-    stamp = message.header.stamp.to_sec()
-    return stamp if stamp > 0.0 else bag_stamp.to_sec()
+JOINT_ORDER = tuple(f"iiwa14_joint_{index}" for index in range(1, 8))
+JOINT_ORIGINS_XYZ = np.asarray(
+    [
+        [0.0, 0.0, 0.1575],
+        [0.0, 0.0, 0.2025],
+        [0.0, 0.2045, 0.0],
+        [0.0, 0.0, 0.2155],
+        [0.0, 0.1845, 0.0],
+        [0.0, 0.0, 0.2155],
+        [0.0, 0.0810, 0.0],
+    ],
+    dtype=float,
+)
+JOINT_ORIGINS_RPY = np.asarray(
+    [
+        [0.0, 0.0, 0.0],
+        [np.pi / 2.0, 0.0, np.pi],
+        [np.pi / 2.0, 0.0, np.pi],
+        [np.pi / 2.0, 0.0, 0.0],
+        [-np.pi / 2.0, np.pi, 0.0],
+        [np.pi / 2.0, 0.0, 0.0],
+        [-np.pi / 2.0, np.pi, 0.0],
+    ],
+    dtype=float,
+)
 
 
 def pose_row(message):
@@ -112,274 +71,532 @@ def pose_row(message):
     ]
 
 
-def nearest_indices(reference_times, query_times):
-    reference = np.asarray(reference_times, dtype=float)
-    query = np.asarray(query_times, dtype=float)
-    right = np.searchsorted(reference, query, side="left")
-    right = np.clip(right, 0, len(reference) - 1)
-    left = np.clip(right - 1, 0, len(reference) - 1)
-    use_left = np.abs(query - reference[left]) <= np.abs(reference[right] - query)
-    indices = np.where(use_left, left, right)
-    return indices, np.abs(query - reference[indices])
+def homogeneous(rotation, translation):
+    output = np.eye(4)
+    output[:3, :3] = np.asarray(rotation, dtype=float)
+    output[:3, 3] = np.asarray(translation, dtype=float)
+    return output
 
 
-def quaternion_matrices(quaternions):
-    """Convert finite XYZW quaternions to rotation matrices."""
-    quaternion = np.asarray(quaternions, dtype=float)
-    norms = np.linalg.norm(quaternion, axis=1, keepdims=True)
-    quaternion = quaternion / np.where(norms > 1e-12, norms, 1.0)
-    x, y, z, w = quaternion.T
-    matrices = np.empty((len(quaternion), 3, 3), dtype=float)
-    matrices[:, 0, 0] = 1.0 - 2.0 * (y * y + z * z)
-    matrices[:, 0, 1] = 2.0 * (x * y - z * w)
-    matrices[:, 0, 2] = 2.0 * (x * z + y * w)
-    matrices[:, 1, 0] = 2.0 * (x * y + z * w)
-    matrices[:, 1, 1] = 1.0 - 2.0 * (x * x + z * z)
-    matrices[:, 1, 2] = 2.0 * (y * z - x * w)
-    matrices[:, 2, 0] = 2.0 * (x * z - y * w)
-    matrices[:, 2, 1] = 2.0 * (y * z + x * w)
-    matrices[:, 2, 2] = 1.0 - 2.0 * (x * x + y * y)
-    return matrices
-
-
-def average_quaternion(quaternions):
-    """Average XYZW quaternions without being affected by q/-q sign flips."""
-    quaternion = np.asarray(quaternions, dtype=float)
-    quaternion = quaternion / np.linalg.norm(quaternion, axis=1, keepdims=True)
-    scatter = np.einsum("ti,tj->ij", quaternion, quaternion)
-    _, eigenvectors = np.linalg.eigh(scatter)
-    result = eigenvectors[:, -1]
-    if result[3] < 0.0:
-        result = -result
-    return result / np.linalg.norm(result)
-
-
-def robust_static_pose(
-    poses,
-    position_floor_m,
-    local_axis=None,
-    axis_floor_rad=None,
-):
-    """Estimate one fixed pose while rejecting minority OptiTrack jumps.
-
-    Position is estimated by a component-wise median and a median/MAD radial
-    gate.  For the bar, a second gate rejects samples whose tracked local +X
-    direction disagrees with the robust direction.  The returned pose is then
-    repeated for all feature calculations by the caller.
-    """
-    pose = np.asarray(poses, dtype=float)
-    if pose.ndim != 2 or pose.shape[1] != 7:
-        raise ValueError("Static-scene poses must have shape (samples, 7).")
-
-    quaternion_norm = np.linalg.norm(pose[:, 3:7], axis=1)
-    valid = (
-        np.all(np.isfinite(pose), axis=1)
-        & np.isfinite(quaternion_norm)
-        & (quaternion_norm > 1e-12)
-    )
-    if not np.any(valid):
-        raise ValueError("No finite OptiTrack poses are available for scene locking.")
-
-    initial_position = np.median(pose[valid, :3], axis=0)
-    position_error = np.linalg.norm(pose[:, :3] - initial_position[None, :], axis=1)
-    valid_error = position_error[valid]
-    median_error = float(np.median(valid_error))
-    mad = float(np.median(np.abs(valid_error - median_error)))
-    position_limit = max(
-        float(position_floor_m),
-        median_error + 6.0 * 1.4826 * max(mad, 1e-9),
-    )
-    position_inlier = valid & (position_error <= position_limit)
-
-    minimum_inliers = max(1, int(math.ceil(0.5 * np.count_nonzero(valid))))
-    if np.count_nonzero(position_inlier) < minimum_inliers:
-        raise ValueError(
-            "OptiTrack scene lock rejected at least half of the finite position samples."
-        )
-
-    axis_error = np.full(len(pose), np.nan, dtype=float)
-    inlier = position_inlier.copy()
-    if local_axis is not None:
-        axis = np.asarray(local_axis, dtype=float).reshape(3)
-        axis /= np.linalg.norm(axis)
-        rotations = quaternion_matrices(pose[:, 3:7])
-        tracked_axes = np.einsum("tij,j->ti", rotations, axis)
-        robust_axis = np.median(tracked_axes[position_inlier], axis=0)
-        robust_axis /= np.linalg.norm(robust_axis)
-        axis_error[valid] = np.arccos(
-            np.clip(tracked_axes[valid] @ robust_axis, -1.0, 1.0)
-        )
-        inlier &= axis_error <= float(axis_floor_rad)
-        if np.count_nonzero(inlier) < minimum_inliers:
-            raise ValueError(
-                "OptiTrack scene lock rejected at least half of the finite bar-axis samples."
+def iiwa14_fk(joint_positions):
+    origin_transforms = [
+        homogeneous(Rotation.from_euler("xyz", rpy).as_matrix(), xyz)
+        for xyz, rpy in zip(JOINT_ORIGINS_XYZ, JOINT_ORIGINS_RPY)
+    ]
+    joint_trace = np.asarray(joint_positions, dtype=float)
+    poses = np.empty((len(joint_trace), 7), dtype=float)
+    for row_index, joint_row in enumerate(joint_trace):
+        transform = np.eye(4)
+        for origin_transform, angle in zip(origin_transforms, joint_row):
+            transform = transform @ origin_transform @ homogeneous(
+                Rotation.from_rotvec([0.0, 0.0, float(angle)]).as_matrix(),
+                [0.0, 0.0, 0.0],
             )
+        poses[row_index, :3] = transform[:3, 3]
+        poses[row_index, 3:] = Rotation.from_matrix(transform[:3, :3]).as_quat()
+    return poses
 
-    locked_pose = np.concatenate(
-        [
-            np.median(pose[inlier, :3], axis=0),
-            average_quaternion(pose[inlier, 3:7]),
-        ]
+
+def read_recording(bag_path, joint_topic, bar_topic, obstacle_topic):
+    try:
+        from rosbags.highlevel import AnyReader
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "Reading ROS1 bags requires the 'rosbags' Python package."
+        ) from error
+
+    topics = (joint_topic, bar_topic, obstacle_topic)
+    raw_times = {topic: [] for topic in topics}
+    raw_values = {topic: [] for topic in topics}
+    with AnyReader([Path(bag_path)]) as reader:
+        selected = [connection for connection in reader.connections if connection.topic in topics]
+        present = {connection.topic for connection in selected}
+        missing = sorted(set(topics).difference(present))
+        if missing:
+            raise RuntimeError(f"ROS bag is missing required topics: {missing}")
+        for connection, timestamp, raw_data in reader.messages(connections=selected):
+            message = reader.deserialize(raw_data, connection.msgtype)
+            topic = connection.topic
+            if topic == joint_topic:
+                name_to_index = {name: index for index, name in enumerate(message.name)}
+                if not all(name in name_to_index for name in JOINT_ORDER):
+                    continue
+                value = [message.position[name_to_index[name]] for name in JOINT_ORDER]
+            else:
+                value = pose_row(message)
+            raw_times[topic].append(float(timestamp) / 1e9)
+            raw_values[topic].append(value)
+    for topic in topics:
+        raw_times[topic] = np.asarray(raw_times[topic], dtype=float)
+        raw_values[topic] = np.asarray(raw_values[topic], dtype=float)
+        if len(raw_times[topic]) == 0:
+            raise RuntimeError(f"No usable samples found on {topic}.")
+    return raw_times, raw_values
+
+
+def load_environment_config(path, feature_dt):
+    with Path(path).open(encoding="utf-8") as stream:
+        config = dict(json.load(stream))
+    for key in ("name", "n_demos", "seed", "processed_demo_path", "method_overrides"):
+        config.pop(key, None)
+    config["dt"] = float(feature_dt)
+    return config
+
+
+def build_feature_grid(raw_times, raw_values, joint_topic, feature_hz):
+    dt = 1.0 / float(feature_hz)
+    common_start = max(values[0] for values in raw_times.values())
+    common_end = min(values[-1] for values in raw_times.values())
+    grid_absolute = np.arange(np.ceil(common_start / dt) * dt, common_end, dt)
+    joint_indices, joint_gaps = nearest_indices(raw_times[joint_topic], grid_absolute)
+    return (
+        grid_absolute - grid_absolute[0],
+        raw_values[joint_topic][joint_indices],
+        joint_gaps,
+        float(grid_absolute[0]),
     )
-    final_position_error = np.linalg.norm(
-        pose[:, :3] - locked_pose[None, :3], axis=1
-    )
-    return {
-        "pose": locked_pose,
-        "inlier": inlier,
-        "position_error_m": final_position_error,
-        "position_limit_m": position_limit,
-        "axis_error_rad": axis_error,
+
+
+def scene_window_mask(raw_times, common_grid_start, start_s, end_s):
+    relative_times = np.asarray(raw_times, dtype=float) - float(common_grid_start)
+    mask = relative_times >= float(start_s)
+    if end_s is not None:
+        mask &= relative_times <= float(end_s)
+    if not np.any(mask):
+        raise ValueError("The requested scene-lock window contains no samples.")
+    return mask
+
+
+def lock_demo_obstacle_poses(
+    obstacle_times,
+    obstacle_poses,
+    common_grid_start,
+    bounds_times,
+    position_radius_m,
+):
+    relative_times = np.asarray(obstacle_times, dtype=float) - float(common_grid_start)
+    locks = []
+    for demo_index, row in enumerate(np.asarray(bounds_times, dtype=float)):
+        mask = (relative_times >= float(row[0])) & (relative_times <= float(row[-1]))
+        if not np.any(mask):
+            raise ValueError(f"Demo {demo_index} contains no obstacle tracker samples.")
+        lock = dominant_static_pose_cluster(
+            np.asarray(obstacle_poses, dtype=float)[mask],
+            position_radius_m=position_radius_m,
+        )
+        lock["sample_count"] = int(np.count_nonzero(mask))
+        locks.append(lock)
+    return locks
+
+
+def concatenate_annotated_demos(
+    timestamps,
+    joint_positions,
+    joint_gaps,
+    trajectory,
+    bounds_times,
+    environment,
+    demo_scenes,
+    max_joint_gap,
+):
+    source_bounds, _, _ = annotation_arrays(timestamps, bounds_times)
+    output = {
+        "timestamps": [],
+        "joint_positions": [],
+        "trajectory": [],
+        "features": [],
+        "demo_id": [],
+        "coarse_stage_labels": [],
     }
+    output_bounds = []
+    selected_gaps = []
+    offset = 0
+    for demo_index, row in enumerate(source_bounds):
+        begin, stage2, stage3, stage4, end = (int(value) for value in row)
+        demo_slice = slice(begin, end)
+        demo_gaps = joint_gaps[demo_slice]
+        if float(np.max(demo_gaps)) > float(max_joint_gap):
+            raise RuntimeError(
+                f"Joint-state gap too large inside demo {demo_index}: "
+                f"{np.max(demo_gaps):.6f}s"
+            )
+        demo_trajectory = trajectory[demo_slice]
+        local_bounds = np.asarray(
+            [0, stage2 - begin, stage3 - begin, stage4 - begin, end - begin],
+            dtype=np.int64,
+        )
+        labels = np.concatenate(
+            [
+                np.full(length, stage, dtype=np.int64)
+                for stage, length in enumerate(np.diff(local_bounds))
+            ]
+        )
+        output["timestamps"].append(timestamps[demo_slice])
+        output["joint_positions"].append(joint_positions[demo_slice])
+        output["trajectory"].append(demo_trajectory)
+        output["features"].append(
+            environment.compute_all_features_matrix(
+                demo_trajectory,
+                scene=demo_scenes[demo_index],
+            )
+        )
+        output["demo_id"].append(
+            np.full(end - begin, demo_index, dtype=np.int64)
+        )
+        output["coarse_stage_labels"].append(labels)
+        output_bounds.append(local_bounds + offset)
+        selected_gaps.append(demo_gaps)
+        offset += end - begin
+    arrays = {
+        key: np.concatenate(value, axis=0)
+        for key, value in output.items()
+    }
+    return arrays, np.asarray(output_bounds, dtype=np.int64), np.concatenate(selected_gaps)
+
+
+def validate_demo_start_positions(
+    timestamps,
+    trajectory,
+    bounds_times,
+    environment,
+    demo_scenes,
+    minimum_north_offset_m,
+):
+    source_bounds, _, _ = annotation_arrays(timestamps, bounds_times)
+    start_indices = source_bounds[:, 0]
+    trajectory = np.asarray(trajectory, dtype=float)
+    north_offsets = np.asarray(
+        [
+            trajectory[start_index, 1]
+            - environment._obstacle_center_trace(
+                trajectory[start_index : start_index + 1],
+                scene=demo_scenes[demo_index],
+            )[0, 1]
+            for demo_index, start_index in enumerate(start_indices)
+        ],
+        dtype=float,
+    )
+    invalid = np.flatnonzero(north_offsets < float(minimum_north_offset_m))
+    if len(invalid):
+        details = ", ".join(
+            f"demo {int(index)}: {north_offsets[index]:.3f}m"
+            for index in invalid
+        )
+        raise RuntimeError(
+            "Annotated demo starts must be north of the obstacle by at least "
+            f"{float(minimum_north_offset_m):.3f}m; {details}. "
+            "This usually means the reset from the previous attempt was included."
+        )
+    return north_offsets
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("bag")
-    parser.add_argument("output", help="Output .npz file")
-    parser.add_argument("--robot-name", default="iiwa14")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Estimate one robust static BarInspect scene, compute features at 10 Hz, "
+            "then optionally subsample complete rows for training."
+        )
+    )
+    parser.add_argument("bag", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--annotations", type=Path, required=True)
+    parser.add_argument(
+        "--env-config",
+        type=Path,
+        default=PROJECT_ROOT / "configs/envs/BarInspect.json",
+    )
+    parser.add_argument("--joint-topic", default=JOINT_TOPIC)
     parser.add_argument("--bar-topic", default=BAR_TOPIC)
     parser.add_argument("--obstacle-topic", default=OBSTACLE_TOPIC)
-    parser.add_argument("--max-sync-gap", type=float, default=0.05)
+    parser.add_argument("--feature-hz", type=float, default=10.0)
+    parser.add_argument("--output-hz", type=float, default=5.0)
+    parser.add_argument("--max-joint-gap", type=float, default=0.05)
+    parser.add_argument("--scene-position-outlier-m", type=float, default=0.020)
     parser.add_argument(
-        "--scene-position-outlier-m",
+        "--demo-obstacle-cluster-radius-m",
         type=float,
-        default=0.020,
-        help="Minimum radial gate used when locking each static OptiTrack object.",
+        default=0.005,
+        help=(
+            "Fixed radius used to select the dominant static obstacle-pose cluster "
+            "inside each annotated demo."
+        ),
+    )
+    parser.add_argument("--bar-axis-outlier-deg", type=float, default=5.0)
+    parser.add_argument(
+        "--min-start-north-offset-m",
+        type=float,
+        default=0.03,
+        help=(
+            "Reject annotations whose first TCP sample is not this far north "
+            "(+Y in the robot base) of the tracked obstacle center."
+        ),
     )
     parser.add_argument(
-        "--bar-axis-outlier-deg",
+        "--scene-lock-start-s",
         type=float,
-        default=5.0,
-        help="Reject bar samples whose local +X direction differs from the robust direction.",
+        default=0.0,
+        help="Scene-lock window start relative to the common processing grid.",
+    )
+    parser.add_argument(
+        "--scene-lock-end-s",
+        type=float,
+        help="Optional scene-lock window end relative to the common processing grid.",
+    )
+    parser.add_argument(
+        "--only-annotated",
+        action="store_true",
+        help="Export only annotated demo intervals, excluding resets and failed attempts.",
+    )
+    parser.add_argument(
+        "--feature-output",
+        type=Path,
+        help="Optionally save the annotated feature-rate arrays before downsampling.",
     )
     args = parser.parse_args()
 
+    if args.feature_hz <= 0.0 or args.output_hz <= 0.0:
+        parser.error("--feature-hz and --output-hz must be positive")
+    ratio = float(args.feature_hz) / float(args.output_hz)
+    factor = int(round(ratio))
+    if factor < 1 or not np.isclose(ratio, factor, atol=1e-9):
+        parser.error("--feature-hz must be an integer multiple of --output-hz")
     if args.scene_position_outlier_m <= 0.0:
         parser.error("--scene-position-outlier-m must be positive")
+    if args.demo_obstacle_cluster_radius_m <= 0.0:
+        parser.error("--demo-obstacle-cluster-radius-m must be positive")
     if not 0.0 < args.bar_axis_outlier_deg < 180.0:
         parser.error("--bar-axis-outlier-deg must be between 0 and 180 degrees")
+    if args.min_start_north_offset_m < 0.0:
+        parser.error("--min-start-north-offset-m must be non-negative")
+    if args.scene_lock_start_s < 0.0:
+        parser.error("--scene-lock-start-s must be non-negative")
+    if (
+        args.scene_lock_end_s is not None
+        and args.scene_lock_end_s <= args.scene_lock_start_s
+    ):
+        parser.error("--scene-lock-end-s must be greater than --scene-lock-start-s")
 
-    ee_times = []
-    trajectories = []
-    bar_times, bar_poses = [], []
-    obstacle_times, obstacle_poses = [], []
+    annotation_path, annotation_payload, bounds_times, confidence = load_cutpoint_annotations(
+        args.annotations
+    )
+    raw_times, raw_values = read_recording(
+        args.bag,
+        args.joint_topic,
+        args.bar_topic,
+        args.obstacle_topic,
+    )
+    timestamps, joint_positions, joint_gaps, common_grid_start = build_feature_grid(
+        raw_times,
+        raw_values,
+        args.joint_topic,
+        args.feature_hz,
+    )
+    trajectory = iiwa14_fk(joint_positions)
+    environment = BarInspectEnv(
+        **load_environment_config(args.env_config, 1.0 / args.feature_hz)
+    )
 
-    topics = ["/tf", args.bar_topic, args.obstacle_topic]
-    with rosbag.Bag(args.bag) as bag:
-        for topic, message, bag_stamp in bag.read_messages(topics=topics):
-            if topic == args.bar_topic:
-                bar_times.append(message_stamp(message, bag_stamp))
-                bar_poses.append(pose_row(message))
-                continue
-            if topic == args.obstacle_topic:
-                obstacle_times.append(message_stamp(message, bag_stamp))
-                obstacle_poses.append(pose_row(message))
-                continue
-
-            links = {item.child_frame_id: item for item in message.transforms}
-            if not all(
-                f"{args.robot_name}_link_{index}" in links for index in range(1, 8)
-            ):
-                continue
-            matrix = np.eye(4)
-            for index in range(1, 8):
-                matrix = matrix @ transform_matrix(
-                    links[f"{args.robot_name}_link_{index}"]
-                )
-            stamp = message.transforms[0].header.stamp.to_sec() or bag_stamp.to_sec()
-            ee_times.append(stamp)
-            trajectories.append(
-                [*matrix[:3, 3], *rotation_quaternion(matrix[:3, :3])]
-            )
-
-    if not trajectories:
-        raise RuntimeError(f"No complete {args.robot_name} link chain found in /tf")
-    if not bar_poses:
-        raise RuntimeError(f"No bar poses found on {args.bar_topic}")
-    if not obstacle_poses:
-        raise RuntimeError(f"No obstacle poses found on {args.obstacle_topic}")
-
-    ee_times = np.asarray(ee_times, dtype=float)
-    trajectory = np.asarray(trajectories, dtype=float)
-    bar_times = np.asarray(bar_times, dtype=float)
-    bar_poses = np.asarray(bar_poses, dtype=float)
-    obstacle_times = np.asarray(obstacle_times, dtype=float)
-    obstacle_poses = np.asarray(obstacle_poses, dtype=float)
-
-    bar_indices, bar_gaps = nearest_indices(bar_times, ee_times)
-    obstacle_indices, obstacle_gaps = nearest_indices(obstacle_times, ee_times)
-    keep = (bar_gaps <= args.max_sync_gap) & (obstacle_gaps <= args.max_sync_gap)
-    if not np.any(keep):
-        raise RuntimeError(
-            "No EE samples have both bar and obstacle poses within the synchronization limit"
-        )
-
-    trajectory = trajectory[keep]
-    timestamps = ee_times[keep] - ee_times[keep][0]
-    bar_pose = bar_poses[bar_indices[keep]]
-    obstacle_pose = obstacle_poses[obstacle_indices[keep]]
-
-    environment = BarInsepectEnv()
+    bar_scene_mask = scene_window_mask(
+        raw_times[args.bar_topic],
+        common_grid_start,
+        args.scene_lock_start_s,
+        args.scene_lock_end_s,
+    )
+    obstacle_scene_mask = scene_window_mask(
+        raw_times[args.obstacle_topic],
+        common_grid_start,
+        args.scene_lock_start_s,
+        args.scene_lock_end_s,
+    )
     bar_lock = robust_static_pose(
-        bar_pose,
-        args.scene_position_outlier_m,
+        raw_values[args.bar_topic][bar_scene_mask],
+        position_floor_m=args.scene_position_outlier_m,
         local_axis=environment.bar_axis_local,
         axis_floor_rad=np.deg2rad(args.bar_axis_outlier_deg),
     )
     obstacle_lock = robust_static_pose(
-        obstacle_pose,
-        args.scene_position_outlier_m,
+        raw_values[args.obstacle_topic][obstacle_scene_mask],
+        position_floor_m=args.scene_position_outlier_m,
     )
-    locked_bar_pose_trace = np.repeat(
-        bar_lock["pose"][None, :], len(trajectory), axis=0
+    demo_obstacle_locks = lock_demo_obstacle_poses(
+        raw_times[args.obstacle_topic],
+        raw_values[args.obstacle_topic],
+        common_grid_start,
+        bounds_times,
+        args.demo_obstacle_cluster_radius_m,
     )
-    locked_obstacle_pose_trace = np.repeat(
-        obstacle_lock["pose"][None, :], len(trajectory), axis=0
+    demo_scenes = [
+        BarInspectScene(
+            bar_pose_optitrack=bar_lock["pose"],
+            obstacle_pose_optitrack=lock["pose"],
+        )
+        for lock in demo_obstacle_locks
+    ]
+    demo_start_north_offsets = validate_demo_start_positions(
+        timestamps,
+        trajectory,
+        bounds_times,
+        environment,
+        demo_scenes,
+        args.min_start_north_offset_m,
     )
-    environment.register_bar_pose_trace(trajectory, locked_bar_pose_trace)
-    environment.register_obstacle_pose_trace(trajectory, locked_obstacle_pose_trace)
-    features = environment.compute_all_features_matrix(trajectory)
     feature_names = np.asarray(
-        [item["name"] for item in environment.get_feature_schema()]
+        [spec["name"] for spec in environment.get_feature_schema()]
+    )
+    if args.only_annotated:
+        annotated, bounds, selected_joint_gaps = concatenate_annotated_demos(
+            timestamps,
+            joint_positions,
+            joint_gaps,
+            trajectory,
+            bounds_times,
+            environment,
+            demo_scenes,
+            args.max_joint_gap,
+        )
+        output_timestamps = annotated["timestamps"]
+        output_joint_positions = annotated["joint_positions"]
+        output_trajectory = annotated["trajectory"]
+        features = annotated["features"]
+        demo_id = annotated["demo_id"]
+        stage_labels = annotated["coarse_stage_labels"]
+    else:
+        if float(np.max(joint_gaps)) > float(args.max_joint_gap):
+            raise RuntimeError(
+                f"Joint-state gap too large for {args.feature_hz:g} Hz processing: "
+                f"{np.max(joint_gaps):.6f}s"
+            )
+        output_timestamps = timestamps
+        output_joint_positions = joint_positions
+        output_trajectory = trajectory
+        bounds, demo_id, stage_labels = annotation_arrays(timestamps, bounds_times)
+        obstacle_pose_trace = np.repeat(
+            obstacle_lock["pose"][None, :],
+            len(trajectory),
+            axis=0,
+        )
+        for row, lock in zip(bounds, demo_obstacle_locks):
+            obstacle_pose_trace[int(row[0]) : int(row[-1])] = lock["pose"]
+        feature_scene = BarInspectScene(
+            bar_pose_optitrack=bar_lock["pose"],
+            obstacle_pose_optitrack=obstacle_pose_trace,
+        )
+        features = environment.compute_all_features_matrix(
+            trajectory,
+            scene=feature_scene,
+        )
+        selected_joint_gaps = joint_gaps
+
+    feature_rate_arrays = {
+        "schema_version": np.asarray(3, dtype=np.int64),
+        "timestamps": output_timestamps,
+        "joint_positions": output_joint_positions,
+        "trajectory": output_trajectory,
+        "features": features,
+        "feature_names": feature_names,
+        "locked_bar_pose": bar_lock["pose"],
+        "recording_reference_obstacle_pose": obstacle_lock["pose"],
+        "demo_obstacle_poses": np.asarray(
+            [lock["pose"] for lock in demo_obstacle_locks],
+            dtype=float,
+        ),
+        "demo_id": demo_id,
+        "coarse_stage_labels": stage_labels,
+        "coarse_bounds_indices": bounds,
+        "coarse_bounds_times_s": bounds_times,
+        "demo_start_confidence": np.asarray(confidence),
+        "demo_start_segmentation_basis": np.asarray(
+            annotation_payload.get("demo_start_segmentation_basis", "")
+        ),
+        "demo_start_north_offset_m": demo_start_north_offsets,
+        "minimum_demo_start_north_offset_m": np.asarray(
+            args.min_start_north_offset_m
+        ),
+        "raw_joint_state_hz": np.asarray(
+            1.0 / np.median(np.diff(raw_times[args.joint_topic]))
+        ),
+        "feature_computation_hz": np.asarray(args.feature_hz),
+        "downsample_hz": np.asarray(args.feature_hz),
+        "source_bag": np.asarray(args.bag.name),
+        "source_annotations": np.asarray(annotation_path.name),
+        "cutpoint_annotation_kind": np.asarray(annotation_payload["kind"]),
+        "cutpoint_evaluation_role": np.asarray(
+            annotation_payload.get("evaluation_role", "heuristic_reference")
+        ),
+        "cutpoint_confidence": np.asarray(
+            annotation_payload.get("heuristic_cutpoint_confidence", [])
+        ),
+        "cutpoint_segmentation_basis": np.asarray(
+            annotation_payload.get("segmentation_basis", [])
+        ),
+        "bar_scene_policy": np.asarray(
+            "windowed_robust_static_lock"
+            if args.scene_lock_end_s is not None or args.scene_lock_start_s > 0.0
+            else "whole_recording_robust_static_lock"
+        ),
+        "obstacle_scene_policy": np.asarray(
+            "per_demo_dominant_static_position_cluster"
+        ),
+        "scene_lock_window_s": np.asarray(
+            [
+                args.scene_lock_start_s,
+                np.nan if args.scene_lock_end_s is None else args.scene_lock_end_s,
+            ],
+            dtype=float,
+        ),
+        "export_policy": np.asarray(
+            "annotated_intervals_only" if args.only_annotated else "whole_recording"
+        ),
+        "bar_scene_inlier_count": np.asarray(np.count_nonzero(bar_lock["inlier"])),
+        "bar_scene_sample_count": np.asarray(len(bar_lock["inlier"])),
+        "demo_obstacle_scene_inlier_count": np.asarray(
+            [np.count_nonzero(lock["inlier"]) for lock in demo_obstacle_locks],
+            dtype=np.int64,
+        ),
+        "demo_obstacle_scene_sample_count": np.asarray(
+            [lock["sample_count"] for lock in demo_obstacle_locks],
+            dtype=np.int64,
+        ),
+        "demo_obstacle_position_p95_m": np.asarray(
+            [lock["position_p95_m"] for lock in demo_obstacle_locks],
+            dtype=float,
+        ),
+        "bar_position_gate_m": np.asarray(bar_lock["position_limit_m"]),
+        "demo_obstacle_cluster_radius_m": np.asarray(
+            args.demo_obstacle_cluster_radius_m
+        ),
+        "bar_axis_gate_rad": np.asarray(np.deg2rad(args.bar_axis_outlier_deg)),
+        "max_joint_resampling_gap_s": np.asarray(np.max(selected_joint_gaps)),
+        "recording_max_joint_resampling_gap_s": np.asarray(np.max(joint_gaps)),
+    }
+
+    if args.feature_output is not None:
+        args.feature_output.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(args.feature_output, **feature_rate_arrays)
+
+    output_arrays, selected_indices = downsample_processed_arrays(
+        feature_rate_arrays,
+        factor,
+    )
+    output_arrays["downsample_hz"] = np.asarray(args.output_hz)
+    output_arrays["downsample_factor"] = np.asarray(factor, dtype=np.int64)
+    output_arrays["source_sample_count"] = np.asarray(
+        len(output_timestamps),
+        dtype=np.int64,
+    )
+    output_arrays["derivative_feature_policy"] = np.asarray(
+        "compute_at_feature_computation_hz_then_subsample_complete_rows"
     )
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        output,
-        trajectory=trajectory,
-        timestamps=timestamps,
-        bar_pose=locked_bar_pose_trace,
-        obstacle_pose=locked_obstacle_pose_trace,
-        bar_pose_raw=bar_pose,
-        obstacle_pose_raw=obstacle_pose,
-        locked_bar_pose=bar_lock["pose"],
-        locked_obstacle_pose=obstacle_lock["pose"],
-        bar_pose_used_for_features=locked_bar_pose_trace,
-        obstacle_pose_used_for_features=locked_obstacle_pose_trace,
-        bar_scene_inlier=bar_lock["inlier"],
-        obstacle_scene_inlier=obstacle_lock["inlier"],
-        bar_position_error_m=bar_lock["position_error_m"],
-        obstacle_position_error_m=obstacle_lock["position_error_m"],
-        bar_axis_error_rad=bar_lock["axis_error_rad"],
-        bar_position_gate_m=np.asarray(bar_lock["position_limit_m"]),
-        obstacle_position_gate_m=np.asarray(obstacle_lock["position_limit_m"]),
-        bar_axis_gate_rad=np.asarray(np.deg2rad(args.bar_axis_outlier_deg)),
-        feature_scene_policy=np.asarray("whole_demo_robust_static_lock"),
-        features=features,
-        feature_names=feature_names,
-        bar_sync_gap_s=bar_gaps[keep],
-        obstacle_sync_gap_s=obstacle_gaps[keep],
-        source_bag=np.asarray(str(Path(args.bag).resolve())),
-    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(args.output, **output_arrays)
     print(
-        f"samples={len(trajectory)} duration={timestamps[-1]:.3f}s "
-        f"max_bar_gap={bar_gaps[keep].max():.6f}s "
-        f"max_obstacle_gap={obstacle_gaps[keep].max():.6f}s "
-        f"bar_inliers={np.count_nonzero(bar_lock['inlier'])}/{len(trajectory)} "
-        f"obstacle_inliers={np.count_nonzero(obstacle_lock['inlier'])}/{len(trajectory)} "
-        f"output={output}"
+        f"feature_samples={len(output_timestamps)} output_samples={len(selected_indices)} "
+        f"feature_hz={args.feature_hz:g} output_hz={args.output_hz:g} "
+        f"bar_inliers={np.count_nonzero(bar_lock['inlier'])}/{len(bar_lock['inlier'])} "
+        f"demo_obstacle_inliers="
+        f"{','.join(str(np.count_nonzero(lock['inlier'])) for lock in demo_obstacle_locks)} "
+        f"output={args.output}"
     )
 
 

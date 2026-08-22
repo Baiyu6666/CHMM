@@ -4,11 +4,9 @@
   <arg name="auto_plan" default="true"/>
   <arg name="record" default="true"/>
   <arg name="render_video" default="true"/>
+  <arg name="motion_speed_scale" default="1.5"/>
   <arg name="output_root" default="/data/sim_runs"/>
-
-  <!-- Values calibrated or measured for the real setup, in iiwa14_link_0. -->
-  <arg name="table_top_z" default="0.14584"/>
-  <arg name="bar_height" default="0.06"/>
+  <arg name="scene_config" default="$(find stage_iiwa_sim)/config/demo_scene.json"/>
 
   <group ns="iiwa14">
     <param name="robot_description"
@@ -30,14 +28,14 @@
       <param name="auto_plan" value="$(arg auto_plan)"/>
       <param name="record" value="$(arg record)"/>
       <param name="render_video" value="$(arg render_video)"/>
+      <param name="motion_speed_scale" value="$(arg motion_speed_scale)"/>
       <param name="output_root" value="$(arg output_root)"/>
-      <param name="table_top_z" value="$(arg table_top_z)"/>
-      <param name="bar_height" value="$(arg bar_height)"/>
+      <param name="scene_config" value="$(arg scene_config)"/>
     </node>
   </group>
 
-  <include file="$(find stage_placeholder_planner)/launch/straight_line_planner.launch">
+  <include file="$(find stage_constraint_planner)/launch/task_planner.launch">
     <arg name="frame_id" value="iiwa14_link_0"/>
-    <arg name="sample_spacing" value="0.01"/>
+    <arg name="output_spacing" value="0.005"/>
   </include>
 </launch>

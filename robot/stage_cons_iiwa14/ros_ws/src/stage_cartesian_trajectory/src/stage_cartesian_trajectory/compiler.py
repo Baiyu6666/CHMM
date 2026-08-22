@@ -38,6 +38,8 @@ class CartesianTrajectoryCompiler:
         task_speed=0.025,
         approach_spacing=0.01,
         approach_axis_spacing=math.radians(2.0),
+        approach_clearance_z=None,
+        minimum_approach_z=0.20,
         position_tolerance=0.002,
         tool_z_tolerance=math.radians(2.0),
         minimum_singular_value=0.01,
@@ -66,6 +68,12 @@ class CartesianTrajectoryCompiler:
         self._task_speed = float(task_speed)
         self._approach_spacing = float(approach_spacing)
         self._approach_axis_spacing = float(approach_axis_spacing)
+        self._approach_clearance_z = (
+            None if approach_clearance_z is None else float(approach_clearance_z)
+        )
+        self._minimum_approach_z = float(minimum_approach_z)
+        if not math.isfinite(self._minimum_approach_z):
+            raise ValueError("minimum_approach_z must be finite")
         self._position_tolerance = float(position_tolerance)
         self._tool_z_tolerance = float(tool_z_tolerance)
         self._minimum_singular_value = float(minimum_singular_value)
@@ -158,14 +166,14 @@ class CartesianTrajectoryCompiler:
             for phase in phases
         ])
 
-    def _continuous_ik(self, positions, axes, seed, abort_requested):
+    def _continuous_ik(self, positions, axes, seed, abort_requested, phase_name):
         previous = np.asarray(seed, dtype=float).copy()
         _, rotation = self.tip_state(previous)
         reference_x = rotation[:, 0]
         trajectory, position_errors, axis_errors = [], [], []
         ranges = self._upper - self._lower
         center = 0.5 * (self._lower + self._upper)
-        for target_position, target_z in zip(positions, axes):
+        for sample_index, (target_position, target_z) in enumerate(zip(positions, axes)):
             if abort_requested():
                 raise TrajectoryValidationError("Trajectory compilation aborted")
             rest = 0.98 * previous + 0.02 * center
@@ -214,14 +222,15 @@ class CartesianTrajectoryCompiler:
             _, candidate, actual_rotation, position_error, axis_error, step = best
             if position_error > self._position_tolerance or axis_error > self._tool_z_tolerance:
                 raise TrajectoryValidationError(
-                    "IK failed: position error {:.4f} m, Tool-Z error {:.2f} deg".format(
-                        position_error, math.degrees(axis_error)
+                    "{} IK failed at sample {}: position error {:.4f} m, "
+                    "Tool-Z error {:.2f} deg".format(
+                        phase_name, sample_index, position_error, math.degrees(axis_error)
                     )
                 )
             if step > self._max_joint_step:
                 raise TrajectoryValidationError(
-                    "IK branch jump {:.3f} rad exceeds {:.3f}".format(
-                        step, self._max_joint_step
+                    "{} IK branch jump at sample {}: {:.3f} rad exceeds {:.3f}".format(
+                        phase_name, sample_index, step, self._max_joint_step
                     )
                 )
             trajectory.append(candidate)
@@ -318,6 +327,50 @@ class CartesianTrajectoryCompiler:
             for joint in range(positions.shape[1])
         ])
 
+    def _approach_samples(self, current_position, current_axis, target_position, target_axis):
+        waypoints = [np.asarray(current_position, dtype=float)]
+        target_position = np.asarray(target_position, dtype=float)
+        transit_heights = [
+            self._minimum_approach_z,
+            float(current_position[2]),
+            float(target_position[2]),
+        ]
+        if self._approach_clearance_z is not None:
+            transit_heights.append(self._approach_clearance_z)
+        transit_z = max(transit_heights)
+        waypoints.extend(
+            [
+                np.asarray([current_position[0], current_position[1], transit_z]),
+                np.asarray([target_position[0], target_position[1], transit_z]),
+            ]
+        )
+        waypoints.append(target_position)
+        compact = [waypoints[0]]
+        for waypoint in waypoints[1:]:
+            if float(np.linalg.norm(waypoint - compact[-1])) > 1e-9:
+                compact.append(waypoint)
+        if len(compact) == 1:
+            return target_position[None, :], np.asarray(target_axis, dtype=float)[None, :], 0.0
+
+        waypoints = np.asarray(compact, dtype=float)
+        edge_lengths = np.linalg.norm(np.diff(waypoints, axis=0), axis=1)
+        cumulative = np.concatenate(([0.0], np.cumsum(edge_lengths)))
+        distance = float(cumulative[-1])
+        axis_angle = math.acos(float(np.clip(current_axis @ target_axis, -1.0, 1.0)))
+        sample_count = max(
+            1,
+            int(math.ceil(distance / self._approach_spacing)),
+            int(math.ceil(axis_angle / self._approach_axis_spacing)),
+        )
+        targets = np.unique(
+            np.concatenate((np.linspace(0.0, distance, sample_count + 1)[1:], cumulative[1:]))
+        )
+        positions = np.column_stack(
+            [np.interp(targets, cumulative, waypoints[:, dim]) for dim in range(3)]
+        )
+        axes = self._interpolate_axis(current_axis, target_axis, targets / distance)
+        return positions, axes, distance
+
     def compile(self, positions, tool_z_axes, start_q, abort_requested=None):
         positions = np.asarray(positions, dtype=float)
         axes = np.asarray(tool_z_axes, dtype=float)
@@ -338,26 +391,16 @@ class CartesianTrajectoryCompiler:
 
         try:
             current_position, current_rotation = self.tip_state(start_q)
-            distance = float(np.linalg.norm(positions[0] - current_position))
-            axis_angle = math.acos(float(np.clip(current_rotation[:, 2] @ axes[0], -1.0, 1.0)))
-            approach_count = max(
-                2,
-                int(math.ceil(distance / self._approach_spacing)) + 1,
-                int(math.ceil(axis_angle / self._approach_axis_spacing)) + 1,
+            approach_positions, approach_axes, approach_distance = self._approach_samples(
+                current_position, current_rotation[:, 2], positions[0], axes[0]
             )
-            phases = np.linspace(0.0, 1.0, approach_count)[1:]
-            approach_positions = (
-                (1.0 - phases[:, None]) * current_position[None, :]
-                + phases[:, None] * positions[0][None, :]
-            )
-            approach_axes = self._interpolate_axis(current_rotation[:, 2], axes[0], phases)
             q_approach_tail, approach_position_error, approach_axis_error = self._continuous_ik(
-                approach_positions, approach_axes, start_q, abort_requested
+                approach_positions, approach_axes, start_q, abort_requested, "Approach"
             )
             q_approach = np.vstack((start_q[None, :], q_approach_tail))
 
             q_task_tail, task_position_error, task_axis_error = self._continuous_ik(
-                positions[1:], axes[1:], q_approach[-1], abort_requested
+                positions[1:], axes[1:], q_approach[-1], abort_requested, "Task"
             )
             q_task = np.vstack((q_approach[-1][None, :], q_task_tail))
             full_path = np.vstack((q_approach, q_task[1:]))
@@ -371,7 +414,7 @@ class CartesianTrajectoryCompiler:
             minimum_sv = self._collision_and_singularity_checks(full_path)
 
             task_length = float(np.sum(np.linalg.norm(np.diff(positions, axis=0), axis=1)))
-            approach_minimum = distance / max(self._approach_speed, 1e-4)
+            approach_minimum = approach_distance / max(self._approach_speed, 1e-4)
             task_minimum = task_length / max(self._task_speed, 1e-4)
             approach = self.time_parameterize(q_approach, approach_minimum)
             task = self.time_parameterize(q_task, task_minimum)
@@ -384,7 +427,7 @@ class CartesianTrajectoryCompiler:
                     "task_points": len(q_task),
                     "approach_duration_s": approach["duration"],
                     "task_duration_s": task["duration"],
-                    "approach_distance_m": distance,
+                    "approach_distance_m": approach_distance,
                     "task_length_m": task_length,
                     "maximum_joint_step_rad": maximum_step,
                     "minimum_jacobian_singular_value": minimum_sv,

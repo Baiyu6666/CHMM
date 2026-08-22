@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "kind": "heuristic_coarse_stage_boundaries",
+  "is_ground_truth": false,
+  "evaluation_role": "heuristic_true_cutpoints",
+  "time_reference": "seconds from the first sample on the common processing grid",
+  "boundary_convention": "half_open_stage_start_times",
+  "segmentation_basis": [
+    "stage_1_to_2: entry into a stable bar-relative scan manifold, inferred jointly from lateral position, height, tool orientation, and sustained forward bar-axis motion",
+    "stage_2_to_3: scan turnaround, inferred from the bar-axis velocity sign change together with the reproducible tool-orientation change",
+    "stage_3_to_4: departure from the scan manifold after reverse scanning, inferred from lateral or height divergence and loss of bar-axis tracking",
+    "no configured true-constraint threshold was used to place a cutpoint"
+  ],
+  "selection_policy": "last ten semantically complete attempts; first complete attempt retained in the all-candidates archive because the recording contains eleven complete attempts",
+  "demo_start_segmentation_basis": "end of the final stationary dwell north of the obstacle before sustained task motion, inspected from the raw approximately 200 Hz joint-state FK trajectory",
+  "bounds_times_s": [
+    [47.0, 53.0, 62.7, 69.3, 72.4],
+    [87.1, 94.0, 103.7, 109.8, 113.0],
+    [146.3, 150.7, 158.9, 164.6, 167.2],
+    [173.7, 180.0, 191.6, 197.5, 200.5],
+    [209.5, 215.0, 223.9, 228.8, 231.9],
+    [276.4, 281.0, 289.1, 293.6, 296.4],
+    [307.1, 313.0, 320.7, 325.3, 329.6],
+    [338.2, 344.0, 353.5, 358.1, 360.2],
+    [370.3, 375.5, 382.8, 387.5, 390.5],
+    [401.1, 407.5, 414.0, 418.5, 422.4]
+  ],
+  "demo_start_confidence": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "medium",
+    "high"
+  ],
+  "heuristic_cutpoint_confidence": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "medium",
+    "medium",
+    "medium",
+    "high",
+    "medium"
+  ],
+  "excluded_failed_interval_s": [234.5, 259.3]
+}

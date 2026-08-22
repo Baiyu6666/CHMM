@@ -10,7 +10,7 @@ import numpy as np
 from ..base import TaskBundle
 
 
-S4_DEMO_CACHE_VERSION = 3
+S4_DEMO_CACHE_VERSION = 4
 S4_FEATURE_EXTRACTOR_VERSION = 1
 _REQUIRED_FIELDS = (
     "trajectory",

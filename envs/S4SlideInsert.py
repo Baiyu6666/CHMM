@@ -2523,7 +2523,7 @@ class _S4GeneratorSupport:
         f_insert_min=1.00,
         orient_err_max_stage3=0.06,
         orient_err_max_stage4=0.04,
-        transition_half_window: int = 1,
+        transition_edge_range=(2, 3),
         noise_pos: float = 0.003,
         noise_misc: float = 0.02,
         seg_length_jitter=(5, 3, 6, 4),
@@ -2559,7 +2559,13 @@ class _S4GeneratorSupport:
         self.f_insert_min = float(f_insert_min)
         self.orient_err_max_stage3 = float(orient_err_max_stage3)
         self.orient_err_max_stage4 = float(orient_err_max_stage4)
-        self.transition_half_window = int(transition_half_window)
+        self.transition_edge_range = tuple(int(x) for x in transition_edge_range)
+        if (
+            len(self.transition_edge_range) != 2
+            or self.transition_edge_range[0] < 1
+            or self.transition_edge_range[1] < self.transition_edge_range[0]
+        ):
+            raise ValueError("transition_edge_range must be an increasing positive (min, max) pair.")
         self.noise_pos = float(noise_pos)
         self.noise_misc = float(noise_misc)
         self.seg_length_jitter = tuple(int(x) for x in seg_length_jitter)
@@ -2604,6 +2610,7 @@ class _S4GeneratorSupport:
                 "seg_lengths": list(self.seg_lengths),
                 "seg_length_jitter": list(self.seg_length_jitter),
                 "seg_length_scale_range": list(self.seg_length_scale_range),
+                "transition_edge_range": list(self.transition_edge_range),
             },
         }
 
@@ -2695,6 +2702,56 @@ class _S4GeneratorSupport:
             + h01[:, None] * p1
             + h11[:, None] * m1
         )
+        return out
+
+    @staticmethod
+    def _taper_speed_profile(
+        weights: np.ndarray,
+        *,
+        edge_count: int,
+        start_fraction: float | None = None,
+        end_fraction: float | None = None,
+    ) -> np.ndarray:
+        out = np.asarray(weights, dtype=float).copy()
+        count = min(max(int(edge_count), 1), len(out))
+        if count <= 0:
+            return out
+        peak = float(max(np.max(out), 1e-12))
+        if start_fraction is not None:
+            u = np.linspace(0.0, 1.0, count, endpoint=True)
+            blend = u * u * (3.0 - 2.0 * u)
+            target = peak * float(np.clip(start_fraction, 0.05, 1.0))
+            out[:count] = (1.0 - blend) * target + blend * out[:count]
+        if end_fraction is not None:
+            u = np.linspace(0.0, 1.0, count, endpoint=True)
+            blend = u * u * (3.0 - 2.0 * u)
+            target = peak * float(np.clip(end_fraction, 0.05, 1.0))
+            out[-count:] = (1.0 - blend) * out[-count:] + blend * target
+        return np.clip(out, 1e-6, None)
+
+    @staticmethod
+    def _anticipate_force_transition(
+        values: np.ndarray,
+        *,
+        boundary: int,
+        edge_count: int,
+    ) -> np.ndarray:
+        out = np.asarray(values, dtype=float).copy()
+        target_idx = int(boundary)
+        next_idx = target_idx + 1
+        if target_idx <= 0 or next_idx >= len(out):
+            return out
+        left = max(0, target_idx - max(int(edge_count), 1))
+        if left >= target_idx:
+            return out
+        start_value = float(out[left - 1] if left > 0 else out[left])
+        target_value = float(out[next_idx])
+        if target_value <= start_value:
+            return out
+        u = np.linspace(0.0, 1.0, target_idx - left + 1, endpoint=True)
+        blend = u * u * (3.0 - 2.0 * u)
+        ramp = start_value + blend * (target_value - start_value)
+        out[left:target_idx + 1] = np.maximum(out[left:target_idx + 1], ramp)
         return out
 
     def _sample_demo_latents(self, rng: np.random.RandomState):
@@ -2789,8 +2846,13 @@ class _S4GeneratorSupport:
             )
             force[mask] = np.maximum(stage_lower_bounds[mask], raw_stage_force)
 
-        for boundary in np.where(np.diff(labels) != 0)[0]:
-            force = self._blend_segment_boundary(force[:, None], boundary=int(boundary), half_window=max(2, self.transition_half_window + 1)).ravel()
+        boundaries = np.where(np.diff(labels) != 0)[0]
+        for boundary in boundaries:
+            force = self._anticipate_force_transition(
+                force,
+                boundary=int(boundary),
+                edge_count=1,
+            )
 
         if np.any(precontact_mask):
             pre_idx = np.where(precontact_mask)[0]
@@ -2802,7 +2864,10 @@ class _S4GeneratorSupport:
 
         force[constrained_mask] = np.maximum(force[constrained_mask], stage_lower_bounds[constrained_mask])
         force_out = force.copy()
-        force_out[~constrained_mask] = np.clip(force_out[~constrained_mask] + latents["force_bias"], 0.0, 0.02)
+        force_out[~constrained_mask] = np.maximum(
+            force_out[~constrained_mask] + latents["force_bias"],
+            0.0,
+        )
         return force_out
 
     @staticmethod
@@ -3040,10 +3105,10 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
     def get_feature_schema(self):
         return [
             {"id": 0, "name": "surf_dist", "description": "Distance to the table/guide surface"},
-            {"id": 1, "name": "center_dist", "description": "Absolute lateral distance from the slot centerline"},
+            {"id": 1, "name": "center_dist", "description": "Signed lateral error from the slot centerline"},
             {"id": 2, "name": "orient_err", "description": "Absolute angle error relative to the slot"},
-            {"id": 3, "name": "speed", "description": "3D translational speed"},
-            {"id": 4, "name": "angular_speed", "description": "Absolute angular speed"},
+            {"id": 3, "name": "speed", "description": "3D translational speed", "temporal_alignment": "backward_edge"},
+            {"id": 4, "name": "angular_speed", "description": "Absolute angular speed", "temporal_alignment": "backward_edge"},
             {"id": 5, "name": "normal_force", "description": "Measured normal contact force against the guide"},
             {"id": 6, "name": "noise", "description": "Auxiliary irrelevant feature"},
             {"id": 7, "name": "start_dist", "description": "Distance to the demo start pose"},
@@ -3311,7 +3376,7 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
             n0 = int(stage0.sum())
             y0_start = float(rng.uniform(-0.055, 0.055))
             y[stage0] = np.linspace(y0_start, 0.0, n0, endpoint=True)
-        for stage_idx, amp in [(1, 0.00018), (2, 0.00100), (3, 0.00055)]:
+        for stage_idx, amp in [(1, 0.00018), (2, 0.00080), (3, 0.00055)]:
             mask = labels == stage_idx
             if not np.any(mask):
                 continue
@@ -3460,6 +3525,19 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
         v4_demo = self.v4_target * constrained_speed_fraction
         stage3_speed_weights = self._speed_profile_weights(2, max(l3, 1), rng, phase + 0.8)
         stage4_speed_weights = self._speed_profile_weights(3, max(l4, 1), rng, phase + 1.2)
+        transition_rng = np.random.RandomState(int(seed) + 47017)
+        min_transition_edges, max_transition_edges = self.transition_edge_range
+        transition_edges = tuple(
+            int(transition_rng.randint(min_transition_edges, max_transition_edges + 1))
+            for _ in range(3)
+        )
+        latents["transition_edges"] = transition_edges
+        stage3_speed_weights = self._taper_speed_profile(
+            stage3_speed_weights,
+            edge_count=transition_edges[1],
+            start_fraction=v2_demo / max(v3_demo, 1e-12),
+            end_fraction=v4_demo / max(v3_demo, 1e-12),
+        )
 
         start_local = self.start + rng.randn(2) * self.start_jitter
         start_local[0] = float(np.clip(start_local[0], -0.2640, -0.1792))
@@ -3498,8 +3576,35 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
         seg1_path = self._planar_curve(start_local, stage1_end_local, rng, amp=0.0060, cycles=1.0, z_bias=0.0060)
         seg2_path = self._planar_curve(stage1_end_local, stage2_end_local, rng, amp=0.00025, cycles=1.1, z_bias=-0.00012)
 
-        seg1 = self._resample_planar_segment(seg1_path, l1, 0, rng, phase)
-        seg2 = self._resample_planar_segment(seg2_path, l2 + 1, 1, rng, phase + 0.4)[1:]
+        stage1_speed_weights = self._speed_profile_weights(0, max(l1 - 1, 1), rng, phase)
+        stage1_path_length = float(np.linalg.norm(np.diff(seg1_path, axis=0), axis=1).sum())
+        stage1_peak_speed = (
+            stage1_path_length
+            * float(np.max(stage1_speed_weights))
+            / max(float(np.sum(stage1_speed_weights)) * self.dt, 1e-12)
+        )
+        stage1_speed_weights = self._taper_speed_profile(
+            stage1_speed_weights,
+            edge_count=transition_edges[0],
+            end_fraction=v2_demo / max(stage1_peak_speed, 1e-12),
+        )
+        stage2_speed_weights = self._speed_profile_weights(1, max(l2, 1), rng, phase + 0.4)
+        seg1 = self._resample_planar_segment(
+            seg1_path,
+            l1,
+            0,
+            rng,
+            phase,
+            edge_weights=stage1_speed_weights,
+        )
+        seg2 = self._resample_planar_segment(
+            seg2_path,
+            l2 + 1,
+            1,
+            rng,
+            phase + 0.4,
+            edge_weights=stage2_speed_weights,
+        )[1:]
         seg3 = self._resample_planar_segment(
             seg3_path,
             l3 + 1,
@@ -3541,13 +3646,17 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
         if l4 > 0:
             u4_theta = np.linspace(0.0, 1.0, l4, endpoint=True)
             half_wave4 = np.maximum(np.sin(1.95 * np.pi * u4_theta - 0.5 * np.pi + 0.16 * latents["phase"]), 0.0)
-            margin4 = 0.58 * self.orient_err_max_stage4 * half_wave4 - 0.16 * self.orient_err_max_stage4
+            margin4 = 0.75 * self.orient_err_max_stage4 * half_wave4 - 0.16 * self.orient_err_max_stage4
             abs_theta4 = np.clip(self.orient_err_max_stage4 - margin4, 0.0, 0.96 * self.orient_err_max_stage4)
             theta4 = sign4 * self._smooth_trace(abs_theta4, kernel_size=3)
         theta = np.concatenate([theta1, theta2, theta3, theta4])
-        theta = self._blend_segment_boundary(theta[:, None], boundary=l1 - 1, half_window=self.transition_half_window).ravel()
-        theta = self._blend_segment_boundary(theta[:, None], boundary=l1 + l2 - 1, half_window=self.transition_half_window).ravel()
-        theta = self._blend_segment_boundary(theta[:, None], boundary=l1 + l2 + l3 - 1, half_window=self.transition_half_window).ravel()
+        boundaries = (l1 - 1, l1 + l2 - 1, l1 + l2 + l3 - 1)
+        for boundary, edge_count in zip(boundaries, transition_edges):
+            theta = self._blend_segment_boundary(
+                theta[:, None],
+                boundary=boundary,
+                half_window=max(1, edge_count // 2),
+            ).ravel()
 
         theta_noise_scale = np.take(np.array([1.0, 0.30, 0.08, 0.05], dtype=float), labels)
         theta += self._smooth_noise(rng, len(theta), 0.28 * self.noise_misc, kernel_size=11) * theta_noise_scale
@@ -3565,8 +3674,12 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
             -0.95 * self.orient_err_max_stage4,
             0.95 * self.orient_err_max_stage4,
         )
-        for boundary in (l1 - 1, l1 + l2 - 1, l1 + l2 + l3 - 1):
-            theta = self._blend_segment_boundary(theta[:, None], boundary=boundary, half_window=self.transition_half_window).ravel()
+        for boundary, edge_count in zip(boundaries, transition_edges):
+            theta = self._blend_segment_boundary(
+                theta[:, None],
+                boundary=boundary,
+                half_window=max(1, edge_count // 2),
+            ).ravel()
         theta[l1 + l2:l1 + l2 + l3] = np.clip(
             theta[l1 + l2:l1 + l2 + l3],
             -0.98 * self.orient_err_max_stage3,
@@ -3577,7 +3690,6 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
             -0.98 * self.orient_err_max_stage4,
             0.98 * self.orient_err_max_stage4,
         )
-
         normal_load = self._scale_normal_load_trace(
             self._compute_force_signal(pos, theta, stage3_end_local[0], labels, rng, latents)
         )
@@ -3884,7 +3996,7 @@ class S4SlideInsertEnv(_S4GeneratorSupport):
         angular_speed = np.abs(omega)
         surf_dist = np.abs(xyz[:, 2] - self.surface_height(xyz[:, :2]))
         rail_proj = self.project_to_rail(xyz[:, :2])
-        center_dist = np.asarray(rail_proj["dist"], dtype=float)
+        center_dist = np.asarray(rail_proj["signed_dist"], dtype=float)
         orient_err = np.abs(self._wrap_to_pi(theta - np.asarray(rail_proj["angle"], dtype=float)))
         normal_load = self._lookup_cached_normal_load_trace(traj)
         if normal_load is None:

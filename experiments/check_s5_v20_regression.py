@@ -17,7 +17,7 @@ from envs.s5.regression import fingerprint_s5_analytic_bundle, verify_s5_v20_cac
 from envs.s5.time_parameterization import FixedStepTimeParameterizer, gaussian_slowdown_weights
 
 
-DEFAULT_CACHE = PROJECT_ROOT / "envs" / "demo_cache" / "S5SphereInspect" / "seed_127_0dd45ba56eadab53.npz"
+DEFAULT_CACHE = PROJECT_ROOT / "envs" / "demo_cache" / "S5SphereInspect" / "seed_127_efe3f8f7e1b0cf81.npz"
 DEFAULT_FIXTURE = PROJECT_ROOT / "envs" / "s5" / "fixtures" / "s5_v20_seed127_fingerprint.json"
 DEFAULT_ANALYTIC_FIXTURE = PROJECT_ROOT / "envs" / "s5" / "fixtures" / "s5_v20_analytic_seed127_fingerprint.json"
 

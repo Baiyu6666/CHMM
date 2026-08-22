@@ -1,0 +1,71 @@
+{
+  "analysis_policy": {
+    "uses_configured_true_constraints": false,
+    "uses_task_semantics": true,
+    "signals": [
+      "bar-relative progress and lateral position",
+      "height above the table",
+      "tool orientation",
+      "bar-axis velocity direction",
+      "three-dimensional distance to the tracked obstacle"
+    ]
+  },
+  "demo_start_crop": {
+    "raw_joint_state_hz": 199.264,
+    "policy": "end of the final low-speed dwell north of the obstacle before sustained task motion",
+    "old_start_times_s": [36.5, 75.5, 146.2, 169.3, 209.5, 259.3, 299.5, 331.1, 361.6, 401.9],
+    "corrected_start_times_s": [47.0, 87.1, 146.3, 173.7, 209.5, 276.4, 307.1, 338.2, 370.3, 401.1],
+    "start_north_offset_m": [0.120, 0.074, 0.115, 0.091, 0.127, 0.112, 0.186, 0.094, 0.098, 0.101],
+    "stage_1_duration_s": [6.0, 6.9, 4.4, 6.3, 5.5, 4.6, 5.9, 5.8, 5.2, 6.4]
+  },
+  "scene_positions_robot": {
+    "bar_reference_position_m": [0.60925747, -0.26304179, 0.04913750],
+    "bar_axis_xy": [0.03835443, -0.99926420],
+    "obstacle_center_m": [0.59962526, -0.01229183, 0.06274782]
+  },
+  "local_cutpoints_s": [
+    [6.0, 15.7, 22.3],
+    [6.9, 16.6, 22.7],
+    [4.4, 12.6, 18.3],
+    [6.3, 17.9, 23.8],
+    [5.5, 14.4, 19.3],
+    [4.6, 12.7, 17.2],
+    [5.9, 13.6, 18.2],
+    [5.8, 15.3, 19.9],
+    [5.2, 12.5, 17.2],
+    [6.4, 12.9, 17.4]
+  ],
+  "forward_scan": {
+    "progress_delta_m_median": 0.278,
+    "progress_delta_m_range": [0.262, 0.298],
+    "monotonic_fraction_median": 0.975,
+    "monotonic_fraction_range": [0.944, 1.0],
+    "lateral_abs_median_m_median": 0.009,
+    "lateral_abs_p90_m_median": 0.018,
+    "height_median_m_median": 0.067,
+    "tool_pitch_median_rad_median": 1.522,
+    "tool_pitch_median_rad_range": [1.469, 1.561]
+  },
+  "reverse_scan": {
+    "progress_delta_m_median": -0.219,
+    "progress_delta_m_range": [-0.255, -0.172],
+    "monotonic_fraction_median": 0.958,
+    "monotonic_fraction_range": [0.911, 1.0],
+    "lateral_abs_median_m_median": 0.015,
+    "lateral_abs_p90_m_median": 0.024,
+    "height_median_m_median": 0.061,
+    "tool_pitch_median_rad_median": 2.201,
+    "tool_pitch_median_rad_range": [2.067, 2.308]
+  },
+  "approach": {
+    "minimum_obstacle_3d_center_distance_m_range": [0.132, 0.197],
+    "minimum_obstacle_planar_center_distance_m_range": [0.029, 0.125],
+    "interpretation": "Several demonstrations pass above the obstacle rather than maintaining planar clearance; the current planar obstacle feature is not an accurate description of the demonstrated safety behavior."
+  },
+  "quality_flags": {
+    "demo_7": "lowest reverse-scan monotonicity",
+    "demo_8": "shortest reverse-scan displacement",
+    "demo_10": "largest reverse-scan lateral spread"
+  },
+  "sensor_caveat": "The static scene is locked from the first 60 seconds because later relative OptiTrack object poses are corrupted."
+}

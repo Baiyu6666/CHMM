@@ -11,7 +11,7 @@ MAP_POSTHOC_PARAMETER_KEYS = (
     "constraint_core_trim",
     "map_mstep_boundary_trim",
     "truncated_z_soft_boundary_scale",
-    "truncated_z_observation_noise_scale",
+    "map_active_sigma_floor",
     "truncated_z_half_t_scale_quantile",
     "map_eq_sigma",
     "map_c_bg",
@@ -27,11 +27,6 @@ MAP_POSTHOC_PARAMETER_KEYS = (
     "map_vote_prior_scope",
     "map_refit_winning_voters",
 )
-
-MAP_JOINT_METHOD_NAMES = frozenset(
-    {"map", "map_pooled", "map_balanced_pooled", "map_balanced_vote"}
-)
-
 
 def load_json(path: str | Path) -> Dict[str, Any]:
     with open(path, "r") as f:
@@ -64,13 +59,7 @@ def resolve_dataset_method_override(
     method_name: str,
     dataset_method_overrides: Dict[str, Any],
 ) -> Dict[str, Any]:
-    method_name = str(method_name)
-    if method_name not in MAP_JOINT_METHOD_NAMES or method_name == "map":
-        return dict(dataset_method_overrides.get(method_name, {}))
-    return deep_merge(
-        dict(dataset_method_overrides.get("map", {})),
-        dict(dataset_method_overrides.get(method_name, {})),
-    )
+    return dict(dataset_method_overrides.get(str(method_name), {}))
 
 
 def inherit_map_posthoc_parameters(

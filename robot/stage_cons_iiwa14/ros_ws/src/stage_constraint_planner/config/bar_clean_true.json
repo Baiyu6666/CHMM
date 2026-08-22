@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "task_id": "BarClean",
+  "stage_names": [
+    "approach",
+    "longitudinal_clean",
+    "free_reposition",
+    "transverse_discharge",
+    "depart"
+  ],
+  "visualization_features": [
+    "obstacle_clearance",
+    "surface_dist",
+    "bar_lateral_offset",
+    "tool_pitch",
+    "tool_plane_err",
+    "bar_axial_offset"
+  ],
+  "feature_units": {
+    "obstacle_clearance": "m",
+    "surface_dist": "m",
+    "bar_lateral_offset": "m",
+    "tool_pitch": "rad",
+    "tool_plane_err": "rad",
+    "bar_axial_offset": "m"
+  },
+  "endpoint_definition": {
+    "source": "BarInspect fitted S1/S2 endpoints plus task-designed S3/S4 goals",
+    "position_only": true,
+    "coordinate_frame": "bar task frame [axial, lateral, table-normal]"
+  },
+  "endpoint_coordinate_frame": "bar_task_frame",
+  "stage_endpoint_positions_bar": [
+    [-0.10062747, 0.00796490, 0.16696779],
+    [0.17806532, -0.00284781, 0.17843280],
+    [0.17806532, 0.06715219, 0.17843280],
+    [0.17806532, -0.19284781, 0.17843280]
+  ],
+  "bar_axial_offset_reference": 0.17806532,
+  "table_surface_point": [0.0, 0.0, 0.14584],
+  "table_normal": [0.0, 0.0, 1.0],
+  "bar_axis_local": [1.0, 0.0, 0.0],
+  "obstacle_radius": 0.05,
+  "position_smooth_scale": 0.02,
+  "axis_smooth_scale": 0.20,
+  "constraint_transition": {
+    "fraction": 0.20,
+    "min_distance": 0.03,
+    "max_distance": 0.08
+  },
+  "optimizer_weights": {
+    "constraint": 3.0,
+    "position_first": 0.12,
+    "position_second": 0.65,
+    "axis_first": 0.10,
+    "axis_second": 0.55,
+    "axis_norm": 0.05
+  },
+  "constraint_terms": [
+    {
+      "feature_name": "obstacle_clearance",
+      "stage": 0,
+      "semantics": "lower_bound",
+      "value": 0.020,
+      "scale": 0.0234,
+      "weight": 1.5
+    },
+    {
+      "feature_name": "surface_dist",
+      "stage": 1,
+      "semantics": "target_value",
+      "value": 0.08,
+      "scale": 0.0071
+    },
+    {
+      "feature_name": "bar_lateral_offset",
+      "stage": 1,
+      "semantics": "target_value",
+      "value": 0.0,
+      "scale": 0.0142
+    },
+    {
+      "feature_name": "tool_pitch",
+      "stage": 1,
+      "semantics": "target_value",
+      "value": 1.5707963267948966,
+      "scale": 0.0482
+    },
+    {
+      "feature_name": "tool_plane_err",
+      "stage": 1,
+      "semantics": "target_value",
+      "value": 0.0,
+      "scale": 0.0411
+    },
+    {
+      "feature_name": "bar_axial_offset",
+      "stage": 3,
+      "semantics": "target_value",
+      "value": 0.0,
+      "scale": 0.003,
+      "weight": 1.5
+    }
+  ]
+}

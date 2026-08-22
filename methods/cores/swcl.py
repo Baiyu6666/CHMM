@@ -594,6 +594,7 @@ class StageWiseConstraintLearningModel:
                 "column_idx": int(col_idx),
                 "name": name,
                 "description": str(raw_spec.get("description", "")),
+                "temporal_alignment": raw_spec.get("temporal_alignment"),
                 "local_idx": int(local_idx),
             }
             self.feature_specs.append(spec)

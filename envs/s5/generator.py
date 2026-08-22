@@ -198,9 +198,9 @@ class S5DemoGeneratorMixin:
         return stabilize_tail_weights(
             self._make_deliberate_slowdown_weights(
                 num_edges,
-                depth=self.stage4_speed_valley_depth,
-                center=self.stage4_speed_valley_center,
-                width=self.stage4_speed_valley_width,
+                depth=self.stage4_speed_valley_depths,
+                center=self.stage4_speed_valley_centers,
+                width=self.stage4_speed_valley_widths,
             ),
             tail_len=2,
             floor_ratio=0.98,
@@ -774,7 +774,7 @@ class S5DemoGeneratorMixin:
             + theta_pull * float(self.stage2_lateral_center_theta)
             + float(rng.uniform(-self.stage345_top_theta_jitter, self.stage345_top_theta_jitter))
         )
-        n_repos_end = self._normal_from_spherical(theta_repos, phi_cap)
+        n_shell_anchor = self._normal_from_spherical(theta_repos, phi_cap)
 
         p_contact = self.sphere_center + self.sphere_radius * n_contact
         p_start = (
@@ -822,7 +822,7 @@ class S5DemoGeneratorMixin:
         stage2 = stage2_timing.positions
         shell_offset = float(self.true_constraints["surface_near_target"])
         shell_blend = float(rng.uniform(self.stage3_shell_blend_range[0], self.stage3_shell_blend_range[1]))
-        n_shell_start = self._unit((1.0 - shell_blend) * n_trace_end + shell_blend * n_repos_end)
+        n_shell_start = self._unit((1.0 - shell_blend) * n_trace_end + shell_blend * n_shell_anchor)
         stage3_raw = self._build_stage3_transition(
             n_trace_end,
             n_shell_start,
@@ -846,12 +846,19 @@ class S5DemoGeneratorMixin:
             radial_blend=0.8,
             speed_intent=lambda n, w=stage3_intent_weights: w,
         )
-        stage4_raw = self._make_spherical_shell_path(
-            n_shell_start,
-            n_repos_end,
+        theta_shell_start, phi_shell_start = self._spherical_from_normal(n_shell_start)
+        stage4_trace_angle = float(rng.uniform(*self.stage4_trace_angle_range))
+        stage4_delta_theta = min(
+            stage4_trace_angle / max(float(np.sin(phi_shell_start)), 1e-6),
+            0.92 * np.pi,
+        )
+        theta_shell_end = theta_shell_start + lateral_sign * stage4_delta_theta
+        stage4_raw = self._make_latitude_surface_path(
+            theta_shell_start,
+            theta_shell_end,
+            phi_shell_start,
             max(int(5 * l4), 96),
             radius_offset=shell_offset,
-            detour_angle=float(max(self.stage4_shell_detour_angle, 0.0)),
         )
         stage4_timing = self._time_parameterize_path(
             stage4_raw,
@@ -864,6 +871,7 @@ class S5DemoGeneratorMixin:
         )
         stage4 = stage4_timing.positions
         stage4 = self._regularize_tail_spacing(stage4, tail_points=5)
+        n_repos_end = self._unit(stage4[-1] - self.sphere_center)
         stage5_geometry = self._build_departure_geometry(stage4[-1], n_repos_end, rng=rng)
         stage4 = self._repair_stage4_departure_tail(
             stage4,
@@ -1044,7 +1052,7 @@ class S5DemoGeneratorMixin:
                     "stage1": "approach_taper",
                     "stage2": "deliberate_gaussian_slowdowns",
                     "stage3": "smooth_correlated_variation",
-                    "stage4": "deliberate_gaussian_slowdown",
+                    "stage4": "deliberate_gaussian_slowdowns",
                     "stage5": "constant_departure_intent",
                 },
             },

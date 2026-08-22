@@ -23,6 +23,7 @@ except ModuleNotFoundError:
     Axes3D = None
 
 from .io import learner_plot_dir, save_figure
+from .top_view_scene import draw_top_view_scene, top_view_scene_limit_points
 
 PAPER_FIGSIZE = (8.4, 6.0)
 PAPER_TITLE_SIZE = 9
@@ -843,8 +844,21 @@ def _trajectory_figsize(learner, *, three_row=False):
     return (9.2, 8.6) if three_row else PAPER_FIGSIZE
 
 
-def _configure_2d_trajectory_axes(ax, env, pts):
+def _configure_2d_trajectory_axes(
+    ax,
+    env,
+    pts,
+    demo_index=None,
+    all_demos=False,
+):
     pts = np.asarray(pts, dtype=float)
+    scene_points = top_view_scene_limit_points(
+        env,
+        demo_index=demo_index,
+        all_demos=all_demos,
+    )
+    if len(scene_points):
+        pts = np.vstack([pts, scene_points])
     xmin, ymin = pts.min(axis=0)
     xmax, ymax = pts.max(axis=0)
     dx = float(max(xmax - xmin, 1e-6))
@@ -994,7 +1008,13 @@ def _draw_sphere_projection_circle(ax, env, dims):
     ax.add_patch(circle)
 
 
-def _draw_planar_obstacles(ax, env):
+def _draw_planar_obstacles(ax, env, demo_index=None, all_demos=False):
+    draw_top_view_scene(
+        ax,
+        env,
+        demo_index=demo_index,
+        all_demos=all_demos,
+    )
     if hasattr(env, "stage1_aux_obstacle_centers") and hasattr(env, "stage1_aux_obstacle_radii"):
         cx, cy = np.asarray(env.obs_center, dtype=float).reshape(-1)[:2]
         ax.add_patch(plt.Circle((cx, cy), float(env.obs_radius), color="gray", fill=False, linestyle="-", label="obstacle"))
@@ -1363,7 +1383,7 @@ def _draw_true_cutpoint_trajectory_panel(ax, learner, demo_idx: int):
     if _is_sphere_inspect(learner.env):
         _draw_sphere_projection_circle(ax, learner.env, dims=(0, 1))
     else:
-        _draw_planar_obstacles(ax, learner.env)
+        _draw_planar_obstacles(ax, learner.env, demo_index=demo_idx)
 
     for stage_idx, (s, e) in enumerate(zip(starts, ends)):
         color = colors[stage_idx % len(colors)]
@@ -1406,7 +1426,12 @@ def _draw_true_cutpoint_trajectory_panel(ax, learner, demo_idx: int):
             label="true cutpoints" if cp_idx == 0 else "",
         )
 
-    _configure_2d_trajectory_axes(ax, learner.env, X[:, :2])
+    _configure_2d_trajectory_axes(
+        ax,
+        learner.env,
+        X[:, :2],
+        demo_index=demo_idx,
+    )
     ax.set_xlabel("x", fontsize=7.0, labelpad=0.6)
     ax.set_ylabel("y", fontsize=7.0, labelpad=0.6)
     ax.tick_params(labelsize=6.2, pad=1.0)
@@ -1599,7 +1624,7 @@ def _draw_trajectories(ax, learner, it, demo_idx=0):
     for k, (s, e) in enumerate(zip(starts, ends)):
         ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], color=colors[k], s=traj_marker_size, alpha=0.32 if is_press else 0.45)
 
-    _draw_planar_obstacles(ax, learner.env)
+    _draw_planar_obstacles(ax, learner.env, demo_index=demo_idx)
     sg = _true_stage_end_point(learner.env, "subgoal", demo_idx=demo_idx)
     if sg is not None:
         sg = _xy_point(sg)
@@ -1625,7 +1650,12 @@ def _draw_trajectories(ax, learner, it, demo_idx=0):
         pts.append(_xy_point(sg)[None, :])
     if gg is not None:
         pts.append(_xy_point(gg)[None, :])
-    _configure_2d_trajectory_axes(ax, learner.env, np.concatenate(pts, axis=0))
+    _configure_2d_trajectory_axes(
+        ax,
+        learner.env,
+        np.concatenate(pts, axis=0),
+        demo_index=demo_idx,
+    )
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     _legend(ax, outside=is_press)
 
@@ -1643,7 +1673,7 @@ def _draw_trajectories_overview(ax, learner, it):
         for k, (s, e) in enumerate(zip(starts, ends)):
             ax.scatter(X[s : e + 1, 0], X[s : e + 1, 1], color=colors[k], s=traj_marker_size, alpha=0.28 if is_press else 0.35)
 
-    _draw_planar_obstacles(ax, learner.env)
+    _draw_planar_obstacles(ax, learner.env, all_demos=True)
     for pt_idx, pt in enumerate(_all_true_stage_end_points(learner.env, "subgoal")):
         xy = _xy_point(pt)
         ax.scatter(xy[0], xy[1], color="black", marker="X", s=goal_marker_size, alpha=0.55, label="true stage end" if pt_idx == 0 else "")
@@ -1669,7 +1699,12 @@ def _draw_trajectories_overview(ax, learner, it):
         pts.append(_xy_point(pt)[None, :])
     for pt in _all_true_stage_end_points(learner.env, "goal"):
         pts.append(_xy_point(pt)[None, :])
-    _configure_2d_trajectory_axes(ax, learner.env, np.concatenate(pts, axis=0))
+    _configure_2d_trajectory_axes(
+        ax,
+        learner.env,
+        np.concatenate(pts, axis=0),
+        all_demos=True,
+    )
     ax.tick_params(labelsize=PAPER_TICK_SIZE)
     _legend(ax, outside=is_press)
 

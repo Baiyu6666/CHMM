@@ -7,8 +7,11 @@ from .registry import ENV_REGISTRY, load_env
 
 
 _LAZY_EXPORTS = {
-    "BarInsepectEnv": (".BarInsepect", "BarInsepectEnv"),
-    "load_BarInsepect": (".BarInsepect", "load_BarInsepect"),
+    "BarCleanEnv": (".BarClean", "BarCleanEnv"),
+    "load_BarClean": (".BarClean", "load_BarClean"),
+    "BarInspectEnv": (".BarInspect", "BarInspectEnv"),
+    "BarInspectScene": (".BarInspect", "BarInspectScene"),
+    "load_BarInspect": (".BarInspect", "load_BarInspect"),
     "S3ObsAvoidEnv": (".S3ObsAvoid", "S3ObsAvoidEnv"),
     "load_S3ObsAvoid": (".S3ObsAvoid", "load_S3ObsAvoid"),
     "S3ObsAvoidRealEnv": (".S3ObsAvoidReal", "S3ObsAvoidRealEnv"),
@@ -31,14 +34,17 @@ def __getattr__(name):
 
 
 __all__ = [
-    "BarInsepectEnv",
+    "BarCleanEnv",
+    "BarInspectEnv",
+    "BarInspectScene",
     "ENV_REGISTRY",
     "S3ObsAvoidEnv",
     "S3ObsAvoidRealEnv",
     "S4SlideInsertEnv",
     "S5SphereInspectEnv",
     "TaskBundle",
-    "load_BarInsepect",
+    "load_BarClean",
+    "load_BarInspect",
     "load_S3ObsAvoid",
     "load_S3ObsAvoidReal",
     "load_S4SlideInsert",

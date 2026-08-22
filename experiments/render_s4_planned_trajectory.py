@@ -732,13 +732,11 @@ def _smooth_stage_speed_timing(
                     f"s{stage_no}:orient_err",
                     float(env.theta_stage2_end),
                 )
-                signed = np.asarray(proj.get("signed_dist", np.zeros(idx.size)), dtype=float).reshape(-1)
-                sign = 1.0 if signed.size == 0 or float(np.nanmean(signed)) >= 0.0 else -1.0
                 points, _tangents, normals, angles = env.rail_pose_at_s(s_new)
                 candidate = np.zeros_like(block)
                 candidate[:, :2] = (
                     np.asarray(points, dtype=float).reshape((-1, 2))
-                    + np.asarray(normals, dtype=float).reshape((-1, 2)) * (sign * abs(float(center)))
+                    + np.asarray(normals, dtype=float).reshape((-1, 2)) * float(center)
                 )
                 candidate[:, 2] = env.surface_height(candidate[:, :2]) + float(surf)
                 candidate[:, 3] = np.asarray(angles, dtype=float).reshape(-1) + float(orient)
@@ -920,18 +918,14 @@ def _plan_s4_stage_constraint_optimizer(
             )
             if hasattr(env, "project_to_rail") and hasattr(env, "rail_pose_at_s"):
                 proj = env.project_to_rail(traj[mask, :2])
-                signed = np.asarray(proj["signed_dist"], dtype=float)
-                sign = 1.0 if float(np.mean(signed)) >= 0.0 else -1.0
                 s_proj = np.asarray(proj["s"], dtype=float)
                 points, _tangents, normals, angles = env.rail_pose_at_s(s_proj)
-                target_xy = np.asarray(points, dtype=float).reshape((-1, 2)) + np.asarray(normals, dtype=float).reshape((-1, 2)) * (sign * abs(float(center)))
+                target_xy = np.asarray(points, dtype=float).reshape((-1, 2)) + np.asarray(normals, dtype=float).reshape((-1, 2)) * float(center)
                 target_theta = np.asarray(angles, dtype=float).reshape(-1) + float(orient)
                 traj[mask, :2] = (1.0 - alpha) * traj[mask, :2] + alpha * target_xy
                 traj[mask, 3] = (1.0 - alpha) * traj[mask, 3] + alpha * target_theta
             else:
-                current_y = traj[mask, 1]
-                sign = 1.0 if float(np.mean(current_y)) >= float(env.clearance_target) else -1.0
-                target_y = float(env.clearance_target) if abs(center) < 1e-9 else float(env.clearance_target) + sign * abs(float(center))
+                target_y = float(env.clearance_target) + float(center)
                 traj[mask, 1] = (1.0 - alpha) * traj[mask, 1] + alpha * target_y
                 traj[mask, 3] = (1.0 - alpha) * traj[mask, 3] + alpha * (float(env.slot_theta) + float(orient))
             target_z = env.surface_height(traj[mask, :2]) + float(surf)

@@ -23,8 +23,8 @@
     </node>
   </group>
 
-  <include file="$(find stage_placeholder_planner)/launch/straight_line_planner.launch">
+  <include file="$(find stage_constraint_planner)/launch/task_planner.launch">
     <arg name="frame_id" value="$(arg robot_name)_link_0"/>
-    <arg name="sample_spacing" value="0.01"/>
+    <arg name="output_spacing" value="0.005"/>
   </include>
 </launch>

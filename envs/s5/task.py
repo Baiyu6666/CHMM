@@ -64,7 +64,7 @@ class S5SphereInspectEnv(
         stage2_trace_angle_range=(1.184, 1.376),
         stage2_lateral_center_theta=0.0,
         stage2_lateral_phi_bump_range=(-0.035 * np.pi, 0.035 * np.pi),
-        stage4_shell_detour_angle=0.10,
+        stage4_trace_angle_range=(0.52, 0.66),
         stage1_target_speed_ratio=0.68,
         stage1_speed_taper_fraction=1.0,
         stage1_speed_taper_end_ratio=0.78,
@@ -78,9 +78,9 @@ class S5SphereInspectEnv(
         stage3_speed_jitter_std=0.04,
         stage3_speed_jitter_clip=0.09,
         stage3_speed_jitter_kernel=5,
-        stage4_speed_valley_depth=0.08,
-        stage4_speed_valley_center=0.54,
-        stage4_speed_valley_width=0.025,
+        stage4_speed_valley_depths=(0.20, 0.10),
+        stage4_speed_valley_centers=(0.35, 0.72),
+        stage4_speed_valley_widths=(0.055, 0.045),
         stage2_normal_error_policy="random_control_points_quantile_matched",
         stage2_normal_error_control_point_count_range=(6, 10),
         stage2_normal_error_depth_scale_std=0.05,
@@ -163,7 +163,7 @@ class S5SphereInspectEnv(
         self.stage2_lateral_center_theta = float(stage2_lateral_center_theta)
         bump_lo, bump_hi = stage2_lateral_phi_bump_range
         self.stage2_lateral_phi_bump_range = (float(bump_lo), float(bump_hi))
-        self.stage4_shell_detour_angle = float(stage4_shell_detour_angle)
+        self.stage4_trace_angle_range = tuple(float(x) for x in stage4_trace_angle_range)
         self.stage1_target_speed_ratio = float(stage1_target_speed_ratio)
         self.stage1_speed_taper_fraction = float(stage1_speed_taper_fraction)
         self.stage1_speed_taper_end_ratio = (
@@ -179,9 +179,9 @@ class S5SphereInspectEnv(
         self.stage3_speed_jitter_std = float(stage3_speed_jitter_std)
         self.stage3_speed_jitter_clip = float(stage3_speed_jitter_clip)
         self.stage3_speed_jitter_kernel = int(max(int(stage3_speed_jitter_kernel), 1))
-        self.stage4_speed_valley_depth = float(stage4_speed_valley_depth)
-        self.stage4_speed_valley_center = float(stage4_speed_valley_center)
-        self.stage4_speed_valley_width = float(stage4_speed_valley_width)
+        self.stage4_speed_valley_depths = tuple(float(x) for x in np.asarray(stage4_speed_valley_depths, dtype=float).reshape(-1))
+        self.stage4_speed_valley_centers = tuple(float(x) for x in np.asarray(stage4_speed_valley_centers, dtype=float).reshape(-1))
+        self.stage4_speed_valley_widths = tuple(float(x) for x in np.asarray(stage4_speed_valley_widths, dtype=float).reshape(-1))
         self.stage2_normal_error_policy = str(stage2_normal_error_policy).strip().lower()
         if self.stage2_normal_error_policy not in {
             "fixed_periodic_v20",
@@ -352,7 +352,7 @@ class S5SphereInspectEnv(
                 "stage345_top_phi_range": list(self.stage345_top_phi_range),
                 "stage345_top_theta_pull": float(self.stage345_top_theta_pull),
                 "stage345_top_theta_jitter": float(self.stage345_top_theta_jitter),
-                "stage4_shell_detour_angle": float(self.stage4_shell_detour_angle),
+                "stage4_trace_angle_range": list(self.stage4_trace_angle_range),
                 "stage2_deliberate_slowdowns": {
                     "kind": "gaussian_speed_intent_events",
                     "depths": list(self.stage2_speed_valley_depths),
@@ -366,9 +366,9 @@ class S5SphereInspectEnv(
                 },
                 "stage4_deliberate_slowdowns": {
                     "kind": "gaussian_speed_intent_events",
-                    "depth": float(self.stage4_speed_valley_depth),
-                    "center": float(self.stage4_speed_valley_center),
-                    "width": float(self.stage4_speed_valley_width),
+                    "depths": list(self.stage4_speed_valley_depths),
+                    "centers": list(self.stage4_speed_valley_centers),
+                    "widths": list(self.stage4_speed_valley_widths),
                 },
                 "tool_axis": {
                     "stage2_normal_error_policy": str(self.stage2_normal_error_policy),

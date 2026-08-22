@@ -57,7 +57,8 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
 # installed wholesale in this ROS image.
 RUN python3 -m pip install --no-cache-dir \
       numpy==1.24.4 \
-      pybullet==3.2.7
+      pybullet==3.2.7 \
+      scipy==1.10.1
 
 # The FRI client is not vendored here. BuildKit forwards the user's SSH agent
 # only for this layer, so private-repository credentials are not stored.

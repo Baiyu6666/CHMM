@@ -18,6 +18,8 @@ from std_srvs.srv import SetBool, Trigger
 
 
 class DemoGui:
+    TASK_IDS = {"BarInspect", "BarClean"}
+
     def __init__(self):
         self._lock = threading.RLock()
         self._service_lock = threading.Lock()
@@ -47,6 +49,10 @@ class DemoGui:
         self._last_ee = 0.0
         self._last_trace_sample = 0.0
         self._message = "Waiting for robot data"
+        self._task_id = str(rospy.get_param("~task_id", "BarInspect"))
+        if self._task_id not in self.TASK_IDS:
+            raise ValueError("Unknown initial task id {}".format(self._task_id))
+        rospy.set_param("/demo_recorder/task_id", self._task_id)
 
         self._root_frame = rospy.get_param("~root_frame", "iiwa14_link_0")
         self._ee_frame = rospy.get_param("~ee_frame", "iiwa14_link_ee")
@@ -323,6 +329,8 @@ class DemoGui:
         with self._lock:
             return {
                 "ok": True,
+                "task_id": self._task_id,
+                "available_tasks": sorted(self.TASK_IDS),
                 "mode_active": self._driver_demo_active,
                 "mode_requested": self._mode_requested,
                 "ready": all(dependencies.values()),
@@ -425,6 +433,7 @@ class DemoGui:
                 if enabled:
                     label = str(payload.get("label", "demo")).strip() or "demo"
                     notes = str(payload.get("notes", "")).strip()
+                    rospy.set_param("/demo_recorder/task_id", self._task_id)
                     rospy.set_param("/demo_recorder/label", label)
                     rospy.set_param("/demo_recorder/operator_notes", notes)
                     response = self._record_start_service()
@@ -435,6 +444,19 @@ class DemoGui:
             with self._lock:
                 self._message = response.message
             return bool(response.success), response.message
+
+    def set_task(self, task_id):
+        task_id = str(task_id).strip()
+        if task_id not in self.TASK_IDS:
+            return False, "Unknown task id {}".format(task_id)
+        with self._service_lock:
+            with self._lock:
+                if self._recorder_state == "recording":
+                    return False, "Stop the current recording before switching tasks"
+                self._task_id = task_id
+                self._message = "{} selected for demonstration collection".format(task_id)
+            rospy.set_param("/demo_recorder/task_id", task_id)
+        return True, self._message
 
     def reset_trace(self):
         with self._lock:
@@ -497,6 +519,8 @@ class DemoGui:
                         ok, message = gui.set_recording(
                             bool(payload["enabled"]), payload
                         )
+                    elif self.path == "/api/task":
+                        ok, message = gui.set_task(payload["task_id"])
                     elif self.path == "/api/trace/reset":
                         ok, message = gui.reset_trace()
                     else:

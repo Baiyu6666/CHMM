@@ -42,6 +42,8 @@ ValidationError = TrajectoryValidationError
 
 
 class RealExecutor:
+    _TASK_IDS = {"BarInspect", "BarClean"}
+
     def __init__(self):
         self._lock = threading.RLock()
         self._joint_names = ["iiwa14_joint_{}".format(index) for index in range(1, 8)]
@@ -60,6 +62,8 @@ class RealExecutor:
         self._acceleration_limit = float(rospy.get_param("~acceleration_limit_rad_s2", 0.25))
         self._approach_speed = float(rospy.get_param("~approach_speed_mps", 0.04))
         self._task_speed = float(rospy.get_param("~task_speed_mps", 0.025))
+        self._minimum_approach_z = float(rospy.get_param("~minimum_approach_z", 0.20))
+        self._approach_clearance_z = float(rospy.get_param("~approach_clearance_z", 0.33))
         self._torque_thresholds = np.asarray(
             rospy.get_param("~external_torque_thresholds_nm", [20, 20, 15, 15, 8, 8, 8]),
             dtype=float,
@@ -68,6 +72,7 @@ class RealExecutor:
             raise ValueError("~external_torque_thresholds_nm must contain seven values")
 
         self._path = None
+        self._task_id = "BarInspect"
         self._path_serial = 0
         self._joint_position = None
         self._joint_received = 0.0
@@ -96,6 +101,9 @@ class RealExecutor:
             rospy.Duration(0.05), self._publish_position_heartbeat
         )
         self._status_pub = rospy.Publisher("~status", String, queue_size=1, latch=True)
+        rospy.Subscriber(
+            "/stage_cons/planner/task", String, self._task_callback, queue_size=1
+        )
         rospy.Subscriber("/stage_cons/plan", RosPath, self._path_callback, queue_size=1)
         rospy.Subscriber("joint_states", JointState, self._joint_callback, queue_size=5)
         rospy.Subscriber("commanding_status", Bool, self._commanding_callback, queue_size=2)
@@ -127,6 +135,8 @@ class RealExecutor:
             acceleration_limit=self._acceleration_limit,
             approach_speed=self._approach_speed,
             task_speed=self._task_speed,
+            minimum_approach_z=self._minimum_approach_z,
+            approach_clearance_z=self._approach_clearance_z,
         )
         self._publish("idle", message="Real executor ready; no trajectory prepared")
         rospy.on_shutdown(self._shutdown)
@@ -134,6 +144,7 @@ class RealExecutor:
     def _publish(self, phase, **fields):
         payload = {
             "phase": phase,
+            "task_id": self._task_id,
             "stamp": rospy.Time.now().to_sec(),
             "record": self._record_requested,
             "run_directory": str(self._run_directory) if self._run_directory else None,
@@ -152,6 +163,20 @@ class RealExecutor:
             self._path_serial += 1
             self._prepared = None
         self._publish("path_received", points=len(message.poses), message="Path received; prepare is required")
+
+    def _task_callback(self, message):
+        task_id = str(message.data).strip()
+        if task_id not in self._TASK_IDS:
+            rospy.logerr("Ignoring unknown task id %s", task_id)
+            return
+        with self._lock:
+            if self._worker is not None:
+                rospy.logerr("Ignoring task switch to %s during real execution", task_id)
+                return
+            self._task_id = task_id
+            self._path = None
+            self._prepared = None
+        self._publish("task_selected", message="{} selected".format(task_id))
 
     def _joint_callback(self, message):
         positions = dict(zip(message.name, message.position))
@@ -300,6 +325,7 @@ class RealExecutor:
             abort_requested=self._abort.is_set,
         )
         plan["path_serial"] = self._path_serial
+        plan["task_id"] = self._task_id
         return plan
 
     def _prepare(self, _request):
@@ -417,7 +443,8 @@ class RealExecutor:
     def _start_recording(self):
         now = datetime.datetime.now(datetime.timezone.utc)
         name = now.strftime("%Y%m%dT%H%M%S_%fZ_real_task")
-        self._run_directory = self._output_root / name
+        self._run_directory = self._output_root / self._task_id / name
+        self._run_directory.parent.mkdir(parents=True, exist_ok=True)
         self._run_directory.mkdir(parents=True, exist_ok=False)
         bag = self._run_directory / "real_task.bag"
         topics = [
@@ -425,10 +452,12 @@ class RealExecutor:
             "/iiwa14/PositionTrajectoryController/state", "/iiwa14/real_executor/status",
             "/iiwa14/commanding_status", "/iiwa14/fri_command_mode",
             "/stage_cons/plan", "/tf", "/tf_static",
+            "/stage_cons/planner/task", "/stage_cons/plan_stage_boundaries",
         ]
         metadata = {
             "schema_version": 1,
             "mode": "real",
+            "task_id": self._task_id,
             "robot": "iiwa14",
             "tip_link": self._tip_link,
             "orientation_control": "position_plus_tool_z",

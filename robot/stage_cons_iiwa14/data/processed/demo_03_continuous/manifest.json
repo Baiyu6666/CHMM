@@ -1,0 +1,22 @@
+{
+  "source": "robot/stage_cons_iiwa14/data/demos/20260820T094151_876066Z_demo_03/demo.bag",
+  "scene_lock_window_s": [0.0, 60.0],
+  "selected_demo_count": 10,
+  "selected_attempts": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  "selected_durations_s": [25.4, 25.9, 20.9, 26.8, 22.4, 20.0, 22.5, 22.0, 20.2, 21.3],
+  "failed_interval_s": [234.5, 259.3],
+  "complete_candidate_not_selected": {
+    "attempt": 1,
+    "interval_s": [12.1, 35.0],
+    "reason": "The recording contains eleven semantically complete scan cycles although ten were expected. This first cycle is retained in the all-candidates archive rather than silently discarded."
+  },
+  "outputs": {
+    "map_training_5hz": "demo_03_10_demos_5hz_coarse.npz",
+    "feature_rate_10hz": "demo_03_10_demos_10hz_coarse.npz",
+    "all_complete_candidates_5hz": "demo_03_all_11_candidates_5hz_coarse.npz",
+    "segmentation_preview": "segmentation_preview.png",
+    "heuristic_cutpoints_preview": "heuristic_cutpoints_preview.png",
+    "demo_start_crop_diagnostics": "demo_start_crop_diagnostics.png",
+    "quality_analysis": "quality_analysis.json"
+  }
+}

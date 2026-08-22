@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="frame_id" default="iiwa14_link_0"/>
+  <arg name="bar_inspect_config" default="$(find stage_constraint_planner)/config/bar_inspect_true.json"/>
+  <arg name="bar_clean_config" default="$(find stage_constraint_planner)/config/bar_clean_true.json"/>
+  <arg name="output_spacing" default="0.005"/>
+  <arg name="output_axis_spacing_deg" default="2.0"/>
+
+  <node pkg="stage_constraint_planner"
+        type="task_planner.py"
+        name="stage_constraint_planner"
+        output="screen"
+        required="true">
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="bar_inspect_config" value="$(arg bar_inspect_config)"/>
+    <param name="bar_clean_config" value="$(arg bar_clean_config)"/>
+    <param name="output_spacing" value="$(arg output_spacing)"/>
+    <param name="output_axis_spacing_deg" value="$(arg output_axis_spacing_deg)"/>
+  </node>
+</launch>

@@ -11,7 +11,7 @@
   "duration_max": null,
   "constraint_core_trim": 0,
   "truncated_z_soft_boundary_scale": 0.1,
-  "truncated_z_observation_noise_scale": 0.003,
+  "map_active_sigma_floor": 0.003,
   "truncated_z_half_t_scale_quantile": 0.9,
   "fixed_true_cutpoint_prefix": 0,
   "fixed_true_cutpoint_indices": null,
