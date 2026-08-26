@@ -33,6 +33,13 @@ _CONSTRAINT_KEYS = (
     "ConstraintLearnedDemoCount",
 )
 
+_MAP_METHODS = frozenset(
+    {"map", "map_pooled", "map_balanced_pooled", "map_balanced_vote"}
+)
+_LEARNED_MODES = frozenset(
+    {"inactive", "target_value", "lower_bound", "upper_bound"}
+)
+
 
 def _jsonify(value: Any) -> Any:
     if isinstance(value, np.ndarray):
@@ -170,6 +177,131 @@ def _extract_constraints(result: Mapping[str, Any]) -> dict[str, Any]:
         if key in metrics:
             payload[key] = metrics[key]
     return payload
+
+
+def _finite_or_none(value: Any) -> float | None:
+    try:
+        value_f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value_f if np.isfinite(value_f) else None
+
+
+def _map_mode_scores(result: Mapping[str, Any], stage: int, feature: int) -> dict[str, float]:
+    model = result.get("joint_result", {}).get("model")
+    costs = getattr(model, "map_shared_mode_costs_", None)
+    try:
+        raw = dict(costs[int(stage)][int(feature)])
+    except (IndexError, TypeError, ValueError):
+        return {}
+    aliases = {
+        "inactive": "inactive",
+        "eq": "target_value",
+        "lb": "lower_bound",
+        "ub": "upper_bound",
+    }
+    normalized_costs = {
+        aliases[str(name)]: float(value)
+        for name, value in raw.items()
+        if str(name) in aliases and _finite_or_none(value) is not None
+    }
+    if not normalized_costs:
+        return {}
+    minimum = min(normalized_costs.values())
+    weights = {
+        name: float(np.exp(-min(max(cost - minimum, 0.0), 700.0)))
+        for name, cost in normalized_costs.items()
+    }
+    total = sum(weights.values())
+    return {name: value / total for name, value in weights.items()}
+
+
+def _extract_learned_constraint_artifact(
+    *,
+    dataset_name: str,
+    method_name: str,
+    method_seed: int,
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    metrics = _extract_metrics(result)
+    feature_names = [str(value) for value in metrics["ConstraintFeatureNames"]]
+    semantics = np.asarray(metrics["ConstraintLearnedSemanticsMatrix"], dtype=object)
+    values = np.asarray(metrics["ConstraintLearnedValueMatrix"], dtype=float)
+    if semantics.ndim != 2 or values.shape != semantics.shape:
+        raise ValueError("Learned constraint semantics and value matrices must have equal 2-D shapes")
+    if semantics.shape[1] != len(feature_names):
+        raise ValueError("Learned constraint feature names do not match matrix width")
+
+    scales = np.asarray(
+        metrics.get("ConstraintFeatureScales", np.ones(len(feature_names))), dtype=float
+    ).reshape(-1)
+    if scales.size != len(feature_names):
+        raise ValueError("Learned constraint feature scales do not match feature names")
+    if not np.all(np.isfinite(scales)) or np.any(scales <= 0.0):
+        raise ValueError("Learned constraint feature scales must be positive and finite")
+
+    dataset = result.get("dataset")
+    schema_by_name = {
+        str(spec.get("name")): dict(spec)
+        for spec in (getattr(dataset, "feature_schema", None) or [])
+    }
+    feature_schema = [
+        {
+            "name": name,
+            "unit": str(schema_by_name.get(name, {}).get("unit", "")),
+            "frame": str(schema_by_name.get(name, {}).get("frame", "")),
+            "scale": _finite_or_none(scales[index]),
+        }
+        for index, name in enumerate(feature_names)
+    ]
+    dataset_meta = getattr(dataset, "meta", {}) or {}
+    observation_specs = dataset_meta.get("observation_specs", {})
+    task_frame = (
+        dict(observation_specs.get("task_frame", {}))
+        if isinstance(observation_specs, Mapping)
+        else {}
+    )
+
+    pairs = []
+    for stage in range(semantics.shape[0]):
+        for feature, feature_name in enumerate(feature_names):
+            mode = str(semantics[stage, feature]).strip() or "inactive"
+            if mode not in _LEARNED_MODES:
+                raise ValueError(
+                    "Unsupported learned constraint mode {!r} at stage {}, feature {}".format(
+                        mode, stage, feature_name
+                    )
+                )
+            pair = {
+                "stage": int(stage),
+                "feature_name": feature_name,
+                "mode": mode,
+                "value": None if mode == "inactive" else _finite_or_none(values[stage, feature]),
+                "scale": _finite_or_none(scales[feature]),
+                "mode_scores": _map_mode_scores(result, stage, feature),
+            }
+            if mode != "inactive" and pair["value"] is None:
+                raise ValueError(
+                    "Active learned constraint has no finite value at stage {}, feature {}".format(
+                        stage, feature_name
+                    )
+                )
+            scores = pair["mode_scores"]
+            pair["confidence"] = max(scores.values()) if scores else None
+            pairs.append(pair)
+
+    return {
+        "schema_version": 2,
+        "artifact_type": "learned_stage_constraints",
+        "task_id": str(dataset_name),
+        "method_name": str(method_name),
+        "method_seed": int(method_seed),
+        "num_stages": int(semantics.shape[0]),
+        "feature_schema": feature_schema,
+        "task_frame": task_frame,
+        "feature_stage_modes": pairs,
+        "true_constraint_specs": getattr(dataset, "constraint_specs", None),
+    }
 
 
 def _extract_scalar_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
@@ -331,4 +463,14 @@ def save_run_artifacts(
             _extract_constraints(result),
         ),
     }
+    if method_name in _MAP_METHODS:
+        files["learned_constraints"] = write_json(
+            run_dir / "learned_constraints.json",
+            _extract_learned_constraint_artifact(
+                dataset_name=dataset_name,
+                method_name=method_name,
+                method_seed=method_seed,
+                result=result,
+            ),
+        )
     return files

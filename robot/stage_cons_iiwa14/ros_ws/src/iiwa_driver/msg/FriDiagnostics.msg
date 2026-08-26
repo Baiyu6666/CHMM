@@ -1,0 +1,39 @@
+Header header
+
+uint8 session_state
+uint8 connection_quality
+uint8 safety_state
+uint8 operation_mode
+uint8 drive_state
+int32 client_command_mode
+bool commanding
+float64 sample_time_sec
+uint32 receive_multiplier
+bool realtime_scheduling_enabled
+int32 realtime_priority
+int32 cpu_affinity
+
+uint64 control_cycles
+uint64 cycle_period_deadline_misses
+uint64 control_work_overruns
+float64 deadline_threshold_sec
+float64 last_cycle_period_sec
+float64 maximum_cycle_period_sec
+float64 last_control_work_sec
+float64 maximum_control_work_sec
+float64 last_deadline_miss_wall_sec
+
+uint64 connection_closed_failures
+uint64 receive_failures
+uint64 decode_failures
+uint64 message_id_failures
+uint64 encode_failures
+uint64 send_failures
+uint64 monitor_sequence_gaps
+uint64 duplicate_monitor_messages
+uint64 monitor_sequence_resets
+uint32 last_monitor_sequence
+float64 last_io_failure_wall_sec
+
+uint64 session_state_changes
+float64 last_session_state_change_wall_sec

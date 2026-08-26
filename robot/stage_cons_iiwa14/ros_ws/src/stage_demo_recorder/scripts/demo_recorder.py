@@ -147,7 +147,7 @@ class DemoRecorder:
                         "~optitrack_object", "baiyu_bar"
                     ),
                     "obstacle_rigid_body": rospy.get_param(
-                        "~optitrack_obstacle", "baiyu_obs_ball"
+                        "~optitrack_obstacle", "baiyu_obs_bar"
                     ),
                 },
             }

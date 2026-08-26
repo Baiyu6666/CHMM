@@ -113,10 +113,12 @@ class BaseTransformer {
       ROS_WARN_THROTTLE(1.0, "Ignoring invalid OptiTrack object pose");
       return;
     }
+    const Eigen::Isometry3d object_in_base =
+        base_in_world_.inverse() * object_in_world;
     geometry_msgs::PoseStamped output;
     output.header.stamp = object_stamp;
     output.header.frame_id = output_frame_;
-    output.pose = transformToPose(base_in_world_.inverse() * object_in_world);
+    output.pose = transformToPose(object_in_base);
     channel->publisher.publish(output);
   }
 

@@ -54,6 +54,7 @@ find_package(FRI REQUIRED COMPONENTS
 add_message_files(
   FILES
   AdditionalOutputs.msg
+  FriDiagnostics.msg
 )
 
 generate_messages(

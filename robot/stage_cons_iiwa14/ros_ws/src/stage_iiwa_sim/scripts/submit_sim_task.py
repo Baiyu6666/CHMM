@@ -29,7 +29,10 @@ def main():
         raise ValueError("Expected one JSON task argument")
     task = json.loads(sys.argv[1])
     task_id = str(task["task_id"])
-    if task_id not in {"BarInspect", "BarClean"}:
+    scene_snapshot = task["scene_snapshot"]
+    if not isinstance(scene_snapshot, dict):
+        raise ValueError("scene_snapshot must be an object")
+    if task_id != "BarClean":
         raise ValueError("Unknown task_id {}".format(task_id))
     rospy.init_node("stage_sim_task_submitter", anonymous=True)
     planner_selected = threading.Event()
@@ -66,8 +69,13 @@ def main():
     task_publisher = rospy.Publisher(
         "/stage_cons/planner/task", String, queue_size=1, latch=True
     )
-    rospy.wait_for_service("/iiwa14/sim/set_task_recording", timeout=5.0)
+    rospy.wait_for_service("/iiwa14/sim/set_task_video", timeout=5.0)
+    rospy.wait_for_service("/iiwa14/sim/apply_scene_snapshot", timeout=5.0)
     rospy.wait_for_service("/stage_constraint_planner/plan", timeout=5.0)
+    rospy.set_param(
+        "/stage_constraint_planner/constraint_source",
+        str(task.get("constraint_source", "true")),
+    )
 
     connection_deadline = time.monotonic() + 3.0
     while not rospy.is_shutdown() and (
@@ -79,11 +87,24 @@ def main():
             raise RuntimeError("Planner pose subscribers did not connect")
         rospy.sleep(0.02)
 
-    recording_response = rospy.ServiceProxy(
-        "/iiwa14/sim/set_task_recording", SetBool
-    )(bool(task.get("record", True)))
-    if not recording_response.success:
-        raise RuntimeError(recording_response.message)
+    rospy.set_param(
+        "/iiwa14/pybullet_sim/pending_scene_snapshot", scene_snapshot
+    )
+    scene_response = rospy.ServiceProxy(
+        "/iiwa14/sim/apply_scene_snapshot", Trigger
+    )()
+    if not scene_response.success:
+        raise RuntimeError(scene_response.message)
+    # The service only returns after PyBullet has moved both scene bodies and
+    # published their frozen poses.  Give the planner subscribers one callback
+    # cycle before submitting start and goal.
+    rospy.sleep(0.05)
+
+    video_response = rospy.ServiceProxy(
+        "/iiwa14/sim/set_task_video", SetBool
+    )(bool(task.get("render_video", False)))
+    if not video_response.success:
+        raise RuntimeError(video_response.message)
 
     for _ in range(3):
         task_publisher.publish(String(data=task_id))

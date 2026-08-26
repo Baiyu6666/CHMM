@@ -17,8 +17,8 @@
     <param name="gui_file" value="$(find stage_demo_gui)/web/index.html"/>
     <rosparam param="optitrack_to_robot_rotation">[[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]</rosparam>
     <rosparam param="optitrack_to_robot_translation">[0.0, 0.0, 0.0]</rosparam>
-    <rosparam param="bar_outline_u">[-0.11177, 0.18629]</rosparam>
-    <rosparam param="bar_outline_v">[-0.01787, 0.04452]</rosparam>
-    <param name="obstacle_radius" value="0.05"/>
+    <rosparam param="bar_outline_u">[-0.15, 0.15]</rosparam>
+    <rosparam param="bar_outline_v">[-0.03, 0.03]</rosparam>
+    <param name="obstacle_radius" value="0.025"/>
   </node>
 </launch>

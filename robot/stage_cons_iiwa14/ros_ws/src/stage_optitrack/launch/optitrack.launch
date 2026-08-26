@@ -4,7 +4,7 @@
   <arg name="port" default="3883"/>
   <arg name="base_name" default="iiwa14"/>
   <arg name="object_name" default="baiyu_bar"/>
-  <arg name="obstacle_name" default="baiyu_obs_ball"/>
+  <arg name="obstacle_name" default="baiyu_obs_bar"/>
   <arg name="output_frame" default="base"/>
   <arg name="base_timeout" default="0.25"/>
 

@@ -10,7 +10,6 @@ services:
       - sim_station.launch
       - gui:=${SIM_GUI:-false}
       - auto_plan:=${SIM_AUTO_PLAN:-true}
-      - record:=${SIM_RECORD:-true}
       - render_video:=${SIM_RENDER_VIDEO:-true}
     volumes:
       - ./data/sim_runs:/data/sim_runs

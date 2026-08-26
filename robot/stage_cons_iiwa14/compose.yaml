@@ -9,12 +9,14 @@ services:
       ssh:
         - default
       args:
-        USER_UID: ${USER_UID:-1000}
+        USER_UID: ${USER_UID:?USER_UID must match the host UID; rebuild from the GUI or export USER_UID first}
         KUKA_FRI_REF: ${KUKA_FRI_REF:-59af82a8524b37e08a1424a50605e7fe70f11ec9}
     container_name: stage_cons_iiwa14
     hostname: stage-cons-iiwa14
     init: true
     privileged: true
+    cap_add:
+      - SYS_NICE
     tty: true
     stdin_open: true
     network_mode: host
@@ -24,4 +26,8 @@ services:
       DISABLE_ROS1_EOL_WARNINGS: "1"
     volumes:
       - ./data/demos:/data/demos
+      - ./data/real_runs:/data/real_runs
       - ./data/models:/models:ro
+      - ./ros_ws/src/stage_constraint_planner/config:/task_definitions:ro
+      - ./ros_ws/src/stage_iiwa_sim/config:/workcell_definition:ro
+      - ../../outputs:/learned_constraints:ro

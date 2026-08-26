@@ -9,18 +9,19 @@ required_topics:
   - /iiwa14/joint_states
   - /tf
   - /vrpn_client_node/baiyu_bar/pose_from_iiwa14
-  - /vrpn_client_node/baiyu_obs_ball/pose_from_iiwa14
+  - /vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14
 
 # These topics are recorded when they appear, but do not block recording start.
 optional_topics:
   - /tf_static
   - /iiwa14/additional_outputs
+  - /iiwa14/fri_diagnostics
   - /iiwa14/commanding_status
   - /iiwa14/SafeTorqueController/command
   - /iiwa14/demo_virtual_fixture/status
   - /vrpn_client_node/iiwa14/pose
   - /vrpn_client_node/baiyu_bar/pose
-  - /vrpn_client_node/baiyu_obs_ball/pose
+  - /vrpn_client_node/baiyu_obs_bar/pose
   - /stage_cons/plan
 
 marker_topic: /stage_cons/demo_marker
@@ -31,4 +32,4 @@ robot_name: iiwa14
 optitrack_server: 128.178.145.104
 optitrack_base: iiwa14
 optitrack_object: baiyu_bar
-optitrack_obstacle: baiyu_obs_ball
+optitrack_obstacle: baiyu_obs_bar

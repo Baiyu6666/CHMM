@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "frame_id": "iiwa14_link_0",
+  "captured_from": "measured robot pose on 2026-08-24",
+  "pose": {
+    "x": 0.68477651,
+    "y": 0.01630373,
+    "z": 0.33116155,
+    "qx": -0.49420326,
+    "qy": -0.86555559,
+    "qz": 0.05969546,
+    "qw": 0.05489182
+  },
+  "joint_position_reference": [
+    0.50062919,
+    1.22457303,
+    -1.09616224,
+    -1.09874688,
+    -2.21954748,
+    -1.45924345,
+    -2.53476729
+  ],
+  "execution": {
+    "approach_speed_mps": 0.06,
+    "approach_position_tolerance_m": 0.01,
+    "approach_joint_bridge_limit_rad": 3.0
+  }
+}

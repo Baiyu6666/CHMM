@@ -1,0 +1,96 @@
+{
+  "acceleration_limit_rad_s2": 0.5625,
+  "approach_speed_mps": 0.06,
+  "auto_goal_distance": 0.15,
+  "bar_center_xy": [
+    0.6240017525005455,
+    -0.29976329726741285
+  ],
+  "bar_reference_xy": [
+    0.6092574709562736,
+    -0.2630417860411133
+  ],
+  "bar_size": [
+    0.29806,
+    0.06239,
+    0.0278
+  ],
+  "bar_yaw": -1.5324324857904386,
+  "created_utc": "2026-08-22T13:51:40.747988+00:00",
+  "frame_id": "iiwa14_link_0",
+  "motion_speed_scale": 1.5,
+  "obstacle_center": [
+    0.599625257339464,
+    -0.012291830559654215,
+    0.19584000000000001
+  ],
+  "obstacle_radius": 0.05,
+  "orientation_control": "position_plus_tool_z",
+  "physics_hz": 240.0,
+  "planner": "stage_constraint_planner/task_planner",
+  "publish_hz": 60.0,
+  "pybullet_api_version": 202010061,
+  "render_video": false,
+  "scene_config": "/home/ros/ros_ws/src/stage_iiwa_sim/config/demo_scene.json",
+  "scene_locked_bar_pose": [
+    -0.2630417860411133,
+    0.04913749922852528,
+    0.6092574709562736,
+    0.0015703503318544448,
+    -0.9996697540523543,
+    0.017056898211676573,
+    0.019156697422511443
+  ],
+  "scene_locked_obstacle_pose": [
+    -0.012291830559654215,
+    0.0627478191532751,
+    0.599625257339464,
+    0.9040141924227553,
+    0.09293160310267357,
+    0.3933348023030686,
+    0.139319023612021
+  ],
+  "scene_source": {
+    "bar_field": "locked_bar_pose",
+    "ik_seed_field": "joint_positions",
+    "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_01_5hz_coarse.npz",
+    "ik_seed_sample_index": 305,
+    "obstacle_field": "locked_obstacle_pose",
+    "processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_03_continuous/demo_03_10_demos_5hz_coarse.npz"
+  },
+  "simulator": "pybullet",
+  "status": "complete",
+  "table_center_xy": [
+    0.6118135049200047,
+    -0.15602756391353353
+  ],
+  "table_size": [
+    0.8,
+    0.8,
+    0.05
+  ],
+  "table_top_z": 0.14584,
+  "task_id": "BarInspect",
+  "task_speed_mps": 0.037500000000000006,
+  "trajectory_compiler": "stage_cartesian_trajectory/CartesianTrajectoryCompiler",
+  "trajectory_metrics": {
+    "approach_distance_m": 0.6104162910340414,
+    "approach_duration_s": 10.673604850567356,
+    "approach_points": 65,
+    "maximum_ik_position_error_m": 8.026985333948008e-05,
+    "maximum_ik_tool_z_error_deg": 0.0010152108229188783,
+    "maximum_joint_step_rad": 0.022622008860794907,
+    "minimum_jacobian_singular_value": 0.1274947090177464,
+    "task_duration_s": 28.955974359908563,
+    "task_length_m": 1.0362895601793216,
+    "task_points": 217
+  },
+  "velocity_scale": 0.15000000000000002,
+  "video_fps": 30,
+  "video_path": null,
+  "video_size": [
+    640,
+    480
+  ],
+  "video_slowdown": 1.0
+}

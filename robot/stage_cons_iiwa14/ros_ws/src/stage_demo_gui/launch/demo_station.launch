@@ -3,7 +3,8 @@
   <arg name="optitrack_server" default="128.178.145.104"/>
   <arg name="optitrack_base" default="iiwa14"/>
   <arg name="optitrack_object" default="baiyu_bar"/>
-  <arg name="optitrack_obstacle" default="baiyu_obs_ball"/>
+  <arg name="optitrack_obstacle" default="baiyu_obs_bar"/>
+  <arg name="start_optitrack" default="true"/>
   <arg name="gui_host" default="127.0.0.1"/>
   <arg name="gui_port" default="8080"/>
 
@@ -18,7 +19,7 @@
   </group>
 
   <include file="$(find stage_demo_recorder)/launch/demo_collection.launch">
-    <arg name="start_optitrack" value="true"/>
+    <arg name="start_optitrack" value="$(arg start_optitrack)"/>
     <arg name="optitrack_server" value="$(arg optitrack_server)"/>
     <arg name="optitrack_base" value="$(arg optitrack_base)"/>
     <arg name="optitrack_object" value="$(arg optitrack_object)"/>

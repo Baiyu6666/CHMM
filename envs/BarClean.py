@@ -37,11 +37,14 @@ class BarCleanEnv(BarInspectEnv):
         *args,
         scan_start_progress=-0.18,
         stage2_scan_distance=0.15,
+        scan_standoff=0.030,
+        scan_lateral_offset=-0.020,
         transition_axial_advance=0.0,
-        discharge_start_lateral=0.07,
-        discharge_distance=0.26,
+        discharge_start_lateral=0.05,
+        discharge_distance=0.156,
+        discharge_standoff=0.020,
         discharge_axial_noise_std=0.0008,
-        discharge_height_variation=0.025,
+        discharge_height_variation=0.003,
         seg_lengths=(38, 32, 24, 28, 28),
         seg_length_jitter=(5, 4, 4, 4, 5),
         **kwargs,
@@ -56,6 +59,7 @@ class BarCleanEnv(BarInspectEnv):
         self.transition_axial_advance = float(transition_axial_advance)
         self.discharge_start_lateral = float(discharge_start_lateral)
         self.discharge_distance = float(discharge_distance)
+        self.discharge_standoff = float(discharge_standoff)
         self.discharge_axial_noise_std = float(discharge_axial_noise_std)
         self.discharge_height_variation = float(discharge_height_variation)
         self.discharge_axial_progress = (
@@ -63,8 +67,8 @@ class BarCleanEnv(BarInspectEnv):
             + float(stage2_scan_distance)
             + self.transition_axial_advance
         )
-        if self.discharge_distance <= 0.0:
-            raise ValueError("discharge_distance must be positive.")
+        if self.discharge_distance <= 0.0 or self.discharge_standoff <= 0.0:
+            raise ValueError("discharge_distance and discharge_standoff must be positive.")
         if self.discharge_axial_noise_std < 0.0 or self.discharge_height_variation < 0.0:
             raise ValueError(
                 "discharge_axial_noise_std and discharge_height_variation must be non-negative."
@@ -74,6 +78,8 @@ class BarCleanEnv(BarInspectEnv):
             *args,
             scan_start_progress=scan_start_progress,
             stage2_scan_distance=stage2_scan_distance,
+            scan_standoff=scan_standoff,
+            scan_lateral_offset=scan_lateral_offset,
             seg_lengths=(
                 requested_lengths[0],
                 requested_lengths[1],
@@ -107,6 +113,7 @@ class BarCleanEnv(BarInspectEnv):
                     "Signed bar-axis displacement from the transverse-discharge line; "
                     "task-relative x error"
                 ),
+                "frame": "bar_table_task.x",
             }
         )
         return schema
@@ -116,6 +123,9 @@ class BarCleanEnv(BarInspectEnv):
         constraints.pop("stage3_pitch_target", None)
         constraints["discharge_axial_target"] = 0.0
         constraints["discharge_axial_progress"] = float(self.discharge_axial_progress)
+        constraints["discharge_surface_distance_target"] = float(
+            self.discharge_standoff
+        )
         return constraints
 
     def get_constraint_specs(self):
@@ -156,6 +166,12 @@ class BarCleanEnv(BarInspectEnv):
                 "semantics": "target_value",
                 "oracle_key": "discharge_axial_target",
             },
+            {
+                "feature_name": "surface_dist",
+                "stage": 3,
+                "semantics": "target_value",
+                "oracle_key": "discharge_surface_distance_target",
+            },
         ]
 
     def get_stage_specs(self):
@@ -181,6 +197,7 @@ class BarCleanEnv(BarInspectEnv):
                 "name": "transverse_discharge",
                 "distance_m": float(self.discharge_distance),
                 "fixed_axial_progress_m": float(self.discharge_axial_progress),
+                "standoff_m": float(self.discharge_standoff),
             },
             {
                 "stage": 4,
@@ -198,6 +215,7 @@ class BarCleanEnv(BarInspectEnv):
             "discharge_axial_progress": float(self.discharge_axial_progress),
             "discharge_start_lateral": float(self.discharge_start_lateral),
             "discharge_distance": float(self.discharge_distance),
+            "discharge_standoff": float(self.discharge_standoff),
             "dt": float(self.dt),
         }
         return scene
@@ -301,11 +319,11 @@ class BarCleanEnv(BarInspectEnv):
             self._smoothstep(np.linspace(0.0, 1.0, n1)),
         )
 
-        discharge_start_height = self.scan_standoff + local_rng.uniform(
+        discharge_start_height = self.discharge_standoff + local_rng.uniform(
             -self.discharge_height_variation,
             self.discharge_height_variation,
         )
-        discharge_end_height = self.scan_standoff + local_rng.uniform(
+        discharge_end_height = self.discharge_standoff + local_rng.uniform(
             -self.discharge_height_variation,
             self.discharge_height_variation,
         )

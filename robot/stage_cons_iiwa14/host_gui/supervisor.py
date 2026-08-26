@@ -31,13 +31,35 @@ from urllib.request import Request, urlopen
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
 WEB_ROOT = Path(__file__).resolve().parent / "web"
+GUI_SETTINGS_PATH = PROJECT_ROOT / "data" / "gui_settings.json"
+LEARNED_CONSTRAINT_ROOT = REPOSITORY_ROOT / "outputs"
+MAP_METHODS = frozenset(
+    {"map", "map_pooled", "map_balanced_pooled", "map_balanced_vote"}
+)
 CONTAINER = "stage_cons_iiwa14"
 SIM_CONTAINER = "stage_cons_iiwa14_sim"
 HOST = "127.0.0.1"
 PORT = 8080
 DEMO_PORT = 8081
 TASK_TRACE_POINTS = 4000
+TASK_ACTIVE_PHASES = frozenset(
+    {
+        "starting",
+        "planning",
+        "waiting_for_fri",
+        "preparing",
+        "prepared",
+        "repreparing",
+        "moving_to_start",
+        "home_preparing",
+        "home_repreparing",
+        "home_prepared",
+        "returning_home",
+        "executing",
+    }
+)
 SCENE_CONFIG = (
     PROJECT_ROOT
     / "ros_ws"
@@ -46,24 +68,140 @@ SCENE_CONFIG = (
     / "config"
     / "demo_scene.json"
 )
-TASK_PROFILES = {
-    "BarInspect": {
-        "display_name": "Bar Inspect",
-        "n_stages": 4,
-        "stage_names": ["Approach", "Vertical scan", "Oblique scan", "Depart"],
-    },
-    "BarClean": {
-        "display_name": "Bar Clean",
-        "n_stages": 5,
-        "stage_names": [
-            "Approach",
-            "Longitudinal clean",
-            "Free reposition",
-            "Right-to-left discharge",
-            "Depart",
-        ],
-    },
+TASK_CONFIGS = {
+    "BarClean": (
+        PROJECT_ROOT / "ros_ws" / "src" / "stage_constraint_planner"
+        / "config" / "bar_clean_true.json"
+    ),
 }
+FEATURE_SAMPLE_HZ = 20.0
+class RosTopicStream:
+    """Keep one docker/rostopic subscriber alive and cache its newest value."""
+
+    def __init__(self, container: str, topic: str) -> None:
+        self._container = container
+        self._topic = topic
+        self._condition = threading.Condition()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._process: Optional[subprocess.Popen[str]] = None
+        self._value: Optional[str] = None
+        self._received = 0.0
+        self._last_error = "subscriber has not started"
+        self._node_name = "stage_host_topic_{}_{}".format(
+            os.getpid(), secrets.token_hex(4)
+        )
+
+    def _kill_ros_node(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "docker", "exec", self._container, "/entrypoint.sh",
+                    "rosnode", "kill", "/" + self._node_name,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    def _ensure_started(self) -> None:
+        with self._condition:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            process: Optional[subprocess.Popen[str]] = None
+            try:
+                process = subprocess.Popen(
+                    [
+                        "docker", "exec", self._container, "/entrypoint.sh",
+                        "rostopic", "echo", "-p", self._topic,
+                        "__name:=" + self._node_name,
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=1,
+                )
+                with self._condition:
+                    self._process = process
+                    self._last_error = "waiting for the first topic message"
+                    self._condition.notify_all()
+                if process.stdout is None:
+                    raise RuntimeError("subscriber stdout was not created")
+                for raw_line in process.stdout:
+                    if self._stop.is_set():
+                        break
+                    line = raw_line.strip()
+                    if not line or line.startswith("%"):
+                        continue
+                    _stamp, separator, value = line.partition(",")
+                    if not separator:
+                        continue
+                    with self._condition:
+                        self._value = value.strip()
+                        self._received = time.monotonic()
+                        self._last_error = ""
+                        self._condition.notify_all()
+            except (OSError, RuntimeError) as error:
+                with self._condition:
+                    self._last_error = str(error)
+                    self._condition.notify_all()
+            finally:
+                self._kill_ros_node()
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1.0)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                with self._condition:
+                    if self._process is process:
+                        self._process = None
+                    if not self._stop.is_set() and not self._last_error:
+                        self._last_error = "topic subscriber exited"
+                    self._condition.notify_all()
+            self._stop.wait(0.5)
+
+    def read(self, timeout: float, max_age: float) -> str:
+        self._ensure_started()
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                now = time.monotonic()
+                if (
+                    self._value is not None
+                    and now - self._received <= max_age
+                ):
+                    return self._value
+                remaining = deadline - now
+                if remaining <= 0.0:
+                    detail = self._last_error or "cached topic value is stale"
+                    raise RuntimeError(
+                        "Could not read fresh {} from {}: {}".format(
+                            self._topic, self._container, detail
+                        )
+                    )
+                self._condition.wait(timeout=remaining)
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._kill_ros_node()
+        with self._condition:
+            process = self._process
+            self._condition.notify_all()
+        if process is not None and process.poll() is None:
+            process.terminate()
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
 
 
 class Supervisor:
@@ -76,28 +214,115 @@ class Supervisor:
         self._job_message = "Ready"
         self._logs: deque[str] = deque(maxlen=500)
         self._children: Dict[str, subprocess.Popen[str]] = {}
+        self._topic_streams: Dict[Tuple[str, str], RosTopicStream] = {}
+        self._real_station_verified = False
         self._task_abort = threading.Event()
         self._task_state: Dict[str, object] = {
-            "task_id": "BarInspect",
+            "task_id": "BarClean",
             "mode": "simulator",
             "phase": "idle",
-            "record": True,
+            "data_saved": True,
+            "video": False,
             "message": "No task has been started",
             "run_directory": None,
             "video_available": False,
         }
         self._fixed_scene_geometry = self._load_fixed_scene_geometry()
-        self._fixed_feature_series = self._load_fixed_feature_series()
+        scene_config = json.loads(SCENE_CONFIG.read_text(encoding="utf-8"))
+        scene_transform = scene_config["optitrack_to_robot"]
+        self._optitrack_to_robot_rotation = [
+            [float(value) for value in row]
+            for row in scene_transform["rotation"]
+        ]
+        self._optitrack_to_robot_translation = [
+            float(value) for value in scene_transform["translation"]
+        ]
+        self._task_profiles = self._load_task_profiles()
+        self._task_feature_definitions = self._load_task_feature_definitions()
+        self._constraint_sources = self._discover_constraint_sources()
+        self._gui_settings = self._load_gui_settings()
+        self._save_gui_settings()
+        restored_task = str(self._gui_settings["task_id"])
+        self._task_state["task_id"] = restored_task
+        self._task_state["constraint_source_id"] = self._gui_settings[
+            "constraint_source_by_task"
+        ][restored_task]
+        restored_source = self._resolve_constraint_source(
+            restored_task, self._task_state["constraint_source_id"]
+        )
+        self._task_state["constraint_source_label"] = restored_source["label"]
         self._task_trace: deque[List[float]] = deque(maxlen=TASK_TRACE_POINTS)
         self._task_current_ee: Optional[Dict[str, float]] = None
         self._task_scene_geometry = self._fallback_scene_geometry()
         self._task_scene_source = "fallback"
-        self._task_feature_series = self._empty_feature_series()
+        self._task_feature_series = self._empty_feature_series(restored_task)
         self._task_planned_trace: List[List[float]] = []
-        self._task_planned_feature_series = self._empty_feature_series()
+        self._task_planned_feature_series = self._empty_feature_series(restored_task)
         self._task_stage_boundary_indices: List[int] = []
         self._task_stage_boundary_times: List[float] = []
         self._task_stage_transition_end_times: List[float] = []
+        self._task_execution_started: Optional[float] = None
+        self._task_last_feature_sample = -math.inf
+
+    def _topic_value(
+        self,
+        container: str,
+        topic: str,
+        *,
+        timeout: float = 3.0,
+        max_age: float = 1.0,
+    ) -> str:
+        key = (container, topic)
+        with self._lock:
+            stream = self._topic_streams.get(key)
+            if stream is None:
+                stream = RosTopicStream(container, topic)
+                self._topic_streams[key] = stream
+        return stream.read(timeout=timeout, max_age=max_age)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            streams = list(self._topic_streams.values())
+            self._topic_streams.clear()
+        for stream in streams:
+            stream.stop()
+
+    def cleanup_stale_topic_streams(self) -> None:
+        if not self._container_running():
+            return
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "exec", CONTAINER, "timeout", "3s", "/entrypoint.sh",
+                    "rosnode", "list",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=4.0,
+                check=False,
+            )
+            names = [
+                name
+                for name in result.stdout.splitlines()
+                if name.startswith("/stage_host_topic_")
+            ]
+            if names:
+                subprocess.run(
+                    [
+                        "docker", "exec", CONTAINER, "timeout", "3s", "/entrypoint.sh",
+                        "rosnode", "kill", *names,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=4.0,
+                    check=False,
+                )
+                self.log(
+                    "Cleaned {} stale host topic subscriber(s)".format(len(names))
+                )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def log(self, text: str) -> None:
         stamp = time.strftime("%H:%M:%S")
@@ -154,6 +379,43 @@ class Supervisor:
             check=False,
         )
         return result.returncode == 0 and result.stdout.strip() == "true"
+
+    @staticmethod
+    def _ensure_data_directories() -> None:
+        for relative_path in ("data/demos", "data/models", "data/real_runs", "data/sim_runs"):
+            (PROJECT_ROOT / relative_path).mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _assert_container_storage_access(
+        container: str, writable_paths: Tuple[str, ...]
+    ) -> None:
+        uid_result = subprocess.run(
+            ["docker", "exec", container, "id", "-u"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if uid_result.returncode != 0:
+            raise RuntimeError(f"Could not verify the runtime UID in {container}")
+        container_uid = uid_result.stdout.strip()
+        host_uid = str(os.getuid())
+        if container_uid != host_uid:
+            raise RuntimeError(
+                f"{container} uses UID {container_uid}, but the host uses UID {host_uid}; "
+                "rebuild the image from the GUI before starting a task"
+            )
+        for writable_path in writable_paths:
+            access_result = subprocess.run(
+                ["docker", "exec", container, "test", "-w", writable_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if access_result.returncode != 0:
+                raise RuntimeError(
+                    f"{container} cannot write {writable_path}; check the host data-directory ownership"
+                )
 
     def _ros_nodes(self) -> List[str]:
         if not self._container_running():
@@ -229,6 +491,167 @@ class Supervisor:
             top.returncode == 0
             and "/iiwa_driver/iiwa_driver" in top.stdout
         )
+
+    def _running_iiwa_controllers(self) -> Optional[List[str]]:
+        if not self._container_running():
+            return []
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "exec", CONTAINER, "timeout", "0.75s", "/entrypoint.sh",
+                    "rosservice", "call", "/iiwa14/controller_manager/list_controllers",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=1.25,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return None
+        if result.returncode != 0:
+            return None
+        running: List[str] = []
+        controller_name: Optional[str] = None
+        for raw_line in result.stdout.splitlines():
+            line = raw_line.strip()
+            if line.startswith("name:"):
+                controller_name = line.split(":", 1)[1].strip().strip("'\"")
+            elif line.startswith("state:") and controller_name is not None:
+                state = line.split(":", 1)[1].strip().strip("'\"")
+                if state == "running":
+                    running.append(controller_name)
+                controller_name = None
+        return running
+
+    def _real_station_interfaces_ready(self) -> bool:
+        # The controller-manager switch blocks until the SmartPAD FRI session
+        # starts. Planning is allowed before that; the later FRI gate still
+        # prevents prepare/execute without a running position controller.
+        commands = ("rosservice", "rostopic")
+        discovered: Dict[str, set[str]] = {}
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    [
+                        "docker", "exec", CONTAINER, "timeout", "2s",
+                        "/entrypoint.sh", command, "list",
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3.0,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                return False
+            if result.returncode != 0:
+                return False
+            discovered[command] = set(result.stdout.splitlines())
+        required_services = {
+            "/iiwa14/iiwa_driver/set_position_commanding",
+            "/iiwa14/real_executor/prepare",
+            "/iiwa14/real_executor/execute",
+            "/iiwa14/real_executor/return_home",
+            "/iiwa14/real_executor/abort",
+        }
+        required_topics = {
+            "/iiwa14/PositionTrajectoryController/follow_joint_trajectory/status",
+            "/iiwa14/PositionTrajectoryController/state",
+            "/iiwa14/real_executor/status",
+            "/iiwa14/real_executor/fri_ready_status",
+        }
+        return (
+            required_services.issubset(discovered["rosservice"])
+            and required_topics.issubset(discovered["rostopic"])
+        )
+
+    @staticmethod
+    def _control_mode_from_graph(
+        nodes: List[str], running_controllers: Optional[List[str]]
+    ) -> Dict[str, object]:
+        driver_running = "/iiwa14/iiwa_driver" in nodes
+        real_executor_running = "/iiwa14/real_executor" in nodes
+        if not driver_running:
+            return {"mode": "idle", "label": "Idle / no robot commands", "healthy": True}
+        if running_controllers is None:
+            return {
+                "mode": "planner_waiting" if real_executor_running else "driver_waiting",
+                "label": (
+                    "Planner / waiting for FRI or controller"
+                    if real_executor_running
+                    else "Driver / waiting for FRI or controller"
+                ),
+                "healthy": False,
+            }
+        torque_running = "SafeTorqueController" in running_controllers
+        position_running = "PositionTrajectoryController" in running_controllers
+        if torque_running and position_running:
+            return {
+                "mode": "conflict",
+                "label": "Control ownership conflict",
+                "healthy": False,
+            }
+        if torque_running:
+            return {"mode": "demo", "label": "Demo / Torque", "healthy": True}
+        if position_running and real_executor_running:
+            return {"mode": "planner", "label": "Planner / Position", "healthy": True}
+        if position_running:
+            return {
+                "mode": "incomplete",
+                "label": "Position controller has no executor",
+                "healthy": False,
+            }
+        if real_executor_running:
+            return {
+                "mode": "planner_waiting",
+                "label": "Planner / waiting for FRI",
+                "healthy": True,
+            }
+        return {
+            "mode": "driver_waiting",
+            "label": "Driver / waiting for FRI",
+            "healthy": True,
+        }
+
+    def _quiesce_demo_control(self) -> None:
+        """Remove every Demo-side command source before a driver transition."""
+        if not self._container_running():
+            return
+        commands = (
+            "rosservice call /iiwa14/demo_virtual_fixture/enable_all 'data: false'",
+            "rosservice call /iiwa14/iiwa_driver/set_demo_mode 'data: false'",
+            "rosservice call /demo_recorder/stop",
+        )
+        for command in commands:
+            try:
+                self._run(
+                    ["docker", "exec", CONTAINER, "bash", "-lc", command],
+                    check=False,
+                    timeout=3,
+                )
+            except subprocess.TimeoutExpired:
+                # A controller switch can hold the driver's ROS service queue
+                # while FRI is absent.  Do not let that prevent the subsequent
+                # real-executor abort and process-level driver shutdown.
+                self.log("Quiesce command timed out; continuing fail-closed shutdown: " + command)
+
+    def _release_robot_control(self, reason: str) -> None:
+        """Fail closed through Idle before another controller may be started."""
+        if not self._container_running():
+            return
+        nodes = set(self._ros_nodes())
+        self.log("Releasing robot control before " + reason)
+        self._quiesce_demo_control()
+        if "/iiwa14/real_executor" in nodes:
+            try:
+                self._abort_real_and_confirm(reason)
+            except RuntimeError as error:
+                # A dead executor must not prevent fail-closed driver shutdown.
+                # The next mode is allowed only after the old driver and launch
+                # wrappers are confirmed absent below.
+                self.log("Real executor did not confirm abort; forcing driver shutdown: " + str(error))
+        self._stop_driver_process()
 
     def _robot_iface_state(self) -> Dict[str, object]:
         env_file = PROJECT_ROOT / ".env"
@@ -328,20 +751,329 @@ class Supervisor:
         return json.loads(json.dumps(self._fixed_scene_geometry))
 
     @staticmethod
-    def _load_fixed_feature_series() -> Dict[str, object]:
-        config = json.loads(SCENE_CONFIG.read_text(encoding="utf-8"))
-        definition = config["feature_definition"]
+    def _load_task_profiles() -> Dict[str, Dict[str, object]]:
+        profiles: Dict[str, Dict[str, object]] = {}
+        for task_id, path in TASK_CONFIGS.items():
+            config = json.loads(path.read_text(encoding="utf-8"))
+            gui = dict(config["gui"])
+            stage_names = [str(value) for value in gui["stage_names"]]
+            profiles[task_id] = {
+                "display_name": str(config["display_name"]),
+                "n_stages": len(stage_names),
+                "stage_names": stage_names,
+                "default_start": dict(gui["default_start"]),
+                "default_goal": dict(gui["default_goal"]),
+            }
+        return profiles
+
+    def _discover_constraint_sources(self) -> Dict[str, List[Dict[str, object]]]:
+        sources: Dict[str, List[Dict[str, object]]] = {
+            task_id: [
+                {
+                    "id": "true",
+                    "label": "True constraints",
+                    "task_id": task_id,
+                    "container_path": "true",
+                    "compatible": True,
+                }
+            ]
+            for task_id in self._task_profiles
+        }
+        for method_name in sorted(MAP_METHODS):
+            pattern = "{}/*/method_seed_*/learned_constraints.json".format(
+                method_name
+            )
+            for path in sorted(LEARNED_CONSTRAINT_ROOT.glob(pattern)):
+                try:
+                    artifact = json.loads(path.read_text(encoding="utf-8"))
+                    task_id = str(artifact.get("task_id"))
+                    if (
+                        artifact.get("artifact_type") != "learned_stage_constraints"
+                        or task_id not in self._task_profiles
+                    ):
+                        continue
+                    compatible, reason = self._constraint_artifact_compatibility(
+                        task_id, artifact
+                    )
+                    relative = path.relative_to(LEARNED_CONSTRAINT_ROOT)
+                    metadata_path = path.with_name("metadata.json")
+                    metadata = (
+                        json.loads(metadata_path.read_text(encoding="utf-8"))
+                        if metadata_path.exists()
+                        else {}
+                    )
+                    artifact_method = str(artifact.get("method_name", method_name))
+                    method_seed = int(artifact.get("method_seed", 0))
+                    sources[task_id].append(
+                        {
+                            "id": "learned:" + relative.as_posix(),
+                            "label": "{} · seed {}".format(
+                                artifact_method, method_seed
+                            ),
+                            "task_id": task_id,
+                            "container_path": "/learned_constraints/"
+                            + relative.as_posix(),
+                            "compatible": compatible,
+                            "reason": reason,
+                            "created_at_utc": metadata.get("created_at_utc"),
+                        }
+                    )
+                except (KeyError, OSError, TypeError, ValueError):
+                    continue
+        return sources
+
+    def _constraint_artifact_compatibility(
+        self, task_id: str, artifact: Dict[str, object]
+    ) -> Tuple[bool, str]:
+        try:
+            if int(artifact.get("schema_version", -1)) != 2:
+                return False, "unsupported schema version"
+            expected_frame = dict(
+                json.loads(TASK_CONFIGS[task_id].read_text(encoding="utf-8")).get(
+                    "task_frame", {}
+                )
+            )
+            artifact_frame = artifact.get("task_frame")
+            if expected_frame:
+                if not isinstance(artifact_frame, dict):
+                    return False, "task-frame definition is missing"
+                if str(artifact_frame.get("frame_id")) != str(
+                    expected_frame.get("frame_id")
+                ):
+                    return False, "task frame does not match"
+                if str(artifact_frame.get("snapshot_policy")) != str(
+                    expected_frame.get("snapshot_policy")
+                ):
+                    return False, "task-frame snapshot policy does not match"
+            n_stages = int(artifact["num_stages"])
+            expected_stages = int(self._task_profiles[task_id]["n_stages"])
+            if n_stages != expected_stages:
+                return False, "{} stages; task requires {}".format(
+                    n_stages, expected_stages
+                )
+            schema = artifact["feature_schema"]
+            pairs = artifact["feature_stage_modes"]
+            if not isinstance(schema, list) or not schema or not isinstance(pairs, list):
+                return False, "feature schema or feature-stage matrix is missing"
+            names = [str(spec["name"]) for spec in schema]
+            if any(not name for name in names) or len(set(names)) != len(names):
+                return False, "feature schema contains empty or duplicate names"
+            expected_pairs = {
+                (stage, name) for stage in range(n_stages) for name in names
+            }
+            seen_pairs = set()
+            supported = {
+                str(spec["name"])
+                for spec in self._task_feature_definitions[task_id]["schema"]
+            }
+            unsupported = set()
+            for pair in pairs:
+                stage = int(pair["stage"])
+                name = str(pair["feature_name"])
+                key = (stage, name)
+                if key in seen_pairs or key not in expected_pairs:
+                    return False, "feature-stage matrix has duplicate or invalid pairs"
+                seen_pairs.add(key)
+                mode = str(pair["mode"])
+                if mode not in (
+                    "inactive",
+                    "target_value",
+                    "lower_bound",
+                    "upper_bound",
+                ):
+                    return False, "unsupported mode {}".format(mode)
+                if mode != "inactive":
+                    if name not in supported:
+                        unsupported.add(name)
+                    value = float(pair["value"])
+                    scale = float(pair.get("scale", 1.0))
+                    weight = float(pair.get("weight", 1.0))
+                    if not math.isfinite(value):
+                        return False, "active constraint value is not finite"
+                    if not math.isfinite(scale) or scale <= 0.0:
+                        return False, "constraint scale must be positive and finite"
+                    if not math.isfinite(weight) or weight < 0.0:
+                        return False, "constraint weight must be nonnegative and finite"
+            if seen_pairs != expected_pairs:
+                return False, "feature-stage matrix is incomplete"
+            if unsupported:
+                return False, "unsupported active features: " + ", ".join(
+                    sorted(unsupported)
+                )
+            return True, ""
+        except (KeyError, TypeError, ValueError):
+            return False, "invalid learned constraint artifact"
+
+    def _refresh_constraint_sources(self) -> None:
+        sources = self._discover_constraint_sources()
+        changed = False
+        with self._lock:
+            self._constraint_sources = sources
+            for task_id, options in sources.items():
+                valid_ids = {
+                    str(option["id"])
+                    for option in options
+                    if option["compatible"] is True
+                }
+                selected = str(
+                    self._gui_settings["constraint_source_by_task"].get(
+                        task_id, "true"
+                    )
+                )
+                if selected not in valid_ids:
+                    self._gui_settings["constraint_source_by_task"][task_id] = "true"
+                    changed = True
+                    if str(self._task_state.get("task_id")) == task_id:
+                        self._task_state["constraint_source_id"] = "true"
+                        self._task_state["constraint_source_label"] = "True constraints"
+            if changed:
+                self._save_gui_settings()
+
+    def _default_gui_settings(self) -> Dict[str, object]:
+        task_id = "BarClean" if "BarClean" in self._task_profiles else next(iter(self._task_profiles))
         return {
-            "source": str(definition["source"]),
-            "schema": [dict(value) for value in definition["schema"]],
-            "true_constraints": dict(definition["true_constraints"]),
-            "constraint_specs": [
-                dict(value) for value in definition["constraint_specs"]
-            ],
+            "schema_version": 1,
+            "task_id": task_id,
+            "constraint_source_by_task": {
+                name: "true" for name in self._task_profiles
+            },
+            "start_by_task": {
+                name: dict(profile["default_start"])
+                for name, profile in self._task_profiles.items()
+            },
+            "goal_by_task": {
+                name: dict(profile["default_goal"])
+                for name, profile in self._task_profiles.items()
+            },
+            "render_video": False,
         }
 
-    def _empty_feature_series(self) -> Dict[str, object]:
-        series = json.loads(json.dumps(self._fixed_feature_series))
+    @staticmethod
+    def _settings_pose(value: object) -> Optional[Dict[str, float]]:
+        if not isinstance(value, dict):
+            return None
+        keys = ("x", "y", "z", "qx", "qy", "qz", "qw")
+        try:
+            pose = {key: float(value[key]) for key in keys}
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not all(math.isfinite(number) for number in pose.values()):
+            return None
+        norm = math.sqrt(sum(pose[key] ** 2 for key in ("qx", "qy", "qz", "qw")))
+        return pose if norm > 1e-9 else None
+
+    def _load_gui_settings(self) -> Dict[str, object]:
+        settings = self._default_gui_settings()
+        try:
+            saved = json.loads(GUI_SETTINGS_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return settings
+        task_id = str(saved.get("task_id", settings["task_id"]))
+        if task_id in self._task_profiles:
+            settings["task_id"] = task_id
+        for map_name in ("start_by_task", "goal_by_task"):
+            saved_poses = saved.get(map_name, {})
+            if isinstance(saved_poses, dict):
+                for name in self._task_profiles:
+                    pose = self._settings_pose(saved_poses.get(name))
+                    if pose is not None:
+                        settings[map_name][name] = pose
+        saved_sources = saved.get("constraint_source_by_task", {})
+        if isinstance(saved_sources, dict):
+            for name, options in self._constraint_sources.items():
+                source_id = str(saved_sources.get(name, "true"))
+                if any(option["id"] == source_id and option["compatible"] for option in options):
+                    settings["constraint_source_by_task"][name] = source_id
+        settings["render_video"] = saved.get("render_video", False) is True
+        return settings
+
+    def _save_gui_settings(self) -> None:
+        GUI_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = GUI_SETTINGS_PATH.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(self._gui_settings, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(GUI_SETTINGS_PATH)
+
+    def _resolve_constraint_source(self, task_id: str, source_id: str) -> Dict[str, object]:
+        self._constraint_sources = self._discover_constraint_sources()
+        for source in self._constraint_sources[task_id]:
+            if source["id"] == source_id:
+                if source["compatible"] is not True:
+                    raise ValueError(
+                        "Learned constraints are incompatible: {}".format(source.get("reason", "unknown reason"))
+                    )
+                return source
+        raise ValueError("Unknown constraint source {} for {}".format(source_id, task_id))
+
+    def update_gui_settings(self, payload: Dict[str, object]) -> None:
+        task_id = str(payload.get("task_id", self._gui_settings["task_id"]))
+        if task_id not in self._task_profiles:
+            raise ValueError("Unknown task_id {}".format(task_id))
+        source_id = str(
+            payload.get(
+                "constraint_source_id",
+                self._gui_settings["constraint_source_by_task"][task_id],
+            )
+        )
+        source = self._resolve_constraint_source(task_id, source_id)
+        start = self._settings_pose(payload.get("start"))
+        goal = self._settings_pose(payload.get("goal"))
+        with self._lock:
+            self._gui_settings["task_id"] = task_id
+            self._gui_settings["constraint_source_by_task"][task_id] = source_id
+            if start is not None:
+                self._gui_settings["start_by_task"][task_id] = start
+            if goal is not None:
+                self._gui_settings["goal_by_task"][task_id] = goal
+            if "render_video" in payload:
+                self._gui_settings["render_video"] = payload["render_video"] is True
+            self._save_gui_settings()
+            if str(self._task_state.get("task_id")) == task_id:
+                self._task_state["constraint_source_id"] = source_id
+                self._task_state["constraint_source_label"] = source["label"]
+
+    @staticmethod
+    def _load_task_feature_definitions() -> Dict[str, Dict[str, object]]:
+        definitions: Dict[str, Dict[str, object]] = {}
+        for task_id, path in TASK_CONFIGS.items():
+            config = json.loads(path.read_text(encoding="utf-8"))
+            feature_names = [str(value) for value in config["visualization_features"]]
+            units = config["feature_units"]
+            definitions[task_id] = {
+                "source": "stage_constraint_planner/config/{}".format(path.name),
+                "schema": [
+                    {"name": name, "unit": str(units[name])}
+                    for name in feature_names
+                ],
+                "true_constraints": {
+                    "bar_axial_offset_reference": float(
+                        config.get("bar_axial_offset_reference", 0.0)
+                    )
+                },
+                "constraint_specs": [dict(value) for value in config["constraint_terms"]],
+                "table_surface_point": [
+                    float(value) for value in config["table_surface_point"]
+                ],
+                "table_normal": [float(value) for value in config["table_normal"]],
+                "obstacle_radius": float(config["obstacle_radius"]),
+            }
+        return definitions
+
+    def _reload_task_definitions(self) -> None:
+        profiles = self._load_task_profiles()
+        definitions = self._load_task_feature_definitions()
+        with self._lock:
+            self._task_profiles = profiles
+            self._task_feature_definitions = definitions
+
+    def _empty_feature_series(self, task_id: str) -> Dict[str, object]:
+        definition = self._task_feature_definitions[task_id]
+        series = {
+            key: json.loads(json.dumps(definition[key]))
+            for key in ("source", "schema", "true_constraints", "constraint_specs")
+        }
         series["samples"] = []
         return series
 
@@ -371,13 +1103,150 @@ class Supervisor:
             "source": "optitrack" if live_objects else "fallback",
         }
 
+    @staticmethod
+    def _pose_from_topic_csv(payload: str) -> Dict[str, float]:
+        try:
+            row = next(csv.reader([payload]))
+        except (csv.Error, StopIteration) as error:
+            raise ValueError("Pose topic returned invalid CSV") from error
+        # RosTopicStream removes the leading %time field. PoseStamped then has
+        # seq, stamp, frame_id, position xyz, and quaternion xyzw.
+        if len(row) != 10:
+            raise ValueError(
+                "Pose topic returned {} fields instead of 10".format(len(row))
+            )
+        try:
+            values = [float(value) for value in row[3:10]]
+        except ValueError as error:
+            raise ValueError("Pose topic returned a non-numeric pose") from error
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Pose topic returned a non-finite pose")
+        quaternion_norm = math.sqrt(sum(value * value for value in values[3:]))
+        if quaternion_norm <= 1e-12:
+            raise ValueError("Pose topic returned a zero quaternion")
+        values[3:] = [value / quaternion_norm for value in values[3:]]
+        return dict(zip(("x", "y", "z", "qx", "qy", "qz", "qw"), values))
+
+    def _direct_optitrack_visualization(self) -> Optional[Dict[str, object]]:
+        try:
+            bar = self._pose_from_topic_csv(
+                self._topic_value(
+                    CONTAINER,
+                    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
+                    timeout=0.2,
+                    max_age=0.5,
+                )
+            )
+            obstacle = self._pose_from_topic_csv(
+                self._topic_value(
+                    CONTAINER,
+                    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
+                    timeout=0.2,
+                    max_age=0.5,
+                )
+            )
+        except (RuntimeError, ValueError):
+            return None
+
+        rotation = self._optitrack_to_robot_rotation
+        translation = self._optitrack_to_robot_translation
+        bar_position = self._transform_point(
+            rotation, translation, [bar["x"], bar["y"], bar["z"]]
+        )
+        obstacle_position = self._transform_point(
+            rotation,
+            translation,
+            [obstacle["x"], obstacle["y"], obstacle["z"]],
+        )
+        x, y, z, w = (bar[key] for key in ("qx", "qy", "qz", "qw"))
+        tracker_axis = [
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y + z * w),
+            2.0 * (x * z - y * w),
+        ]
+        bar_axis = self._rotate_vector(rotation, tracker_axis)
+        axis_norm = math.hypot(bar_axis[0], bar_axis[1])
+        if axis_norm <= 1e-12:
+            return None
+
+        return {
+            "current_ee": None,
+            "scene_geometry": {
+                "bar": {
+                    "pivot": bar_position[:2],
+                    "axis": [bar_axis[0] / axis_norm, bar_axis[1] / axis_norm],
+                    "outline_u": list(self._fixed_scene_geometry["bar"]["outline_u"]),
+                    "outline_v": list(self._fixed_scene_geometry["bar"]["outline_v"]),
+                    "live": True,
+                },
+                "obstacle": {
+                    "center": obstacle_position[:2],
+                    "radius": float(self._fixed_scene_geometry["obstacle"]["radius"]),
+                    "live": True,
+                },
+            },
+            "source": "optitrack",
+        }
+
+    def _simulation_scene_snapshot(self) -> Dict[str, object]:
+        visualization = (
+            self._direct_optitrack_visualization() or self._demo_visualization()
+        )
+        if visualization is None:
+            scene = self._fallback_scene_geometry()
+            source = "fallback"
+        else:
+            scene = visualization.get("scene_geometry")
+            source = str(visualization.get("source", "fallback"))
+        if not isinstance(scene, dict):
+            raise RuntimeError("Task scene snapshot is unavailable")
+        bar = scene.get("bar")
+        obstacle = scene.get("obstacle")
+        if not isinstance(bar, dict) or not isinstance(obstacle, dict):
+            raise RuntimeError("Task scene snapshot is missing bar or obstacle geometry")
+        try:
+            pivot = [float(value) for value in bar["pivot"]]
+            axis = [float(value) for value in bar["axis"]]
+            center = [float(value) for value in obstacle["center"]]
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError("Task scene snapshot contains invalid geometry") from error
+        if (
+            len(pivot) != 2
+            or len(axis) != 2
+            or len(center) != 2
+            or not all(math.isfinite(value) for value in pivot + axis + center)
+        ):
+            raise RuntimeError("Task scene snapshot contains invalid geometry")
+        axis_norm = math.hypot(axis[0], axis[1])
+        if axis_norm <= 1e-12:
+            raise RuntimeError("Task scene snapshot contains a zero bar axis")
+        snapshot = {
+            "source": source,
+            "bar": {
+                "pivot": pivot,
+                "axis": [axis[0] / axis_norm, axis[1] / axis_norm],
+                "live": bar.get("live") is True,
+            },
+            "obstacle": {
+                "center": center,
+                "live": obstacle.get("live") is True,
+            },
+        }
+        self.log(
+            "Frozen simulation scene from {}: bar=({:.3f}, {:.3f}), "
+            "obstacle=({:.3f}, {:.3f})".format(
+                source, pivot[0], pivot[1], center[0], center[1]
+            )
+        )
+        return snapshot
+
     def task_visualization(self) -> Dict[str, object]:
         with self._lock:
             mode = str(self._task_state.get("mode", "simulator"))
             phase = str(self._task_state.get("phase", "idle"))
             use_simulation = (
                 mode == "simulator"
-                and phase != "idle"
+                and phase == "executing"
                 and self._task_scene_source == "simulation"
             )
             trace = [list(point) for point in self._task_trace]
@@ -397,16 +1266,26 @@ class Supervisor:
             demo_visualization = self._demo_visualization()
             if demo_visualization is not None:
                 current_ee = demo_visualization["current_ee"]
-                scene = demo_visualization["scene_geometry"]
-                source = demo_visualization["source"]
-            elif source != "simulation":
+            keep_planner_scene = (
+                source == "planner_scene" and phase in TASK_ACTIVE_PHASES
+            )
+            if not keep_planner_scene:
+                live_visualization = (
+                    self._direct_optitrack_visualization() or demo_visualization
+                )
+                if live_visualization is not None:
+                    scene = live_visualization["scene_geometry"]
+                    source = live_visualization["source"]
+                else:
+                    current_ee = None
+                    scene = self._fallback_scene_geometry()
+                    source = "fallback"
+            elif demo_visualization is None:
                 current_ee = None
-                scene = self._fallback_scene_geometry()
-                source = "fallback"
 
         return {
             "ok": True,
-            "task_id": str(self._task_state.get("task_id", "BarInspect")),
+            "task_id": str(self._task_state.get("task_id", "BarClean")),
             "mode": mode,
             "phase": phase,
             "current_ee": current_ee,
@@ -422,7 +1301,24 @@ class Supervisor:
         }
 
     def state(self) -> Dict[str, object]:
+        self._reload_task_definitions()
+        self._refresh_constraint_sources()
         nodes = self._ros_nodes()
+        driver_node_running = "/iiwa14/iiwa_driver" in nodes
+        driver_process_running = self._driver_binary_running()
+        controllers = (
+            self._running_iiwa_controllers()
+            if driver_node_running
+            else []
+        )
+        if driver_process_running and not driver_node_running:
+            robot_control = {
+                "mode": "incomplete",
+                "label": "Driver process exists without a ROS node",
+                "healthy": False,
+            }
+        else:
+            robot_control = self._control_mode_from_graph(nodes, controllers)
         with self._lock:
             busy = self._job is not None and self._job.is_alive()
             return {
@@ -430,10 +1326,13 @@ class Supervisor:
                 "project_root": str(PROJECT_ROOT),
                 "available_tasks": [
                     {"task_id": task_id, **profile}
-                    for task_id, profile in TASK_PROFILES.items()
+                    for task_id, profile in self._task_profiles.items()
                 ],
+                "constraint_sources": json.loads(json.dumps(self._constraint_sources)),
+                "gui_settings": json.loads(json.dumps(self._gui_settings)),
                 "container_running": self._container_running(),
-                "driver_running": "/iiwa14/iiwa_driver" in nodes,
+                "driver_running": driver_node_running or driver_process_running,
+                "robot_control": robot_control,
                 "demo_running": "/stage_demo_gui" in nodes,
                 "simulator_running": self._named_container_running(SIM_CONTAINER),
                 "task": {
@@ -517,13 +1416,14 @@ class Supervisor:
     def _ensure_simulator(
         self, require_video: bool
     ) -> Tuple[bool, Dict[str, object]]:
+        self._ensure_data_directories()
         environment = {
             "SIM_AUTO_PLAN": "false",
-            "SIM_RECORD": "false",
             "SIM_RENDER_VIDEO": "true",
         }
         recreate = False
         if self._named_container_running(SIM_CONTAINER):
+            self._assert_container_storage_access(SIM_CONTAINER, ("/data/sim_runs",))
             try:
                 self._wait_for_simulator(timeout=3.0)
                 status = self._read_sim_status()
@@ -531,11 +1431,16 @@ class Supervisor:
                 self.log("Simulator is unhealthy; recreating its container")
                 recreate = True
             else:
-                if "task_sequence" not in status or "task_id" not in status:
-                    raise RuntimeError(
-                        "Simulator image is outdated; rebuild the workstation image once"
+                if any(
+                    key not in status
+                    for key in (
+                        "task_sequence", "task_id", "video_capable",
+                        "scene_snapshot_source",
                     )
-                if require_video and status.get("render_video") is not True:
+                ):
+                    self.log("Simulator container is outdated; recreating it from the current image")
+                    recreate = True
+                elif require_video and status.get("video_capable") is not True:
                     self.log("Restarting simulator once to enable task video rendering")
                     recreate = True
                 else:
@@ -547,12 +1452,19 @@ class Supervisor:
             arguments.append("--force-recreate")
         self._run(self._sim_compose(*arguments), env_overrides=environment)
         self._wait_for_simulator()
+        self._assert_container_storage_access(SIM_CONTAINER, ("/data/sim_runs",))
         status = self._read_sim_status()
-        if "task_sequence" not in status or "task_id" not in status:
+        if any(
+            key not in status
+            for key in (
+                "task_sequence", "task_id", "video_capable",
+                "scene_snapshot_source",
+            )
+        ):
             raise RuntimeError(
                 "Simulator image is outdated; rebuild the workstation image once"
             )
-        if require_video and status.get("render_video") is not True:
+        if require_video and status.get("video_capable") is not True:
             raise RuntimeError("Simulator started without video-rendering capability")
         return False, status
 
@@ -567,10 +1479,19 @@ class Supervisor:
         task_id: str,
         start: Dict[str, float],
         goal: Dict[str, float],
-        record: bool,
+        render_video: bool,
+        scene_snapshot: Dict[str, object],
+        constraint_source: str = "true",
     ) -> None:
         payload = json.dumps(
-            {"task_id": task_id, "start": start, "goal": goal, "record": record},
+            {
+                "task_id": task_id,
+                "start": start,
+                "goal": goal,
+                "render_video": render_video,
+                "scene_snapshot": scene_snapshot,
+                "constraint_source": constraint_source,
+            },
             separators=(",", ":"),
         )
         result = self._sim_ros(
@@ -589,28 +1510,12 @@ class Supervisor:
             raise RuntimeError(str(response.get("message", "Planner rejected the task")))
 
     def _read_sim_status(self) -> Dict[str, object]:
-        result = subprocess.run(
-            [
-                "docker",
-                "exec",
-                SIM_CONTAINER,
-                "/entrypoint.sh",
-                "rostopic",
-                "echo",
-                "-n",
-                "1",
-                "-p",
-                "/iiwa14/sim/status",
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=3,
-            check=False,
+        data_line = self._topic_value(
+            SIM_CONTAINER,
+            "/iiwa14/sim/status",
+            timeout=3.0,
+            max_age=0.75,
         )
-        if result.returncode != 0:
-            raise RuntimeError("Could not read simulator status")
-        data_line = self._string_message_from_csv(result.stdout)
         try:
             return json.loads(data_line)
         except json.JSONDecodeError as error:
@@ -655,8 +1560,10 @@ class Supervisor:
 
     @staticmethod
     def _string_message_from_csv(output: str) -> str:
-        rows = list(csv.reader(io.StringIO(output)))
-        for row in rows:
+        # rostopic -p stores std_msgs/String.data in one CSV field. Planner
+        # visualizations can legitimately exceed Python's 128 KiB default.
+        csv.field_size_limit(16 * 1024 * 1024)
+        for row in csv.reader(io.StringIO(output)):
             if row and not row[0].startswith("%") and len(row) >= 2:
                 return ",".join(row[1:]).strip()
         return ""
@@ -670,27 +1577,97 @@ class Supervisor:
         )
 
     def _read_real_status(self) -> Dict[str, object]:
-        result = subprocess.run(
-            [
-                "docker", "exec", CONTAINER, "/entrypoint.sh",
-                "rostopic", "echo", "-n", "1", "-p",
-                "/iiwa14/real_executor/status",
-            ],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=3,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise RuntimeError("Could not read real-executor status")
         try:
-            return json.loads(self._string_message_from_csv(result.stdout))
+            return json.loads(
+                self._topic_value(
+                    CONTAINER,
+                    "/iiwa14/real_executor/status",
+                    timeout=3.0,
+                    max_age=0.75,
+                )
+            )
         except json.JSONDecodeError as error:
             raise RuntimeError("Real executor returned an invalid status message") from error
 
+    def _wait_for_real_plan(
+        self, previous_serial: int, task_id: str, timeout: float = 10.0
+    ) -> bool:
+        deadline = time.monotonic() + timeout
+        last_error = ""
+        while time.monotonic() < deadline:
+            if self._task_abort.is_set():
+                return False
+            try:
+                status = self._read_real_status()
+            except RuntimeError as error:
+                last_error = str(error)
+                time.sleep(0.1)
+                continue
+            try:
+                path_serial = int(status.get("path_serial", -1))
+            except (TypeError, ValueError):
+                path_serial = -1
+            if (
+                path_serial > previous_serial
+                and str(status.get("task_id", "")) == task_id
+                and str(status.get("phase", "")) == "path_received"
+            ):
+                self.log(
+                    "Real executor acknowledged planner path serial {}".format(
+                        path_serial
+                    )
+                )
+                return True
+            time.sleep(0.1)
+        detail = ": " + last_error if last_error else ""
+        raise RuntimeError(
+            "Real executor did not acknowledge this task's new planner path" + detail
+        )
+
+    def _read_real_fri_ready(self) -> Tuple[bool, str]:
+        try:
+            ready_value = self._topic_value(
+                CONTAINER,
+                "/iiwa14/real_executor/fri_ready_status",
+                timeout=3.0,
+                max_age=0.5,
+            )
+        except RuntimeError:
+            return False, "waiting for FRI readiness status"
+        # ``rostopic echo -p`` serializes std_msgs/Bool as numeric CSV (1/0),
+        # while some ROS versions/tools use True/False.  Accept both forms.
+        ready = ready_value.strip().lower() in {"1", "true"}
+        return ready, (
+            "FRI POSITION mode is COMMANDING_ACTIVE"
+            if ready
+            else "waiting for COMMANDING_ACTIVE + POSITION"
+        )
+
+    def _wait_for_fri_position(self, timeout: float = 180.0) -> bool:
+        self._set_task_state(
+            phase="waiting_for_fri",
+            message="SmartPAD: start FRIOverlayGripper, then select Position",
+        )
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._task_abort.is_set():
+                return False
+            ready, reason = self._read_real_fri_ready()
+            if ready:
+                self.log("FRI POSITION mode is COMMANDING_ACTIVE")
+                return True
+            self._set_task_state(
+                phase="waiting_for_fri",
+                message="Start FRIOverlayGripper on SmartPAD, then select Position — "
+                + reason,
+            )
+            time.sleep(0.5)
+        raise RuntimeError(
+            "Timed out waiting for FRIOverlayGripper POSITION mode; retry from the GUI"
+        )
+
     def _wait_for_real_station(
-        self, child: subprocess.Popen[str], timeout: float = 20.0
+        self, child: Optional[subprocess.Popen[str]], timeout: float = 20.0
     ) -> None:
         required = {
             "/iiwa14/iiwa_driver",
@@ -699,24 +1676,213 @@ class Supervisor:
         }
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if child.poll() is not None:
+            if child is not None and child.poll() is not None:
                 raise RuntimeError(
                     "Real station exited during startup; inspect the supervisor log"
                 )
-            if required.issubset(set(self._ros_nodes())):
+            if (
+                required.issubset(set(self._ros_nodes()))
+                and self._real_station_interfaces_ready()
+            ):
+                with self._lock:
+                    self._real_station_verified = True
                 return
             time.sleep(0.5)
-        raise RuntimeError("Real station did not become ready within 20 s")
+        raise RuntimeError(
+            "Real station interfaces did not become ready within {:.0f} s".format(
+                timeout
+            )
+        )
 
-    def _start_real_station(self) -> None:
+    def _optitrack_settings(self) -> Tuple[str, str, str, str]:
+        return (
+            self._read_env_value("OPTITRACK_SERVER", "128.178.145.104"),
+            self._read_env_value("OPTITRACK_BASE", "iiwa14"),
+            self._read_env_value("OPTITRACK_OBJECT", "baiyu_bar"),
+            self._read_env_value("OPTITRACK_OBSTACLE", "baiyu_obs_bar"),
+        )
+
+    @staticmethod
+    def _topic_has_fresh_message(
+        topic: str, timeout: float = 3.0, max_age: float = 1.0
+    ) -> bool:
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "exec", CONTAINER,
+                    "timeout", "{:.2f}s".format(timeout),
+                    "/entrypoint.sh", "rostopic", "echo", "-n", "1", "-p", topic,
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout + 1.0,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        if result.returncode != 0:
+            return False
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        if len(rows) < 2:
+            return False
+        header = rows[0]
+        try:
+            stamp_index = header.index("field.header.stamp")
+            raw_stamp = float(rows[-1][stamp_index])
+        except (ValueError, IndexError):
+            return False
+        stamp_seconds = raw_stamp / 1e9 if raw_stamp > 1e12 else raw_stamp
+        age = time.time() - stamp_seconds
+        return -0.1 <= age <= max_age
+
+    def _wait_for_optitrack_ready(
+        self,
+        child: Optional[subprocess.Popen[str]],
+        base: str,
+        obj: str,
+        obstacle: str,
+        timeout: float = 20.0,
+    ) -> None:
+        required_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        raw_topics = (
+            ("base", base, "/vrpn_client_node/{}/pose".format(base)),
+            ("object", obj, "/vrpn_client_node/{}/pose".format(obj)),
+            (
+                "obstacle",
+                obstacle,
+                "/vrpn_client_node/{}/pose".format(obstacle),
+            ),
+        )
+        transformed_topics = (
+            "/vrpn_client_node/{}/pose_from_{}".format(obj, base),
+            "/vrpn_client_node/{}/pose_from_{}".format(obstacle, base),
+        )
+        deadline = time.monotonic() + timeout
+        missing_raw = list(raw_topics)
+        missing_transformed = list(transformed_topics)
+        while time.monotonic() < deadline:
+            if child is not None and child.poll() is not None:
+                raise RuntimeError(
+                    "OptiTrack launch exited during startup; inspect the supervisor log"
+                )
+            if required_nodes.issubset(set(self._ros_nodes())):
+                missing_raw = [
+                    item
+                    for item in raw_topics
+                    if not self._topic_has_fresh_message(item[2])
+                ]
+                if missing_raw:
+                    missing_transformed = list(transformed_topics)
+                else:
+                    missing_transformed = [
+                        topic
+                        for topic in transformed_topics
+                        if not self._topic_has_fresh_message(topic)
+                    ]
+                if not missing_raw and not missing_transformed:
+                    self.log(
+                        "OptiTrack is ready: {}, {}, and {} are publishing fresh poses".format(
+                            base, obj, obstacle
+                        )
+                    )
+                    return
+            time.sleep(0.25)
+        if missing_raw:
+            missing_roles = {role for role, _name, _topic in missing_raw}
+            if missing_roles == {"base"}:
+                raise RuntimeError(
+                    "OptiTrack objects are available, but base rigid body '{}' did not "
+                    "deliver a fresh raw pose on {}. Base-relative object poses cannot "
+                    "be computed. In Motive, enable and track exactly '{}' and disable "
+                    "any duplicate robot-base rigid body.".format(
+                        base, missing_raw[0][2], base
+                    )
+                )
+            raise RuntimeError(
+                "OptiTrack did not deliver fresh raw poses for: {}. Confirm these exact "
+                "rigid-body names are enabled and tracked in Motive.".format(
+                    ", ".join(
+                        "{} ({})".format(name, topic)
+                        for _role, name, topic in missing_raw
+                    )
+                )
+            )
+        raise RuntimeError(
+            "OptiTrack raw poses are fresh, but these base-relative topics did not "
+            "deliver a new pose: {}. Inspect the base-transform node.".format(
+                ", ".join(missing_transformed)
+            )
+        )
+
+    def _start_optitrack_process(self) -> None:
+        if not self._container_running():
+            raise RuntimeError("Container is not running")
+        server, base, obj, obstacle = self._optitrack_settings()
+        required_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        nodes = set(self._ros_nodes())
+        if required_nodes.issubset(nodes):
+            self.log("Reusing the running OptiTrack ROS chain")
+            self._wait_for_optitrack_ready(None, base, obj, obstacle)
+            return
+        partial = required_nodes.intersection(nodes)
+        if partial:
+            raise RuntimeError(
+                "OptiTrack ROS chain is only partially running ({}); stop the "
+                "workstation once, then retry".format(", ".join(sorted(partial)))
+            )
+        child = self._spawn(
+            "tracking",
+            [
+                "docker", "exec", CONTAINER, "/entrypoint.sh",
+                "roslaunch", "stage_optitrack", "optitrack.launch",
+                "server:={}".format(server),
+                "base_name:={}".format(base),
+                "object_name:={}".format(obj),
+                "obstacle_name:={}".format(obstacle),
+            ],
+        )
+        try:
+            self._wait_for_optitrack_ready(child, base, obj, obstacle)
+        except Exception:
+            self._signal_child("tracking")
+            raise
+
+    def _start_real_station(self, require_optitrack: bool = True) -> None:
+        # Planner tasks consume live object poses. Return Home is deliberately
+        # independent of OptiTrack and starts the same position station without
+        # waiting for any tracked rigid body.
+        station_nodes = {
+            "/iiwa14/iiwa_driver",
+            "/iiwa14/real_executor",
+            "/stage_constraint_planner",
+        }
+        tracking_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        nodes = set(self._ros_nodes())
+        station_running = station_nodes.issubset(nodes)
+        tracking_running = tracking_nodes.issubset(nodes)
+        if station_running and (not require_optitrack or tracking_running):
+            with self._lock:
+                already_verified = self._real_station_verified
+            if already_verified:
+                self.log("Reusing the verified Position station (fast path)")
+                return
+            # A supervisor restart forgets its in-memory readiness result even
+            # though the ROS station may still be healthy. Verify the service
+            # contract once, then use the node-only fast path on later tasks.
+            if self._real_station_interfaces_ready():
+                with self._lock:
+                    self._real_station_verified = True
+                self.log("Reusing the running Position station after one interface check")
+                return
+        if require_optitrack:
+            self._start_optitrack_process()
         nodes = set(self._ros_nodes())
         if "/iiwa14/real_executor" in nodes:
+            self._wait_for_real_station(None, timeout=5.0)
             return
         if "/iiwa14/iiwa_driver" in nodes:
-            raise RuntimeError(
-                "A non-real-task iiwa_driver is already running. Stop it before switching "
-                "to PositionTrajectoryController."
-            )
+            self._release_robot_control("switching to Planner / Position control")
         conflicts = self._driver_process_containers()
         if conflicts:
             raise RuntimeError(
@@ -729,52 +1895,173 @@ class Supervisor:
                 "roslaunch", "stage_real_executor", "real_station.launch",
             ],
         )
-        self._wait_for_real_station(child)
+        try:
+            self._wait_for_real_station(child)
+        except Exception:
+            self.log("Real station startup failed; removing the partial control chain")
+            self._stop_driver_process()
+            raise
+
+    def _abort_real_and_confirm(self, reason: str) -> None:
+        self.log("Requesting fail-closed real-task abort: " + str(reason))
+        try:
+            response = self._run(
+                [
+                    "docker", "exec", CONTAINER, "/entrypoint.sh", "rosservice",
+                    "call", "/iiwa14/real_executor/abort",
+                ],
+                check=False,
+                timeout=5.0,
+            )
+        except subprocess.TimeoutExpired as error:
+            self._set_task_state(
+                phase="control_status_unknown",
+                message=(
+                    "GUI lost execution supervision and abort timed out. "
+                    "Use SmartPAD stop or emergency stop."
+                ),
+            )
+            raise RuntimeError("real-executor abort timed out; control status is unknown") from error
+        if response.returncode != 0 or "success: True" not in response.stdout:
+            self._set_task_state(
+                phase="control_status_unknown",
+                message=(
+                    "GUI lost execution supervision and abort was not accepted. "
+                    "Use SmartPAD stop or emergency stop."
+                ),
+            )
+            raise RuntimeError("real-executor abort was not accepted; control status is unknown")
+
+        deadline = time.monotonic() + 5.0
+        last_error = ""
+        while time.monotonic() < deadline:
+            try:
+                status = self._read_real_status()
+            except RuntimeError as error:
+                last_error = str(error)
+                time.sleep(0.1)
+                continue
+            if (
+                status.get("execution_active") is False
+                and status.get("holding_final_position") is not True
+                and str(status.get("phase", ""))
+                in {"aborted", "failed", "protective_stop", "rejected"}
+            ):
+                self.log("Real executor confirmed the robot command path is stopped")
+                return
+            time.sleep(0.1)
+
+        self._set_task_state(
+            phase="control_status_unknown",
+            message=(
+                "Abort was requested but the stopped state could not be confirmed. "
+                "Use SmartPAD stop or emergency stop."
+            ),
+        )
+        detail = ": " + last_error if last_error else ""
+        raise RuntimeError(
+            "could not confirm real-executor abort; control status is unknown" + detail
+        )
 
     def _execute_real_task(
         self,
         task_id: str,
         start: Dict[str, float],
         goal: Dict[str, float],
-        record: bool,
+        constraint_source: str = "true",
     ) -> None:
         if not self._container_running():
             raise RuntimeError("Start the workstation container first")
+        self._assert_container_storage_access(
+            CONTAINER, ("/data/demos", "/data/real_runs")
+        )
         if not self._robot_iface_state()["configured"]:
             raise RuntimeError("Robot network interface is not configured")
-        if self._named_container_running(SIM_CONTAINER):
-            raise RuntimeError("Stop the PyBullet simulator before real-robot execution")
-        self._task_abort.clear()
-        self._reset_task_visualization()
+        # The PyBullet station has its own bridge-network container and ROS graph.
+        # It cannot command the FRI driver, so it may remain available while a real
+        # task is prepared or executed.
+        self._reset_task_visualization(task_id)
         self._set_task_state(
-            task_id=task_id, mode="real", phase="starting", record=record,
+            task_id=task_id, mode="real", phase="starting",
+            data_saved=True, video=False,
             start=start, goal=goal,
-            message="Starting the iiwa14 position-control station",
+            message="Checking or reusing the iiwa14 Position station",
             run_directory=None, video_available=False,
+            constraint_source=constraint_source,
         )
         self._start_real_station()
+        if self._task_abort.is_set():
+            self._abort_real_and_confirm("user stopped the task during station startup")
+            self._set_task_state(
+                phase="aborted", message="Real task stopped before planning"
+            )
+            return
+        initial_status = self._read_real_status()
+        initial_phase = str(initial_status.get("phase", "unknown"))
+        if (
+            initial_status.get("execution_active") is True
+            or initial_phase
+            in {"preparing", "repreparing", "moving_to_start", "executing"}
+        ):
+            self._set_task_state(
+                phase=initial_phase,
+                message="The real executor is already running a task",
+            )
+            raise RuntimeError(
+                "The real executor is already active; abort or wait for it before submitting a new plan"
+            )
+        if initial_status.get("protective_stop") is True:
+            raise RuntimeError(
+                "The real executor has a latched protective stop; inspect and restart the real station"
+            )
+        try:
+            previous_path_serial = int(initial_status["path_serial"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError(
+                "Real executor status has no valid path serial; rebuild the workstation image"
+            ) from error
+        self._set_task_state(
+            phase="planning",
+            message="Planning the Cartesian task; the robot will not move yet",
+        )
+        plan_request = json.dumps(
+            {
+                "task_id": task_id,
+                "start": start,
+                "goal": goal,
+                "constraint_source": constraint_source,
+            },
+            separators=(",", ":"),
+        )
+        response = self._real_ros(
+            "rosrun", "stage_real_executor", "submit_real_plan.py", plan_request,
+            timeout=30.0,
+        )
+        lines = [line for line in response.stdout.splitlines() if line.strip()]
+        try:
+            plan_result = json.loads(lines[-1])
+        except (IndexError, json.JSONDecodeError) as error:
+            raise RuntimeError("Real plan submitter returned invalid output") from error
+        if plan_result.get("success") is not True:
+            raise RuntimeError(
+                "Planner rejected the real task: "
+                + str(plan_result.get("message", "no reason returned"))
+            )
+        if not self._wait_for_real_plan(previous_path_serial, task_id):
+            self._set_task_state(
+                phase="aborted", message="Real task aborted after planning"
+            )
+            return
+        self._update_plan_visualization(self._read_plan_visualization(CONTAINER))
+        if not self._wait_for_fri_position():
+            self._set_task_state(
+                phase="aborted", message="Real task aborted while waiting for FRI"
+            )
+            return
         self._real_ros(
             "rosservice", "call", "/iiwa14/real_executor/set_recording",
-            "data: {}".format("true" if record else "false"),
+            "data: true",
         )
-        self._real_ros(
-            "rostopic", "pub", "-1", "/stage_cons/planner/task",
-            "std_msgs/String", "data: '{}'".format(task_id),
-        )
-        for topic, pose in (
-            ("/stage_cons/planner/start", start),
-            ("/stage_cons/planner/goal", goal),
-        ):
-            self._real_ros(
-                "rostopic", "pub", "-1", topic, "geometry_msgs/PoseStamped",
-                self._pose_message(pose),
-            )
-        response = self._real_ros(
-            "rosservice", "call", "/stage_constraint_planner/plan", timeout=30.0
-        )
-        if "success: True" not in response.stdout:
-            raise RuntimeError("Planner rejected the real task")
-        self._update_plan_visualization(self._read_plan_visualization(CONTAINER))
         self._set_task_state(
             phase="preparing", message="Solving continuous IK and validating the joint trajectory"
         )
@@ -786,62 +2073,324 @@ class Supervisor:
         if self._task_abort.is_set():
             self._set_task_state(phase="aborted", message="Real task aborted before execution")
             return
-        response = self._real_ros(
-            "rosservice", "call", "/iiwa14/real_executor/execute", timeout=10.0
-        )
-        if "success: True" not in response.stdout:
-            raise RuntimeError("Real executor refused to start: " + response.stdout.strip())
-
-        deadline = time.monotonic() + 600.0
-        last_phase = ""
-        while time.monotonic() < deadline:
-            if self._task_abort.is_set():
-                self._set_task_state(phase="aborted", message="Real task aborted by user")
-                return
-            status = self._read_real_status()
-            status_task_id = str(status.get("task_id", ""))
-            if status_task_id != task_id:
-                raise RuntimeError(
-                    "Real executor reports task {}, but GUI selected {}".format(
-                        status_task_id, task_id
-                    )
-                )
-            phase = str(status.get("phase", "unknown"))
-            if phase != last_phase:
-                self.log("Real task phase: " + phase)
-                last_phase = phase
-            message = str(status.get("message", phase))
-            self._set_task_state(
-                phase=phase,
-                message=message,
-                run_directory=status.get("run_directory"),
-                video_available=False,
+        # Once this request is sent, a timeout is ambiguous: the executor may
+        # already have armed and started. Any subsequent supervisor failure must
+        # therefore explicitly abort and confirm the stopped state.
+        execution_may_have_started = True
+        try:
+            response = self._real_ros(
+                "rosservice", "call", "/iiwa14/real_executor/execute", timeout=10.0
             )
-            if phase == "complete":
-                return
-            if phase in ("failed", "rejected", "protective_stop"):
-                raise RuntimeError(message)
-            if phase == "aborted":
-                return
-            time.sleep(0.25)
-        raise RuntimeError("Real task exceeded the 600 s timeout")
+            if "success: True" not in response.stdout:
+                raise RuntimeError(
+                    "Real executor refused to start: " + response.stdout.strip()
+                )
+
+            deadline = time.monotonic() + 600.0
+            last_phase = ""
+            while time.monotonic() < deadline:
+                if self._task_abort.is_set():
+                    self._set_task_state(
+                        phase="aborted", message="Real task aborted by user"
+                    )
+                    return
+                status = self._read_real_status()
+                status_task_id = str(status.get("task_id", ""))
+                if status_task_id != task_id:
+                    raise RuntimeError(
+                        "Real executor reports task {}, but GUI selected {}".format(
+                            status_task_id, task_id
+                        )
+                    )
+                phase = str(status.get("phase", "unknown"))
+                if phase != last_phase:
+                    self.log("Real task phase: " + phase)
+                    last_phase = phase
+                message = str(status.get("message", phase))
+                self._set_task_state(
+                    phase=phase,
+                    message=message,
+                    run_directory=status.get("run_directory"),
+                    video_available=False,
+                )
+                if phase == "executing":
+                    self._update_real_visualization()
+                if phase == "complete":
+                    execution_may_have_started = False
+                    return
+                if phase in ("failed", "rejected", "protective_stop"):
+                    raise RuntimeError(message)
+                if phase == "aborted":
+                    execution_may_have_started = False
+                    return
+                time.sleep(0.1)
+            raise RuntimeError("Real task exceeded the 600 s timeout")
+        except Exception as error:
+            if execution_may_have_started:
+                self._abort_real_and_confirm(str(error))
+            raise
+
+    def _return_robot_home(self) -> None:
+        if not self._container_running():
+            raise RuntimeError("Start the workstation container first")
+        if not self._robot_iface_state()["configured"]:
+            raise RuntimeError("Robot network interface is not configured")
+        with self._lock:
+            task_id = str(self._task_state.get("task_id", "BarClean"))
+        self._reset_task_visualization(task_id)
+        self._set_task_state(
+            mode="home",
+            phase="starting",
+            data_saved=False,
+            video=False,
+            message="Starting Position control for Return Home (OptiTrack not required)",
+            run_directory=None,
+            video_available=False,
+        )
+        self._start_real_station(require_optitrack=False)
+        if self._task_abort.is_set():
+            self._abort_real_and_confirm("user stopped Return Home during station startup")
+            self._set_task_state(
+                phase="aborted", message="Return Home stopped before FRI"
+            )
+            return
+        status = self._read_real_status()
+        if status.get("execution_active") is True or str(status.get("phase", "")) in {
+            "moving_to_start", "executing", "returning_home"
+        }:
+            raise RuntimeError("The real executor is already running a robot motion")
+        if status.get("protective_stop") is True:
+            raise RuntimeError(
+                "The real executor has a latched protective stop; inspect and restart the real station"
+            )
+        if not self._wait_for_fri_position():
+            self._set_task_state(
+                phase="aborted", message="Return Home stopped while waiting for FRI"
+            )
+            return
+        self._set_task_state(
+            phase="home_preparing",
+            message="Validating the vertical-first trajectory to Robot Home",
+        )
+        execution_may_have_started = True
+        try:
+            response = self._real_ros(
+                "rosservice",
+                "call",
+                "/iiwa14/real_executor/return_home",
+                timeout=70.0,
+            )
+            if "success: True" not in response.stdout:
+                raise RuntimeError(
+                    "Real executor refused Return Home: " + response.stdout.strip()
+                )
+            deadline = time.monotonic() + 300.0
+            last_phase = ""
+            while time.monotonic() < deadline:
+                if self._task_abort.is_set():
+                    self._set_task_state(
+                        phase="aborted", message="Return Home stopped by user"
+                    )
+                    return
+                status = self._read_real_status()
+                if str(status.get("operation", "")) != "home":
+                    raise RuntimeError(
+                        "Real executor switched away from the Return Home operation"
+                    )
+                phase = str(status.get("phase", "unknown"))
+                if phase != last_phase:
+                    self.log("Return Home phase: " + phase)
+                    last_phase = phase
+                message = str(status.get("message", phase))
+                self._set_task_state(
+                    task_id=task_id,
+                    phase=phase,
+                    message=message,
+                    run_directory=None,
+                    video_available=False,
+                )
+                if phase == "complete":
+                    execution_may_have_started = False
+                    return
+                if phase in ("failed", "rejected", "protective_stop"):
+                    raise RuntimeError(message)
+                if phase == "aborted":
+                    execution_may_have_started = False
+                    return
+                time.sleep(0.1)
+            raise RuntimeError("Return Home exceeded the 300 s timeout")
+        except Exception as error:
+            if execution_may_have_started:
+                self._abort_real_and_confirm(str(error))
+            raise
+
+    def return_robot_home(self) -> None:
+        self._start_job(
+            "Return robot Home", self._return_robot_home, reset_task_abort=True
+        )
 
     def _set_task_state(self, **values: object) -> None:
         with self._lock:
             self._task_state.update(values)
 
-    def _reset_task_visualization(self) -> None:
+    def _reset_task_visualization(self, task_id: Optional[str] = None) -> None:
+        self._reload_task_definitions()
+        if task_id is None:
+            with self._lock:
+                task_id = str(self._task_state.get("task_id", "BarClean"))
         with self._lock:
             self._task_trace.clear()
             self._task_current_ee = None
             self._task_scene_geometry = self._fallback_scene_geometry()
             self._task_scene_source = "fallback"
-            self._task_feature_series = self._empty_feature_series()
+            self._task_feature_series = self._empty_feature_series(task_id)
             self._task_planned_trace = []
-            self._task_planned_feature_series = self._empty_feature_series()
+            self._task_planned_feature_series = self._empty_feature_series(task_id)
             self._task_stage_boundary_indices = []
             self._task_stage_boundary_times = []
             self._task_stage_transition_end_times = []
+            self._task_execution_started = None
+            self._task_last_feature_sample = -math.inf
+
+    @staticmethod
+    def _tool_axis_from_pose(pose: Dict[str, float]) -> List[float]:
+        x, y, z, w = (pose[key] for key in ("qx", "qy", "qz", "qw"))
+        return [
+            2.0 * (x * z + y * w),
+            2.0 * (y * z - x * w),
+            1.0 - 2.0 * (x * x + y * y),
+        ]
+
+    @staticmethod
+    def _tool_x_from_pose(pose: Dict[str, float]) -> List[float]:
+        x, y, z, w = (pose[key] for key in ("qx", "qy", "qz", "qw"))
+        return [
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y + z * w),
+            2.0 * (x * z - y * w),
+        ]
+
+    def _real_feature_values(
+        self,
+        task_id: str,
+        pose: Dict[str, float],
+        scene: Dict[str, object],
+    ) -> Dict[str, float]:
+        definition = self._task_feature_definitions[task_id]
+        bar = scene["bar"]
+        obstacle = scene["obstacle"]
+        axis = [float(value) for value in bar["axis"]]
+        axis_norm = math.hypot(axis[0], axis[1])
+        if axis_norm <= 1e-12:
+            raise ValueError("Planner scene contains a zero bar axis")
+        axis = [axis[0] / axis_norm, axis[1] / axis_norm, 0.0]
+        lateral = [-axis[1], axis[0], 0.0]
+        normal = [float(value) for value in definition["table_normal"]]
+        normal_norm = math.sqrt(sum(value * value for value in normal))
+        if normal_norm <= 1e-12:
+            raise ValueError("Task config contains a zero table normal")
+        normal = [value / normal_norm for value in normal]
+        position = [pose["x"], pose["y"], pose["z"]]
+        table_point = [float(value) for value in definition["table_surface_point"]]
+        pivot = [float(value) for value in bar["pivot"]]
+        obstacle_center = [float(value) for value in obstacle["center"]]
+        relative_obstacle = [
+            position[0] - obstacle_center[0],
+            position[1] - obstacle_center[1],
+            0.0,
+        ]
+        obstacle_normal = sum(
+            relative_obstacle[index] * normal[index] for index in range(3)
+        )
+        obstacle_radial = [
+            relative_obstacle[index] - obstacle_normal * normal[index]
+            for index in range(3)
+        ]
+        relative_bar = [position[0] - pivot[0], position[1] - pivot[1], 0.0]
+        tool_axis = self._tool_axis_from_pose(pose)
+        tool_x = self._tool_x_from_pose(pose)
+        tool_x_normal = sum(tool_x[index] * normal[index] for index in range(3))
+        tool_x_horizontal = [
+            tool_x[index] - tool_x_normal * normal[index]
+            for index in range(3)
+        ]
+        tool_x_horizontal_norm = math.sqrt(
+            sum(value * value for value in tool_x_horizontal)
+        )
+        if tool_x_horizontal_norm <= 1e-12:
+            raise ValueError("Tool-X cannot be projected into the table plane")
+        tool_x_horizontal = [
+            value / tool_x_horizontal_norm for value in tool_x_horizontal
+        ]
+        down_component = -sum(tool_axis[index] * normal[index] for index in range(3))
+        forward_component = sum(tool_axis[index] * axis[index] for index in range(3))
+        plane_component = sum(tool_axis[index] * lateral[index] for index in range(3))
+        axial_reference = float(
+            definition["true_constraints"].get("bar_axial_offset_reference", 0.0)
+        )
+        return {
+            "obstacle_clearance": math.sqrt(
+                sum(value * value for value in obstacle_radial)
+            ) - float(definition["obstacle_radius"]),
+            "surface_dist": sum(
+                (position[index] - table_point[index]) * normal[index]
+                for index in range(3)
+            ),
+            "bar_lateral_offset": sum(
+                relative_bar[index] * lateral[index] for index in range(3)
+            ),
+            "tool_pitch": math.atan2(down_component, forward_component),
+            "tool_plane_err": math.asin(max(-1.0, min(1.0, plane_component))),
+            "tool_yaw": math.atan2(
+                sum(
+                    tool_x_horizontal[index] * lateral[index]
+                    for index in range(3)
+                ),
+                sum(
+                    tool_x_horizontal[index] * axis[index]
+                    for index in range(3)
+                ),
+            ),
+            "bar_axial_offset": sum(
+                relative_bar[index] * axis[index] for index in range(3)
+            ) - axial_reference,
+        }
+
+    def _update_real_visualization(self, sample_time: Optional[float] = None) -> None:
+        visualization = self._demo_visualization()
+        if visualization is None:
+            return
+        try:
+            pose = self._validated_pose("current EE", visualization.get("current_ee"))
+        except ValueError:
+            return
+        now = time.monotonic() if sample_time is None else float(sample_time)
+        with self._lock:
+            task_id = str(self._task_state.get("task_id", "BarClean"))
+            if self._task_execution_started is None:
+                self._task_execution_started = now
+            if now - self._task_last_feature_sample < 1.0 / FEATURE_SAMPLE_HZ:
+                return
+            scene = json.loads(json.dumps(self._task_scene_geometry))
+            elapsed = now - self._task_execution_started
+        try:
+            values = self._real_feature_values(task_id, pose, scene)
+        except (KeyError, TypeError, ValueError):
+            return
+        definition = self._task_feature_definitions[task_id]
+        names = [str(spec["name"]) for spec in definition["schema"]]
+        sample = [elapsed, *[values[name] for name in names]]
+        if not all(math.isfinite(value) for value in sample):
+            return
+        with self._lock:
+            self._task_current_ee = dict(pose)
+            xy = [pose["x"], pose["y"]]
+            if not self._task_trace or math.dist(self._task_trace[-1], xy) >= 1e-4:
+                self._task_trace.append(xy)
+            self._task_feature_series["source"] = "real_tf/{}".format(task_id)
+            self._task_feature_series["samples"].append(sample)
+            self._task_feature_series["samples"] = self._task_feature_series["samples"][-2400:]
+            self._task_last_feature_sample = now
 
     def _update_plan_visualization(self, payload: Dict[str, object]) -> None:
         task_id = str(payload.get("task_id", ""))
@@ -849,12 +2398,19 @@ class Supervisor:
         feature_names = payload.get("feature_names")
         feature_schema = payload.get("feature_schema")
         constraint_specs = payload.get("constraint_specs")
+        planning_constraint_specs = payload.get(
+            "planning_constraint_specs", constraint_specs
+        )
+        planning_constraint_source = str(
+            payload.get("planning_constraint_source", "true")
+        )
         feature_samples = payload.get("feature_samples")
         boundary_indices = payload.get("stage_boundaries")
         boundary_times = payload.get("stage_boundary_times")
         transition_end_times = payload.get("stage_transition_end_times")
+        planner_scene = payload.get("scene_geometry")
         with self._lock:
-            selected_task = str(self._task_state.get("task_id", "BarInspect"))
+            selected_task = str(self._task_state.get("task_id", "BarClean"))
         if task_id != selected_task:
             raise RuntimeError(
                 "Planner returned task {}, but GUI selected {}".format(
@@ -866,6 +2422,7 @@ class Supervisor:
             or not isinstance(feature_names, list)
             or not isinstance(feature_schema, list)
             or not isinstance(constraint_specs, list)
+            or not isinstance(planning_constraint_specs, list)
         ):
             raise RuntimeError("Planner visualization has an invalid trace or feature schema")
         schema_names = [str(value.get("name", "")) for value in feature_schema]
@@ -913,7 +2470,33 @@ class Supervisor:
             for value in transition_end_times
             if isinstance(value, (int, float)) and math.isfinite(float(value))
         ]
-        expected_transitions = int(TASK_PROFILES[task_id]["n_stages"]) - 1
+        valid_scene = None
+        if isinstance(planner_scene, dict):
+            bar = planner_scene.get("bar")
+            obstacle = planner_scene.get("obstacle")
+            if isinstance(bar, dict) and isinstance(obstacle, dict):
+                try:
+                    pivot = [float(value) for value in bar["pivot"]]
+                    axis = [float(value) for value in bar["axis"]]
+                    center = [float(value) for value in obstacle["center"]]
+                except (KeyError, TypeError, ValueError):
+                    pivot, axis, center = [], [], []
+                if (
+                    len(pivot) == 2
+                    and len(axis) == 2
+                    and len(center) == 2
+                    and all(math.isfinite(value) for value in pivot + axis + center)
+                ):
+                    axis_norm = math.hypot(axis[0], axis[1])
+                    if axis_norm > 1e-12:
+                        valid_scene = self._fallback_scene_geometry()
+                        valid_scene["bar"].update(
+                            pivot=pivot,
+                            axis=[axis[0] / axis_norm, axis[1] / axis_norm],
+                            live=True,
+                        )
+                        valid_scene["obstacle"].update(center=center, live=True)
+        expected_transitions = int(self._task_profiles[task_id]["n_stages"]) - 1
         expected_stages = expected_transitions + 1
         if (
             len(valid_trace) < 2
@@ -937,6 +2520,10 @@ class Supervisor:
             "schema": json.loads(json.dumps(feature_schema)),
             "true_constraints": {},
             "constraint_specs": json.loads(json.dumps(constraint_specs)),
+            "planning_constraint_specs": json.loads(
+                json.dumps(planning_constraint_specs)
+            ),
+            "planning_constraint_source": planning_constraint_source,
             "samples": valid_samples,
         }
         with self._lock:
@@ -945,11 +2532,14 @@ class Supervisor:
             self._task_stage_boundary_indices = valid_boundary_indices
             self._task_stage_boundary_times = valid_boundaries
             self._task_stage_transition_end_times = valid_transition_ends
+            if valid_scene is not None:
+                self._task_scene_geometry = valid_scene
+                self._task_scene_source = "planner_scene"
 
     def _update_sim_visualization(self, status: Dict[str, object]) -> None:
         status_task_id = str(status.get("task_id", ""))
         with self._lock:
-            selected_task = str(self._task_state.get("task_id", "BarInspect"))
+            selected_task = str(self._task_state.get("task_id", "BarClean"))
         if status_task_id != selected_task:
             raise RuntimeError(
                 "Simulator reports task {}, but GUI selected {}".format(
@@ -1029,10 +2619,11 @@ class Supervisor:
 
     def execute_task(self, payload: Dict[str, object]) -> None:
         task_id = str(payload.get("task_id", ""))
-        if task_id not in TASK_PROFILES:
+        self._reload_task_definitions()
+        if task_id not in self._task_profiles:
             raise ValueError("Unknown task_id {}".format(task_id))
         with self._lock:
-            selected_task = str(self._task_state.get("task_id", "BarInspect"))
+            selected_task = str(self._task_state.get("task_id", "BarClean"))
         if task_id != selected_task:
             raise ValueError("Select {} in the GUI before execution".format(task_id))
         mode = str(payload.get("mode", "simulator"))
@@ -1040,34 +2631,65 @@ class Supervisor:
             raise ValueError("mode must be simulator or real")
         start = self._validated_pose("start", payload.get("start"))
         goal = self._validated_pose("goal", payload.get("goal"))
-        record = payload.get("record", True) is True
+        render_video_preference = payload.get("render_video", False) is True
+        render_video = render_video_preference and mode == "simulator"
+        source_id = str(
+            payload.get(
+                "constraint_source_id",
+                self._gui_settings["constraint_source_by_task"][task_id],
+            )
+        )
+        constraint_source = self._resolve_constraint_source(task_id, source_id)
+        self.update_gui_settings(
+            {
+                "task_id": task_id,
+                "constraint_source_id": source_id,
+                "start": start,
+                "goal": goal,
+                "render_video": render_video_preference,
+            }
+        )
+        self._set_task_state(
+            constraint_source_id=source_id,
+            constraint_source_label=constraint_source["label"],
+        )
 
         if mode == "real":
-            if payload.get("confirmed") is not True:
-                raise RuntimeError("Real-robot execution requires explicit confirmation")
             self._start_job(
                 "Execute real task",
-                lambda: self._execute_real_task(task_id, start, goal, record),
+                lambda: self._execute_real_task(
+                    task_id,
+                    start,
+                    goal,
+                    str(constraint_source["container_path"]),
+                ),
+                reset_task_abort=True,
             )
             return
 
+        scene_snapshot = self._simulation_scene_snapshot()
+
         def task() -> None:
-            if self._driver_process_containers():
-                raise RuntimeError("Stop every real-robot iiwa driver before starting simulation")
-            self._task_abort.clear()
-            self._reset_task_visualization()
+            # The simulator runs in a separate bridge-network container and does
+            # not share the real robot's FRI control path or ROS graph.
+            self._reset_task_visualization(task_id)
             self._set_task_state(
                 task_id=task_id,
                 mode=mode,
                 phase="starting",
-                record=record,
+                data_saved=True,
+                video=render_video,
                 start=start,
                 goal=goal,
                 message="Starting or reusing the persistent simulator",
                 run_directory=None,
                 video_available=False,
+                constraint_source_id=source_id,
+                constraint_source_label=constraint_source["label"],
             )
-            reused, initial_status = self._ensure_simulator(require_video=record)
+            reused, initial_status = self._ensure_simulator(
+                require_video=render_video
+            )
             controller = str(initial_status.get("controller", "unknown"))
             if controller in ("planning", "moving_to_start", "executing"):
                 raise RuntimeError("The persistent simulator is still executing another task")
@@ -1075,7 +2697,14 @@ class Supervisor:
                 previous_sequence = int(initial_status["task_sequence"])
             except (KeyError, TypeError, ValueError) as error:
                 raise RuntimeError("Simulator status has no valid task sequence") from error
-            self._submit_sim_task(task_id, start, goal, record)
+            self._submit_sim_task(
+                task_id,
+                start,
+                goal,
+                render_video,
+                scene_snapshot,
+                str(constraint_source["container_path"]),
+            )
             self._update_plan_visualization(
                 self._read_plan_visualization(SIM_CONTAINER)
             )
@@ -1113,7 +2742,9 @@ class Supervisor:
                         "complete": "Task completed and data finalized",
                     }.get(phase, phase),
                     run_directory=run_directory,
-                    video_available=bool(run_directory and record and phase == "complete"),
+                    video_available=bool(
+                        run_directory and render_video and phase == "complete"
+                    ),
                 )
                 if phase == "complete":
                     return
@@ -1123,16 +2754,17 @@ class Supervisor:
                 status = self._read_sim_status()
             raise RuntimeError("Simulation task exceeded the 300 s timeout")
 
-        self._start_job("Execute simulation task", task)
+        self._start_job("Execute simulation task", task, reset_task_abort=True)
 
     def select_task(self, payload: Dict[str, object]) -> None:
         task_id = str(payload.get("task_id", ""))
-        if task_id not in TASK_PROFILES:
+        self._reload_task_definitions()
+        if task_id not in self._task_profiles:
             raise ValueError("Unknown task_id {}".format(task_id))
         with self._lock:
             busy = self._job is not None and self._job.is_alive()
             phase = str(self._task_state.get("phase", "idle"))
-        if busy or phase in ("starting", "preparing", "moving_to_start", "executing"):
+        if busy or phase in TASK_ACTIVE_PHASES:
             raise RuntimeError("Cannot switch tasks while execution is active")
         request = Request(
             "http://127.0.0.1:{}/api/task".format(DEMO_PORT),
@@ -1156,11 +2788,18 @@ class Supervisor:
             raise RuntimeError(message) from error
         except (OSError, URLError, ValueError) as error:
             self.log("Demo GUI task sync deferred: {}".format(error))
-        self._reset_task_visualization()
+        self._reset_task_visualization(task_id)
+        source_id = self._gui_settings["constraint_source_by_task"][task_id]
+        source = self._resolve_constraint_source(task_id, source_id)
+        with self._lock:
+            self._gui_settings["task_id"] = task_id
+            self._save_gui_settings()
         self._set_task_state(
             task_id=task_id,
+            constraint_source_id=source_id,
+            constraint_source_label=source["label"],
             phase="idle",
-            message="{} selected".format(TASK_PROFILES[task_id]["display_name"]),
+            message="{} selected".format(self._task_profiles[task_id]["display_name"]),
             run_directory=None,
             video_available=False,
         )
@@ -1168,18 +2807,21 @@ class Supervisor:
     def abort_task(self) -> None:
         self._task_abort.set()
         with self._lock:
-            mode = self._task_state.get("mode")
-        if mode == "real" and self._container_running():
-            self._run(
-                [
-                    "docker", "exec", CONTAINER, "/entrypoint.sh", "rosservice",
-                    "call", "/iiwa14/real_executor/abort",
-                ],
-                check=False,
-                timeout=5,
-            )
+            mode = str(self._task_state.get("mode", ""))
+            phase = str(self._task_state.get("phase", "idle"))
+        if phase not in TASK_ACTIVE_PHASES:
+            raise RuntimeError("No active task to stop")
+        if mode in ("real", "home"):
+            if not self._container_running():
+                message = "Real task terminated; the robot-control container is already stopped"
+            elif "/iiwa14/real_executor" in set(self._ros_nodes()):
+                self._abort_real_and_confirm("user pressed Stop Execution")
+                message = "Real trajectory stopped; command gate disarmed and task terminated"
+            else:
+                # The execution thread observes _task_abort before it can plan or arm.
+                message = "Real task stopped before the robot executor started"
             self._set_task_state(
-                phase="aborted", message="Real trajectory cancelled; position controller remains active"
+                phase="aborted", message=message
             )
         else:
             if not self._named_container_running(SIM_CONTAINER):
@@ -1191,6 +2833,19 @@ class Supervisor:
                 )
                 if "success: True" not in response.stdout:
                     raise RuntimeError(response.stdout.strip())
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    status = self._read_sim_status()
+                    if str(status.get("controller", "")) == "aborted":
+                        self._update_sim_visualization(status)
+                        self._set_task_state(
+                            phase="aborted",
+                            message="Simulation stopped at the current position; task terminated",
+                            run_directory=status.get("run_directory"),
+                        )
+                        return
+                    time.sleep(0.05)
+                raise RuntimeError("simulator did not confirm the stopped state")
             except (RuntimeError, subprocess.TimeoutExpired) as error:
                 self.log(f"Graceful simulator abort failed: {error}")
                 self._run(self._sim_compose("stop"), check=False, timeout=20)
@@ -1199,10 +2854,6 @@ class Supervisor:
                     message="Task aborted; unhealthy simulator was stopped",
                 )
                 return
-            self._set_task_state(
-                phase="aborted",
-                message="Task aborted; simulator is holding the current position",
-            )
 
     def task_video_path(self) -> Optional[Path]:
         with self._lock:
@@ -1218,10 +2869,16 @@ class Supervisor:
         path = PROJECT_ROOT / "data" / "sim_runs" / relative / "goal_reaching.mp4"
         return path if path.is_file() else None
 
-    def _start_job(self, name: str, target) -> None:
+    def _start_job(
+        self, name: str, target, *, reset_task_abort: bool = False
+    ) -> None:
         with self._lock:
             if self._job is not None and self._job.is_alive():
                 raise RuntimeError(f"Another task is running: {self._job_name}")
+            if reset_task_abort:
+                # Clear before the worker becomes visible. Clearing inside the worker
+                # can erase a Stop click that arrives immediately after task submission.
+                self._task_abort.clear()
             self._job_name = name
             self._job_ok = None
             self._job_message = f"{name} started"
@@ -1234,7 +2891,15 @@ class Supervisor:
                     with self._lock:
                         self._job_ok = False
                         self._job_message = str(error)
-                        if name in ("Execute simulation task", "Execute real task") and not self._task_abort.is_set():
+                        if (
+                            name in (
+                                "Execute simulation task",
+                                "Execute real task",
+                                "Return robot Home",
+                            )
+                            and not self._task_abort.is_set()
+                            and self._task_state.get("phase") != "control_status_unknown"
+                        ):
                             self._task_state.update(phase="failed", message=str(error))
                 else:
                     with self._lock:
@@ -1246,8 +2911,20 @@ class Supervisor:
 
     def start_workstation(self) -> None:
         def task() -> None:
+            self._ensure_data_directories()
             self._run(["docker", "compose", "up", "-d"])
+            self._assert_container_storage_access(
+                CONTAINER, ("/data/demos", "/data/real_runs")
+            )
             self._wait_for_ros_master()
+            if not self._robot_iface_state()["configured"]:
+                self.log("Configuring the robot network before starting the station")
+                self._run(
+                    ["pkexec", str(PROJECT_ROOT / "scripts" / "connect_robot_network.sh")],
+                    timeout=60,
+                )
+                if not self._robot_iface_state()["configured"]:
+                    raise RuntimeError("Robot network configuration did not complete")
             if "/stage_demo_gui" not in self._ros_nodes():
                 self._signal_child("demo")
             self._start_demo_process()
@@ -1350,10 +3027,9 @@ class Supervisor:
         if "/stage_demo_gui" in self._ros_nodes():
             self.log("Demo station is already running")
             return
-        server = self._read_env_value("OPTITRACK_SERVER", "128.178.145.104")
-        base = self._read_env_value("OPTITRACK_BASE", "iiwa14")
-        obj = self._read_env_value("OPTITRACK_OBJECT", "baiyu_bar")
-        obstacle = self._read_env_value("OPTITRACK_OBSTACLE", "baiyu_obs_ball")
+        server, base, obj, obstacle = self._optitrack_settings()
+        tracking_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        start_optitrack = not tracking_nodes.issubset(set(self._ros_nodes()))
         child = self._spawn(
             "demo",
             [
@@ -1364,6 +3040,9 @@ class Supervisor:
                 "roslaunch",
                 "stage_demo_gui",
                 "demo_station.launch",
+                "start_optitrack:={}".format(
+                    "true" if start_optitrack else "false"
+                ),
                 f"optitrack_server:={server}",
                 f"optitrack_base:={base}",
                 f"optitrack_object:={obj}",
@@ -1383,15 +3062,22 @@ class Supervisor:
 
         self._start_job("Start Demo station automatically", task)
 
-    def start_driver(self) -> None:
+    def prepare_demo_control(self) -> None:
         def task() -> None:
             if not self._container_running():
                 raise RuntimeError("Start the workstation container first")
             if not self._robot_iface_state()["configured"]:
                 raise RuntimeError("Robot network interface is not configured")
             if "/iiwa14/iiwa_driver" in self._ros_nodes():
-                self.log("iiwa_driver is already running")
-                return
+                controller_snapshot = self._running_iiwa_controllers()
+                running_controllers = set(controller_snapshot or [])
+                if "SafeTorqueController" in running_controllers:
+                    self.log("Demo / Torque driver is already running")
+                    return
+                self.log(
+                    "Switching robot control through Idle to SafeTorqueController"
+                )
+                self._release_robot_control("switching to Demo / Torque control")
             with self._lock:
                 previous_child = self._children.get("driver")
             if previous_child is not None and previous_child.poll() is None:
@@ -1436,7 +3122,7 @@ class Supervisor:
                 self._signal_child("driver")
                 raise
 
-        self._start_job("Start iiwa_driver", task)
+        self._start_job("Prepare Demo / Torque control", task)
 
     def _wait_for_driver_ready(
         self, child: subprocess.Popen[str], timeout: float = 15.0
@@ -1479,6 +3165,8 @@ class Supervisor:
                 os.killpg(child.pid, signal.SIGTERM)
 
     def _stop_driver_process(self) -> None:
+        with self._lock:
+            self._real_station_verified = False
         self._signal_child("real")
         self._signal_child("driver")
         if self._container_running():
@@ -1495,56 +3183,69 @@ class Supervisor:
                 check=False,
                 timeout=5,
             )
-            deadline = time.monotonic() + 8
-            while time.monotonic() < deadline:
-                driver_node_running = "/iiwa14/iiwa_driver" in self._ros_nodes()
-                launch_running = CONTAINER in self._driver_process_containers()
-                if not driver_node_running and not launch_running:
-                    return
-                time.sleep(0.5)
+            if self._wait_for_driver_stopped(8.0):
+                return
+            self.log("Driver ignored SIGINT; escalating shutdown to SIGTERM")
+            self._signal_driver_processes("TERM")
+            if self._wait_for_driver_stopped(3.0):
+                return
+            self.log("Driver ignored SIGTERM; forcing final process cleanup")
+            self._signal_driver_processes("KILL")
+            if self._wait_for_driver_stopped(2.0):
+                return
             raise RuntimeError(
                 "iiwa_driver or its roslaunch wrapper did not stop; "
                 "use the SmartPAD/E-stop if motion persists"
             )
 
-    def stop_driver(self) -> None:
-        def task() -> None:
-            if self._container_running():
-                self._run(
-                    [
-                        "docker",
-                        "exec",
-                        CONTAINER,
-                        "bash",
-                        "-lc",
-                        "rosservice call /iiwa14/demo_virtual_fixture/enable_all 'data: false' >/dev/null 2>&1 || true",
-                    ],
-                    check=False,
-                    timeout=3,
-                )
-            self._stop_driver_process()
+    def _signal_driver_processes(self, signal_name: str) -> None:
+        self._run(
+            [
+                "docker",
+                "exec",
+                CONTAINER,
+                "bash",
+                "-lc",
+                "pkill -{signal_name} -f '[r]oslaunch stage_real_executor real_station.launch' || true; "
+                "pkill -{signal_name} -f '[r]oslaunch iiwa_driver .*iiwa14_bringup.launch' || true; "
+                "pkill -{signal_name} -f '[/]iiwa_driver/iiwa_driver' || true; "
+                "pkill -{signal_name} -f '[/]stage_real_executor/real_executor.py' || true".format(
+                    signal_name=signal_name
+                ),
+            ],
+            check=False,
+            timeout=5,
+        )
 
-        self._start_job("Stop iiwa_driver", task)
+    def _wait_for_driver_stopped(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        stopped_since: Optional[float] = None
+        while time.monotonic() < deadline:
+            driver_node_running = "/iiwa14/iiwa_driver" in self._ros_nodes()
+            launch_running = CONTAINER in self._driver_process_containers()
+            if not driver_node_running and not launch_running:
+                if stopped_since is None:
+                    stopped_since = time.monotonic()
+                elif time.monotonic() - stopped_since >= 0.5:
+                    return True
+            else:
+                stopped_since = None
+            time.sleep(0.5)
+        return False
+
+    def release_robot_control(self) -> None:
+        def task() -> None:
+            self._release_robot_control("returning to Idle")
+
+        self._start_job("Release robot control", task)
 
     def stop_all(self) -> None:
         def task() -> None:
             self._task_abort.set()
             self._run(self._sim_compose("stop"), check=False, timeout=20)
-            if self._container_running():
-                self._run(
-                    [
-                        "docker",
-                        "exec",
-                        CONTAINER,
-                        "bash",
-                        "-lc",
-                        "rosservice call /iiwa14/demo_virtual_fixture/enable_all 'data: false' >/dev/null 2>&1 || true",
-                    ],
-                    check=False,
-                    timeout=3,
-                )
-            self._stop_driver_process()
+            self._release_robot_control("stopping the workstation")
             self._signal_child("demo")
+            self._signal_child("tracking")
             self._run(["docker", "compose", "stop"], check=False)
 
         self._start_job("Stop workstation", task)
@@ -1666,18 +3367,20 @@ class Handler(BaseHTTPRequestHandler):
                 SUPERVISOR.start_workstation()
             elif self.path == "/api/rebuild-image":
                 SUPERVISOR.rebuild_image()
-            elif self.path == "/api/start-driver":
-                if payload.get("confirmed") is not True:
-                    raise RuntimeError("启动 iiwa_driver 前必须在界面中二次确认")
-                SUPERVISOR.start_driver()
-            elif self.path == "/api/stop-driver":
-                SUPERVISOR.stop_driver()
+            elif self.path == "/api/control/demo":
+                SUPERVISOR.prepare_demo_control()
+            elif self.path == "/api/control/idle":
+                SUPERVISOR.release_robot_control()
+            elif self.path == "/api/control/home":
+                SUPERVISOR.return_robot_home()
             elif self.path == "/api/stop-all":
                 SUPERVISOR.stop_all()
             elif self.path == "/api/task/execute":
                 SUPERVISOR.execute_task(payload)
             elif self.path == "/api/task/select":
                 SUPERVISOR.select_task(payload)
+            elif self.path == "/api/settings":
+                SUPERVISOR.update_gui_settings(payload)
             elif self.path == "/api/task/abort":
                 SUPERVISOR.abort_task()
             else:
@@ -1703,7 +3406,18 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     os.chdir(PROJECT_ROOT)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    shutdown_started = threading.Event()
+
+    def request_shutdown(_signum: int, _frame: object) -> None:
+        if shutdown_started.is_set():
+            return
+        shutdown_started.set()
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGINT, request_shutdown)
+    signal.signal(signal.SIGTERM, request_shutdown)
     SUPERVISOR.log(f"Host supervisor available at http://{HOST}:{PORT}")
+    SUPERVISOR.cleanup_stale_topic_streams()
     SUPERVISOR.start_demo_if_available()
     try:
         server.serve_forever(poll_interval=0.5)
@@ -1711,6 +3425,7 @@ def main() -> None:
         pass
     finally:
         server.server_close()
+        SUPERVISOR.shutdown()
 
 
 if __name__ == "__main__":

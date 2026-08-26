@@ -32,8 +32,8 @@
       0.019156697422511443
     ],
     "axis_local": [1.0, 0.0, 0.0],
-    "outline_u": [-0.11177, 0.18629],
-    "outline_v": [-0.01787, 0.04452],
+    "outline_u": [-0.15, 0.15],
+    "outline_v": [-0.03, 0.03],
     "height": 0.0278
   },
   "obstacle": {
@@ -46,68 +46,11 @@
       0.3933348023030686,
       0.139319023612021
     ],
-    "radius": 0.05
+    "radius": 0.025
   },
-  "feature_definition": {
-    "source": "envs/BarInspect.py",
+  "feature_runtime": {
     "sample_hz": 20.0,
-    "table_surface_point": [0.0, 0.0, 0.14584],
-    "table_normal": [0.0, 0.0, 1.0],
-    "tool_axis_local": [0.0, 0.0, 1.0],
-    "schema": [
-      {"name": "obstacle_clearance", "unit": "m"},
-      {"name": "surface_dist", "unit": "m"},
-      {"name": "bar_lateral_offset", "unit": "m"},
-      {"name": "tool_pitch", "unit": "rad"},
-      {"name": "tool_plane_err", "unit": "rad"}
-    ],
-    "true_constraints": {
-      "obstacle_min_clearance": 0.020,
-      "surface_distance_target": 0.08,
-      "bar_lateral_target": 0.0,
-      "stage2_pitch_target": 1.5707963267948966,
-      "stage3_pitch_target": 1.2217304763960306,
-      "tool_plane_target": 0.0
-    },
-    "constraint_specs": [
-      {"feature_name": "obstacle_clearance", "stage": 0, "semantics": "lower_bound", "oracle_key": "obstacle_min_clearance"},
-      {"feature_name": "surface_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_distance_target"},
-      {"feature_name": "bar_lateral_offset", "stage": 1, "semantics": "target_value", "oracle_key": "bar_lateral_target"},
-      {"feature_name": "tool_plane_err", "stage": 1, "semantics": "target_value", "oracle_key": "tool_plane_target"},
-      {"feature_name": "tool_pitch", "stage": 1, "semantics": "target_value", "oracle_key": "stage2_pitch_target"},
-      {"feature_name": "surface_dist", "stage": 2, "semantics": "target_value", "oracle_key": "surface_distance_target"},
-      {"feature_name": "bar_lateral_offset", "stage": 2, "semantics": "target_value", "oracle_key": "bar_lateral_target"},
-      {"feature_name": "tool_plane_err", "stage": 2, "semantics": "target_value", "oracle_key": "tool_plane_target"},
-      {"feature_name": "tool_pitch", "stage": 2, "semantics": "target_value", "oracle_key": "stage3_pitch_target"}
-    ]
-  },
-  "bar_clean_feature_definition": {
-    "source": "envs/BarClean.py",
-    "schema": [
-      {"name": "obstacle_clearance", "unit": "m"},
-      {"name": "surface_dist", "unit": "m"},
-      {"name": "bar_lateral_offset", "unit": "m"},
-      {"name": "tool_pitch", "unit": "rad"},
-      {"name": "tool_plane_err", "unit": "rad"},
-      {"name": "bar_axial_offset", "unit": "m"}
-    ],
-    "true_constraints": {
-      "obstacle_min_clearance": 0.020,
-      "surface_distance_target": 0.08,
-      "bar_lateral_target": 0.0,
-      "stage2_pitch_target": 1.5707963267948966,
-      "tool_plane_target": 0.0,
-      "discharge_axial_target": 0.0,
-      "bar_axial_offset_reference": 0.17806532
-    },
-    "constraint_specs": [
-      {"feature_name": "obstacle_clearance", "stage": 0, "semantics": "lower_bound", "oracle_key": "obstacle_min_clearance"},
-      {"feature_name": "surface_dist", "stage": 1, "semantics": "target_value", "oracle_key": "surface_distance_target"},
-      {"feature_name": "bar_lateral_offset", "stage": 1, "semantics": "target_value", "oracle_key": "bar_lateral_target"},
-      {"feature_name": "tool_plane_err", "stage": 1, "semantics": "target_value", "oracle_key": "tool_plane_target"},
-      {"feature_name": "tool_pitch", "stage": 1, "semantics": "target_value", "oracle_key": "stage2_pitch_target"},
-      {"feature_name": "bar_axial_offset", "stage": 3, "semantics": "target_value", "oracle_key": "discharge_axial_target"}
-    ]
+    "tool_axis_local": [0.0, 0.0, 1.0]
   },
   "initial_ik_seed": [
     0.18990058973306506,

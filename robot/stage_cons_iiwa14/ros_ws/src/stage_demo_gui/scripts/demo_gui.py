@@ -18,13 +18,14 @@ from std_srvs.srv import SetBool, Trigger
 
 
 class DemoGui:
-    TASK_IDS = {"BarInspect", "BarClean"}
+    TASK_IDS = {"BarClean"}
 
     def __init__(self):
         self._lock = threading.RLock()
         self._service_lock = threading.Lock()
         self._mode_requested = False
         self._driver_demo_active = False
+        self._mode_loss_cleanup_running = False
         self._fri_commanding = False
         self._fri_command_mode = 0
         self._orientation_requested = False
@@ -49,7 +50,7 @@ class DemoGui:
         self._last_ee = 0.0
         self._last_trace_sample = 0.0
         self._message = "Waiting for robot data"
-        self._task_id = str(rospy.get_param("~task_id", "BarInspect"))
+        self._task_id = str(rospy.get_param("~task_id", "BarClean"))
         if self._task_id not in self.TASK_IDS:
             raise ValueError("Unknown initial task id {}".format(self._task_id))
         rospy.set_param("/demo_recorder/task_id", self._task_id)
@@ -67,12 +68,12 @@ class DemoGui:
             "~optitrack_to_robot_translation", [0.0, 0.0, 0.0]
         )
         self._bar_outline_u = [float(value) for value in rospy.get_param(
-            "~bar_outline_u", [-0.11177, 0.18629]
+            "~bar_outline_u", [-0.15, 0.15]
         )]
         self._bar_outline_v = [float(value) for value in rospy.get_param(
-            "~bar_outline_v", [-0.01787, 0.04452]
+            "~bar_outline_v", [-0.03, 0.03]
         )]
-        self._obstacle_radius = float(rospy.get_param("~obstacle_radius", 0.05))
+        self._obstacle_radius = float(rospy.get_param("~obstacle_radius", 0.025))
         # Mechanical position hold was removed from the driver after unsafe
         # hardware behavior. Do not make it recoverable through ROS params.
         self._position_hold_enabled = False
@@ -109,7 +110,7 @@ class DemoGui:
             queue_size=1,
         )
         rospy.Subscriber(
-            "/vrpn_client_node/baiyu_obs_ball/pose_from_iiwa14",
+            "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
             PoseStamped,
             self._on_obstacle_pose,
             queue_size=1,
@@ -270,9 +271,42 @@ class DemoGui:
             self._last_command_mode = time.monotonic()
 
     def _on_motion_gate(self, message):
+        lost_mode = False
         with self._lock:
-            self._driver_demo_active = bool(message.data)
+            active = bool(message.data)
+            lost_mode = self._driver_demo_active and not active
+            self._driver_demo_active = active
+            if not active:
+                # Driver mode/session changes define a new command epoch. Do not
+                # let the GUI heartbeat silently reactivate an old Demo request.
+                self._mode_requested = False
             self._last_motion_gate = time.monotonic()
+            if lost_mode and not self._mode_loss_cleanup_running:
+                self._mode_loss_cleanup_running = True
+                threading.Thread(
+                    target=self._cleanup_after_mode_loss, daemon=True
+                ).start()
+
+    def _cleanup_after_mode_loss(self):
+        try:
+            with self._service_lock:
+                self._call_set_bool(self._all_service, False)
+                with self._lock:
+                    recording = self._recorder_state == "recording"
+                if recording:
+                    try:
+                        self._record_stop_service()
+                    except (rospy.ServiceException, rospy.ROSException):
+                        pass
+                with self._lock:
+                    self._orientation_requested = False
+                    self._vertical_requested = False
+                    self._message = (
+                        "FRI/control mode changed; Demo stopped and must be enabled again"
+                    )
+        finally:
+            with self._lock:
+                self._mode_loss_cleanup_running = False
 
     def _heartbeat(self, _event):
         with self._lock:
@@ -294,9 +328,16 @@ class DemoGui:
             "x": float(transform.transform.translation.x),
             "y": float(transform.transform.translation.y),
             "z": float(transform.transform.translation.z),
+            "qx": float(transform.transform.rotation.x),
+            "qy": float(transform.transform.rotation.y),
+            "qz": float(transform.transform.rotation.z),
+            "qw": float(transform.transform.rotation.w),
             "stamp": transform.header.stamp.to_sec(),
         }
-        if not all(math.isfinite(point[key]) for key in ("x", "y", "z")):
+        if not all(
+            math.isfinite(point[key])
+            for key in ("x", "y", "z", "qx", "qy", "qz", "qw")
+        ):
             return
         now = time.monotonic()
         with self._lock:

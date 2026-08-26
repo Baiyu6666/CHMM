@@ -104,12 +104,13 @@ class BarInspectEnv:
         stage2_pitch_deg=90.0,
         stage3_pitch_deg=70.0,
         obstacle_center=(-0.285, -0.090, 0.14584),
-        obstacle_radius=0.050,
-        obstacle_min_clearance=0.020,
+        obstacle_radius=0.025,
+        obstacle_min_clearance=0.040,
         nominal_start_tcp=(-0.40, -0.27, 0.27),
         tcp_offset_local=(0.0, 0.0, 0.0),
         tool_axis_local=(0.0, 0.0, 1.0),
         tool_lateral_axis_local=(0.0, 1.0, 0.0),
+        task_frame_snapshot_policy="frozen_per_task",
         seg_lengths=(38, 32, 32, 28),
         seg_length_jitter=(5, 4, 4, 5),
         dt=0.10,
@@ -167,6 +168,11 @@ class BarInspectEnv:
         self.obstacle_radius = float(obstacle_radius)
         self.obstacle_min_clearance = float(obstacle_min_clearance)
         self.nominal_start_tcp = np.asarray(nominal_start_tcp, dtype=float).reshape(3)
+        self.task_frame_snapshot_policy = str(task_frame_snapshot_policy)
+        if self.task_frame_snapshot_policy != "frozen_per_task":
+            raise ValueError(
+                "task_frame_snapshot_policy must be 'frozen_per_task'."
+            )
 
         self.tcp_offset_local = np.asarray(tcp_offset_local, dtype=float).reshape(3)
         self.tool_axis_local = self._unit(tool_axis_local, "tool_axis_local")
@@ -297,6 +303,7 @@ class BarInspectEnv:
                 len(trajectory),
                 "obstacle_pose_optitrack",
             )
+            poses = np.repeat(poses[0:1], len(poses), axis=0)
             return (
                 poses[:, :3] @ self.optitrack_to_robot_rotation.T
                 + self.optitrack_to_robot_translation[None, :]
@@ -317,6 +324,9 @@ class BarInspectEnv:
             len(demo),
             "bar_pose_optitrack",
         )
+        # The bar/table task frame is a per-execution scene snapshot.  Never
+        # let live marker jitter or a later bar movement deform one trajectory.
+        bar_pose = np.repeat(bar_pose[0:1], len(bar_pose), axis=0)
         self._quat_normalize(bar_pose[:, 3:7])
 
         tracker_rotation = self._quat_to_matrix(bar_pose[:, 3:7])
@@ -515,14 +525,19 @@ class BarInspectEnv:
     def get_feature_schema(self):
         return [
             {"id": 0, "column_idx": 0, "name": "obstacle_clearance", "unit": "m",
+             "frame": "frozen scene snapshot",
              "description": "EE radial clearance from the infinite vertical obstacle cylinder; positive outside"},
             {"id": 1, "column_idx": 1, "name": "surface_dist", "unit": "m",
+             "frame": "bar_table_task.z / calibrated table",
              "description": "Signed EE distance to the fixed calibrated table plane along its normal"},
             {"id": 2, "column_idx": 2, "name": "bar_lateral_offset", "unit": "m",
+             "frame": "bar_table_task.y",
              "description": "Signed in-table offset from the bar centerline"},
             {"id": 3, "column_idx": 3, "name": "tool_pitch", "unit": "rad",
+             "frame": "bar_table_task orientation",
              "description": "Signed tool-axis pitch above the table plane; downward vertical is pi/2"},
             {"id": 4, "column_idx": 4, "name": "tool_plane_err", "unit": "rad",
+             "frame": "bar_table_task orientation",
              "description": "Signed tool-axis deviation from the plane spanned by bar axis and table normal"},
             {"id": 5, "column_idx": 5, "name": "motion_axis_err", "unit": "rad",
              "description": "Signed bar-relative motion-direction error; diagnostic and excluded from the default learner"},
@@ -587,7 +602,7 @@ class BarInspectEnv:
                 "calibration_source": "demo_surface stable contact segment, 2026-08-19",
             },
             "optitrack_obstacle_pose": {
-                "topic": "/vrpn_client_node/baiyu_obs_ball/pose_from_iiwa14",
+                "topic": "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
                 "columns": ["obstacle_x", "obstacle_y", "obstacle_z", "qx", "qy", "qz", "qw"],
                 "scene_field": "obstacle_pose_optitrack",
                 "geometry": "infinite cylinder parallel to table_normal",
@@ -611,6 +626,15 @@ class BarInspectEnv:
                 "pitch_zero": "parallel to the table and pointing along positive bar axis",
                 "pitch_positive": "toward the bar surface",
                 "free_rotation": "rotation about tool_axis_local is intentionally not featured",
+            },
+            "task_frame": {
+                "frame_id": "bar_table_task",
+                "origin": "tracked bar center projected onto the calibrated table plane",
+                "x_axis": "tracked bar local +X projected into the table plane",
+                "z_axis": "calibrated table normal",
+                "y_axis": "z_axis cross x_axis",
+                "motive_orientation_usage": "bar local +X only",
+                "snapshot_policy": self.task_frame_snapshot_policy,
             },
             "default_learning_features": list(self.default_learning_features),
             "feature_schema": self.get_feature_schema(),

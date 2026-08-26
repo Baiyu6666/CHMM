@@ -26,6 +26,7 @@
 #define IIWA_DRIVER_IIWA_H
 
 #include <atomic>
+#include <cstdint>
 
 // ROS Headers
 #include <ros/ros.h>
@@ -37,6 +38,7 @@
 #include <realtime_tools/realtime_publisher.h>
 
 #include <iiwa_driver/AdditionalOutputs.h>
+#include <iiwa_driver/FriDiagnostics.h>
 #include <std_msgs/Float64MultiArray.h>
 
 #include <hardware_interface/joint_command_interface.h>
@@ -90,6 +92,7 @@ namespace iiwa_ros {
     protected:
         void _init();
         void _ctrl_loop();
+        bool _configure_control_thread();
         void _load_params();
         void _read(ros::Duration elapsed_time);
         void _write(ros::Duration elapsed_time);
@@ -99,6 +102,7 @@ namespace iiwa_ros {
         bool _read_fri(kuka::fri::ESessionState& current_state);
         bool _write_fri();
         void _publish();
+        void _publish_fri_diagnostics();
         void _update_demo_motion_gate();
         bool _set_demo_mode(std_srvs::SetBool::Request& request,
             std_srvs::SetBool::Response& response);
@@ -106,10 +110,12 @@ namespace iiwa_ros {
             std_srvs::SetBool::Response& response);
         void _demo_heartbeat(const std_msgs::Empty::ConstPtr& message);
         void _position_command_heartbeat(const std_msgs::Empty::ConstPtr& message);
-        void _on_fri_state_change(kuka::fri::ESessionState old_state, kuka::fri::ESessionState current_state) {}
+        void _on_fri_state_change(
+            kuka::fri::ESessionState old_state, kuka::fri::ESessionState current_state);
 
         // External torque publisher
         realtime_tools::RealtimePublisher<iiwa_driver::AdditionalOutputs> _additional_pub;
+        realtime_tools::RealtimePublisher<iiwa_driver::FriDiagnostics> _fri_diagnostics_pub;
 
         // Interfaces
         hardware_interface::JointStateInterface _joint_state_interface;
@@ -133,6 +139,11 @@ namespace iiwa_ros {
         std::vector<double> _joint_velocity;
         std::vector<double> _joint_effort;
         std::vector<double> _joint_position_command;
+        // Fixed fail-closed reference used while POSITION FRI remains active
+        // but no executor owns the command gate.  This must not be replaced by
+        // the changing measured position on every cycle: doing so creates a
+        // moving reference and can let the arm drift after Stop Execution.
+        std::vector<double> _position_hold_command;
         std::vector<double> _joint_velocity_command;
         std::vector<double> _joint_effort_command;
 
@@ -145,17 +156,64 @@ namespace iiwa_ros {
         kuka::fri::DummyState _robot_state; //!< wrapper class for the FRI monitoring message
         kuka::fri::DummyCommand _robot_command; //!< wrapper class for the FRI command message
         int _message_size;
-        bool _idle, _commanding;
-        int _client_command_mode;
+        bool _idle;
+        std::atomic<bool> _commanding;
+        std::atomic<int> _client_command_mode;
+
+        // FRI diagnostics are updated only by the control thread and published
+        // at low rate through a realtime publisher. They never gate commands.
+        std::uint64_t _control_cycles;
+        std::uint64_t _cycle_period_deadline_misses;
+        std::uint64_t _control_work_overruns;
+        double _last_cycle_start_wall_sec;
+        double _last_cycle_period_sec;
+        double _maximum_cycle_period_sec;
+        double _last_control_work_sec;
+        double _maximum_control_work_sec;
+        double _last_deadline_miss_wall_sec;
+        double _fri_diagnostics_publish_period;
+        double _fri_deadline_miss_factor;
+        double _last_fri_diagnostics_publish_wall_sec;
+        int _fri_realtime_priority;
+        int _fri_cpu_affinity;
+        bool _fri_realtime_enabled;
+        int _fri_realtime_effective_priority;
+        int _fri_effective_cpu_affinity;
+
+        std::uint64_t _connection_closed_failures;
+        std::uint64_t _receive_failures;
+        std::uint64_t _decode_failures;
+        std::uint64_t _message_id_failures;
+        std::uint64_t _encode_failures;
+        std::uint64_t _send_failures;
+        std::uint64_t _monitor_sequence_gaps;
+        std::uint64_t _duplicate_monitor_messages;
+        std::uint64_t _monitor_sequence_resets;
+        std::uint32_t _last_monitor_sequence;
+        bool _have_monitor_sequence;
+        double _last_io_failure_wall_sec;
+
+        int _fri_session_state;
+        int _fri_connection_quality;
+        int _fri_safety_state;
+        int _fri_operation_mode;
+        int _fri_drive_state;
+        double _fri_sample_time_sec;
+        std::uint32_t _fri_receive_multiplier;
+        std::uint64_t _fri_session_state_changes;
+        double _last_fri_session_state_change_wall_sec;
 
         // Demo state gates acquisition and optional assistance only. It never
         // changes the FRI joint-position reference.
         std::atomic<bool> _demo_mode_requested;
         std::atomic<double> _last_demo_heartbeat_wall_sec;
-        bool _demo_mode_active;
+        std::atomic<bool> _demo_mode_active;
         double _demo_heartbeat_timeout;
         std::atomic<bool> _position_command_enabled;
         std::atomic<bool> _position_arm_requested;
+        std::atomic<std::uint64_t> _position_controller_reset_requested;
+        std::atomic<std::uint64_t> _position_controller_reset_completed;
+        std::atomic<bool> _position_hold_valid;
         std::atomic<double> _last_position_heartbeat_wall_sec;
         double _position_arm_tolerance;
         double _position_heartbeat_timeout;
@@ -168,14 +226,16 @@ namespace iiwa_ros {
         std::string _ns;
         std::string _robot_description;
         ros::Duration _control_period;
-        ros::Publisher _commanding_status_pub;
-        ros::Publisher _demo_mode_status_pub;
-        ros::Publisher _client_command_mode_pub;
+        realtime_tools::RealtimePublisher<std_msgs::Bool> _commanding_status_pub;
+        realtime_tools::RealtimePublisher<std_msgs::Bool> _demo_mode_status_pub;
+        realtime_tools::RealtimePublisher<std_msgs::Int32> _client_command_mode_pub;
         ros::ServiceServer _position_command_service;
         ros::Subscriber _position_heartbeat_sub;
         ros::Subscriber _demo_heartbeat_sub;
         ros::ServiceServer _demo_mode_service;
         double _control_freq;
+        double _status_publish_period;
+        double _last_status_publish_wall_sec;
         bool _initialized;
     };
 } // namespace iiwa_ros

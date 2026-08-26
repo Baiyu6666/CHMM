@@ -20,6 +20,7 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        iproute2 \
        iputils-ping \
        iptables \
+       libcap2-bin \
        libeigen3-dev \
        liborocos-kdl-dev \
        python-is-python3 \
@@ -32,6 +33,7 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        ros-noetic-geometry-msgs \
        ros-noetic-hardware-interface \
        ros-noetic-joint-state-controller \
+       ros-noetic-joint-trajectory-controller \
        ros-noetic-joint-limits-interface \
        ros-noetic-kdl-parser \
        ros-noetic-nav-msgs \
@@ -86,6 +88,16 @@ USER ${USERNAME}
 WORKDIR /home/${USERNAME}/ros_ws
 RUN source /opt/ros/noetic/setup.bash \
     && catkin_make -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+# Only the FRI launch wrapper may pass CAP_SYS_NICE to the driver.  It restores
+# the ROS environment through /entrypoint.sh after Linux secure-exec sanitizes
+# it, while every other ROS process keeps the normal scheduler and no ambient
+# capability.
+USER root
+RUN install -m 0755 /usr/bin/setpriv /usr/local/bin/iiwa-fri-setpriv \
+    && setcap cap_setpcap,cap_sys_nice=eip /usr/local/bin/iiwa-fri-setpriv \
+    && getcap /usr/local/bin/iiwa-fri-setpriv | grep -q 'cap_sys_nice'
+USER ${USERNAME}
 
 # docker compose exec does not pass through ENTRYPOINT. Export the generated
 # workspace environment here as well so direct rosnode/rosservice commands work.

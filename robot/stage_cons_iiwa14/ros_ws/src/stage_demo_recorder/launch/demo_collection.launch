@@ -4,7 +4,7 @@
   <arg name="optitrack_server" default="128.178.145.104"/>
   <arg name="optitrack_base" default="iiwa14"/>
   <arg name="optitrack_object" default="baiyu_bar"/>
-  <arg name="optitrack_obstacle" default="baiyu_obs_ball"/>
+  <arg name="optitrack_obstacle" default="baiyu_obs_bar"/>
   <arg name="config" default="$(find stage_demo_recorder)/config/demo_topics.yaml"/>
 
   <include if="$(arg start_optitrack)" file="$(find stage_optitrack)/launch/optitrack.launch">

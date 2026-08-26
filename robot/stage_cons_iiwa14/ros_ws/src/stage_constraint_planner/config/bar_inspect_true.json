@@ -1,6 +1,27 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "task_id": "BarInspect",
+  "display_name": "Bar Inspect",
+  "gui": {
+    "stage_names": ["Approach", "Vertical scan", "Oblique scan", "Depart"],
+    "default_start": {"x": 0.6183, "y": -0.1613, "z": 0.26584, "qx": 0.0, "qy": 1.0, "qz": 0.0, "qw": 0.0},
+    "default_goal": {"x": 0.6286, "y": -0.4392, "z": 0.26584, "qx": 0.0, "qy": 1.0, "qz": 0.0, "qw": 0.0}
+  },
+  "planner": {
+    "control_spacing_m": 0.045,
+    "output_spacing_m": 0.005,
+    "output_axis_spacing_deg": 2.0,
+    "min_control_points": 6,
+    "max_control_points": 10,
+    "max_nfev": 80,
+    "multi_start": 2
+  },
+  "execution": {
+    "approach_speed_mps": 0.06,
+    "task_speed_mps": 0.04,
+    "approach_position_tolerance_m": 0.01,
+    "approach_joint_bridge_limit_rad": 3.0
+  },
   "stage_names": ["approach", "vertical_scan", "oblique_scan", "depart"],
   "visualization_features": [
     "obstacle_clearance",
@@ -31,7 +52,8 @@
   "table_surface_point": [0.0, 0.0, 0.14584],
   "table_normal": [0.0, 0.0, 1.0],
   "bar_axis_local": [1.0, 0.0, 0.0],
-  "obstacle_radius": 0.05,
+  "canonical_bar_axis": "away_from_obstacle",
+  "obstacle_radius": 0.025,
   "position_smooth_scale": 0.02,
   "axis_smooth_scale": 0.20,
   "constraint_transition": {
@@ -52,7 +74,7 @@
       "feature_name": "obstacle_clearance",
       "stage": 0,
       "semantics": "lower_bound",
-      "value": 0.020,
+      "value": 0.040,
       "scale": 0.0234,
       "weight": 1.5
     },

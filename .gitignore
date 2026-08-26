@@ -7,3 +7,6 @@ __pycache__/
 
 # Generated experiment artifacts. Curated paper assets should live outside outputs/.
 /outputs/
+
+# Host GUI preferences are local workstation state.
+/robot/stage_cons_iiwa14/data/gui_settings.json

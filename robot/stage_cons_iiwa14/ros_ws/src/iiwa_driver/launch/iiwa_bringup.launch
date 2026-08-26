@@ -43,7 +43,8 @@
         </include>
 
         <!-- Spawn iiwa FRI driver -->
-        <node pkg="iiwa_driver" type="iiwa_driver" name="iiwa_driver" respawn="false" output="screen">
+        <node pkg="iiwa_driver" type="iiwa_driver" name="iiwa_driver" respawn="false" output="screen"
+              launch-prefix="/usr/local/bin/iiwa-fri-setpriv --inh-caps=+sys_nice --ambient-caps=+sys_nice /entrypoint.sh">
           <rosparam file="$(find iiwa_driver)/config/iiwa.yaml" command="load" subst_value="True"/>
         </node>
         

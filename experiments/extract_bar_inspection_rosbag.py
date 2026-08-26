@@ -29,7 +29,7 @@ from experiments.bar_inspect_processing import (  # noqa: E402
 
 JOINT_TOPIC = "/iiwa14/joint_states"
 BAR_TOPIC = "/vrpn_client_node/baiyu_bar/pose_from_iiwa14"
-OBSTACLE_TOPIC = "/vrpn_client_node/baiyu_obs_ball/pose_from_iiwa14"
+OBSTACLE_TOPIC = "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14"
 JOINT_ORDER = tuple(f"iiwa14_joint_{index}" for index in range(1, 8))
 JOINT_ORIGINS_XYZ = np.asarray(
     [

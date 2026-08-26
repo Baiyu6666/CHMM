@@ -77,7 +77,7 @@
         <div class="conn"><i id="jointLamp" class="lamp"></i>Joint State</div>
         <div class="conn"><i id="tfLamp" class="lamp"></i>EE TF</div>
         <div class="conn"><i id="barLamp" class="lamp"></i>baiyu_bar</div>
-        <div class="conn"><i id="obstacleLamp" class="lamp"></i>baiyu_obs_ball</div>
+        <div class="conn"><i id="obstacleLamp" class="lamp"></i>baiyu_obs_bar</div>
         <div class="conn"><i id="fixtureLamp" class="lamp"></i>Fixture</div>
         <div class="conn"><i id="recorderLamp" class="lamp"></i>Recorder</div>
         <div class="conn"><i id="commandingLamp" class="lamp"></i>FRI Active</div>
@@ -97,13 +97,13 @@
         <div>Vertical damping</div><div id="verticalState">关闭</div>
         <div>辅助输出</div><div id="assistState">未激活</div>
       </div>
-      <div class="warning-box">实验性 FRI position-reference hold 已因硬件测试中的异常回位力而禁用；非 Demo 状态目前不会机械锁定机器人。网页不会启动 FRI 或绕过 SmartPAD。</div>
+      <div class="warning-box">本页只在主界面已准备 Demo / Torque 且 SmartPAD 处于 TORQUE 时开放示教。FRI 中断或切换模式后会立即清零辅助并结束本次 Demo，必须手动重新启用。</div>
     </div>
 
     <div class="panel">
       <h2>ROS Bag Demonstration</h2>
       <div class="record-fields">
-        <label>Task<select id="taskInput"><option value="BarInspect">Bar Inspect</option><option value="BarClean">Bar Clean</option></select></label>
+        <label>Task<select id="taskInput"><option value="BarClean" selected>Bar Clean</option></select></label>
         <label>Demo label<input id="labelInput" value="demo_01" maxlength="60"></label>
         <label>Notes<input id="notesInput" placeholder="可选：方向、材料、辅助设置"></label>
       </div>
@@ -177,7 +177,7 @@ function draw(){
   if(current){ctx.fillStyle='#ffbd61';ctx.beginPath();ctx.arc(px(current.x),py(current.y),6,0,2*Math.PI);ctx.fill();$('eeValue').textContent=`EE: x=${current.x.toFixed(4)}, y=${current.y.toFixed(4)}, z=${current.z.toFixed(4)} m`}else $('eeValue').textContent='EE: —';
   $('pointCount').textContent=`${trace.length} samples`;
 }
-function render(){if(!state)return;const d=state.dependencies;lamp('jointLamp',d.joint_state);lamp('tfLamp',d.ee_tf);lamp('barLamp',d.optitrack_bar);lamp('obstacleLamp',d.optitrack_obstacle);lamp('fixtureLamp',d.fixture);lamp('recorderLamp',d.recorder);lamp('commandingLamp',d.fri_commanding);lamp('torqueModeLamp',d.fri_torque_mode);lamp('motionGateLamp',d.motion_gate);$('overallBadge').textContent=state.ready?'系统 Ready':'等待数据';$('overallBadge').className='badge '+(state.ready?'ready':'warning');if(state.task_id&&$('taskInput').value!==state.task_id)$('taskInput').value=state.task_id;$('modeState').textContent=state.mode_active?'Demo：可拖动':(state.position_hold_enabled?'保持：当前位置锁定':'非 Demo：机械保持已禁用');$('orientationState').textContent=state.orientation_requested?'开启':'关闭';$('verticalState').textContent=state.vertical_requested?'开启':'关闭';$('assistState').textContent=state.assistance_active?'输出有效':'无辅助输出';$('recorderState').textContent=state.recorder_state;$('sessionState').textContent=state.recorder_session||'—';$('modeBtn').textContent=state.mode_active?(state.position_hold_enabled?'退出 Demo 并保持当前位置':'退出 Demo'):'进入 Demo 采集模式';$('modeBtn').classList.toggle('enabled',state.mode_active);$('orientationBtn').textContent=state.orientation_requested?'关闭 Orientation 保持':'开启 Orientation 保持';$('verticalBtn').textContent=state.vertical_requested?'关闭竖直阻尼':'开启竖直阻尼';$('orientationBtn').classList.toggle('enabled',state.orientation_requested);$('verticalBtn').classList.toggle('enabled',state.vertical_requested);$('recordBtn').textContent=state.recording?'停止并保存 Rosbag':'开始 Record Demo';$('recordBtn').classList.toggle('enabled',state.recording);$('taskInput').disabled=busy||state.recording;$('orientationBtn').disabled=busy||!state.mode_active;$('verticalBtn').disabled=busy||!state.mode_active;$('recordBtn').disabled=busy||!state.mode_active;$('modeBtn').disabled=busy||(!state.mode_active&&!state.ready);draw()}
+	function render(){if(!state)return;const d=state.dependencies;lamp('jointLamp',d.joint_state);lamp('tfLamp',d.ee_tf);lamp('barLamp',d.optitrack_bar);lamp('obstacleLamp',d.optitrack_obstacle);lamp('fixtureLamp',d.fixture);lamp('recorderLamp',d.recorder);lamp('commandingLamp',d.fri_commanding);lamp('torqueModeLamp',d.fri_torque_mode);lamp('motionGateLamp',d.motion_gate);$('overallBadge').textContent=state.ready?'Demo / Torque Ready':'等待主界面与 SmartPAD';$('overallBadge').className='badge '+(state.ready?'ready':'warning');if(state.task_id&&$('taskInput').value!==state.task_id)$('taskInput').value=state.task_id;$('modeState').textContent=state.mode_active?'Demo：可拖动':'Idle：无 Demo 力矩输出';$('orientationState').textContent=state.orientation_requested?'开启':'关闭';$('verticalState').textContent=state.vertical_requested?'开启':'关闭';$('assistState').textContent=state.assistance_active?'输出有效':'无辅助输出';$('recorderState').textContent=state.recorder_state;$('sessionState').textContent=state.recorder_session||'—';$('modeBtn').textContent=state.mode_active?'结束 Demo 并清零力矩':'开始示教（允许拖动）';$('modeBtn').classList.toggle('enabled',state.mode_active);$('orientationBtn').textContent=state.orientation_requested?'关闭 Orientation 保持':'开启 Orientation 保持';$('verticalBtn').textContent=state.vertical_requested?'关闭竖直阻尼':'开启竖直阻尼';$('orientationBtn').classList.toggle('enabled',state.orientation_requested);$('verticalBtn').classList.toggle('enabled',state.vertical_requested);$('recordBtn').textContent=state.recording?'停止并保存 Rosbag':'开始 Record Demo';$('recordBtn').classList.toggle('enabled',state.recording);$('taskInput').disabled=busy||state.recording;$('orientationBtn').disabled=busy||!state.mode_active;$('verticalBtn').disabled=busy||!state.mode_active;$('recordBtn').disabled=busy||!state.mode_active;$('modeBtn').disabled=busy||(!state.mode_active&&!state.ready);draw()}
 async function poll(){try{const response=await fetch('api/state',{cache:'no-store'});state=await response.json();render()}catch(error){$('overallBadge').textContent='GUI disconnected';$('overallBadge').className='badge failed';message(error.message,false)}}
 $('modeBtn').onclick=async()=>{await post('api/demo_mode',{enabled:!state.mode_active});await poll()};
 $('orientationBtn').onclick=async()=>{await post('api/assistance/orientation',{enabled:!state.orientation_requested});await poll()};

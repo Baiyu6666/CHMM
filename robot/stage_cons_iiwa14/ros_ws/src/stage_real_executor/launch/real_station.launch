@@ -20,11 +20,12 @@
       <param name="controller_action"
              value="/$(arg robot_name)/PositionTrajectoryController/follow_joint_trajectory"/>
       <param name="output_root" value="$(arg output_root)"/>
+      <param name="external_torque_timeout" value="0.25"/>
     </node>
   </group>
 
   <include file="$(find stage_constraint_planner)/launch/task_planner.launch">
     <arg name="frame_id" value="$(arg robot_name)_link_0"/>
-    <arg name="output_spacing" value="0.005"/>
+    <arg name="scene_pose_rotation" value="[[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]"/>
   </include>
 </launch>

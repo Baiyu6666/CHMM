@@ -5,6 +5,17 @@ fri:
 
 hardware_interface:
   control_freq: 200 # in Hz
+  # Keep the 5 ms FRI loop ahead of GUI/planner/rendering work.  These settings
+  # apply only to the dedicated control thread; failure to apply them prevents
+  # the driver from starting instead of silently running without RT protection.
+  fri_realtime_priority: 80
+  fri_cpu_affinity: 4
+  # Diagnostics are observational only and do not change the FRI control path.
+  fri_diagnostics_publish_period: 1.0
+  # Serialization is handed off through realtime publishers so it does not run
+  # in the 5 ms control thread.
+  status_publish_period: 0.05
+  fri_deadline_miss_factor: 1.5
   # Demo is a logical acquisition/assistance gate only. Position commands are
   # used only when the position hardware interface/controller is selected.
   demo_heartbeat_timeout: 0.5

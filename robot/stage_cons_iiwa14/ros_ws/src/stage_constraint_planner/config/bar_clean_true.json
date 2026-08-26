@@ -1,6 +1,27 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "task_id": "BarClean",
+  "display_name": "Bar Clean",
+  "gui": {
+    "stage_names": ["Approach", "Longitudinal clean", "Free reposition", "Right-to-left discharge", "Depart"],
+    "default_start": {"x": 0.6183, "y": -0.1613, "z": 0.26584, "qx": 0.0, "qy": 1.0, "qz": 0.0, "qw": 0.0},
+    "default_goal": {"x": 0.45, "y": -0.44, "z": 0.26584, "qx": 0.0, "qy": 1.0, "qz": 0.0, "qw": 0.0}
+  },
+  "planner": {
+    "control_spacing_m": 0.045,
+    "output_spacing_m": 0.005,
+    "output_axis_spacing_deg": 2.0,
+    "min_control_points": 6,
+    "max_control_points": 10,
+    "max_nfev": 80,
+    "multi_start": 2
+  },
+  "execution": {
+    "approach_speed_mps": 0.06,
+    "task_speed_mps": 0.04,
+    "approach_position_tolerance_m": 0.01,
+    "approach_joint_bridge_limit_rad": 3.0
+  },
   "stage_names": [
     "approach",
     "longitudinal_clean",
@@ -14,6 +35,7 @@
     "bar_lateral_offset",
     "tool_pitch",
     "tool_plane_err",
+    "tool_yaw",
     "bar_axial_offset"
   ],
   "feature_units": {
@@ -22,27 +44,43 @@
     "bar_lateral_offset": "m",
     "tool_pitch": "rad",
     "tool_plane_err": "rad",
+    "tool_yaw": "rad",
     "bar_axial_offset": "m"
   },
   "endpoint_definition": {
     "source": "BarInspect fitted S1/S2 endpoints plus task-designed S3/S4 goals",
     "position_only": true,
-    "coordinate_frame": "bar task frame [axial, lateral, table-normal]"
+    "coordinate_frame": "bar/table task frame [axial, lateral, distance above table]"
   },
-  "endpoint_coordinate_frame": "bar_task_frame",
+  "task_frame": {
+    "frame_id": "bar_table_task",
+    "origin": "tracked bar center projected onto the calibrated table plane",
+    "x_axis": "tracked bar local +X projected into the calibrated table plane and canonicalized",
+    "z_axis": "calibrated table normal",
+    "y_axis": "z_axis cross x_axis",
+    "motive_orientation_usage": "bar local +X only",
+    "snapshot_policy": "frozen_per_task"
+  },
+  "endpoint_coordinate_frame": "bar_table_task",
   "stage_endpoint_positions_bar": [
-    [-0.10062747, 0.00796490, 0.16696779],
-    [0.17806532, -0.00284781, 0.17843280],
-    [0.17806532, 0.06715219, 0.17843280],
-    [0.17806532, -0.19284781, 0.17843280]
+    [-0.10062747, 0.00796490, 0.06000000],
+    [0.23806532, -0.00284781, 0.06000000],
+    [0.23806532, 0.06715219, 0.02000000],
+    [0.23806532, -0.08884781, 0.02000000]
   ],
-  "bar_axial_offset_reference": 0.17806532,
+  "endpoint_group_offsets": [
+    {"endpoints": [2, 3], "offset_bar": [0.0, -0.01, 0.0]},
+    {"endpoints": [4], "offset_bar": [0.0, -0.03, 0.0]}
+  ],
+  "bar_axial_offset_reference": 0.23806532,
   "table_surface_point": [0.0, 0.0, 0.14584],
   "table_normal": [0.0, 0.0, 1.0],
   "bar_axis_local": [1.0, 0.0, 0.0],
-  "obstacle_radius": 0.05,
+  "canonical_bar_axis": "away_from_obstacle",
+  "obstacle_radius": 0.025,
   "position_smooth_scale": 0.02,
   "axis_smooth_scale": 0.20,
+  "yaw_smooth_scale": 0.20,
   "constraint_transition": {
     "fraction": 0.20,
     "min_distance": 0.03,
@@ -54,14 +92,16 @@
     "position_second": 0.65,
     "axis_first": 0.10,
     "axis_second": 0.55,
-    "axis_norm": 0.05
+    "axis_norm": 0.05,
+    "yaw_first": 0.10,
+    "yaw_second": 0.55
   },
   "constraint_terms": [
     {
       "feature_name": "obstacle_clearance",
       "stage": 0,
       "semantics": "lower_bound",
-      "value": 0.020,
+      "value": 0.070,
       "scale": 0.0234,
       "weight": 1.5
     },
@@ -69,7 +109,7 @@
       "feature_name": "surface_dist",
       "stage": 1,
       "semantics": "target_value",
-      "value": 0.08,
+      "value": 0.06,
       "scale": 0.0071
     },
     {
@@ -94,10 +134,64 @@
       "scale": 0.0411
     },
     {
+      "feature_name": "tool_yaw",
+      "stage": 1,
+      "semantics": "target_value",
+      "value": -0.7853981633974483,
+      "scale": 0.035,
+      "weight": 2.0
+    },
+    {
+      "feature_name": "bar_axial_offset",
+      "stage": 2,
+      "semantics": "target_value",
+      "value": 0.0,
+      "scale": 0.003,
+      "weight": 1.5
+    },
+    {
+      "feature_name": "surface_dist",
+      "stage": 2,
+      "semantics": "target_value",
+      "value": 0.020,
+      "scale": 0.003,
+      "weight": 1.5
+    },
+    {
+      "feature_name": "tool_pitch",
+      "stage": 2,
+      "semantics": "target_value",
+      "value": 1.5707963267948966,
+      "scale": 0.0482
+    },
+    {
+      "feature_name": "tool_plane_err",
+      "stage": 2,
+      "semantics": "target_value",
+      "value": 0.0,
+      "scale": 0.0411
+    },
+    {
+      "feature_name": "tool_yaw",
+      "stage": 2,
+      "semantics": "target_value",
+      "value": -0.7853981633974483,
+      "scale": 0.035,
+      "weight": 2.0
+    },
+    {
       "feature_name": "bar_axial_offset",
       "stage": 3,
       "semantics": "target_value",
       "value": 0.0,
+      "scale": 0.003,
+      "weight": 1.5
+    },
+    {
+      "feature_name": "surface_dist",
+      "stage": 3,
+      "semantics": "target_value",
+      "value": 0.020,
       "scale": 0.003,
       "weight": 1.5
     }

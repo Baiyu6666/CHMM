@@ -21,7 +21,9 @@ catkin_package(CATKIN_DEPENDS
   stage_cartesian_trajectory std_msgs std_srvs trajectory_msgs
 )
 
-catkin_install_python(PROGRAMS scripts/real_executor.py
+catkin_install_python(PROGRAMS
+  scripts/real_executor.py
+  scripts/submit_real_plan.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 install(DIRECTORY launch

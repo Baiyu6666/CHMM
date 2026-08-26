@@ -2,11 +2,10 @@
 <launch>
   <arg name="gui" default="false"/>
   <arg name="auto_plan" default="true"/>
-  <arg name="record" default="true"/>
   <arg name="render_video" default="true"/>
-  <arg name="motion_speed_scale" default="1.5"/>
+  <arg name="motion_speed_scale" default="1.0"/>
   <arg name="output_root" default="/data/sim_runs"/>
-  <arg name="scene_config" default="$(find stage_iiwa_sim)/config/demo_scene.json"/>
+  <arg name="scene_config" default="/workcell_definition/demo_scene.json"/>
 
   <group ns="iiwa14">
     <param name="robot_description"
@@ -26,7 +25,6 @@
           required="true">
       <param name="gui" value="$(arg gui)"/>
       <param name="auto_plan" value="$(arg auto_plan)"/>
-      <param name="record" value="$(arg record)"/>
       <param name="render_video" value="$(arg render_video)"/>
       <param name="motion_speed_scale" value="$(arg motion_speed_scale)"/>
       <param name="output_root" value="$(arg output_root)"/>
@@ -36,6 +34,5 @@
 
   <include file="$(find stage_constraint_planner)/launch/task_planner.launch">
     <arg name="frame_id" value="iiwa14_link_0"/>
-    <arg name="output_spacing" value="0.005"/>
   </include>
 </launch>

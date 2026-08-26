@@ -11,7 +11,7 @@
   "scan_standoff": 0.08,
   "table_surface_point": [0.0, 0.0, 0.14584],
   "table_normal": [0.0, 0.0, 1.0],
-  "obstacle_radius": 0.05,
+  "obstacle_radius": 0.025,
   "stage2_pitch_deg": 90.0,
   "stage3_pitch_deg": 70.0,
   "bar_axis_local": [1.0, 0.0, 0.0],

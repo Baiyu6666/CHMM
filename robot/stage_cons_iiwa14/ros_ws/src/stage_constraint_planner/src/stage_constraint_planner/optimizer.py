@@ -76,6 +76,141 @@ def _matrix_to_quaternion(matrix):
     return _unit(quaternion, "rotation quaternion")
 
 
+def _wrap_angle(values):
+    values = np.asarray(values, dtype=float)
+    return np.arctan2(np.sin(values), np.cos(values))
+
+
+def transform_pose(pose, rotation, translation):
+    """Apply a rigid coordinate-frame transform to an xyz+xyzw pose."""
+    pose = np.asarray(pose, dtype=float).reshape(7)
+    rotation = np.asarray(rotation, dtype=float).reshape(3, 3)
+    translation = np.asarray(translation, dtype=float).reshape(3)
+    if np.any(~np.isfinite(pose)):
+        raise ValueError("pose must be finite")
+    if np.any(~np.isfinite(rotation)) or np.any(~np.isfinite(translation)):
+        raise ValueError("rigid transform must be finite")
+    if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-6):
+        raise ValueError("rigid transform rotation must be orthonormal")
+    if not math.isclose(float(np.linalg.det(rotation)), 1.0, abs_tol=1e-6):
+        raise ValueError("rigid transform rotation must have determinant +1")
+
+    transformed = np.empty(7, dtype=float)
+    transformed[:3] = rotation @ pose[:3] + translation
+    transformed[3:] = _matrix_to_quaternion(
+        rotation @ quaternion_to_matrix(pose[3:])
+    )
+    return transformed
+
+
+def canonicalize_bar_pose(
+    bar_pose,
+    obstacle_pose,
+    table_normal,
+    bar_axis_local,
+    convention,
+):
+    """Resolve the 180-degree bar-axis ambiguity using the obstacle side."""
+    bar_pose = np.asarray(bar_pose, dtype=float).reshape(7).copy()
+    obstacle_pose = np.asarray(obstacle_pose, dtype=float).reshape(7)
+    convention = str(convention)
+    if convention in ("", "tracker_frame"):
+        return bar_pose, False
+    if convention not in ("away_from_obstacle", "toward_obstacle"):
+        raise ValueError("Unsupported canonical_bar_axis {}".format(convention))
+
+    table_normal = _unit(table_normal, "table normal").reshape(3)
+    rotation = quaternion_to_matrix(bar_pose[3:7])
+    bar_axis = rotation @ _unit(bar_axis_local, "bar axis local").reshape(3)
+    bar_axis -= table_normal * float(bar_axis @ table_normal)
+    bar_axis = _unit(bar_axis, "projected bar axis").reshape(3)
+    toward_obstacle = obstacle_pose[:3] - bar_pose[:3]
+    toward_obstacle -= table_normal * float(toward_obstacle @ table_normal)
+    toward_obstacle = _unit(
+        toward_obstacle, "bar-to-obstacle direction"
+    ).reshape(3)
+    points_toward_obstacle = float(bar_axis @ toward_obstacle) > 0.0
+    should_flip = (
+        points_toward_obstacle
+        if convention == "away_from_obstacle"
+        else not points_toward_obstacle
+    )
+    if not should_flip:
+        return bar_pose, False
+
+    # A half-turn about the table normal reverses both horizontal bar-frame
+    # axes while preserving height. This reconstructs the demonstration frame
+    # even when Motive exposes the same centered rigid body with opposite axes.
+    half_turn = 2.0 * np.outer(table_normal, table_normal) - np.eye(3)
+    bar_pose[3:] = _matrix_to_quaternion(half_turn @ rotation)
+    return bar_pose, True
+
+
+def build_bar_table_task_frame(
+    bar_pose,
+    obstacle_pose,
+    table_surface_point,
+    table_normal,
+    bar_axis_local,
+    convention,
+):
+    """Build one frozen task frame without using Motive's transverse axes.
+
+    Motive contributes only the configured bar longitudinal axis.  That axis is
+    projected into the calibrated table plane; table normal supplies task +Z,
+    and +Y is reconstructed as Z cross X.  The origin is the tracked bar point
+    projected onto the table so task-frame Z is distance above the table.
+    """
+    bar_pose = np.asarray(bar_pose, dtype=float).reshape(7)
+    obstacle_pose = np.asarray(obstacle_pose, dtype=float).reshape(7)
+    table_point = np.asarray(table_surface_point, dtype=float).reshape(3)
+    if not all(
+        np.all(np.isfinite(value))
+        for value in (bar_pose, obstacle_pose, table_point)
+    ):
+        raise ValueError("Task-frame inputs must be finite")
+
+    normal = _unit(table_normal, "table normal").reshape(3)
+    motive_rotation = quaternion_to_matrix(bar_pose[3:7])
+    axial = motive_rotation @ _unit(bar_axis_local, "bar axis local").reshape(3)
+    axial -= normal * float(axial @ normal)
+    axial = _unit(axial, "bar axis projected into table plane").reshape(3)
+
+    convention = str(convention)
+    flipped = False
+    if convention not in ("", "tracker_frame"):
+        if convention not in ("away_from_obstacle", "toward_obstacle"):
+            raise ValueError("Unsupported canonical_bar_axis {}".format(convention))
+        toward_obstacle = obstacle_pose[:3] - bar_pose[:3]
+        toward_obstacle -= normal * float(toward_obstacle @ normal)
+        toward_obstacle = _unit(
+            toward_obstacle, "bar-to-obstacle direction projected into table plane"
+        ).reshape(3)
+        points_toward_obstacle = float(axial @ toward_obstacle) > 0.0
+        flipped = (
+            points_toward_obstacle
+            if convention == "away_from_obstacle"
+            else not points_toward_obstacle
+        )
+        if flipped:
+            axial = -axial
+
+    lateral = _unit(np.cross(normal, axial), "task lateral axis").reshape(3)
+    rotation_world_from_task = np.column_stack((axial, lateral, normal))
+    origin = bar_pose[:3] - normal * float((bar_pose[:3] - table_point) @ normal)
+    return {
+        "frame_id": "bar_table_task",
+        "origin": origin,
+        "rotation_world_from_task": rotation_world_from_task,
+        "axial": axial,
+        "lateral": lateral,
+        "normal": normal,
+        "bar_reference": bar_pose[:3].copy(),
+        "axis_flipped": bool(flipped),
+        "snapshot_policy": "frozen_per_task",
+    }
+
+
 def _interpolate_unit_vectors(first, second, phases):
     first = _unit(np.asarray(first, dtype=float).reshape(3), "first axis")
     second = _unit(np.asarray(second, dtype=float).reshape(3), "second axis")
@@ -127,6 +262,56 @@ def continuous_quaternions_from_axes(tool_axes, reference_quaternion):
     return np.asarray(quaternions, dtype=float)
 
 
+def tool_yaw_from_quaternion(quaternion, task_frame):
+    """Return Tool-X yaw in the frozen bar/table task frame."""
+    rotation = quaternion_to_matrix(quaternion)
+    normal = _unit(task_frame["normal"], "task normal").reshape(3)
+    tool_x = rotation[:, 0]
+    horizontal_x = tool_x - normal * float(tool_x @ normal)
+    if np.linalg.norm(horizontal_x) <= 1e-8:
+        raise ValueError("Tool-X cannot be projected into the table plane")
+    horizontal_x = _unit(horizontal_x, "projected Tool-X").reshape(3)
+    return float(
+        math.atan2(
+            float(horizontal_x @ task_frame["lateral"]),
+            float(horizontal_x @ task_frame["axial"]),
+        )
+    )
+
+
+def quaternions_from_axes_and_yaws(tool_axes, tool_yaws, task_frame):
+    """Construct full orientations with an exact table-plane Tool-X heading."""
+    axes = _unit(np.asarray(tool_axes, dtype=float), "tool axes")
+    yaws = np.asarray(tool_yaws, dtype=float).reshape(-1)
+    if len(axes) != len(yaws):
+        raise ValueError("A tool yaw is required for every tool axis")
+    axial = _unit(task_frame["axial"], "task axial axis").reshape(3)
+    lateral = _unit(task_frame["lateral"], "task lateral axis").reshape(3)
+    normal = _unit(task_frame["normal"], "task normal").reshape(3)
+    quaternions = []
+    previous = None
+    for z_axis, yaw in zip(axes, yaws):
+        heading = math.cos(float(yaw)) * axial + math.sin(float(yaw)) * lateral
+        normal_component = float(normal @ z_axis)
+        if abs(normal_component) > 1e-6:
+            # Adding only a table-normal component keeps the horizontal
+            # projection exactly on ``heading`` while making Tool-X ⟂ Tool-Z.
+            x_axis = heading - normal * float(heading @ z_axis) / normal_component
+        else:
+            x_axis = heading - z_axis * float(heading @ z_axis)
+        if np.linalg.norm(x_axis) <= 1e-8:
+            raise ValueError("Tool-X yaw is singular for the requested Tool-Z axis")
+        x_axis = _unit(x_axis, "tool basis x").reshape(3)
+        y_axis = _unit(np.cross(z_axis, x_axis), "tool basis y").reshape(3)
+        x_axis = _unit(np.cross(y_axis, z_axis), "tool basis x").reshape(3)
+        quaternion = _matrix_to_quaternion(np.column_stack((x_axis, y_axis, z_axis)))
+        if previous is not None and float(previous @ quaternion) < 0.0:
+            quaternion = -quaternion
+        quaternions.append(quaternion)
+        previous = quaternion
+    return np.asarray(quaternions, dtype=float)
+
+
 class BarFeatureEvaluator:
     def __init__(self, config):
         self._table_point = np.asarray(config["table_surface_point"], dtype=float).reshape(3)
@@ -137,14 +322,12 @@ class BarFeatureEvaluator:
             config.get("bar_axial_offset_reference", 0.0)
         )
 
-    def evaluate(self, positions, tool_axes, bar_pose, obstacle_pose):
+    def evaluate(self, positions, tool_axes, task_frame, obstacle_pose, tool_yaws=None):
         positions = np.asarray(positions, dtype=float)
         tool_axes = _unit(np.asarray(tool_axes, dtype=float), "tool axes")
-        bar_rotation = quaternion_to_matrix(np.asarray(bar_pose, dtype=float)[3:7])
-        bar_axis = bar_rotation @ self._bar_axis_local
-        bar_axis -= self._table_normal * float(bar_axis @ self._table_normal)
-        bar_axis = _unit(bar_axis, "bar axis")
-        bar_lateral = _unit(np.cross(self._table_normal, bar_axis), "bar lateral")
+        bar_axis = _unit(task_frame["axial"], "task axial axis")
+        bar_lateral = _unit(task_frame["lateral"], "task lateral axis")
+        task_origin = np.asarray(task_frame["origin"], dtype=float).reshape(3)
         obstacle_center = np.asarray(obstacle_pose, dtype=float).reshape(7)[:3]
 
         relative_obstacle = positions - obstacle_center[None, :]
@@ -153,15 +336,21 @@ class BarFeatureEvaluator:
         )
         obstacle_clearance = np.linalg.norm(obstacle_radial, axis=1) - self._obstacle_radius
         surface_dist = (positions - self._table_point[None, :]) @ self._table_normal
-        bar_lateral_offset = (positions - np.asarray(bar_pose, dtype=float)[:3]) @ bar_lateral
+        bar_lateral_offset = (positions - task_origin) @ bar_lateral
         bar_axial_offset = (
-            (positions - np.asarray(bar_pose, dtype=float)[:3]) @ bar_axis
+            (positions - task_origin) @ bar_axis
             - self._bar_axial_offset_reference
         )
         down_component = -(tool_axes @ self._table_normal)
         forward_component = tool_axes @ bar_axis
         tool_pitch = np.arctan2(down_component, forward_component)
         tool_plane_err = np.arcsin(np.clip(tool_axes @ bar_lateral, -1.0, 1.0))
+        if tool_yaws is None:
+            tool_yaw = np.zeros(len(positions), dtype=float)
+        else:
+            tool_yaw = _wrap_angle(np.asarray(tool_yaws, dtype=float).reshape(-1))
+            if len(tool_yaw) != len(positions):
+                raise ValueError("A tool yaw is required for every position")
         return {
             "obstacle_clearance": obstacle_clearance,
             "surface_dist": surface_dist,
@@ -169,6 +358,7 @@ class BarFeatureEvaluator:
             "bar_axial_offset": bar_axial_offset,
             "tool_pitch": tool_pitch,
             "tool_plane_err": tool_plane_err,
+            "tool_yaw": tool_yaw,
         }
 
 
@@ -192,6 +382,9 @@ class StageConstraintTrajectoryOptimizer:
         self._endpoint_coordinate_frame = str(
             self._config.get("endpoint_coordinate_frame", "bar_tracker_frame")
         )
+        self._canonical_bar_axis = str(
+            self._config.get("canonical_bar_axis", "tracker_frame")
+        )
         if (
             self._endpoint_positions_bar.ndim != 2
             or self._endpoint_positions_bar.shape[1] != 3
@@ -200,6 +393,17 @@ class StageConstraintTrajectoryOptimizer:
             raise ValueError(
                 "stage_endpoint_positions_bar must contain one or more XYZ points"
             )
+        for group in self._config.get("endpoint_group_offsets", []):
+            offset = np.asarray(group["offset_bar"], dtype=float)
+            indices = [int(value) - 1 for value in group["endpoints"]]
+            if offset.shape != (3,) or np.any(~np.isfinite(offset)):
+                raise ValueError("endpoint_group_offsets offset_bar must be finite XYZ")
+            if not indices or any(
+                index < 0 or index >= len(self._endpoint_positions_bar)
+                for index in indices
+            ):
+                raise ValueError("endpoint_group_offsets endpoints must be valid S numbers")
+            self._endpoint_positions_bar[indices] += offset
         self._n_stages = len(self._endpoint_positions_bar) + 1
         self._constraint_terms = [dict(value) for value in self._config["constraint_terms"]]
         for term in self._constraint_terms:
@@ -225,10 +429,13 @@ class StageConstraintTrajectoryOptimizer:
             "axis_first": 0.10,
             "axis_second": 0.55,
             "axis_norm": 0.05,
+            "yaw_first": 0.10,
+            "yaw_second": 0.55,
         }
         self._weights.update(dict(self._config.get("optimizer_weights", {})))
         self._position_scale = float(self._config.get("position_smooth_scale", 0.02))
         self._axis_scale = float(self._config.get("axis_smooth_scale", 0.20))
+        self._yaw_scale = float(self._config.get("yaw_smooth_scale", 0.20))
         transition = dict(self._config["constraint_transition"])
         self._transition_fraction = float(transition["fraction"])
         self._transition_min_distance = float(transition["min_distance"])
@@ -249,11 +456,12 @@ class StageConstraintTrajectoryOptimizer:
         ):
             raise ValueError("Invalid constraint_transition distance limits")
 
-    def _world_endpoints(self, start_position, goal_position, bar_pose):
+    def _world_endpoints(self, start_position, goal_position, bar_pose, task_frame=None):
         bar_pose = np.asarray(bar_pose, dtype=float).reshape(7)
         rotation = quaternion_to_matrix(bar_pose[3:7])
         if self._endpoint_coordinate_frame == "bar_tracker_frame":
             intermediate_offsets = self._endpoint_positions_bar @ rotation.T
+            intermediate = bar_pose[:3][None, :] + intermediate_offsets
         elif self._endpoint_coordinate_frame == "bar_task_frame":
             table_normal = _unit(self._config["table_normal"], "table normal")
             bar_axis = rotation @ _unit(
@@ -265,13 +473,24 @@ class StageConstraintTrajectoryOptimizer:
             bar_lateral = _unit(np.cross(table_normal, bar_axis), "bar lateral")
             task_rotation = np.column_stack((bar_axis, bar_lateral, table_normal))
             intermediate_offsets = self._endpoint_positions_bar @ task_rotation.T
+            intermediate = bar_pose[:3][None, :] + intermediate_offsets
+        elif self._endpoint_coordinate_frame == "bar_table_task":
+            if task_frame is None:
+                raise ValueError("bar_table_task endpoints require a frozen task frame")
+            task_rotation = np.asarray(
+                task_frame["rotation_world_from_task"], dtype=float
+            ).reshape(3, 3)
+            task_origin = np.asarray(task_frame["origin"], dtype=float).reshape(3)
+            intermediate = (
+                task_origin[None, :]
+                + self._endpoint_positions_bar @ task_rotation.T
+            )
         else:
             raise ValueError(
                 "Unsupported endpoint_coordinate_frame {}".format(
                     self._endpoint_coordinate_frame
                 )
             )
-        intermediate = bar_pose[:3][None, :] + intermediate_offsets
         return np.vstack(
             [
                 np.asarray(start_position, dtype=float).reshape(3),
@@ -280,7 +499,7 @@ class StageConstraintTrajectoryOptimizer:
             ]
         )
 
-    def _initial_trajectory(self, endpoints, start_axis, goal_axis):
+    def _initial_trajectory(self, endpoints, start_axis, goal_axis, start_yaw, goal_yaw):
         positions = []
         labels = []
         endpoint_indices = []
@@ -306,7 +525,9 @@ class StageConstraintTrajectoryOptimizer:
             goal_axis,
             np.linspace(0.0, 1.0, len(positions)),
         )
-        return positions, axes, labels, np.asarray(endpoint_indices, dtype=int)
+        yaw_delta = float(_wrap_angle(goal_yaw - start_yaw))
+        yaws = np.linspace(start_yaw, start_yaw + yaw_delta, len(positions))
+        return positions, axes, yaws, labels, np.asarray(endpoint_indices, dtype=int)
 
     def _transition_distances(self, endpoints):
         next_stage_lengths = np.linalg.norm(np.diff(endpoints, axis=0), axis=1)[1:]
@@ -320,7 +541,40 @@ class StageConstraintTrajectoryOptimizer:
     @staticmethod
     def _smoothstep5(values):
         values = np.clip(np.asarray(values, dtype=float), 0.0, 1.0)
-        return values ** 3 * (values * (values * 6.0 - 15.0) + 10.0)
+        # The polynomial can overshoot 1.0 by a few ulps near the upper
+        # endpoint.  Those values become negative complementary stage weights
+        # and then NaNs when the residual takes their square root.
+        smoothed = values ** 3 * (values * (values * 6.0 - 15.0) + 10.0)
+        return np.clip(smoothed, 0.0, 1.0)
+
+    @staticmethod
+    def _feature_active_mask(
+        stage_labels,
+        constraint_terms,
+        feature_name,
+        stage_constraint_weights=None,
+    ):
+        active_stages = {
+            int(term["stage"])
+            for term in constraint_terms
+            if str(term["feature_name"]) == str(feature_name)
+        }
+        if stage_constraint_weights is not None:
+            weights = np.asarray(stage_constraint_weights, dtype=float)
+            if weights.ndim != 2 or weights.shape[0] != len(stage_labels):
+                raise ValueError(
+                    "Stage constraint weights must match the output samples"
+                )
+            if not active_stages:
+                return np.zeros(len(stage_labels), dtype=bool)
+            active_weight = np.sum(
+                weights[:, sorted(active_stages)], axis=1
+            )
+            # A transition out of an inactive stage is intentionally soft in
+            # the optimizer.  Do not turn that blend into a hard executor
+            # equality until the active-stage weight has fully ramped to one.
+            return active_weight >= 1.0 - 1e-9
+        return np.isin(np.asarray(stage_labels, dtype=int), sorted(active_stages))
 
     def _stage_constraint_weights(self, positions, endpoint_indices, transition_distances):
         positions = np.asarray(positions, dtype=float)
@@ -359,30 +613,43 @@ class StageConstraintTrajectoryOptimizer:
         return np.asarray([index for index in range(int(length)) if index not in fixed], dtype=int)
 
     @staticmethod
-    def _pack(positions, raw_axes, free_positions):
-        return np.concatenate([positions[free_positions].reshape(-1), raw_axes.reshape(-1)])
+    def _pack(positions, raw_axes, yaws, free_positions, free_yaws):
+        return np.concatenate(
+            [
+                positions[free_positions].reshape(-1),
+                raw_axes.reshape(-1),
+                yaws[free_yaws].reshape(-1),
+            ]
+        )
 
     @staticmethod
-    def _unpack(values, position_template, free_positions):
+    def _unpack(values, position_template, yaw_template, free_positions, free_yaws):
         values = np.asarray(values, dtype=float)
         position_count = 3 * len(free_positions)
         positions = np.asarray(position_template, dtype=float).copy()
         positions[free_positions] = values[:position_count].reshape((-1, 3))
-        raw_axes = values[position_count:].reshape((-1, 3))
+        axis_count = 3 * len(position_template)
+        raw_axes = values[position_count:position_count + axis_count].reshape((-1, 3))
         axes = _unit(raw_axes, "optimized tool axes")
-        return positions, raw_axes, axes
+        yaws = np.asarray(yaw_template, dtype=float).copy()
+        yaws[free_yaws] = values[position_count + axis_count:]
+        return positions, raw_axes, axes, yaws
 
     def _residual(
         self,
         values,
         position_template,
+        yaw_template,
         free_positions,
+        free_yaws,
         stage_weights,
         target_steps,
-        bar_pose,
+        task_frame,
         obstacle_pose,
     ):
-        positions, raw_axes, axes = self._unpack(values, position_template, free_positions)
+        positions, raw_axes, axes, yaws = self._unpack(
+            values, position_template, yaw_template, free_positions, free_yaws
+        )
         residuals = []
         position_delta = np.diff(positions, axis=0)
         position_step = np.linalg.norm(position_delta, axis=1)
@@ -411,8 +678,22 @@ class StageConstraintTrajectoryOptimizer:
             math.sqrt(self._weights["axis_norm"])
             * (np.linalg.norm(raw_axes, axis=1) - 1.0)
         )
+        yaw_delta = np.diff(yaws)
+        residuals.append(
+            math.sqrt(self._weights["yaw_first"])
+            * yaw_delta
+            / self._yaw_scale
+        )
+        if len(yaws) > 2:
+            residuals.append(
+                math.sqrt(self._weights["yaw_second"])
+                * np.diff(yaws, n=2)
+                / self._yaw_scale
+            )
 
-        features = self._feature_evaluator.evaluate(positions, axes, bar_pose, obstacle_pose)
+        features = self._feature_evaluator.evaluate(
+            positions, axes, task_frame, obstacle_pose, yaws
+        )
         for term in self._constraint_terms:
             stage = int(term["stage"])
             values_stage = np.asarray(features[str(term["feature_name"])], dtype=float)
@@ -420,6 +701,8 @@ class StageConstraintTrajectoryOptimizer:
             semantics = str(term["semantics"])
             if semantics == "target_value":
                 violation = values_stage - target
+                if str(term["feature_name"]) == "tool_yaw":
+                    violation = _wrap_angle(violation)
             elif semantics == "upper_bound":
                 violation = np.maximum(values_stage - target, 0.0)
             elif semantics == "lower_bound":
@@ -433,11 +716,14 @@ class StageConstraintTrajectoryOptimizer:
             )
         return np.concatenate([np.asarray(value, dtype=float).reshape(-1) for value in residuals])
 
-    def _densify_axis_changes(self, positions, axes):
+    def _densify_orientation_changes(self, positions, axes, yaws):
         output_positions = [positions[0]]
         output_axes = [axes[0]]
+        output_yaws = [yaws[0]]
         for index in range(1, len(positions)):
-            angle = math.acos(float(np.clip(axes[index - 1] @ axes[index], -1.0, 1.0)))
+            axis_angle = math.acos(float(np.clip(axes[index - 1] @ axes[index], -1.0, 1.0)))
+            yaw_delta = float(_wrap_angle(yaws[index] - yaws[index - 1]))
+            angle = max(axis_angle, abs(yaw_delta))
             subdivisions = max(1, int(math.ceil(angle / self._output_axis_spacing)))
             phases = np.linspace(0.0, 1.0, subdivisions + 1)[1:]
             interpolated_positions = (
@@ -449,17 +735,24 @@ class StageConstraintTrajectoryOptimizer:
             )
             output_positions.extend(interpolated_positions)
             output_axes.extend(interpolated_axes)
-        return np.asarray(output_positions, dtype=float), np.asarray(output_axes, dtype=float)
+            output_yaws.extend(yaws[index - 1] + phases * yaw_delta)
+        return (
+            np.asarray(output_positions, dtype=float),
+            np.asarray(output_axes, dtype=float),
+            np.asarray(output_yaws, dtype=float),
+        )
 
-    def _resample(self, positions, axes, endpoint_indices):
+    def _resample(self, positions, axes, yaws, endpoint_indices):
         output_positions = []
         output_axes = []
+        output_yaws = []
         output_labels = []
         boundaries = []
         start_index = 0
         for stage_index, end_index in enumerate(endpoint_indices):
             block_positions = positions[start_index:int(end_index) + 1]
             block_axes = axes[start_index:int(end_index) + 1]
+            block_yaws = yaws[start_index:int(end_index) + 1]
             edge = np.linalg.norm(np.diff(block_positions, axis=0), axis=1)
             cumulative = np.concatenate(([0.0], np.cumsum(edge)))
             length = float(cumulative[-1])
@@ -468,6 +761,7 @@ class StageConstraintTrajectoryOptimizer:
             if length <= 1e-12:
                 sampled_positions = np.repeat(block_positions[:1], count, axis=0)
                 sampled_axes = np.repeat(block_axes[:1], count, axis=0)
+                sampled_yaws = np.repeat(block_yaws[:1], count)
             else:
                 sampled_positions = np.column_stack(
                     [np.interp(targets, cumulative, block_positions[:, dim]) for dim in range(3)]
@@ -476,14 +770,17 @@ class StageConstraintTrajectoryOptimizer:
                     [np.interp(targets, cumulative, block_axes[:, dim]) for dim in range(3)]
                 )
                 sampled_axes = _unit(sampled_axes, "resampled tool axes")
-            sampled_positions, sampled_axes = self._densify_axis_changes(
-                sampled_positions, sampled_axes
+                sampled_yaws = np.interp(targets, cumulative, block_yaws)
+            sampled_positions, sampled_axes, sampled_yaws = self._densify_orientation_changes(
+                sampled_positions, sampled_axes, sampled_yaws
             )
             if stage_index > 0:
                 sampled_positions = sampled_positions[1:]
                 sampled_axes = sampled_axes[1:]
+                sampled_yaws = sampled_yaws[1:]
             output_positions.extend(sampled_positions)
             output_axes.extend(sampled_axes)
+            output_yaws.extend(sampled_yaws)
             output_labels.extend([stage_index] * len(sampled_positions))
             boundaries.append(len(output_positions) - 1)
             start_index = int(end_index)
@@ -493,6 +790,7 @@ class StageConstraintTrajectoryOptimizer:
         return (
             np.asarray(output_positions, dtype=float),
             _unit(np.asarray(output_axes, dtype=float), "resampled tool axes"),
+            np.asarray(output_yaws, dtype=float),
             labels,
             np.asarray(boundaries, dtype=int),
         )
@@ -504,23 +802,41 @@ class StageConstraintTrajectoryOptimizer:
         obstacle_pose = np.asarray(obstacle_pose, dtype=float).reshape(7)
         if not all(np.all(np.isfinite(value)) for value in (start_pose, goal_pose, bar_pose, obstacle_pose)):
             raise ValueError("Planner inputs must be finite")
-        endpoints = self._world_endpoints(start_pose[:3], goal_pose[:3], bar_pose)
+        # This is the only task-frame construction for the plan.  Every
+        # endpoint, residual and reported feature below reuses this immutable
+        # snapshot even while live OptiTrack callbacks continue in the node.
+        task_frame = build_bar_table_task_frame(
+            bar_pose,
+            obstacle_pose,
+            self._config["table_surface_point"],
+            self._config["table_normal"],
+            self._config.get("bar_axis_local", [1.0, 0.0, 0.0]),
+            self._canonical_bar_axis,
+        )
+        bar_axis_flipped = bool(task_frame["axis_flipped"])
+        endpoints = self._world_endpoints(
+            start_pose[:3], goal_pose[:3], bar_pose, task_frame=task_frame
+        )
         start_axis = quaternion_to_matrix(start_pose[3:7])[:, 2]
         goal_axis = quaternion_to_matrix(goal_pose[3:7])[:, 2]
-        position_template, axis_template, labels, endpoint_indices = self._initial_trajectory(
-            endpoints, start_axis, goal_axis
+        start_yaw = tool_yaw_from_quaternion(start_pose[3:7], task_frame)
+        goal_yaw = tool_yaw_from_quaternion(goal_pose[3:7], task_frame)
+        position_template, axis_template, yaw_template, labels, endpoint_indices = self._initial_trajectory(
+            endpoints, start_axis, goal_axis, start_yaw, goal_yaw
         )
         transition_distances = self._transition_distances(endpoints)
         stage_weights, _transition_ends = self._stage_constraint_weights(
             position_template, endpoint_indices, transition_distances
         )
         free_positions = self._free_position_indices(len(position_template), endpoint_indices)
+        free_yaws = np.arange(1, len(position_template) - 1, dtype=int)
         target_steps = np.linalg.norm(np.diff(position_template, axis=0), axis=1)
         best = None
         for attempt in range(self._multi_start):
             rng = np.random.RandomState(int(seed) + 104729 * attempt)
             positions_initial = position_template.copy()
             axes_initial = axis_template.copy()
+            yaws_initial = yaw_template.copy()
             if attempt > 0:
                 positions_initial[free_positions] += rng.normal(
                     scale=0.004 * attempt, size=(len(free_positions), 3)
@@ -529,16 +845,23 @@ class StageConstraintTrajectoryOptimizer:
                     axes_initial + rng.normal(scale=0.06 * attempt, size=axes_initial.shape),
                     "initial tool axes",
                 )
-            initial = self._pack(positions_initial, axes_initial, free_positions)
+                yaws_initial[free_yaws] += rng.normal(
+                    scale=0.04 * attempt, size=len(free_yaws)
+                )
+            initial = self._pack(
+                positions_initial, axes_initial, yaws_initial, free_positions, free_yaws
+            )
             result = least_squares(
                 self._residual,
                 initial,
                 args=(
                     position_template,
+                    yaw_template,
                     free_positions,
+                    free_yaws,
                     stage_weights,
                     target_steps,
-                    bar_pose,
+                    task_frame,
                     obstacle_pose,
                 ),
                 method="trf",
@@ -557,12 +880,19 @@ class StageConstraintTrajectoryOptimizer:
             raise RuntimeError("Stage constraint optimization did not produce a finite candidate")
 
         score, result = best
-        positions, _raw_axes, axes = self._unpack(result.x, position_template, free_positions)
-        positions, axes, labels, boundaries = self._resample(positions, axes, endpoint_indices)
+        positions, _raw_axes, axes, yaws = self._unpack(
+            result.x, position_template, yaw_template, free_positions, free_yaws
+        )
+        positions, axes, yaws, labels, boundaries = self._resample(
+            positions, axes, yaws, endpoint_indices
+        )
         output_stage_weights, transition_ends = self._stage_constraint_weights(
             positions, boundaries, transition_distances
         )
-        features = self._feature_evaluator.evaluate(positions, axes, bar_pose, obstacle_pose)
+        features = self._feature_evaluator.evaluate(
+            positions, axes, task_frame, obstacle_pose, yaws
+        )
+        quaternions = quaternions_from_axes_and_yaws(axes, yaws, task_frame)
         constraint_report = []
         for term in self._constraint_terms:
             stage = int(term["stage"])
@@ -572,6 +902,8 @@ class StageConstraintTrajectoryOptimizer:
             semantics = str(term["semantics"])
             if semantics == "target_value":
                 violation = np.abs(feature_values - target)
+                if str(term["feature_name"]) == "tool_yaw":
+                    violation = np.abs(_wrap_angle(feature_values - target))
             elif semantics == "upper_bound":
                 violation = np.maximum(feature_values - target, 0.0)
             else:
@@ -603,11 +935,24 @@ class StageConstraintTrajectoryOptimizer:
         return {
             "positions": positions,
             "tool_axes": axes,
+            "tool_yaws": _wrap_angle(yaws),
+            "tool_quaternions": quaternions,
             "stage_labels": labels,
+            "tool_yaw_active": self._feature_active_mask(
+                labels,
+                self._constraint_terms,
+                "tool_yaw",
+                output_stage_weights,
+            ),
             "stage_boundaries": boundaries,
             "stage_constraint_weights": output_stage_weights,
             "stage_transition_windows": transition_windows,
             "stage_endpoints_world": endpoints[1:].copy(),
+            "bar_axis_flipped": bool(bar_axis_flipped),
+            "task_frame": {
+                key: value.copy() if isinstance(value, np.ndarray) else value
+                for key, value in task_frame.items()
+            },
             "features": {
                 name: np.asarray(values, dtype=float).copy()
                 for name, values in features.items()

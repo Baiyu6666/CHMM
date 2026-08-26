@@ -9,7 +9,7 @@ if docker ps --format '{{.Names}}' | grep -qx 'kuka14'; then
 fi
 
 export USER_UID="$(id -u)"
-mkdir -p data/demos data/models
+mkdir -p data/demos data/models data/real_runs
 docker compose build
 docker compose up -d
 docker compose ps
