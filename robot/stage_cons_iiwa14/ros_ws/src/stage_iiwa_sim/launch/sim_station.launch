@@ -4,6 +4,8 @@
   <arg name="auto_plan" default="true"/>
   <arg name="render_video" default="true"/>
   <arg name="motion_speed_scale" default="1.0"/>
+  <arg name="velocity_scale" default="0.25"/>
+  <arg name="acceleration_limit_rad_s2" default="1.0"/>
   <arg name="output_root" default="/data/sim_runs"/>
   <arg name="scene_config" default="/workcell_definition/demo_scene.json"/>
 
@@ -27,6 +29,9 @@
       <param name="auto_plan" value="$(arg auto_plan)"/>
       <param name="render_video" value="$(arg render_video)"/>
       <param name="motion_speed_scale" value="$(arg motion_speed_scale)"/>
+      <param name="velocity_scale" value="$(arg velocity_scale)"/>
+      <param name="acceleration_limit_rad_s2"
+             value="$(arg acceleration_limit_rad_s2)"/>
       <param name="output_root" value="$(arg output_root)"/>
       <param name="scene_config" value="$(arg scene_config)"/>
     </node>

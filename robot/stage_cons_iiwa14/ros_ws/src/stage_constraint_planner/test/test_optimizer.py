@@ -138,10 +138,12 @@ def test_bar_table_endpoints_use_distance_above_table_not_marker_height():
     )[1:-1]
     table_point = np.asarray(config["table_surface_point"], dtype=float)
     table_normal = np.asarray(config["table_normal"], dtype=float)
-    expected = np.asarray([0.060, 0.060, 0.020, 0.020])
+    expected = np.asarray([0.10204, 0.10204, 0.07004, 0.07004])
+    expected_world_z = np.asarray([0.21141, 0.21141, 0.17941, 0.17941])
 
     assert np.allclose((endpoints_low - table_point) @ table_normal, expected)
     assert np.allclose((endpoints_high - table_point) @ table_normal, expected)
+    assert np.allclose(endpoints_low[:, 2], expected_world_z)
     assert np.allclose(endpoints_low, endpoints_high)
 
 
@@ -179,19 +181,17 @@ def test_bar_table_task_frame_ignores_motive_axes_other_than_bar_axis():
     assert frames[0]["snapshot_policy"] == "frozen_per_task"
 
 
-def test_endpoint_group_offset_moves_selected_subgoals_only():
+def test_bar_clean_subgoals_are_stored_as_final_coordinates_without_offsets():
     config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
     config = json.loads(config_path.read_text())
-    base = np.asarray(config["stage_endpoint_positions_bar"], dtype=float)
+    endpoints = np.asarray(config["stage_endpoint_positions_bar"], dtype=float)
 
     optimizer = StageConstraintTrajectoryOptimizer(config)
 
-    expected = base.copy()
-    for group in config["endpoint_group_offsets"]:
-        indices = [int(value) - 1 for value in group["endpoints"]]
-        expected[indices] += np.asarray(group["offset_bar"], dtype=float)
-    assert np.allclose(optimizer._endpoint_positions_bar, expected)
-    assert np.allclose(optimizer._endpoint_positions_bar[0], base[0])
+    assert "endpoint_group_offsets" not in config
+    assert np.allclose(optimizer._endpoint_positions_bar, endpoints)
+    assert np.isclose(endpoints[1, 1], 0.0)
+    assert np.isclose(endpoints[2, 1] - endpoints[3, 1], 0.1145)
 
 
 def test_full_orientation_reconstruction_preserves_bar_relative_yaw():
@@ -215,7 +215,7 @@ def test_full_orientation_reconstruction_preserves_bar_relative_yaw():
     )
 
 
-def test_bar_clean_yaw_equality_is_active_only_in_user_stages_two_and_three():
+def test_bar_clean_yaw_equality_is_active_only_in_user_stages_two_and_four():
     config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
     config = json.loads(config_path.read_text())
     terms = [
@@ -223,16 +223,81 @@ def test_bar_clean_yaw_equality_is_active_only_in_user_stages_two_and_three():
         if value["feature_name"] == "tool_yaw"
     ]
 
-    assert [value["stage"] for value in terms] == [1, 2]
+    assert [value["stage"] for value in terms] == [1, 3]
     assert all(value["semantics"] == "target_value" for value in terms)
     assert np.isclose(terms[0]["value"], terms[1]["value"])
+
+
+def test_bar_clean_user_stage_three_is_free_and_stage_four_has_five_equalities():
+    config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
+    config = json.loads(config_path.read_text())
+    by_stage = {
+        stage: [term for term in config["constraint_terms"] if term["stage"] == stage]
+        for stage in range(5)
+    }
+
+    assert by_stage[2] == []
+    stage_four = {term["feature_name"]: term for term in by_stage[3]}
+    assert set(stage_four) == {
+        "bar_axial_offset",
+        "surface_dist",
+        "tool_pitch",
+        "tool_plane_err",
+        "tool_yaw",
+    }
+    assert all(term["semantics"] == "target_value" for term in stage_four.values())
+    assert np.isclose(stage_four["bar_axial_offset"]["value"], 0.0)
+    assert np.isclose(stage_four["surface_dist"]["value"], 0.07004)
+    assert np.isclose(stage_four["tool_pitch"]["value"], np.deg2rad(90.0))
+    assert np.isclose(stage_four["tool_plane_err"]["value"], 0.0)
+    assert np.isclose(stage_four["tool_yaw"]["value"], np.deg2rad(-45.0))
+
+
+def test_constraint_settling_is_used_only_when_next_stage_adds_constraints():
+    config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
+    config = json.loads(config_path.read_text())
+    optimizer = StageConstraintTrajectoryOptimizer(config)
+
+    assert optimizer._settling_boundaries.tolist() == [True, False, True, False]
+
+
+def test_constraint_settling_reserves_progress_without_changing_endpoints():
+    config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
+    config = json.loads(config_path.read_text())
+    optimizer = StageConstraintTrajectoryOptimizer(config)
+    endpoints = np.asarray(
+        [
+            [0.0, 0.0, 0.1],
+            [0.1, 0.0, 0.1],
+            [0.4, 0.0, 0.1],
+            [0.5, 0.1, 0.1],
+            [0.5, -0.2, 0.1],
+            [0.6, -0.2, 0.1],
+        ]
+    )
+    positions, _, _, _, endpoint_indices = optimizer._initial_trajectory(
+        endpoints,
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, -1.0],
+        0.0,
+        0.0,
+    )
+    windows = optimizer._settling_windows(endpoints, endpoint_indices)
+
+    assert [window["boundary_index"] for window in windows] == [0, 2]
+    for window in windows:
+        progress = (
+            positions[window["indices"]] - window["origin"][None, :]
+        ) @ window["direction"]
+        assert np.allclose(progress, window["progress_targets"])
+    assert np.allclose(positions[endpoint_indices], endpoints[1:])
 
 
 def test_tool_yaw_active_mask_follows_loaded_constraint_terms():
     labels = np.asarray([0, 0, 1, 1, 2, 3, 4])
     terms = [
         {"feature_name": "tool_yaw", "stage": 1},
-        {"feature_name": "tool_yaw", "stage": 2},
+        {"feature_name": "tool_yaw", "stage": 3},
         {"feature_name": "surface_dist", "stage": 3},
     ]
 
@@ -243,7 +308,7 @@ def test_tool_yaw_active_mask_follows_loaded_constraint_terms():
         labels, [], "tool_yaw"
     )
 
-    assert active.tolist() == [False, False, True, True, True, False, False]
+    assert active.tolist() == [False, False, True, True, False, True, False]
     assert not np.any(inactive)
 
 
@@ -262,11 +327,11 @@ def test_tool_yaw_mask_waits_until_soft_stage_transition_is_complete():
     )
     terms = [
         {"feature_name": "tool_yaw", "stage": 1},
-        {"feature_name": "tool_yaw", "stage": 2},
+        {"feature_name": "tool_yaw", "stage": 3},
     ]
 
     active = StageConstraintTrajectoryOptimizer._feature_active_mask(
         labels, terms, "tool_yaw", weights
     )
 
-    assert active.tolist() == [False, False, False, True, True, True, False]
+    assert active.tolist() == [False, False, False, True, False, False, False]

@@ -1,9 +1,56 @@
 from __future__ import annotations
 
+import json
+import sys
+from pathlib import Path
+
 import numpy as np
 
 from .BarInspect import BarInspectEnv, BarInspectScene
 from .base import TaskBundle
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_TASK_DEFINITION = (
+    PROJECT_ROOT
+    / "robot"
+    / "stage_cons_iiwa14"
+    / "ros_ws"
+    / "src"
+    / "stage_constraint_planner"
+    / "config"
+    / "bar_clean_true.json"
+)
+PLANNER_PYTHON_ROOT = DEFAULT_TASK_DEFINITION.parent.parent / "src"
+if str(PLANNER_PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLANNER_PYTHON_ROOT))
+
+from stage_constraint_planner.optimizer import (  # noqa: E402
+    BarFeatureEvaluator,
+    tool_yaw_from_quaternion,
+)
+
+
+def _load_task_definition(path):
+    resolved = Path(path or DEFAULT_TASK_DEFINITION).expanduser().resolve()
+    definition = json.loads(resolved.read_text(encoding="utf-8"))
+    if definition.get("task_id") != "BarClean":
+        raise ValueError(f"{resolved} is not a BarClean task definition.")
+    return resolved, definition
+
+
+def _required_term(definition, stage, feature_name):
+    matches = [
+        dict(term)
+        for term in definition["constraint_terms"]
+        if int(term["stage"]) == int(stage)
+        and str(term["feature_name"]) == str(feature_name)
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"BarClean requires exactly one stage {stage} {feature_name} constraint."
+        )
+    return matches[0]
 
 
 class BarCleanEnv(BarInspectEnv):
@@ -29,26 +76,56 @@ class BarCleanEnv(BarInspectEnv):
         "bar_lateral_offset",
         "tool_pitch",
         "tool_plane_err",
+        "tool_yaw",
         "bar_axial_offset",
     )
 
     def __init__(
         self,
         *args,
-        scan_start_progress=-0.18,
-        stage2_scan_distance=0.15,
-        scan_standoff=0.030,
-        scan_lateral_offset=-0.020,
-        transition_axial_advance=0.0,
-        discharge_start_lateral=0.05,
-        discharge_distance=0.156,
-        discharge_standoff=0.020,
+        task_definition_path=None,
         discharge_axial_noise_std=0.0008,
         discharge_height_variation=0.003,
+        obstacle_center=(-0.285, -0.090, 0.13437),
         seg_lengths=(38, 32, 24, 28, 28),
         seg_length_jitter=(5, 4, 4, 4, 5),
         **kwargs,
     ):
+        self.task_definition_path, self.task_definition = _load_task_definition(
+            task_definition_path
+        )
+        definition = self.task_definition
+        endpoints = np.asarray(definition["stage_endpoint_positions_bar"], dtype=float)
+        if endpoints.shape != (4, 3):
+            raise ValueError("BarClean requires four task-frame endpoint positions.")
+        self.stage_endpoint_positions_bar = endpoints.copy()
+        self.feature_definition = dict(definition["feature_definition"])
+
+        stage0_clearance = _required_term(definition, 0, "obstacle_clearance")
+        clean_surface = _required_term(definition, 1, "surface_dist")
+        clean_lateral = _required_term(definition, 1, "bar_lateral_offset")
+        clean_pitch = _required_term(definition, 1, "tool_pitch")
+        clean_yaw = _required_term(definition, 1, "tool_yaw")
+        discharge_axial = _required_term(definition, 3, "bar_axial_offset")
+        discharge_surface = _required_term(definition, 3, "surface_dist")
+        discharge_pitch = _required_term(definition, 3, "tool_pitch")
+        discharge_yaw = _required_term(definition, 3, "tool_yaw")
+        for term in (
+            clean_surface,
+            clean_lateral,
+            clean_pitch,
+            clean_yaw,
+            discharge_axial,
+            discharge_surface,
+            discharge_pitch,
+            discharge_yaw,
+        ):
+            if str(term["semantics"]) != "target_value":
+                raise ValueError(
+                    "Synthetic BarClean demonstrations require equality targets for "
+                    f"{term['feature_name']} at stage {term['stage']}."
+                )
+
         requested_lengths = tuple(int(value) for value in seg_lengths)
         requested_jitters = tuple(int(value) for value in seg_length_jitter)
         if len(requested_lengths) != 5 or len(requested_jitters) != 5:
@@ -56,30 +133,62 @@ class BarCleanEnv(BarInspectEnv):
         if min(requested_lengths) < 4 or min(requested_jitters) < 0:
             raise ValueError("BarClean segment lengths must be >= 4 and jitters non-negative.")
 
-        self.transition_axial_advance = float(transition_axial_advance)
-        self.discharge_start_lateral = float(discharge_start_lateral)
-        self.discharge_distance = float(discharge_distance)
-        self.discharge_standoff = float(discharge_standoff)
+        discharge_axial_reference = float(definition["bar_axial_offset_reference"])
+        discharge_standoff = float(discharge_surface["value"])
+        self.clean_yaw = float(clean_yaw["value"])
+        self.discharge_yaw = float(discharge_yaw["value"])
         self.discharge_axial_noise_std = float(discharge_axial_noise_std)
         self.discharge_height_variation = float(discharge_height_variation)
-        self.discharge_axial_progress = (
-            float(scan_start_progress)
-            + float(stage2_scan_distance)
-            + self.transition_axial_advance
-        )
-        if self.discharge_distance <= 0.0 or self.discharge_standoff <= 0.0:
-            raise ValueError("discharge_distance and discharge_standoff must be positive.")
+        if discharge_standoff <= 0.0:
+            raise ValueError("The stage-four surface target must be positive.")
+        if not np.allclose(
+            endpoints[2:, 0] - discharge_axial_reference,
+            float(discharge_axial["value"]),
+            atol=1e-9,
+        ) or not np.allclose(
+            endpoints[2:, 2], discharge_standoff, atol=1e-9
+        ):
+            raise ValueError(
+                "Stage-four endpoints do not satisfy their axial/surface targets."
+            )
+        if not np.isclose(
+            endpoints[1, 1], float(clean_lateral["value"]), atol=1e-9
+        ) or not np.isclose(
+            endpoints[1, 2], float(clean_surface["value"]), atol=1e-9
+        ):
+            raise ValueError(
+                "Stage-two endpoint does not satisfy its lateral/surface targets."
+            )
         if self.discharge_axial_noise_std < 0.0 or self.discharge_height_variation < 0.0:
             raise ValueError(
                 "discharge_axial_noise_std and discharge_height_variation must be non-negative."
             )
 
+        geometry = dict(definition["scene_geometry"])
+        feature_definition = dict(definition["feature_definition"])
         super().__init__(
             *args,
-            scan_start_progress=scan_start_progress,
-            stage2_scan_distance=stage2_scan_distance,
-            scan_standoff=scan_standoff,
-            scan_lateral_offset=scan_lateral_offset,
+            bar_axis_local=definition["bar_axis_local"],
+            table_surface_point=definition["table_surface_point"],
+            table_normal=definition["table_normal"],
+            bar_outline_u=geometry["bar_outline_u"],
+            bar_outline_v=geometry["bar_outline_v"],
+            bar_height=geometry["bar_height"],
+            scan_start_progress=float(endpoints[0, 0]),
+            stage2_scan_distance=float(endpoints[1, 0] - endpoints[0, 0]),
+            stage3_scan_distance=float(
+                np.linalg.norm(endpoints[2] - endpoints[1])
+            ),
+            scan_standoff=float(clean_surface["value"]),
+            scan_lateral_offset=float(clean_lateral["value"]),
+            stage2_pitch_deg=float(np.rad2deg(clean_pitch["value"])),
+            stage3_pitch_deg=float(np.rad2deg(discharge_pitch["value"])),
+            obstacle_center=obstacle_center,
+            obstacle_radius=float(definition["obstacle_radius"]),
+            obstacle_min_clearance=float(stage0_clearance["value"]),
+            tcp_offset_local=feature_definition["tcp_offset_local"],
+            tool_axis_local=feature_definition["tool_axis_local"],
+            task_frame_snapshot_policy=definition["task_frame"]["snapshot_policy"],
             seg_lengths=(
                 requested_lengths[0],
                 requested_lengths[1],
@@ -100,6 +209,7 @@ class BarCleanEnv(BarInspectEnv):
         self.true_constraints = self.get_true_constraints()
         self.constraint_specs = self.get_constraint_specs()
         self.stage_specs = self.get_stage_specs()
+        self._planner_feature_evaluator = BarFeatureEvaluator(definition)
 
     def get_feature_schema(self):
         schema = [dict(spec) for spec in super().get_feature_schema()]
@@ -116,62 +226,37 @@ class BarCleanEnv(BarInspectEnv):
                 "frame": "bar_table_task.x",
             }
         )
+        schema.append(
+            {
+                "id": 9,
+                "column_idx": 9,
+                "name": "tool_yaw",
+                "unit": "rad",
+                "description": "Tool-X heading relative to the frozen bar axis",
+                "frame": "bar_table_task.xy",
+            }
+        )
         return schema
 
     def get_true_constraints(self):
-        constraints = dict(super().get_true_constraints())
-        constraints.pop("stage3_pitch_target", None)
-        constraints["discharge_axial_target"] = 0.0
-        constraints["discharge_axial_progress"] = float(self.discharge_axial_progress)
-        constraints["discharge_surface_distance_target"] = float(
-            self.discharge_standoff
-        )
-        return constraints
+        return {
+            self._oracle_key(term): float(term["value"])
+            for term in self.task_definition["constraint_terms"]
+        }
+
+    @staticmethod
+    def _oracle_key(term):
+        return "stage_{}_{}".format(int(term["stage"]), str(term["feature_name"]))
 
     def get_constraint_specs(self):
         return [
             {
-                "feature_name": "obstacle_clearance",
-                "stage": 0,
-                "semantics": "lower_bound",
-                "oracle_key": "obstacle_min_clearance",
-            },
-            {
-                "feature_name": "surface_dist",
-                "stage": 1,
-                "semantics": "target_value",
-                "oracle_key": "surface_distance_target",
-            },
-            {
-                "feature_name": "bar_lateral_offset",
-                "stage": 1,
-                "semantics": "target_value",
-                "oracle_key": "bar_lateral_target",
-            },
-            {
-                "feature_name": "tool_pitch",
-                "stage": 1,
-                "semantics": "target_value",
-                "oracle_key": "stage2_pitch_target",
-            },
-            {
-                "feature_name": "tool_plane_err",
-                "stage": 1,
-                "semantics": "target_value",
-                "oracle_key": "tool_plane_target",
-            },
-            {
-                "feature_name": "bar_axial_offset",
-                "stage": 3,
-                "semantics": "target_value",
-                "oracle_key": "discharge_axial_target",
-            },
-            {
-                "feature_name": "surface_dist",
-                "stage": 3,
-                "semantics": "target_value",
-                "oracle_key": "discharge_surface_distance_target",
-            },
+                "feature_name": str(term["feature_name"]),
+                "stage": int(term["stage"]),
+                "semantics": str(term["semantics"]),
+                "oracle_key": self._oracle_key(term),
+            }
+            for term in self.task_definition["constraint_terms"]
         ]
 
     def get_stage_specs(self):
@@ -184,8 +269,7 @@ class BarCleanEnv(BarInspectEnv):
             {
                 "stage": 1,
                 "name": "longitudinal_clean",
-                "distance_m": float(self.stage2_scan_distance),
-                "pitch_deg": float(np.rad2deg(self.stage2_pitch)),
+                "endpoint_bar_table_task": self.stage_endpoint_positions_bar[1].tolist(),
             },
             {
                 "stage": 2,
@@ -195,9 +279,7 @@ class BarCleanEnv(BarInspectEnv):
             {
                 "stage": 3,
                 "name": "transverse_discharge",
-                "distance_m": float(self.discharge_distance),
-                "fixed_axial_progress_m": float(self.discharge_axial_progress),
-                "standoff_m": float(self.discharge_standoff),
+                "endpoint_bar_table_task": self.stage_endpoint_positions_bar[3].tolist(),
             },
             {
                 "stage": 4,
@@ -206,16 +288,23 @@ class BarCleanEnv(BarInspectEnv):
             },
         ]
 
+    def get_planning_profile(self):
+        keys = self.task_definition["planning_profile_fields"]
+        return json.loads(
+            json.dumps({key: self.task_definition[key] for key in keys})
+        )
+
+    def get_observation_spec(self):
+        spec = dict(super().get_observation_spec())
+        spec["task_frame"] = dict(self.task_definition["task_frame"])
+        spec["feature_definition"] = dict(self.feature_definition)
+        return spec
+
     def sample_scene(self, seed=None, rng=None):
         scene = super().sample_scene(seed=seed, rng=rng)
         scene["task"] = {
             "stage_specs": self.get_stage_specs(),
-            "clean_standoff": float(self.scan_standoff),
-            "clean_lateral_offset": float(self.scan_lateral_offset),
-            "discharge_axial_progress": float(self.discharge_axial_progress),
-            "discharge_start_lateral": float(self.discharge_start_lateral),
-            "discharge_distance": float(self.discharge_distance),
-            "discharge_standoff": float(self.discharge_standoff),
+            "endpoints_bar_table_task": self.stage_endpoint_positions_bar.tolist(),
             "dt": float(self.dt),
         }
         return scene
@@ -232,13 +321,59 @@ class BarCleanEnv(BarInspectEnv):
         tcp = trajectory[:, :3] + np.einsum(
             "tij,j->ti", rotations, self.tcp_offset_local
         )
-        bar_reference, bar_axis, _ = self._bar_geometry_trace(
+        bar_reference, bar_axis, bar_lateral = self._bar_geometry_trace(
             trajectory,
             scene=scene,
         )
-        bar_progress = np.sum((tcp - bar_reference) * bar_axis, axis=1)
-        bar_axial_offset = bar_progress - self.discharge_axial_progress
-        features = np.column_stack([base_features, bar_axial_offset])
+        obstacle_center = self._obstacle_center_trace(trajectory, scene=scene)
+        task_origins = bar_reference - np.outer(
+            (bar_reference - self.table_surface_point[None, :]) @ self.table_normal,
+            self.table_normal,
+        )
+        if not (
+            np.allclose(task_origins, task_origins[:1])
+            and np.allclose(bar_axis, bar_axis[:1])
+            and np.allclose(bar_lateral, bar_lateral[:1])
+            and np.allclose(obstacle_center, obstacle_center[:1])
+        ):
+            raise ValueError("BarClean feature evaluation requires one frozen task snapshot.")
+        task_frame = {
+            "origin": task_origins[0],
+            "axial": bar_axis[0],
+            "lateral": bar_lateral[0],
+            "normal": self.table_normal,
+        }
+        tool_yaw = np.asarray(
+            [tool_yaw_from_quaternion(value, task_frame) for value in quaternion],
+            dtype=float,
+        )
+        obstacle_pose = np.concatenate(
+            [obstacle_center[0], np.asarray([0.0, 0.0, 0.0, 1.0])]
+        )
+        planner_features = self._planner_feature_evaluator.evaluate(
+            tcp,
+            np.einsum("tij,j->ti", rotations, self.tool_axis_local),
+            task_frame,
+            obstacle_pose,
+            tool_yaws=tool_yaw,
+        )
+        for column, name in enumerate(
+            (
+                "obstacle_clearance",
+                "surface_dist",
+                "bar_lateral_offset",
+                "tool_pitch",
+                "tool_plane_err",
+            )
+        ):
+            base_features[:, column] = planner_features[name]
+        features = np.column_stack(
+            [
+                base_features,
+                planner_features["bar_axial_offset"],
+                planner_features["tool_yaw"],
+            ]
+        )
         if not np.all(np.isfinite(features)):
             raise ValueError("BarClean feature extraction produced non-finite values.")
         if feat_ids is None:
@@ -250,6 +385,29 @@ class BarCleanEnv(BarInspectEnv):
             feat_ids = [name_to_column[name] for name in feat_ids]
         return features[:, feat_ids]
 
+    def _tool_rotation_with_yaw(self, pitch, plane_error, yaw):
+        in_plane_axis = (
+            np.cos(float(pitch)) * self.bar_axis
+            - np.sin(float(pitch)) * self.table_normal
+        )
+        tool_axis = self._unit(
+            np.cos(float(plane_error)) * in_plane_axis
+            + np.sin(float(plane_error)) * self.bar_lateral,
+            "generated tool axis",
+        )
+        heading = (
+            np.cos(float(yaw)) * self.bar_axis
+            + np.sin(float(yaw)) * self.bar_lateral
+        )
+        normal_component = float(self.table_normal @ tool_axis)
+        if abs(normal_component) > 1e-6:
+            tool_x = heading - self.table_normal * float(heading @ tool_axis) / normal_component
+        else:
+            tool_x = heading - tool_axis * float(heading @ tool_axis)
+        tool_x = self._unit(tool_x, "generated Tool-X axis")
+        tool_y = self._unit(np.cross(tool_axis, tool_x), "generated Tool-Y axis")
+        return np.column_stack([tool_x, tool_y, tool_axis])
+
     def generate_demo(self, seed=0, rng=None):
         local_rng = np.random.RandomState(int(seed)) if rng is None else rng
         lengths = [
@@ -258,7 +416,12 @@ class BarCleanEnv(BarInspectEnv):
         ]
         n1, n2, n3, n4, n5 = lengths
 
-        clean_entry = self._scan_tcp([self.scan_start_progress])[0]
+        endpoint_tcp = self._scan_tcp(
+            self.stage_endpoint_positions_bar[:, 0],
+            lateral=self.stage_endpoint_positions_bar[:, 1],
+            standoff=self.stage_endpoint_positions_bar[:, 2],
+        )
+        clean_entry = endpoint_tcp[0]
         start = self.nominal_start_tcp + local_rng.normal(
             scale=np.array([0.025, 0.035, 0.025], dtype=float), size=3
         )
@@ -283,16 +446,23 @@ class BarCleanEnv(BarInspectEnv):
         approach_tcp[-1] = clean_entry
 
         clean_u = np.arange(1, n2 + 1, dtype=float) / float(n2)
-        clean_lateral = self.scan_lateral_offset + self._smooth_noise(
+        clean_coordinates = (
+            (1.0 - clean_u[:, None]) * self.stage_endpoint_positions_bar[0]
+            + clean_u[:, None] * self.stage_endpoint_positions_bar[1]
+        )
+        clean_coordinates[:, 0] += self._smooth_noise(
             local_rng, n2, 1, self.position_noise_std, knots=6
         )[:, 0]
-        clean_height = self.scan_standoff + self._smooth_noise(
+        clean_coordinates[:, 1] += self._smooth_noise(
+            local_rng, n2, 1, self.position_noise_std, knots=6
+        )[:, 0]
+        clean_coordinates[:, 2] += self._smooth_noise(
             local_rng, n2, 1, self.position_noise_std * 0.65, knots=6
         )[:, 0]
         clean_tcp = self._scan_tcp(
-            self.scan_start_progress + self.stage2_scan_distance * clean_u,
-            clean_lateral,
-            clean_height,
+            clean_coordinates[:, 0],
+            clean_coordinates[:, 1],
+            clean_coordinates[:, 2],
         )
 
         clean_pitch = self.stage2_pitch + self._smooth_noise(
@@ -301,14 +471,13 @@ class BarCleanEnv(BarInspectEnv):
         clean_plane = self._smooth_noise(
             local_rng, n2, 1, self.plane_noise, knots=6
         )[:, 0]
-        roll_phase = local_rng.uniform(-np.pi, np.pi)
-        clean_roll = local_rng.uniform(-np.pi, np.pi) + self.roll_variation * np.sin(
-            2.0 * np.pi * clean_u + roll_phase
-        )
+        clean_yaw = self.clean_yaw + self._smooth_noise(
+            local_rng, n2, 1, self.plane_noise, knots=6
+        )[:, 0]
         clean_quat = np.asarray(
             [
-                self._matrix_to_quat(self._tool_rotation(pitch, plane, roll))
-                for pitch, plane, roll in zip(clean_pitch, clean_plane, clean_roll)
+                self._matrix_to_quat(self._tool_rotation_with_yaw(pitch, plane, yaw))
+                for pitch, plane, yaw in zip(clean_pitch, clean_plane, clean_yaw)
             ],
             dtype=float,
         )
@@ -319,17 +488,17 @@ class BarCleanEnv(BarInspectEnv):
             self._smoothstep(np.linspace(0.0, 1.0, n1)),
         )
 
-        discharge_start_height = self.discharge_standoff + local_rng.uniform(
+        discharge_start_height = self.stage_endpoint_positions_bar[2, 2] + local_rng.uniform(
             -self.discharge_height_variation,
             self.discharge_height_variation,
         )
-        discharge_end_height = self.discharge_standoff + local_rng.uniform(
+        discharge_end_height = self.stage_endpoint_positions_bar[3, 2] + local_rng.uniform(
             -self.discharge_height_variation,
             self.discharge_height_variation,
         )
         discharge_start = self._scan_tcp(
-            [self.discharge_axial_progress],
-            lateral=[self.discharge_start_lateral],
+            [self.stage_endpoint_positions_bar[2, 0]],
+            lateral=[self.stage_endpoint_positions_bar[2, 1]],
             standoff=[discharge_start_height],
         )[0]
         transition_u = np.arange(1, n3 + 1, dtype=float) / float(n3)
@@ -343,7 +512,13 @@ class BarCleanEnv(BarInspectEnv):
         )
         transition_tcp[-1] = discharge_start
 
-        discharge_start_quat = self._quat_normalize(local_rng.normal(size=4))
+        discharge_start_quat = self._matrix_to_quat(
+            self._tool_rotation_with_yaw(
+                self.stage2_pitch,
+                0.0,
+                self.discharge_yaw,
+            )
+        )
         transition_quat = self._quat_slerp(
             clean_quat[-1],
             discharge_start_quat,
@@ -351,36 +526,51 @@ class BarCleanEnv(BarInspectEnv):
         )
 
         discharge_u = np.arange(1, n4 + 1, dtype=float) / float(n4)
-        discharge_progress = self.discharge_axial_progress + self._smooth_noise(
+        discharge_coordinates = (
+            (1.0 - discharge_u[:, None]) * self.stage_endpoint_positions_bar[2]
+            + discharge_u[:, None] * self.stage_endpoint_positions_bar[3]
+        )
+        discharge_coordinates[:, 0] += self._smooth_noise(
             local_rng,
             n4,
             1,
             self.discharge_axial_noise_std,
             knots=6,
         )[:, 0]
-        discharge_lateral = (
-            self.discharge_start_lateral - self.discharge_distance * discharge_u
-        )
-        discharge_lateral += self._smooth_noise(
+        discharge_coordinates[:, 1] += self._smooth_noise(
             local_rng, n4, 1, self.position_noise_std, knots=6
         )[:, 0]
-        discharge_height = (
+        discharge_coordinates[:, 2] = (
             (1.0 - discharge_u) * discharge_start_height
             + discharge_u * discharge_end_height
         )
-        discharge_height += self._smooth_noise(
+        discharge_coordinates[:, 2] += self._smooth_noise(
             local_rng, n4, 1, self.position_noise_std * 1.5, knots=6
         )[:, 0]
         discharge_tcp = self._scan_tcp(
-            discharge_progress,
-            lateral=discharge_lateral,
-            standoff=discharge_height,
+            discharge_coordinates[:, 0],
+            lateral=discharge_coordinates[:, 1],
+            standoff=discharge_coordinates[:, 2],
         )
-        discharge_end_quat = self._quat_normalize(local_rng.normal(size=4))
-        discharge_quat = self._quat_slerp(
-            discharge_start_quat,
-            discharge_end_quat,
-            self._smoothstep(discharge_u),
+        discharge_pitch = self.stage2_pitch + self._smooth_noise(
+            local_rng, n4, 1, self.pitch_noise, knots=6
+        )[:, 0]
+        discharge_plane = self._smooth_noise(
+            local_rng, n4, 1, self.plane_noise, knots=6
+        )[:, 0]
+        discharge_yaw = self.discharge_yaw + self._smooth_noise(
+            local_rng, n4, 1, self.plane_noise, knots=6
+        )[:, 0]
+        discharge_quat = np.asarray(
+            [
+                self._matrix_to_quat(self._tool_rotation_with_yaw(pitch, plane, yaw))
+                for pitch, plane, yaw in zip(
+                    discharge_pitch,
+                    discharge_plane,
+                    discharge_yaw,
+                )
+            ],
+            dtype=float,
         )
 
         depart_direction = self._unit(
@@ -479,6 +669,7 @@ def load_BarClean(
             "scene_specs": scene_specs,
             "timestamps": timestamps,
             "observation_specs": env.get_observation_spec(),
+            "planning_profile": env.get_planning_profile(),
             "render_camera_presets": env.get_render_camera_presets(),
             "asset_handles": env.get_asset_handles(),
             "default_learning_features": list(env.default_learning_features),

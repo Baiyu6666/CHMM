@@ -28,6 +28,99 @@ class StageZeroVerticalRecoveryTest(unittest.TestCase):
         self.compiler._approach_axis_spacing = math.radians(2.0)
         self.compiler._approach_position_tolerance = 0.005
 
+    @staticmethod
+    def obstacle():
+        return {
+            "center": [0.0, 0.0, 0.10],
+            "table_normal": [0.0, 0.0, 1.0],
+            "radius": 0.025,
+            "clearance": 0.085,
+            "margin": 0.005,
+        }
+
+    def test_task_approach_detours_around_obstacle_without_lifting(self):
+        current = np.asarray([-0.30, 0.0, 0.18])
+        target = np.asarray([0.30, 0.0, 0.25])
+        tool_z = np.asarray([0.0, 0.0, -1.0])
+
+        positions, _axes, _x_axes, _distance = self.compiler._approach_samples(
+            current,
+            tool_z,
+            target,
+            tool_z,
+            approach_obstacle=self.obstacle(),
+        )
+
+        radial = np.linalg.norm(positions[:, :2], axis=1)
+        self.assertGreaterEqual(float(np.min(radial)), 0.110 - 1e-6)
+        self.assertGreater(float(np.max(np.abs(positions[:, 1]))), 0.10)
+        self.assertLessEqual(float(np.max(positions[:, 2])), target[2] + 1e-9)
+        self.assertGreaterEqual(float(np.min(positions[:, 2])), current[2] - 1e-9)
+
+    def test_task_obstacle_approach_uses_one_uniform_sample_grid(self):
+        current = np.asarray([-0.30, 0.0, 0.18])
+        target = np.asarray([0.30, 0.0, 0.25])
+        tool_z = np.asarray([0.0, 0.0, -1.0])
+
+        positions, _axes, _x_axes, distance = self.compiler._approach_samples(
+            current,
+            tool_z,
+            target,
+            tool_z,
+            approach_obstacle=self.obstacle(),
+        )
+
+        self.assertEqual(len(positions), int(math.ceil(distance / 0.01)))
+        edge_lengths = np.linalg.norm(
+            np.diff(np.vstack((current, positions)), axis=0), axis=1
+        )
+        self.assertGreater(float(np.min(edge_lengths)), 0.5 * float(np.max(edge_lengths)))
+
+    def test_task_approach_keeps_safe_straight_path_and_does_not_lift(self):
+        current = np.asarray([-0.30, 0.30, 0.18])
+        target = np.asarray([0.30, 0.30, 0.25])
+        tool_z = np.asarray([0.0, 0.0, -1.0])
+
+        positions, _axes, _x_axes, _distance = self.compiler._approach_samples(
+            current,
+            tool_z,
+            target,
+            tool_z,
+            approach_obstacle=self.obstacle(),
+        )
+
+        np.testing.assert_allclose(positions[:, 1], 0.30, atol=1e-12)
+        self.assertLessEqual(float(np.max(positions[:, 2])), target[2] + 1e-9)
+
+    def test_task_approach_rejects_start_target_inside_clearance(self):
+        tool_z = np.asarray([0.0, 0.0, -1.0])
+        with self.assertRaisesRegex(
+            TrajectoryValidationError, "Task start violates Stage-0 obstacle clearance"
+        ):
+            self.compiler._approach_samples(
+                np.asarray([-0.30, 0.0, 0.18]),
+                tool_z,
+                np.asarray([0.05, 0.0, 0.25]),
+                tool_z,
+                approach_obstacle=self.obstacle(),
+            )
+
+    def test_task_obstacle_approach_does_not_enforce_legacy_transit_floor(self):
+        self.compiler.tip_state = lambda q: (np.asarray(q), np.eye(3))
+        path = np.asarray(
+            [
+                [-0.30, 0.0, 0.18],
+                [-0.20, 0.12, 0.18],
+                [0.20, 0.12, 0.19],
+            ]
+        )
+
+        minimum = self.compiler._approach_workspace_checks(
+            path, enforce_transit_floor=False
+        )
+
+        self.assertAlmostEqual(minimum, 0.18)
+
     def test_low_start_is_lifted_before_any_lateral_motion(self):
         current = np.asarray([0.77, -0.26, 0.1962])
         target = np.asarray([0.73, 0.22, 0.2658])
@@ -108,11 +201,18 @@ class StageZeroVerticalRecoveryTest(unittest.TestCase):
             )
 
         compiler._continuous_ik = continuous_ik
-        compiler._approach_workspace_checks = lambda _path: 0.3
+        compiler._approach_workspace_checks = lambda _path, **_kwargs: 0.3
         compiler._collision_and_singularity_checks = lambda _path, _name: 1.0
-        compiler.time_parameterize = lambda path, _duration: {
+        compiler.time_parameterize = lambda path, _duration, **_kwargs: {
             "position": path,
             "duration": 1.0,
+            "_validation_position": path,
+            "maximum_interpolated_velocity_ratio": 0.5,
+            "maximum_interpolated_acceleration_ratio": 0.5,
+            "maximum_interpolated_velocity_rad_s": 0.1,
+            "maximum_interpolated_acceleration_rad_s2": 0.2,
+            "timing_overhead_s": 0.0,
+            "timing_iterations": 0,
         }
         compiler._set_q = lambda _q: None
 

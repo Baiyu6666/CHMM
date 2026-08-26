@@ -196,6 +196,8 @@ def main() -> None:
         tool_yaw_active = np.asarray(
             orientation_metadata["tool_yaw_active"], dtype=bool
         )
+        approach_obstacle = orientation_metadata["approach_obstacle"]
+        stage_timing = orientation_metadata["stage_timing"]
         if tool_yaw_active.shape != (len(positions),):
             raise RuntimeError(
                 "Planner yaw-mask metadata does not match the latched path"
@@ -244,6 +246,15 @@ def main() -> None:
     lower = [float(value[1][8]) for value in joint_info]
     upper = [float(value[1][9]) for value in joint_info]
     velocity = [float(value[1][11]) for value in joint_info]
+    task_definition = json.loads(
+        (
+            ROS_SOURCE
+            / "stage_constraint_planner"
+            / "config"
+            / "bar_clean_true.json"
+        ).read_text(encoding="utf-8")
+    )
+    execution = task_definition["execution"]
     compiler = CartesianTrajectoryCompiler(
         bullet,
         physics,
@@ -254,10 +265,10 @@ def main() -> None:
         upper,
         velocity,
         max_joint_step=0.15,
-        velocity_scale=0.20,
+        velocity_scale=0.25,
         acceleration_limit=1.00,
-        approach_speed=0.06,
-        task_speed=0.04,
+        approach_speed=float(execution["approach_speed_mps"]),
+        task_speed=float(execution["task_speed_mps"]),
         position_tolerance=0.003 if arguments.tool_z_only else 0.002,
         approach_position_tolerance=0.01,
         approach_joint_bridge_limit=3.0,
@@ -283,6 +294,8 @@ def main() -> None:
             if arguments.home or arguments.tool_z_only
             else tool_yaw_active
         ),
+        approach_obstacle=None if arguments.home else approach_obstacle,
+        stage_timing=None if arguments.home else stage_timing,
     )
     selected_spin = None
     if arguments.tool_z_only:

@@ -1,4 +1,4 @@
-from .constraint_artifact import configure_task_constraints
+from .constraint_artifact import configure_planning_profile
 from .optimizer import (
     BarFeatureEvaluator,
     StageConstraintTrajectoryOptimizer,
@@ -12,7 +12,7 @@ __all__ = [
     "BarFeatureEvaluator",
     "StageConstraintTrajectoryOptimizer",
     "build_bar_table_task_frame",
-    "configure_task_constraints",
+    "configure_planning_profile",
     "continuous_quaternions_from_axes",
     "quaternion_to_matrix",
     "transform_pose",

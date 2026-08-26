@@ -75,6 +75,8 @@ TASK_CONFIGS = {
     ),
 }
 FEATURE_SAMPLE_HZ = 20.0
+
+
 class RosTopicStream:
     """Keep one docker/rostopic subscriber alive and cache its newest value."""
 
@@ -204,6 +206,150 @@ class RosTopicStream:
             thread.join(timeout=2.0)
 
 
+class RosTfPoseStream:
+    """Keep one full-precision ROS TF stream alive and cache its newest pose."""
+
+    def __init__(self, container: str, base_frame: str, tip_frame: str) -> None:
+        self._container = container
+        self._base_frame = base_frame
+        self._tip_frame = tip_frame
+        self._condition = threading.Condition()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._process: Optional[subprocess.Popen[str]] = None
+        self._pose: Optional[Dict[str, float]] = None
+        self._received = 0.0
+        self._last_error = "TF subscriber has not started"
+        self._node_name = "stage_host_tf_{}_{}".format(
+            os.getpid(), secrets.token_hex(4)
+        )
+
+    @staticmethod
+    def _parse_pose(line: str) -> Optional[Dict[str, float]]:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        keys = ("x", "y", "z", "qx", "qy", "qz", "qw")
+        if not isinstance(payload, dict) or set(payload) != set(keys):
+            return None
+        try:
+            pose = {key: float(payload[key]) for key in keys}
+        except (TypeError, ValueError):
+            return None
+        if not all(math.isfinite(value) for value in pose.values()):
+            return None
+        return pose
+
+    def _kill_ros_node(self) -> None:
+        try:
+            subprocess.run(
+                [
+                    "docker", "exec", self._container, "/entrypoint.sh",
+                    "rosnode", "kill", "/" + self._node_name,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    def _ensure_started(self) -> None:
+        with self._condition:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            process: Optional[subprocess.Popen[str]] = None
+            try:
+                process = subprocess.Popen(
+                    [
+                        "docker", "exec", self._container, "/entrypoint.sh",
+                        "rosrun", "stage_real_executor", "stream_tf_pose.py",
+                        self._base_frame,
+                        self._tip_frame, str(int(FEATURE_SAMPLE_HZ)),
+                        "__name:=" + self._node_name,
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=1,
+                )
+                with self._condition:
+                    self._process = process
+                    self._last_error = "waiting for the first TF pose"
+                    self._condition.notify_all()
+                if process.stdout is None:
+                    raise RuntimeError("TF subscriber stdout was not created")
+                for raw_line in process.stdout:
+                    if self._stop.is_set():
+                        break
+                    line = raw_line.strip()
+                    pose = self._parse_pose(line)
+                    if pose is None:
+                        continue
+                    with self._condition:
+                        self._pose = pose
+                        self._received = time.monotonic()
+                        self._last_error = ""
+                        self._condition.notify_all()
+            except (OSError, RuntimeError) as error:
+                with self._condition:
+                    self._last_error = str(error)
+                    self._condition.notify_all()
+            finally:
+                self._kill_ros_node()
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1.0)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                with self._condition:
+                    if self._process is process:
+                        self._process = None
+                    if not self._stop.is_set() and not self._last_error:
+                        self._last_error = "TF subscriber exited"
+                    self._condition.notify_all()
+            self._stop.wait(0.5)
+
+    def read(self, timeout: float, max_age: float) -> Dict[str, float]:
+        self._ensure_started()
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while True:
+                now = time.monotonic()
+                if self._pose is not None and now - self._received <= max_age:
+                    return dict(self._pose)
+                remaining = deadline - now
+                if remaining <= 0.0:
+                    detail = self._last_error or "cached TF pose is stale"
+                    raise RuntimeError(
+                        "Could not read fresh {} -> {} from {}: {}".format(
+                            self._base_frame, self._tip_frame, self._container, detail
+                        )
+                    )
+                self._condition.wait(timeout=remaining)
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._kill_ros_node()
+        with self._condition:
+            process = self._process
+            self._condition.notify_all()
+        if process is not None and process.poll() is None:
+            process.terminate()
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+
+
 class Supervisor:
     def __init__(self) -> None:
         self.token = secrets.token_urlsafe(32)
@@ -215,6 +361,7 @@ class Supervisor:
         self._logs: deque[str] = deque(maxlen=500)
         self._children: Dict[str, subprocess.Popen[str]] = {}
         self._topic_streams: Dict[Tuple[str, str], RosTopicStream] = {}
+        self._tf_pose_streams: Dict[Tuple[str, str, str], RosTfPoseStream] = {}
         self._real_station_verified = False
         self._task_abort = threading.Event()
         self._task_state: Dict[str, object] = {
@@ -282,10 +429,28 @@ class Supervisor:
 
     def shutdown(self) -> None:
         with self._lock:
-            streams = list(self._topic_streams.values())
+            streams = [
+                *self._topic_streams.values(),
+                *self._tf_pose_streams.values(),
+            ]
             self._topic_streams.clear()
+            self._tf_pose_streams.clear()
         for stream in streams:
             stream.stop()
+
+    def _robot_ee_pose(
+        self, *, timeout: float = 0.15, max_age: float = 0.25
+    ) -> Optional[Dict[str, float]]:
+        key = (CONTAINER, "iiwa14_link_0", "iiwa14_link_7")
+        with self._lock:
+            stream = self._tf_pose_streams.get(key)
+            if stream is None:
+                stream = RosTfPoseStream(*key)
+                self._tf_pose_streams[key] = stream
+        try:
+            return stream.read(timeout=timeout, max_age=max_age)
+        except RuntimeError:
+            return None
 
     def cleanup_stale_topic_streams(self) -> None:
         if not self._container_running():
@@ -305,7 +470,7 @@ class Supervisor:
             names = [
                 name
                 for name in result.stdout.splitlines()
-                if name.startswith("/stage_host_topic_")
+                if name.startswith(("/stage_host_topic_", "/stage_host_tf_"))
             ]
             if names:
                 subprocess.run(
@@ -826,13 +991,12 @@ class Supervisor:
         self, task_id: str, artifact: Dict[str, object]
     ) -> Tuple[bool, str]:
         try:
-            if int(artifact.get("schema_version", -1)) != 2:
+            if int(artifact.get("schema_version", -1)) != 3:
                 return False, "unsupported schema version"
-            expected_frame = dict(
-                json.loads(TASK_CONFIGS[task_id].read_text(encoding="utf-8")).get(
-                    "task_frame", {}
-                )
+            task_definition = json.loads(
+                TASK_CONFIGS[task_id].read_text(encoding="utf-8")
             )
+            expected_frame = dict(task_definition.get("task_frame", {}))
             artifact_frame = artifact.get("task_frame")
             if expected_frame:
                 if not isinstance(artifact_frame, dict):
@@ -845,12 +1009,26 @@ class Supervisor:
                     expected_frame.get("snapshot_policy")
                 ):
                     return False, "task-frame snapshot policy does not match"
+            if dict(artifact.get("feature_definition", {})) != dict(
+                task_definition.get("feature_definition", {})
+            ):
+                return False, "feature definition does not match"
+            planning_profile = artifact.get("planning_profile")
+            if not isinstance(planning_profile, dict):
+                return False, "planning profile is missing"
+            profile_keys = set(task_definition["planning_profile_fields"])
+            if not profile_keys.issubset(planning_profile):
+                return False, "planning profile is incomplete"
             n_stages = int(artifact["num_stages"])
             expected_stages = int(self._task_profiles[task_id]["n_stages"])
             if n_stages != expected_stages:
                 return False, "{} stages; task requires {}".format(
                     n_stages, expected_stages
                 )
+            if len(planning_profile["stage_names"]) != n_stages or len(
+                planning_profile["stage_endpoint_positions_bar"]
+            ) != n_stages - 1:
+                return False, "planning profile endpoints do not match its stages"
             schema = artifact["feature_schema"]
             pairs = artifact["feature_stage_modes"]
             if not isinstance(schema, list) or not schema or not isinstance(pairs, list):
@@ -2116,6 +2294,7 @@ class Supervisor:
                 if phase == "executing":
                     self._update_real_visualization()
                 if phase == "complete":
+                    self._update_real_visualization()
                     execution_may_have_started = False
                     return
                 if phase in ("failed", "rejected", "protective_stop"):
@@ -2137,7 +2316,6 @@ class Supervisor:
             raise RuntimeError("Robot network interface is not configured")
         with self._lock:
             task_id = str(self._task_state.get("task_id", "BarClean"))
-        self._reset_task_visualization(task_id)
         self._set_task_state(
             mode="home",
             phase="starting",
@@ -2357,12 +2535,8 @@ class Supervisor:
         }
 
     def _update_real_visualization(self, sample_time: Optional[float] = None) -> None:
-        visualization = self._demo_visualization()
-        if visualization is None:
-            return
-        try:
-            pose = self._validated_pose("current EE", visualization.get("current_ee"))
-        except ValueError:
+        pose = self._robot_ee_pose()
+        if pose is None:
             return
         now = time.monotonic() if sample_time is None else float(sample_time)
         with self._lock:

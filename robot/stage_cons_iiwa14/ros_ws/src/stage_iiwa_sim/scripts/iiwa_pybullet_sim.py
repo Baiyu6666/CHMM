@@ -833,15 +833,31 @@ class IiwaPyBulletSim:
     def _parse_orientation_constraints(message):
         try:
             payload = json.loads(message.data)
-            if int(payload.get("schema_version", 0)) != 1:
+            if int(payload.get("schema_version", 0)) != 3:
                 raise ValueError("unsupported schema_version")
             stamp_ns = int(payload["stamp_ns"])
             point_count = int(payload["point_count"])
             task_id = str(payload["task_id"])
             active = np.asarray(payload["tool_yaw_active"], dtype=int)
+            raw_obstacle = payload["approach_obstacle"]
+            center = np.asarray(raw_obstacle["center"], dtype=float)
+            table_normal = np.asarray(raw_obstacle["table_normal"], dtype=float)
+            radius = float(raw_obstacle["radius"])
+            clearance = float(raw_obstacle["clearance"])
+            margin = float(raw_obstacle["margin"])
+            raw_timing = payload["stage_timing"]
+            boundaries = np.asarray(raw_timing["boundaries"], dtype=int)
+            transition_windows = np.asarray(
+                raw_timing["transition_windows"], dtype=int
+            )
+            if transition_windows.size == 0:
+                transition_windows = np.empty((0, 2), dtype=int)
+            speed_scale = float(raw_timing["speed_scale"])
+            ramp_before_m = float(raw_timing["ramp_before_m"])
+            task_start_ramp_m = float(raw_timing["task_start_ramp_m"])
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError(
-                "Invalid planner orientation-constraint metadata: {}".format(error)
+                "Invalid planner path metadata: {}".format(error)
             ) from error
         if stamp_ns <= 0 or point_count < 2 or active.shape != (point_count,):
             raise ValueError(
@@ -849,9 +865,76 @@ class IiwaPyBulletSim:
             )
         if np.any((active != 0) & (active != 1)):
             raise ValueError("Planner tool-yaw mask must contain only 0 or 1")
-        return stamp_ns, task_id, active.astype(bool)
+        if (
+            center.shape != (3,)
+            or table_normal.shape != (3,)
+            or not np.all(np.isfinite(center))
+            or not np.all(np.isfinite(table_normal))
+            or np.linalg.norm(table_normal) <= 1e-12
+            or not all(math.isfinite(value) for value in (radius, clearance, margin))
+            or radius <= 0.0
+            or clearance < 0.0
+            or margin < 0.0
+        ):
+            raise ValueError("Planner Stage-0 obstacle metadata is invalid")
+        approach_obstacle = {
+            "center": center.tolist(),
+            "table_normal": table_normal.tolist(),
+            "radius": radius,
+            "clearance": clearance,
+            "margin": margin,
+        }
+        if (
+            boundaries.ndim != 1
+            or len(boundaries) < 1
+            or boundaries[0] <= 0
+            or boundaries[-1] != point_count - 1
+            or np.any(np.diff(boundaries) <= 0)
+            or transition_windows.shape != (max(len(boundaries) - 1, 0), 2)
+        ):
+            raise ValueError("Planner stage-timing metadata has invalid dimensions")
+        for index, window in enumerate(transition_windows):
+            if (
+                int(window[0]) != int(boundaries[index])
+                or int(window[1]) < int(window[0])
+                or int(window[1]) > int(boundaries[index + 1])
+            ):
+                raise ValueError(
+                    "Planner stage transition window {} is invalid".format(index)
+                )
+        if (
+            not all(
+                math.isfinite(value)
+                for value in (speed_scale, ramp_before_m, task_start_ramp_m)
+            )
+            or not 0.0 < speed_scale <= 1.0
+            or ramp_before_m < 0.0
+            or task_start_ramp_m < 0.0
+        ):
+            raise ValueError("Planner stage-timing values are invalid")
+        stage_timing = {
+            "boundaries": boundaries.tolist(),
+            "transition_windows": transition_windows.tolist(),
+            "speed_scale": speed_scale,
+            "ramp_before_m": ramp_before_m,
+            "task_start_ramp_m": task_start_ramp_m,
+        }
+        return (
+            stamp_ns,
+            task_id,
+            active.astype(bool),
+            approach_obstacle,
+            stage_timing,
+        )
 
-    def _queue_path(self, message, task_id, tool_yaw_active):
+    def _queue_path(
+        self,
+        message,
+        task_id,
+        tool_yaw_active,
+        approach_obstacle,
+        stage_timing,
+    ):
         if task_id != self._task_id:
             rospy.logerr(
                 "Ignoring planner path metadata for %s while %s is selected",
@@ -873,6 +956,17 @@ class IiwaPyBulletSim:
             self._pending_path = (
                 message,
                 np.asarray(tool_yaw_active, dtype=bool).copy(),
+                dict(approach_obstacle),
+                {
+                    "boundaries": list(stage_timing["boundaries"]),
+                    "transition_windows": [
+                        list(window)
+                        for window in stage_timing["transition_windows"]
+                    ],
+                    "speed_scale": float(stage_timing["speed_scale"]),
+                    "ramp_before_m": float(stage_timing["ramp_before_m"]),
+                    "task_start_ramp_m": float(stage_timing["task_start_ramp_m"]),
+                },
             )
             self._awaiting_path_metadata = None
             self._visualization_trace.clear()
@@ -887,13 +981,20 @@ class IiwaPyBulletSim:
 
     def _orientation_constraints_callback(self, message):
         try:
-            stamp_ns, task_id, active = self._parse_orientation_constraints(message)
+            stamp_ns, task_id, active, approach_obstacle, stage_timing = (
+                self._parse_orientation_constraints(message)
+            )
         except ValueError as error:
             rospy.logerr("%s", error)
             return
         waiting = None
         with self._path_lock:
-            self._orientation_constraints[stamp_ns] = (task_id, active)
+            self._orientation_constraints[stamp_ns] = (
+                task_id,
+                active,
+                approach_obstacle,
+                stage_timing,
+            )
             for stale_stamp in sorted(self._orientation_constraints)[:-4]:
                 self._orientation_constraints.pop(stale_stamp, None)
             if (
@@ -902,7 +1003,9 @@ class IiwaPyBulletSim:
             ):
                 waiting = self._awaiting_path_metadata
         if waiting is not None:
-            self._queue_path(waiting, task_id, active)
+            self._queue_path(
+                waiting, task_id, active, approach_obstacle, stage_timing
+            )
 
     def _path_callback(self, message):
         if not message.poses:
@@ -925,9 +1028,13 @@ class IiwaPyBulletSim:
             if metadata is None:
                 self._awaiting_path_metadata = message
                 return
-        self._queue_path(message, metadata[0], metadata[1])
+        self._queue_path(
+            message, metadata[0], metadata[1], metadata[2], metadata[3]
+        )
 
-    def _compile_pending_path(self, message, tool_yaw_active):
+    def _compile_pending_path(
+        self, message, tool_yaw_active, approach_obstacle, stage_timing
+    ):
         task_path = [pose.pose for pose in message.poses]
         try:
             positions = np.asarray([
@@ -952,6 +1059,8 @@ class IiwaPyBulletSim:
                 current,
                 tool_x_axes=x_axes,
                 tool_x_active=tool_yaw_active,
+                approach_obstacle=approach_obstacle,
+                stage_timing=stage_timing,
             )
         except (TrajectoryValidationError, ValueError, RuntimeError) as error:
             self._prepared_plan = None
@@ -1060,7 +1169,9 @@ class IiwaPyBulletSim:
             rospy.logwarn(self._status_message)
             return
         if pending is not None:
-            self._compile_pending_path(pending[0], pending[1])
+            self._compile_pending_path(
+                pending[0], pending[1], pending[2], pending[3]
+            )
 
         with self._path_lock:
             if (

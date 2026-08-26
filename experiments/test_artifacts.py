@@ -39,8 +39,20 @@ def test_map_artifact_contains_every_feature_stage_pair_and_inactive_mode():
                 "task_frame": {
                     "frame_id": "bar_table_task",
                     "snapshot_policy": "frozen_per_task",
-                }
-            }
+                },
+                "feature_definition": {"id": "bar_table_features_v1"},
+            },
+            "planning_profile": {
+                "stage_names": ["s1", "s2"],
+                "endpoint_coordinate_frame": "bar_table_task",
+                "stage_endpoint_positions_bar": [[0.2, 0.0, 0.1]],
+                "planner": {"control_spacing_m": 0.04},
+                "position_smooth_scale": 0.02,
+                "axis_smooth_scale": 0.2,
+                "yaw_smooth_scale": 0.2,
+                "constraint_transition": {},
+                "optimizer_weights": {},
+            },
         },
     )
     result = {
@@ -55,9 +67,13 @@ def test_map_artifact_contains_every_feature_stage_pair_and_inactive_mode():
         result=result,
     )
 
-    assert artifact["schema_version"] == 2
+    assert artifact["schema_version"] == 3
     assert artifact["task_id"] == "BarClean"
     assert artifact["task_frame"]["frame_id"] == "bar_table_task"
+    assert artifact["feature_definition"]["id"] == "bar_table_features_v1"
+    assert artifact["planning_profile"]["stage_endpoint_positions_bar"] == [
+        [0.2, 0.0, 0.1]
+    ]
     assert artifact["feature_schema"][0]["frame"] == "bar_table_task.z"
     assert len(artifact["feature_stage_modes"]) == 4
     inactive = artifact["feature_stage_modes"][0]

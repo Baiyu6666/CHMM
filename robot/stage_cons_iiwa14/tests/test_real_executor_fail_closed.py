@@ -152,6 +152,8 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.subject._task_id = "BarClean"
         self.subject._path = None
         self.subject._path_tool_yaw_active = None
+        self.subject._path_approach_obstacle = None
+        self.subject._path_stage_timing = None
         self.subject._pending_path = None
         self.subject._orientation_constraints = {}
         self.subject._torque_thresholds = np.ones(7)
@@ -506,11 +508,25 @@ class RealExecutorFailClosedTest(unittest.TestCase):
             types.SimpleNamespace(
                 data=json.dumps(
                     {
-                        "schema_version": 1,
+                        "schema_version": 3,
                         "stamp_ns": 123456,
                         "task_id": "BarClean",
                         "point_count": 2,
                         "tool_yaw_active": [0, 1],
+                        "approach_obstacle": {
+                            "center": [0.5, -0.2, 0.1],
+                            "table_normal": [0.0, 0.0, 1.0],
+                            "radius": 0.025,
+                            "clearance": 0.085,
+                            "margin": 0.005,
+                        },
+                        "stage_timing": {
+                            "boundaries": [1],
+                            "transition_windows": [],
+                            "speed_scale": 0.5,
+                            "ramp_before_m": 0.02,
+                            "task_start_ramp_m": 0.03,
+                        },
                     }
                 )
             )
@@ -519,6 +535,17 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.assertIs(self.subject._path, message)
         np.testing.assert_array_equal(
             self.subject._path_tool_yaw_active, [False, True]
+        )
+        self.assertEqual(
+            self.subject._path_approach_obstacle["center"],
+            [0.5, -0.2, 0.1],
+        )
+        self.assertAlmostEqual(
+            self.subject._path_approach_obstacle["clearance"], 0.085
+        )
+        self.assertEqual(self.subject._path_stage_timing["boundaries"], [1])
+        self.assertAlmostEqual(
+            self.subject._path_stage_timing["speed_scale"], 0.5
         )
         self.assertEqual(self.subject._path_serial, 5)
         self.assertIsNone(self.subject._prepared)

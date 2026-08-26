@@ -14,7 +14,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from stage_constraint_planner import (
     StageConstraintTrajectoryOptimizer,
-    configure_task_constraints,
+    configure_planning_profile,
     transform_pose,
 )
 from std_msgs.msg import Int32MultiArray, String
@@ -158,8 +158,8 @@ class TaskPlannerNode:
             }
         )
 
-    def _load_planning_constraints(self, task_id, config, source):
-        configure_task_constraints(
+    def _load_planning_profile(self, task_id, config, source):
+        configure_planning_profile(
             config,
             task_id,
             source,
@@ -176,7 +176,7 @@ class TaskPlannerNode:
                     config_path, config.get("task_id"), task_id
                 )
             )
-        self._load_planning_constraints(task_id, config, constraint_source)
+        self._load_planning_profile(task_id, config, constraint_source)
         planner = dict(config["planner"])
         optimizer = StageConstraintTrajectoryOptimizer(
             config,
@@ -432,12 +432,53 @@ class TaskPlannerNode:
                 raise ValueError(
                     "Planner tool-yaw mask does not match the path length"
                 )
+            approach_constraints = [
+                term
+                for term in config["true_constraint_terms"]
+                if str(term["feature_name"]) == "obstacle_clearance"
+                and int(term["stage"]) == 0
+                and str(term["semantics"]) == "lower_bound"
+            ]
+            if len(approach_constraints) != 1:
+                raise ValueError(
+                    "Task definition needs exactly one true Stage-1 obstacle clearance"
+                )
             orientation_constraints = {
-                "schema_version": 1,
+                "schema_version": 3,
                 "stamp_ns": int(stamp.to_nsec()),
                 "task_id": task_id,
                 "point_count": len(path.poses),
                 "tool_yaw_active": tool_yaw_active.astype(int).tolist(),
+                "stage_timing": {
+                    "boundaries": boundaries.data,
+                    "transition_windows": [
+                        [
+                            int(window["start_index"]),
+                            int(window["end_index"]),
+                        ]
+                        for window in planned["stage_transition_windows"]
+                    ],
+                    "speed_scale": float(
+                        config["execution"]["stage_transition_speed_scale"]
+                    ),
+                    "ramp_before_m": float(
+                        config["execution"]["stage_transition_ramp_before_m"]
+                    ),
+                    "task_start_ramp_m": float(
+                        config["execution"]["task_start_ramp_m"]
+                    ),
+                },
+                "approach_obstacle": {
+                    "center": obstacle_pose[:3].tolist(),
+                    "table_normal": [
+                        float(value) for value in config["table_normal"]
+                    ],
+                    "radius": float(config["obstacle_radius"]),
+                    "clearance": float(approach_constraints[0]["value"]),
+                    "margin": float(
+                        config["execution"]["approach_obstacle_margin_m"]
+                    ),
+                },
             }
             positions = np.asarray(planned["positions"], dtype=float)
             distances = np.concatenate(

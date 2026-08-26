@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from scipy.interpolate import make_interp_spline
 
 
 class TrajectoryValidationError(RuntimeError):
@@ -599,13 +600,15 @@ class CartesianTrajectoryCompiler:
             )
         return minimum_sv
 
-    def _approach_workspace_checks(self, q_path):
+    def _approach_workspace_checks(self, q_path, enforce_transit_floor=True):
         tcp_positions = []
         for q in q_path:
             position, _ = self.tip_state(q)
             tcp_positions.append(np.asarray(position, dtype=float))
         tcp_positions = np.asarray(tcp_positions)
         minimum_z = float(np.min(tcp_positions[:, 2]))
+        if not enforce_transit_floor:
+            return minimum_z
         initial_position = tcp_positions[0]
         initial_z = float(initial_position[2])
         if initial_z >= self._minimum_approach_z - 1e-6:
@@ -656,45 +659,468 @@ class CartesianTrajectoryCompiler:
             )
         return minimum_z
 
-    def time_parameterize(self, q_path, minimum_duration):
+    @staticmethod
+    def _segment_point_distance(start, end, point):
+        start = np.asarray(start, dtype=float)
+        end = np.asarray(end, dtype=float)
+        point = np.asarray(point, dtype=float)
+        delta = end - start
+        denominator = float(delta @ delta)
+        if denominator <= 1e-18:
+            return float(np.linalg.norm(start - point))
+        ratio = float(np.clip(((point - start) @ delta) / denominator, 0.0, 1.0))
+        return float(np.linalg.norm(start + ratio * delta - point))
+
+    def _obstacle_avoiding_approach_waypoints(
+        self, current_position, target_position, obstacle
+    ):
+        current_position = np.asarray(current_position, dtype=float).reshape(3)
+        target_position = np.asarray(target_position, dtype=float).reshape(3)
+        try:
+            center = np.asarray(obstacle["center"], dtype=float).reshape(3)
+            normal = np.asarray(obstacle["table_normal"], dtype=float).reshape(3)
+            radius = float(obstacle["radius"])
+            clearance = float(obstacle["clearance"])
+            margin = float(obstacle.get("margin", 0.0))
+        except (KeyError, TypeError, ValueError) as error:
+            raise TrajectoryValidationError(
+                "Stage-0 obstacle geometry is incomplete or invalid"
+            ) from error
+        normal_norm = float(np.linalg.norm(normal))
+        if (
+            not np.all(np.isfinite(center))
+            or not np.all(np.isfinite(normal))
+            or normal_norm <= 1e-12
+            or not all(math.isfinite(value) for value in (radius, clearance, margin))
+            or radius <= 0.0
+            or clearance < 0.0
+            or margin < 0.0
+        ):
+            raise TrajectoryValidationError(
+                "Stage-0 obstacle geometry must be finite with non-negative clearance"
+            )
+        normal /= normal_norm
+        reference = np.asarray([1.0, 0.0, 0.0])
+        if abs(float(reference @ normal)) > 0.9:
+            reference = np.asarray([0.0, 1.0, 0.0])
+        plane_x = np.cross(normal, reference)
+        plane_x /= np.linalg.norm(plane_x)
+        plane_y = np.cross(normal, plane_x)
+
+        def planar_coordinates(position):
+            relative = np.asarray(position, dtype=float) - center
+            return np.asarray([relative @ plane_x, relative @ plane_y], dtype=float)
+
+        current_planar = planar_coordinates(current_position)
+        target_planar = planar_coordinates(target_position)
+        required_radius = radius + clearance
+        bypass_radius = required_radius + margin
+        current_radius = float(np.linalg.norm(current_planar))
+        target_radius = float(np.linalg.norm(target_planar))
+        if current_radius <= radius + 1e-4:
+            raise TrajectoryValidationError(
+                "Stage-0 starts inside the tracked obstacle"
+            )
+        if target_radius < required_radius - 1e-6:
+            raise TrajectoryValidationError(
+                "Task start violates Stage-0 obstacle clearance by {:.4f} m".format(
+                    required_radius - target_radius
+                )
+            )
+        if self._segment_point_distance(
+            current_planar, target_planar, np.zeros(2)
+        ) >= required_radius - 1e-9:
+            return np.vstack((current_position, target_position))
+
+        current_angle = math.atan2(current_planar[1], current_planar[0])
+        target_angle = math.atan2(target_planar[1], target_planar[0])
+        angle_delta = math.atan2(
+            math.sin(target_angle - current_angle),
+            math.cos(target_angle - current_angle),
+        )
+        arc_length = abs(angle_delta) * bypass_radius
+        arc_segments = max(2, int(math.ceil(arc_length / self._approach_spacing)))
+        arc_angles = np.linspace(
+            current_angle, current_angle + angle_delta, arc_segments + 1
+        )
+        planar_waypoints = [current_planar]
+        current_boundary = bypass_radius * np.asarray(
+            [math.cos(current_angle), math.sin(current_angle)]
+        )
+        if np.linalg.norm(current_boundary - planar_waypoints[-1]) > 1e-9:
+            planar_waypoints.append(current_boundary)
+        for angle in arc_angles[1:]:
+            planar_waypoints.append(
+                bypass_radius * np.asarray([math.cos(angle), math.sin(angle)])
+            )
+        if np.linalg.norm(target_planar - planar_waypoints[-1]) > 1e-9:
+            planar_waypoints.append(target_planar)
+
+        planar_waypoints = np.asarray(planar_waypoints, dtype=float)
+        planar_edges = np.linalg.norm(np.diff(planar_waypoints, axis=0), axis=1)
+        planar_distance = float(np.sum(planar_edges))
+        if planar_distance <= 1e-12:
+            return np.vstack((current_position, target_position))
+        progress = np.concatenate(([0.0], np.cumsum(planar_edges))) / planar_distance
+        current_height = float((current_position - center) @ normal)
+        target_height = float((target_position - center) @ normal)
+        heights = current_height + progress * (target_height - current_height)
+        return (
+            center[None, :]
+            + planar_waypoints[:, :1] * plane_x[None, :]
+            + planar_waypoints[:, 1:] * plane_y[None, :]
+            + heights[:, None] * normal[None, :]
+        )
+
+    @staticmethod
+    def _smoothstep5(values):
+        values = np.clip(np.asarray(values, dtype=float), 0.0, 1.0)
+        return values ** 3 * (values * (values * 6.0 - 15.0) + 10.0)
+
+    def task_segment_speed_scales(self, positions, stage_timing):
+        """Return a smooth local speed multiplier for every task edge."""
+        positions = np.asarray(positions, dtype=float)
+        if positions.ndim != 2 or positions.shape[1] != 3 or len(positions) < 2:
+            raise TrajectoryValidationError(
+                "Stage timing needs at least two Cartesian task positions"
+            )
+        if stage_timing is None:
+            return np.ones(len(positions) - 1, dtype=float)
+        try:
+            boundaries = np.asarray(stage_timing["boundaries"], dtype=int)
+            windows = np.asarray(stage_timing["transition_windows"], dtype=int)
+            slow_scale = float(stage_timing["speed_scale"])
+            ramp_before = float(stage_timing["ramp_before_m"])
+            start_ramp = float(stage_timing["task_start_ramp_m"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise TrajectoryValidationError(
+                "Stage timing metadata is incomplete or invalid"
+            ) from error
+        if (
+            boundaries.ndim != 1
+            or len(boundaries) < 1
+            or boundaries[-1] != len(positions) - 1
+            or boundaries[0] <= 0
+            or np.any(np.diff(boundaries) <= 0)
+            or windows.shape != (max(len(boundaries) - 1, 0), 2)
+        ):
+            raise TrajectoryValidationError(
+                "Stage timing boundaries do not match the Cartesian task path"
+            )
+        for index, window in enumerate(windows):
+            if (
+                int(window[0]) != int(boundaries[index])
+                or int(window[1]) < int(window[0])
+                or int(window[1]) > int(boundaries[index + 1])
+            ):
+                raise TrajectoryValidationError(
+                    "Stage transition window {} is outside its stages".format(index)
+                )
+        if (
+            not all(
+                math.isfinite(value)
+                for value in (slow_scale, ramp_before, start_ramp)
+            )
+            or not 0.0 < slow_scale <= 1.0
+            or ramp_before < 0.0
+            or start_ramp < 0.0
+        ):
+            raise TrajectoryValidationError(
+                "Stage transition timing values must be finite and non-negative"
+            )
+
+        edge_distance = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        distance = np.concatenate(([0.0], np.cumsum(edge_distance)))
+        point_scale = np.ones(len(positions), dtype=float)
+        if start_ramp > 1e-12:
+            indices = np.flatnonzero(distance <= start_ramp + 1e-12)
+            alpha = self._smoothstep5(distance[indices] / start_ramp)
+            point_scale[indices] = np.minimum(
+                point_scale[indices], slow_scale + (1.0 - slow_scale) * alpha
+            )
+        else:
+            point_scale[0] = min(point_scale[0], slow_scale)
+
+        for start_index, end_index in windows:
+            start_index = int(start_index)
+            end_index = int(end_index)
+            boundary_distance = float(distance[start_index])
+            if ramp_before > 1e-12:
+                before = np.flatnonzero(
+                    (distance >= boundary_distance - ramp_before - 1e-12)
+                    & (distance <= boundary_distance + 1e-12)
+                )
+                alpha = self._smoothstep5(
+                    (distance[before] - (boundary_distance - ramp_before))
+                    / ramp_before
+                )
+                point_scale[before] = np.minimum(
+                    point_scale[before], 1.0 - (1.0 - slow_scale) * alpha
+                )
+            else:
+                point_scale[start_index] = min(
+                    point_scale[start_index], slow_scale
+                )
+            transition_distance = float(distance[end_index] - boundary_distance)
+            after = np.arange(start_index, end_index + 1, dtype=int)
+            if transition_distance > 1e-12:
+                alpha = self._smoothstep5(
+                    (distance[after] - boundary_distance) / transition_distance
+                )
+                point_scale[after] = np.minimum(
+                    point_scale[after], slow_scale + (1.0 - slow_scale) * alpha
+                )
+            else:
+                point_scale[start_index] = min(
+                    point_scale[start_index], slow_scale
+                )
+        return np.minimum(point_scale[:-1], point_scale[1:])
+
+    @staticmethod
+    def _dense_spline_samples(spline, times, maximum_step=0.005):
+        samples = []
+        segment_indices = []
+        for index, (start, end) in enumerate(zip(times[:-1], times[1:])):
+            count = max(3, int(math.ceil((end - start) / maximum_step)) + 1)
+            segment_times = np.linspace(start, end, count, endpoint=False)
+            samples.append(segment_times)
+            segment_indices.extend([index] * len(segment_times))
+        samples.append(np.asarray([times[-1]], dtype=float))
+        segment_indices.append(len(times) - 2)
+        sample_times = np.concatenate(samples)
+        return (
+            sample_times,
+            np.asarray(segment_indices, dtype=int),
+            np.asarray(spline(sample_times), dtype=float),
+            np.asarray(spline(sample_times, 1), dtype=float),
+            np.asarray(spline(sample_times, 2), dtype=float),
+        )
+
+    @staticmethod
+    def _segment_peak(sample_values, segment_indices, segment_count):
+        peaks = np.zeros(int(segment_count), dtype=float)
+        np.maximum.at(peaks, segment_indices, np.asarray(sample_values, dtype=float))
+        return peaks
+
+    @staticmethod
+    def _local_time_dilation(required_scale, support_radius=3):
+        """Spread a limit violation only across the spline's local support."""
+        required_scale = np.asarray(required_scale, dtype=float)
+        growth = np.where(required_scale > 1.0, 1.01 * required_scale, 1.0)
+        log_growth = np.log(growth)
+        spread = log_growth.copy()
+        radius = max(0, int(support_radius))
+        for offset in range(1, radius + 1):
+            influence = 1.0 - float(offset) / float(radius + 1)
+            spread[:-offset] = np.maximum(
+                spread[:-offset], influence * log_growth[offset:]
+            )
+            spread[offset:] = np.maximum(
+                spread[offset:], influence * log_growth[:-offset]
+            )
+        return np.exp(spread)
+
+    @staticmethod
+    def _smooth_segment_durations(segment_dt, maximum_neighbor_ratio=2.0):
+        """Avoid abrupt knot-time changes without globally scaling the path."""
+        segment_dt = np.asarray(segment_dt, dtype=float).copy()
+        ratio = float(maximum_neighbor_ratio)
+        for _ in range(2):
+            for index in range(1, len(segment_dt)):
+                segment_dt[index] = max(
+                    segment_dt[index], segment_dt[index - 1] / ratio
+                )
+            for index in range(len(segment_dt) - 2, -1, -1):
+                segment_dt[index] = max(
+                    segment_dt[index], segment_dt[index + 1] / ratio
+                )
+        return segment_dt
+
+    def time_parameterize(
+        self, q_path, minimum_duration, segment_speed_scales=None
+    ):
         q_path = np.asarray(q_path, dtype=float)
         if q_path.ndim != 2 or q_path.shape[1] != self._dof or len(q_path) < 2:
             raise TrajectoryValidationError(
                 "A trajectory needs at least two samples with {} joints".format(self._dof)
             )
+        minimum_duration = float(minimum_duration)
+        if not math.isfinite(minimum_duration) or minimum_duration < 0.0:
+            raise TrajectoryValidationError(
+                "Trajectory minimum duration must be finite and non-negative"
+            )
+        if segment_speed_scales is None:
+            segment_speed_scales = np.ones(len(q_path) - 1, dtype=float)
+        else:
+            segment_speed_scales = np.asarray(
+                segment_speed_scales, dtype=float
+            )
+        if (
+            segment_speed_scales.shape != (len(q_path) - 1,)
+            or not np.all(np.isfinite(segment_speed_scales))
+            or np.any(segment_speed_scales <= 0.0)
+            or np.any(segment_speed_scales > 1.0)
+        ):
+            raise TrajectoryValidationError(
+                "Every trajectory edge needs a speed scale in (0, 1]"
+            )
         joint_step = np.abs(np.diff(q_path, axis=0))
         velocity_limit = np.maximum(self._velocity_limits * self._velocity_scale, 0.05)
+        local_velocity_limit = (
+            segment_speed_scales[:, None] * velocity_limit[None, :]
+        )
         segment_dt = np.maximum(
             0.05,
-            np.max(joint_step / velocity_limit[None, :], axis=1),
+            np.max(joint_step / local_velocity_limit, axis=1),
         )
         raw_duration = float(np.sum(segment_dt))
         duration = max(float(minimum_duration), raw_duration, 0.5)
-        relative_times = np.concatenate(([0.0], np.cumsum(segment_dt)))
-        relative_times *= duration / relative_times[-1]
-        for _ in range(5):
+        segment_dt *= duration / np.sum(segment_dt)
+        spline = None
+        dense_position = None
+        dense_velocity = None
+        dense_acceleration = None
+        ratio_v = math.inf
+        ratio_a = math.inf
+        timing_iterations = 0
+        for iteration in range(24):
+            relative_times = np.concatenate(([0.0], np.cumsum(segment_dt)))
             times = self._first_point_delay + relative_times
-            velocity = np.gradient(q_path, times, axis=0, edge_order=1)
-            velocity[[0, -1]] = 0.0
-            acceleration = np.gradient(velocity, times, axis=0, edge_order=1)
-            acceleration[[0, -1]] = 0.0
-            ratio_v = float(np.max(np.abs(velocity) / velocity_limit[None, :]))
-            ratio_a = float(np.max(np.abs(acceleration) / self._acceleration_limit))
-            scale = max(1.0, ratio_v, math.sqrt(ratio_a))
-            if scale <= 1.00001:
+            spline = make_interp_spline(
+                times,
+                q_path,
+                axis=0,
+                k=5,
+                bc_type=(
+                    [
+                        (1, np.zeros(self._dof, dtype=float)),
+                        (2, np.zeros(self._dof, dtype=float)),
+                    ],
+                    [
+                        (1, np.zeros(self._dof, dtype=float)),
+                        (2, np.zeros(self._dof, dtype=float)),
+                    ],
+                ),
+            )
+            (
+                _dense_times,
+                dense_segments,
+                dense_position,
+                dense_velocity,
+                dense_acceleration,
+            ) = self._dense_spline_samples(spline, times)
+            dense_velocity_limit = local_velocity_limit[dense_segments]
+            ratio_v = float(
+                np.max(np.abs(dense_velocity) / dense_velocity_limit)
+            )
+            ratio_a = float(
+                np.max(np.abs(dense_acceleration) / self._acceleration_limit)
+            )
+            if max(ratio_v, ratio_a) <= 1.00001:
                 break
-            relative_times *= scale * 1.01
+            sample_velocity_ratio = np.max(
+                np.abs(dense_velocity) / dense_velocity_limit, axis=1
+            )
+            sample_acceleration_ratio = np.max(
+                np.abs(dense_acceleration) / self._acceleration_limit, axis=1
+            )
+            segment_velocity_ratio = self._segment_peak(
+                sample_velocity_ratio,
+                dense_segments,
+                len(segment_dt),
+            )
+            segment_acceleration_ratio = self._segment_peak(
+                sample_acceleration_ratio,
+                dense_segments,
+                len(segment_dt),
+            )
+            required_scale = np.maximum(
+                segment_velocity_ratio,
+                np.sqrt(segment_acceleration_ratio),
+            )
+            dilation = self._local_time_dilation(required_scale)
+            segment_dt *= np.minimum(dilation, 2.5)
+            segment_dt = self._smooth_segment_durations(segment_dt)
+            timing_iterations = iteration + 1
+        relative_times = np.concatenate(([0.0], np.cumsum(segment_dt)))
         times = self._first_point_delay + relative_times
-        velocity = np.gradient(q_path, times, axis=0, edge_order=1)
-        velocity[[0, -1]] = 0.0
-        acceleration = np.gradient(velocity, times, axis=0, edge_order=1)
-        acceleration[[0, -1]] = 0.0
+        spline = make_interp_spline(
+            times,
+            q_path,
+            axis=0,
+            k=5,
+            bc_type=(
+                [
+                    (1, np.zeros(self._dof, dtype=float)),
+                    (2, np.zeros(self._dof, dtype=float)),
+                ],
+                [
+                    (1, np.zeros(self._dof, dtype=float)),
+                    (2, np.zeros(self._dof, dtype=float)),
+                ],
+            ),
+        )
+        velocity = np.asarray(spline(times, 1), dtype=float)
+        acceleration = np.asarray(spline(times, 2), dtype=float)
+        (
+            _dense_times,
+            dense_segments,
+            dense_position,
+            dense_velocity,
+            dense_acceleration,
+        ) = self._dense_spline_samples(spline, times)
+        ratio_v = float(
+            np.max(
+                np.abs(dense_velocity)
+                / local_velocity_limit[dense_segments]
+            )
+        )
+        ratio_a = float(
+            np.max(np.abs(dense_acceleration) / self._acceleration_limit)
+        )
+        if ratio_v > 1.001 or ratio_a > 1.001:
+            raise TrajectoryValidationError(
+                "Controller-interpolated trajectory exceeds joint limits "
+                "(velocity {:.3f}, acceleration {:.3f})".format(
+                    ratio_v, ratio_a
+                )
+            )
+        if (
+            np.any(dense_position < self._lower[None, :] - 1e-9)
+            or np.any(dense_position > self._upper[None, :] + 1e-9)
+        ):
+            raise TrajectoryValidationError(
+                "Controller interpolation exceeds a joint position limit"
+            )
+        midpoint_times = 0.5 * (times[:-1] + times[1:])
+        midpoint_position = np.asarray(spline(midpoint_times), dtype=float)
+        validation_position = np.empty(
+            (2 * len(q_path) - 1, self._dof), dtype=float
+        )
+        validation_position[0::2] = q_path
+        validation_position[1::2] = midpoint_position
         return {
             "position": q_path,
             "velocity": velocity,
             "acceleration": acceleration,
             "time": times,
             "duration": float(times[-1]),
+            "timing_iterations": timing_iterations,
+            "minimum_duration_s": duration + self._first_point_delay,
+            "timing_overhead_s": float(times[-1])
+            - (duration + self._first_point_delay),
+            "segment_duration_s": segment_dt,
+            "segment_speed_scales": segment_speed_scales,
+            "maximum_interpolated_velocity_ratio": ratio_v,
+            "maximum_interpolated_acceleration_ratio": ratio_a,
+            "maximum_interpolated_velocity_rad_s": float(
+                np.max(np.abs(dense_velocity))
+            ),
+            "maximum_interpolated_acceleration_rad_s2": float(
+                np.max(np.abs(dense_acceleration))
+            ),
+            "_position_spline": spline,
+            "_validation_position": validation_position,
         }
 
     @staticmethod
@@ -702,6 +1128,9 @@ class CartesianTrajectoryCompiler:
         times = np.asarray(segment["time"], dtype=float)
         positions = np.asarray(segment["position"], dtype=float)
         elapsed = float(np.clip(elapsed, 0.0, times[-1]))
+        spline = segment.get("_position_spline")
+        if spline is not None:
+            return np.asarray(spline(max(elapsed, times[0])), dtype=float)
         return np.asarray([
             np.interp(elapsed, times, positions[:, joint])
             for joint in range(positions.shape[1])
@@ -715,24 +1144,30 @@ class CartesianTrajectoryCompiler:
         target_axis,
         current_x=None,
         target_x=None,
+        approach_obstacle=None,
     ):
-        waypoints = [np.asarray(current_position, dtype=float)]
         target_position = np.asarray(target_position, dtype=float)
-        transit_heights = [
-            self._minimum_approach_z,
-            float(current_position[2]),
-            float(target_position[2]),
-        ]
-        if self._approach_clearance_z is not None:
-            transit_heights.append(self._approach_clearance_z)
-        transit_z = max(transit_heights)
-        waypoints.extend(
-            [
-                np.asarray([current_position[0], current_position[1], transit_z]),
-                np.asarray([target_position[0], target_position[1], transit_z]),
-                target_position,
+        if approach_obstacle is None:
+            waypoints = [np.asarray(current_position, dtype=float)]
+            transit_heights = [
+                self._minimum_approach_z,
+                float(current_position[2]),
+                float(target_position[2]),
             ]
-        )
+            if self._approach_clearance_z is not None:
+                transit_heights.append(self._approach_clearance_z)
+            transit_z = max(transit_heights)
+            waypoints.extend(
+                [
+                    np.asarray([current_position[0], current_position[1], transit_z]),
+                    np.asarray([target_position[0], target_position[1], transit_z]),
+                    target_position,
+                ]
+            )
+        else:
+            waypoints = self._obstacle_avoiding_approach_waypoints(
+                current_position, target_position, approach_obstacle
+            )
         compact = [waypoints[0]]
         for waypoint in waypoints[1:]:
             if float(np.linalg.norm(waypoint - compact[-1])) > 1e-9:
@@ -762,11 +1197,15 @@ class CartesianTrajectoryCompiler:
             int(math.ceil(distance / self._approach_spacing)),
             int(math.ceil(axis_angle / self._approach_axis_spacing)),
         )
-        targets = np.unique(
-            np.concatenate(
-                (np.linspace(0.0, distance, sample_count + 1)[1:], cumulative[1:])
-            )
-        )
+        targets = np.linspace(0.0, distance, sample_count + 1)[1:]
+        if approach_obstacle is None:
+            # Preserve the exact vertical/lateral corners of the legacy
+            # lift-first path.  Obstacle detours are already discretized at
+            # ``approach_spacing`` by _obstacle_avoiding_approach_waypoints;
+            # merging those knots with a second uniform grid creates many
+            # tiny alternating segments, noisy IK corrections and severe
+            # time-dilation without improving obstacle clearance.
+            targets = np.unique(np.concatenate((targets, cumulative[1:])))
         positions = np.column_stack(
             [np.interp(targets, cumulative, waypoints[:, dim]) for dim in range(3)]
         )
@@ -797,6 +1236,8 @@ class CartesianTrajectoryCompiler:
         abort_requested=None,
         tool_x_axes=None,
         tool_x_active=None,
+        approach_obstacle=None,
+        stage_timing=None,
     ):
         positions = np.asarray(positions, dtype=float)
         axes = np.asarray(tool_z_axes, dtype=float)
@@ -857,6 +1298,7 @@ class CartesianTrajectoryCompiler:
                     None if x_axes is None else current_rotation[:, 0]
                 ),
                 target_x=None if x_axes is None else x_axes[0],
+                approach_obstacle=approach_obstacle,
             )
             (
                 q_approach_tail,
@@ -883,7 +1325,10 @@ class CartesianTrajectoryCompiler:
             q_approach = self._densify_joint_path(
                 q_approach, self._max_joint_step
             )
-            minimum_approach_z = self._approach_workspace_checks(q_approach)
+            minimum_approach_z = self._approach_workspace_checks(
+                q_approach,
+                enforce_transit_floor=approach_obstacle is None,
+            )
 
             (
                 q_task_tail,
@@ -908,16 +1353,37 @@ class CartesianTrajectoryCompiler:
                 raise TrajectoryValidationError(
                     "Joint continuity check failed at {:.3f} rad".format(maximum_step)
                 )
-            minimum_sv = min(
-                self._collision_and_singularity_checks(q_approach, "Approach"),
-                self._collision_and_singularity_checks(q_task, "Task"),
+            task_edge_length = np.linalg.norm(
+                np.diff(positions, axis=0), axis=1
             )
-
-            task_length = float(np.sum(np.linalg.norm(np.diff(positions, axis=0), axis=1)))
+            task_length = float(np.sum(task_edge_length))
+            task_speed_scales = self.task_segment_speed_scales(
+                positions, stage_timing
+            )
             approach_minimum = approach_distance / max(self._approach_speed, 1e-4)
-            task_minimum = task_length / max(self._task_speed, 1e-4)
+            task_minimum = float(
+                np.sum(
+                    task_edge_length
+                    / (
+                        max(self._task_speed, 1e-4)
+                        * task_speed_scales
+                    )
+                )
+            )
             approach = self.time_parameterize(q_approach, approach_minimum)
-            task = self.time_parameterize(q_task, task_minimum)
+            task = self.time_parameterize(
+                q_task,
+                task_minimum,
+                segment_speed_scales=task_speed_scales,
+            )
+            minimum_sv = min(
+                self._collision_and_singularity_checks(
+                    approach["_validation_position"], "Approach"
+                ),
+                self._collision_and_singularity_checks(
+                    task["_validation_position"], "Task"
+                ),
+            )
             return {
                 "start": start_q.copy(),
                 "approach": approach,
@@ -929,6 +1395,14 @@ class CartesianTrajectoryCompiler:
                     "task_duration_s": task["duration"],
                     "approach_distance_m": approach_distance,
                     "task_length_m": task_length,
+                    "task_cartesian_minimum_duration_s": task_minimum,
+                    "approach_timing_overhead_s": approach["timing_overhead_s"],
+                    "task_timing_overhead_s": task["timing_overhead_s"],
+                    "approach_timing_iterations": approach["timing_iterations"],
+                    "task_timing_iterations": task["timing_iterations"],
+                    "task_minimum_speed_scale": float(
+                        np.min(task_speed_scales)
+                    ),
                     "maximum_joint_step_rad": maximum_step,
                     "minimum_jacobian_singular_value": minimum_sv,
                     "minimum_approach_tcp_z_m": minimum_approach_z,
@@ -940,6 +1414,22 @@ class CartesianTrajectoryCompiler:
                     ),
                     "maximum_ik_tool_x_error_deg": math.degrees(
                         max(approach_x_error + task_x_error)
+                    ),
+                    "maximum_interpolated_joint_velocity_ratio": max(
+                        approach["maximum_interpolated_velocity_ratio"],
+                        task["maximum_interpolated_velocity_ratio"],
+                    ),
+                    "maximum_interpolated_joint_acceleration_ratio": max(
+                        approach["maximum_interpolated_acceleration_ratio"],
+                        task["maximum_interpolated_acceleration_ratio"],
+                    ),
+                    "maximum_interpolated_joint_velocity_rad_s": max(
+                        approach["maximum_interpolated_velocity_rad_s"],
+                        task["maximum_interpolated_velocity_rad_s"],
+                    ),
+                    "maximum_interpolated_joint_acceleration_rad_s2": max(
+                        approach["maximum_interpolated_acceleration_rad_s2"],
+                        task["maximum_interpolated_acceleration_rad_s2"],
                     ),
                 },
             }

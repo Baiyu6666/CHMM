@@ -7,6 +7,9 @@ from pathlib import Path
 import numpy as np
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def convert(constraints_path: Path, task_id: str | None = None) -> Path:
     constraints = json.loads(constraints_path.read_text(encoding="utf-8"))
     metadata_path = constraints_path.with_name("metadata.json")
@@ -53,17 +56,33 @@ def convert(constraints_path: Path, task_id: str | None = None) -> Path:
             )
 
     resolved_task = str(task_id or metadata["dataset_name"])
+    if resolved_task != "BarClean":
+        raise ValueError("Only BarClean has a planner task definition")
+    definition_path = (
+        PROJECT_ROOT
+        / "robot/stage_cons_iiwa14/ros_ws/src/stage_constraint_planner/config/bar_clean_true.json"
+    )
+    definition = json.loads(definition_path.read_text(encoding="utf-8"))
     artifact = {
-        "schema_version": 1,
+        "schema_version": 3,
         "artifact_type": "learned_stage_constraints",
         "task_id": resolved_task,
         "method_name": str(metadata["method_name"]),
         "method_seed": int(metadata["method_seed"]),
         "num_stages": int(semantics.shape[0]),
         "feature_schema": [
-            {"name": name, "unit": "", "scale": float(scales[index])}
+            {
+                "name": name,
+                "unit": str(definition["feature_units"].get(name, "")),
+                "scale": float(scales[index]),
+            }
             for index, name in enumerate(names)
         ],
+        "task_frame": dict(definition["task_frame"]),
+        "feature_definition": dict(definition["feature_definition"]),
+        "planning_profile": {
+            key: definition[key] for key in definition["planning_profile_fields"]
+        },
         "feature_stage_modes": pairs,
         "true_constraint_specs": constraints.get("constraint_specs"),
     }

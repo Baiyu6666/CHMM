@@ -2,6 +2,8 @@
   <arg name="robot_name" default="iiwa14"/>
   <arg name="robot_ip" default="192.170.10.4"/>
   <arg name="output_root" default="/data/demos"/>
+  <arg name="velocity_scale" default="0.25"/>
+  <arg name="acceleration_limit_rad_s2" default="1.0"/>
 
   <include file="$(find iiwa_driver)/launch/iiwa14_bringup.launch">
     <arg name="robot_name" value="$(arg robot_name)"/>
@@ -20,6 +22,9 @@
       <param name="controller_action"
              value="/$(arg robot_name)/PositionTrajectoryController/follow_joint_trajectory"/>
       <param name="output_root" value="$(arg output_root)"/>
+      <param name="velocity_scale" value="$(arg velocity_scale)"/>
+      <param name="acceleration_limit_rad_s2"
+             value="$(arg acceleration_limit_rad_s2)"/>
       <param name="external_torque_timeout" value="0.25"/>
     </node>
   </group>

@@ -5,30 +5,11 @@
   "dt": 0.2,
   "seg_lengths": [38, 32, 24, 28, 28],
   "seg_length_jitter": [5, 4, 4, 4, 5],
-  "stage2_scan_distance": 0.15,
-  "stage3_scan_distance": 0.15,
-  "scan_standoff": 0.08,
-  "scan_lateral_offset": -0.02,
-  "transition_axial_advance": 0.0,
-  "discharge_start_lateral": 0.05,
-  "discharge_distance": 0.156,
-  "discharge_standoff": 0.02,
   "discharge_axial_noise_std": 0.0008,
   "discharge_height_variation": 0.003,
-  "table_surface_point": [0.0, 0.0, 0.14584],
-  "table_normal": [0.0, 0.0, 1.0],
-  "obstacle_radius": 0.025,
-  "stage2_pitch_deg": 90.0,
-  "stage3_pitch_deg": 70.0,
-  "bar_axis_local": [1.0, 0.0, 0.0],
-  "task_frame_snapshot_policy": "frozen_per_task",
-  "bar_surface_offset_local": [0.0, 0.0, 0.0],
+  "obstacle_center": [-0.285, -0.09, 0.13437],
   "optitrack_to_robot_rotation": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
   "optitrack_to_robot_translation": [0.0, 0.0, 0.0],
-  "bar_outline_u": [-0.11177, 0.18629],
-  "bar_outline_v": [-0.01787, 0.04452],
-  "bar_height": 0.0278,
-  "tcp_offset_local": [0.0, 0.0, 0.0],
   "method_overrides": {
     "swcl": {
       "n_stages": 5,
@@ -37,6 +18,7 @@
         "surface_dist",
         "tool_pitch",
         "tool_plane_err",
+        "tool_yaw",
         "bar_axial_offset"
       ],
       "feature_model_types": {
@@ -44,6 +26,7 @@
         "surface_dist": "student_t",
         "tool_pitch": "student_t",
         "tool_plane_err": "student_t",
+        "tool_yaw": "student_t",
         "bar_axial_offset": "student_t"
       },
       "max_iter": 10,
@@ -64,6 +47,7 @@
         "surface_dist",
         "tool_pitch",
         "tool_plane_err",
+        "tool_yaw",
         "bar_axial_offset"
       ],
       "max_iter": 8,
@@ -75,7 +59,7 @@
       "map_c_bg": 5.0,
       "map_c_ineq": 5.0,
       "map_boundary_quantile": 0.05,
-      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5],
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
       "map_active_mode_prior": null
     },
     "map_pooled": {
@@ -85,6 +69,7 @@
         "surface_dist",
         "tool_pitch",
         "tool_plane_err",
+        "tool_yaw",
         "bar_axial_offset"
       ],
       "max_iter": 8,
@@ -96,7 +81,7 @@
       "map_c_bg": 5.0,
       "map_c_ineq": 5.0,
       "map_boundary_quantile": 0.05,
-      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5],
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
       "map_active_mode_prior": null,
       "map_mode_aggregation": "pooled"
     },
@@ -108,6 +93,7 @@
         "bar_lateral_offset",
         "tool_pitch",
         "tool_plane_err",
+        "tool_yaw",
         "bar_axial_offset",
         "speed"
       ],
@@ -120,7 +106,7 @@
       "map_c_bg": 2.0,
       "map_c_ineq": 0.0,
       "map_boundary_quantile": 0.05,
-      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0],
+      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0],
       "map_active_mode_prior": null,
       "map_mode_aggregation": "demo_balanced_pooled"
     },
@@ -132,6 +118,7 @@
           "surface_dist",
           "tool_pitch",
           "tool_plane_err",
+          "tool_yaw",
           "bar_axial_offset"
         ]
       },
@@ -146,6 +133,7 @@
         "surface_dist",
         "tool_pitch",
         "tool_plane_err",
+        "tool_yaw",
         "bar_axial_offset"
       ],
       "feature_model_types": {
@@ -153,14 +141,15 @@
         "surface_dist": "student_t",
         "tool_pitch": "student_t",
         "tool_plane_err": "student_t",
+        "tool_yaw": "student_t",
         "bar_axial_offset": "student_t"
       },
       "fixed_feature_mask": [
-        [1, 0, 0, 0, 0],
-        [0, 1, 1, 1, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 1],
-        [0, 0, 0, 0, 0]
+        [1, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 0]
       ],
       "feat_weight": 0.2
     },
@@ -172,6 +161,7 @@
           "surface_dist",
           "tool_pitch",
           "tool_plane_err",
+          "tool_yaw",
           "bar_axial_offset"
         ]
       },
@@ -188,6 +178,7 @@
           "surface_dist",
           "tool_pitch",
           "tool_plane_err",
+          "tool_yaw",
           "bar_axial_offset"
         ]
       },
@@ -204,6 +195,7 @@
           "surface_dist",
           "tool_pitch",
           "tool_plane_err",
+          "tool_yaw",
           "bar_axial_offset"
         ]
       },
@@ -220,6 +212,7 @@
           "surface_dist",
           "tool_pitch",
           "tool_plane_err",
+          "tool_yaw",
           "bar_axial_offset"
         ]
       },
@@ -236,6 +229,7 @@
           "surface_dist",
           "tool_pitch",
           "tool_plane_err",
+          "tool_yaw",
           "bar_axial_offset"
         ],
         "use_state": true,

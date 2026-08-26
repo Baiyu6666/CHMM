@@ -261,6 +261,16 @@ def _extract_learned_constraint_artifact(
         if isinstance(observation_specs, Mapping)
         else {}
     )
+    feature_definition = (
+        dict(observation_specs.get("feature_definition", {}))
+        if isinstance(observation_specs, Mapping)
+        else {}
+    )
+    planning_profile = result.get("learned_planning_profile")
+    if planning_profile is None:
+        planning_profile = dataset_meta.get("planning_profile")
+    if not isinstance(planning_profile, Mapping):
+        raise ValueError("A learned constraint artifact requires a planning profile")
 
     pairs = []
     for stage in range(semantics.shape[0]):
@@ -291,7 +301,7 @@ def _extract_learned_constraint_artifact(
             pairs.append(pair)
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "artifact_type": "learned_stage_constraints",
         "task_id": str(dataset_name),
         "method_name": str(method_name),
@@ -299,6 +309,8 @@ def _extract_learned_constraint_artifact(
         "num_stages": int(semantics.shape[0]),
         "feature_schema": feature_schema,
         "task_frame": task_frame,
+        "feature_definition": feature_definition,
+        "planning_profile": json.loads(json.dumps(dict(planning_profile))),
         "feature_stage_modes": pairs,
         "true_constraint_specs": getattr(dataset, "constraint_specs", None),
     }

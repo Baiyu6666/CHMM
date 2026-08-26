@@ -50,6 +50,46 @@ class HostRealExecutionFlowTest(unittest.TestCase):
     def test_barinspect_is_hidden_from_active_gui_tasks(self):
         self.assertEqual(set(self.subject._task_profiles), {"BarClean"})
 
+    def test_real_trace_uses_position_station_tf_and_survives_completion(self):
+        pose = self._pose(0.61, -0.17)
+        self.subject._robot_ee_pose = lambda: dict(pose)
+        self.subject._demo_visualization = lambda: self.fail(
+            "real execution visualization must not depend on the Demo station"
+        )
+        names = [
+            spec["name"]
+            for spec in self.subject._task_feature_definitions["BarClean"]["schema"]
+        ]
+        self.subject._real_feature_values = lambda *_args: {
+            name: float(index) for index, name in enumerate(names)
+        }
+        self.subject._task_state.update({"mode": "real", "phase": "executing"})
+
+        self.subject._update_real_visualization(sample_time=10.0)
+        pose["x"] += 0.01
+        self.subject._update_real_visualization(sample_time=10.1)
+        self.subject._task_state["phase"] = "complete"
+        self.subject._demo_visualization = lambda: None
+        self.subject._direct_optitrack_visualization = lambda: None
+
+        visualization = self.subject.task_visualization()
+        self.assertEqual(visualization["phase"], "complete")
+        self.assertEqual(
+            visualization["trace"], [[0.61, -0.17], [0.62, -0.17]]
+        )
+        self.assertEqual(len(visualization["feature_series"]["samples"]), 2)
+
+    def test_tf_pose_parser_keeps_precision_and_rejects_nonfinite_values(self):
+        parser = self.module.RosTfPoseStream._parse_pose
+        payload = (
+            '{"x":0.123456789,"y":-0.2,"z":0.3,'
+            '"qx":0.0,"qy":1.0,"qz":0.0,"qw":0.0}'
+        )
+
+        self.assertEqual(parser(payload)["x"], 0.123456789)
+        self.assertIsNone(parser('{"x":0.1}'))
+        self.assertIsNone(parser(payload.replace("0.3", "NaN")))
+
     def test_real_execution_plans_and_acknowledges_new_path_before_fri(self):
         events = []
         status_reads = iter(
@@ -217,6 +257,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
 
     def test_return_home_waits_for_fri_then_uses_dedicated_service(self):
         events = []
+        self.subject._task_trace.extend([[0.61, -0.17], [0.62, -0.18]])
+        self.subject._task_planned_trace = [[0.60, -0.16], [0.63, -0.19]]
         statuses = iter(
             [
                 {
@@ -254,6 +296,12 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.assertIn("/iiwa14/real_executor/return_home", events[2][0])
         self.assertEqual(self.subject._task_state["phase"], "complete")
         self.assertEqual(self.subject._task_state["mode"], "home")
+        self.assertEqual(
+            list(self.subject._task_trace), [[0.61, -0.17], [0.62, -0.18]]
+        )
+        self.assertEqual(
+            self.subject._task_planned_trace, [[0.60, -0.16], [0.63, -0.19]]
+        )
 
     def test_stopping_return_home_uses_real_executor_abort(self):
         aborts = []
@@ -868,17 +916,19 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             "obstacle": {"center": [0.70, 0.10], "radius": 0.05},
         }
         self.subject._task_scene_source = "planner_scene"
+        actual_pose = {
+            "x": 0.60,
+            "y": -0.18,
+            "z": 0.19584,
+            "qx": 0.0,
+            "qy": 1.0,
+            "qz": 0.0,
+            "qw": 0.0,
+        }
+        self.subject._robot_ee_pose = mock.Mock(return_value=actual_pose)
         self.subject._demo_visualization = mock.Mock(
             return_value={
-                "current_ee": {
-                    "x": 0.60,
-                    "y": -0.18,
-                    "z": 0.19584,
-                    "qx": 0.0,
-                    "qy": 1.0,
-                    "qz": 0.0,
-                    "qw": 0.0,
-                },
+                "current_ee": actual_pose,
                 "scene_geometry": {
                     "bar": {"pivot": [9.0, 9.0], "axis": [0.0, 1.0]},
                     "obstacle": {"center": [9.0, 9.0], "radius": 0.05},
@@ -895,10 +945,19 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.assertEqual(series["source"], "real_tf/BarClean")
         self.assertEqual(len(series["samples"]), 2)
         self.assertEqual(len(series["schema"]), 7)
-        self.assertAlmostEqual(series["samples"][0][2], 0.05)
+        definition = self.subject._task_feature_definitions["BarClean"]
+        expected_surface = sum(
+            (actual_pose[axis] - definition["table_surface_point"][index])
+            * definition["table_normal"][index]
+            for index, axis in enumerate(("x", "y", "z"))
+        )
+        self.assertAlmostEqual(series["samples"][0][2], expected_surface)
         self.assertAlmostEqual(series["samples"][0][3], 0.02)
         self.assertAlmostEqual(abs(series["samples"][0][6]), math.pi)
-        self.assertAlmostEqual(series["samples"][0][7], 0.10 - 0.23806532)
+        self.assertAlmostEqual(
+            series["samples"][0][7],
+            0.10 - definition["true_constraints"]["bar_axial_offset_reference"],
+        )
         self.assertEqual(visualization["source"], "planner_scene")
         self.assertEqual(visualization["scene_geometry"]["bar"]["pivot"], [0.50, -0.20])
 
@@ -912,7 +971,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         ]
 
         self.assertEqual(len(surface_specs), 1)
-        self.assertEqual(surface_specs[0]["value"], 0.06)
+        self.assertEqual(surface_specs[0]["value"], 0.10204)
 
 
 if __name__ == "__main__":

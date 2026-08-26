@@ -393,17 +393,6 @@ class StageConstraintTrajectoryOptimizer:
             raise ValueError(
                 "stage_endpoint_positions_bar must contain one or more XYZ points"
             )
-        for group in self._config.get("endpoint_group_offsets", []):
-            offset = np.asarray(group["offset_bar"], dtype=float)
-            indices = [int(value) - 1 for value in group["endpoints"]]
-            if offset.shape != (3,) or np.any(~np.isfinite(offset)):
-                raise ValueError("endpoint_group_offsets offset_bar must be finite XYZ")
-            if not indices or any(
-                index < 0 or index >= len(self._endpoint_positions_bar)
-                for index in indices
-            ):
-                raise ValueError("endpoint_group_offsets endpoints must be valid S numbers")
-            self._endpoint_positions_bar[indices] += offset
         self._n_stages = len(self._endpoint_positions_bar) + 1
         self._constraint_terms = [dict(value) for value in self._config["constraint_terms"]]
         for term in self._constraint_terms:
@@ -440,6 +429,12 @@ class StageConstraintTrajectoryOptimizer:
         self._transition_fraction = float(transition["fraction"])
         self._transition_min_distance = float(transition["min_distance"])
         self._transition_max_distance = float(transition["max_distance"])
+        settling = dict(self._config["constraint_settling"])
+        self._settling_control_points = int(settling["control_points"])
+        self._settling_max_progress = float(settling["max_progress_m"])
+        self._settling_progress_weight = float(settling["progress_weight"])
+        self._settling_smoothness_scale = float(settling["smoothness_scale"])
+        self._settling_boundaries = self._constraint_change_boundaries()
         if (
             self._control_spacing <= 0.0
             or self._output_spacing <= 0.0
@@ -455,6 +450,46 @@ class StageConstraintTrajectoryOptimizer:
             or self._transition_max_distance < self._transition_min_distance
         ):
             raise ValueError("Invalid constraint_transition distance limits")
+        if self._settling_control_points < 1:
+            raise ValueError("constraint_settling control_points must be positive")
+        if self._settling_max_progress < 0.0:
+            raise ValueError("constraint_settling max_progress_m must be nonnegative")
+        if self._settling_progress_weight < 0.0:
+            raise ValueError("constraint_settling progress_weight must be nonnegative")
+        if not 0.0 <= self._settling_smoothness_scale <= 1.0:
+            raise ValueError("constraint_settling smoothness_scale must be in [0, 1]")
+
+    def _constraint_change_boundaries(self):
+        """Select transitions that introduce or change next-stage constraints."""
+        signatures = []
+        for stage in range(self._n_stages):
+            by_feature = {}
+            for term in self._constraint_terms:
+                if int(term["stage"]) != stage:
+                    continue
+                feature_name = str(term["feature_name"])
+                by_feature.setdefault(feature_name, []).append(
+                    (str(term["semantics"]), float(term["value"]))
+                )
+            signatures.append(
+                {
+                    feature_name: tuple(sorted(values))
+                    for feature_name, values in by_feature.items()
+                }
+            )
+
+        changed = []
+        for stage in range(self._n_stages - 1):
+            current = signatures[stage]
+            following = signatures[stage + 1]
+            changed.append(
+                any(
+                    feature_name not in current
+                    or current[feature_name] != signature
+                    for feature_name, signature in following.items()
+                )
+            )
+        return np.asarray(changed, dtype=bool)
 
     def _world_endpoints(self, start_position, goal_position, bar_pose, task_frame=None):
         bar_pose = np.asarray(bar_pose, dtype=float).reshape(7)
@@ -510,7 +545,27 @@ class StageConstraintTrajectoryOptimizer:
                 self._min_control_points,
                 self._max_control_points,
             ))
-            block = np.linspace(endpoints[stage_index], endpoints[stage_index + 1], count)
+            phases = np.linspace(0.0, 1.0, count)
+            if stage_index > 0 and self._settling_boundaries[stage_index - 1]:
+                settle_count = min(self._settling_control_points, count - 2)
+                settle_progress = min(
+                    self._settling_max_progress,
+                    0.25 * distance,
+                )
+                settle_phase = settle_progress / distance if distance > 1e-12 else 0.0
+                phases[:settle_count + 1] = np.linspace(
+                    0.0, settle_phase, settle_count + 1
+                )
+                phases[settle_count + 1:] = np.linspace(
+                    settle_phase,
+                    1.0,
+                    count - settle_count,
+                )[1:]
+            block = (
+                endpoints[stage_index][None, :]
+                + phases[:, None]
+                * (endpoints[stage_index + 1] - endpoints[stage_index])[None, :]
+            )
             if stage_index > 0:
                 block = block[1:]
             positions.extend(block)
@@ -528,6 +583,65 @@ class StageConstraintTrajectoryOptimizer:
         yaw_delta = float(_wrap_angle(goal_yaw - start_yaw))
         yaws = np.linspace(start_yaw, start_yaw + yaw_delta, len(positions))
         return positions, axes, yaws, labels, np.asarray(endpoint_indices, dtype=int)
+
+    def _settling_windows(self, endpoints, endpoint_indices):
+        windows = []
+        for boundary_index, enabled in enumerate(self._settling_boundaries):
+            if not enabled:
+                continue
+            boundary = int(endpoint_indices[boundary_index])
+            next_boundary = int(endpoint_indices[boundary_index + 1])
+            end = min(
+                boundary + self._settling_control_points,
+                next_boundary - 1,
+            )
+            if end <= boundary:
+                continue
+            direction = _unit(
+                endpoints[boundary_index + 2] - endpoints[boundary_index + 1],
+                "settling progress direction",
+            ).reshape(3)
+            progress_limit = min(
+                self._settling_max_progress,
+                0.25
+                * float(
+                    np.linalg.norm(
+                        endpoints[boundary_index + 2]
+                        - endpoints[boundary_index + 1]
+                    )
+                ),
+            )
+            indices = np.arange(boundary + 1, end + 1, dtype=int)
+            windows.append(
+                {
+                    "boundary_index": int(boundary_index),
+                    "boundary": boundary,
+                    "end": end,
+                    "indices": indices,
+                    "origin": np.asarray(
+                        endpoints[boundary_index + 1], dtype=float
+                    ).copy(),
+                    "direction": direction,
+                    "progress_targets": np.linspace(
+                        progress_limit / len(indices),
+                        progress_limit,
+                        len(indices),
+                    ),
+                }
+            )
+        return windows
+
+    def _shape_weights(self, length, settling_windows):
+        first = np.ones(int(length) - 1, dtype=float)
+        second = np.ones(max(int(length) - 2, 0), dtype=float)
+        for window in settling_windows:
+            boundary = int(window["boundary"])
+            end = int(window["end"])
+            first[boundary:end] = 0.0
+            center_start = max(boundary - 1, 0)
+            center_end = min(end + 1, len(second))
+            second[center_start:center_end] = self._settling_smoothness_scale
+        return first, second
 
     def _transition_distances(self, endpoints):
         next_stage_lengths = np.linalg.norm(np.diff(endpoints, axis=0), axis=1)[1:]
@@ -576,7 +690,13 @@ class StageConstraintTrajectoryOptimizer:
             return active_weight >= 1.0 - 1e-9
         return np.isin(np.asarray(stage_labels, dtype=int), sorted(active_stages))
 
-    def _stage_constraint_weights(self, positions, endpoint_indices, transition_distances):
+    def _stage_constraint_weights(
+        self,
+        positions,
+        endpoint_indices,
+        transition_distances,
+        settling_windows=None,
+    ):
         positions = np.asarray(positions, dtype=float)
         endpoint_indices = np.asarray(endpoint_indices, dtype=int)
         transition_distances = np.asarray(transition_distances, dtype=float)
@@ -587,6 +707,10 @@ class StageConstraintTrajectoryOptimizer:
             weights[stage_start:stage_end + 1, stage_index] = 1.0
             stage_start = stage_end + 1
 
+        settling_by_boundary = {
+            int(window["boundary_index"]): window
+            for window in (settling_windows or [])
+        }
         transition_ends = []
         for stage_index, transition_distance in enumerate(transition_distances):
             boundary = int(endpoint_indices[stage_index])
@@ -595,14 +719,27 @@ class StageConstraintTrajectoryOptimizer:
             cumulative = np.concatenate(
                 ([0.0], np.cumsum(np.linalg.norm(np.diff(block, axis=0), axis=1)))
             )
-            if transition_distance <= 1e-12:
+            settling = settling_by_boundary.get(stage_index)
+            if settling is not None:
+                relative_end = min(
+                    int(settling["end"]) - boundary,
+                    len(cumulative) - 1,
+                )
+                alpha = np.ones_like(cumulative)
+                alpha[:relative_end + 1] = self._smoothstep5(
+                    np.linspace(0.0, 1.0, relative_end + 1)
+                )
+            elif transition_distance <= 1e-12:
                 alpha = np.ones_like(cumulative)
                 alpha[0] = 0.0
+                relative_end = 0
             else:
                 alpha = self._smoothstep5(cumulative / transition_distance)
+                relative_end = int(
+                    np.searchsorted(cumulative, transition_distance, side="left")
+                )
             weights[boundary:next_boundary + 1, stage_index] = 1.0 - alpha
             weights[boundary:next_boundary + 1, stage_index + 1] = alpha
-            relative_end = int(np.searchsorted(cumulative, transition_distance, side="left"))
             transition_ends.append(boundary + min(relative_end, len(cumulative) - 1))
         return weights, np.asarray(transition_ends, dtype=int)
 
@@ -644,6 +781,9 @@ class StageConstraintTrajectoryOptimizer:
         free_yaws,
         stage_weights,
         target_steps,
+        first_shape_weights,
+        second_shape_weights,
+        settling_windows,
         task_frame,
         obstacle_pose,
     ):
@@ -655,17 +795,20 @@ class StageConstraintTrajectoryOptimizer:
         position_step = np.linalg.norm(position_delta, axis=1)
         residuals.append(
             math.sqrt(self._weights["position_first"])
+            * np.sqrt(first_shape_weights)
             * (position_step - target_steps)
             / self._position_scale
         )
         if len(positions) > 2:
             residuals.append(
                 math.sqrt(self._weights["position_second"])
+                * np.repeat(np.sqrt(second_shape_weights), 3)
                 * (positions[:-2] - 2.0 * positions[1:-1] + positions[2:]).reshape(-1)
                 / self._position_scale
             )
             residuals.append(
                 math.sqrt(self._weights["axis_second"])
+                * np.repeat(np.sqrt(second_shape_weights), 3)
                 * (axes[:-2] - 2.0 * axes[1:-1] + axes[2:]).reshape(-1)
                 / self._axis_scale
             )
@@ -687,9 +830,21 @@ class StageConstraintTrajectoryOptimizer:
         if len(yaws) > 2:
             residuals.append(
                 math.sqrt(self._weights["yaw_second"])
+                * np.sqrt(second_shape_weights)
                 * np.diff(yaws, n=2)
                 / self._yaw_scale
             )
+
+        if self._settling_progress_weight > 0.0:
+            for window in settling_windows:
+                progress = (
+                    positions[window["indices"]] - window["origin"][None, :]
+                ) @ window["direction"]
+                residuals.append(
+                    math.sqrt(self._settling_progress_weight)
+                    * (progress - window["progress_targets"])
+                    / self._position_scale
+                )
 
         features = self._feature_evaluator.evaluate(
             positions, axes, task_frame, obstacle_pose, yaws
@@ -824,9 +979,16 @@ class StageConstraintTrajectoryOptimizer:
         position_template, axis_template, yaw_template, labels, endpoint_indices = self._initial_trajectory(
             endpoints, start_axis, goal_axis, start_yaw, goal_yaw
         )
+        settling_windows = self._settling_windows(endpoints, endpoint_indices)
+        first_shape_weights, second_shape_weights = self._shape_weights(
+            len(position_template), settling_windows
+        )
         transition_distances = self._transition_distances(endpoints)
         stage_weights, _transition_ends = self._stage_constraint_weights(
-            position_template, endpoint_indices, transition_distances
+            position_template,
+            endpoint_indices,
+            transition_distances,
+            settling_windows,
         )
         free_positions = self._free_position_indices(len(position_template), endpoint_indices)
         free_yaws = np.arange(1, len(position_template) - 1, dtype=int)
@@ -861,6 +1023,9 @@ class StageConstraintTrajectoryOptimizer:
                     free_yaws,
                     stage_weights,
                     target_steps,
+                    first_shape_weights,
+                    second_shape_weights,
+                    settling_windows,
                     task_frame,
                     obstacle_pose,
                 ),
@@ -883,11 +1048,17 @@ class StageConstraintTrajectoryOptimizer:
         positions, _raw_axes, axes, yaws = self._unpack(
             result.x, position_template, yaw_template, free_positions, free_yaws
         )
+        optimized_settling_distances = transition_distances.copy()
+        for window in settling_windows:
+            block = positions[int(window["boundary"]):int(window["end"]) + 1]
+            optimized_settling_distances[int(window["boundary_index"])] = float(
+                np.sum(np.linalg.norm(np.diff(block, axis=0), axis=1))
+            )
         positions, axes, yaws, labels, boundaries = self._resample(
             positions, axes, yaws, endpoint_indices
         )
         output_stage_weights, transition_ends = self._stage_constraint_weights(
-            positions, boundaries, transition_distances
+            positions, boundaries, optimized_settling_distances
         )
         features = self._feature_evaluator.evaluate(
             positions, axes, task_frame, obstacle_pose, yaws
@@ -928,7 +1099,8 @@ class StageConstraintTrajectoryOptimizer:
                 "to_stage": int(stage_index + 1),
                 "start_index": int(boundaries[stage_index]),
                 "end_index": int(transition_ends[stage_index]),
-                "distance": float(transition_distances[stage_index]),
+                "distance": float(optimized_settling_distances[stage_index]),
+                "constraint_settling": bool(self._settling_boundaries[stage_index]),
             }
             for stage_index in range(self._n_stages - 1)
         ]
