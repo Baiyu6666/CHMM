@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -10,25 +10,25 @@
     main{max-width:1380px;margin:auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}
     h1{font-size:22px;margin:0}.badge{padding:7px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
     .workspace{display:grid;gap:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
-    h2{font-size:15px;margin:0 0 13px}.task-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}.task-heading h2{margin:0}.task-heading-actions{display:flex;gap:8px}.task-heading-actions button{width:auto;margin:0;padding:8px 14px}.system-panel{margin-bottom:16px}.system-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}.system-head h2{margin:0}.status-strip{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:10px}.status-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:#101720;border:1px solid var(--line);border-radius:8px}.status-item span:first-child{color:var(--muted)}.value{font-weight:650}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+    h2{font-size:15px;margin:0 0 13px}.task-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}.task-heading h2{margin:0}.system-panel{margin-bottom:16px}.system-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}.system-head h2{margin:0}.status-strip{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:10px}.status-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:#101720;border:1px solid var(--line);border-radius:8px}.status-item span:first-child{color:var(--muted)}.value{font-weight:650}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
     button{width:100%;padding:11px 12px;margin:5px 0;border:1px solid var(--line);border-radius:8px;background:#202a36;color:var(--text);font-weight:650;cursor:pointer}
     button.primary{background:#174d39;border-color:#2b8a61}button.simulate{background:#173454;border-color:#3975ac}button.danger{background:#54252a;border-color:#9b3d46}button:disabled{opacity:.45;cursor:not-allowed}
     .hint{color:var(--muted);font-size:13px;margin:6px 0 12px}.message{min-width:300px;padding:8px 11px;border-radius:8px;border:1px solid var(--line)}.message.error{color:var(--red);border-color:var(--red)}
     pre{height:270px;overflow:auto;white-space:pre-wrap;background:#090d12;border:1px solid var(--line);border-radius:8px;padding:10px;color:#b9c7d5}
     input,select{width:100%;padding:9px;color:var(--text);background:#0d131b;border:1px solid var(--line);border-radius:7px}
-    label{display:grid;gap:5px;color:var(--muted);font-size:13px}.pose{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}.pose-title{display:flex;justify-content:space-between;align-items:center;margin:13px 0 7px}.pose-title strong{font-size:13px}.pose-title span{color:var(--muted);font-size:12px}
-    .task-options{display:grid;grid-template-columns:1fr 1.4fr 1.2fr;gap:10px;margin-bottom:9px}.check{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:7px;padding:9px}.check input{width:auto}.task-actions{display:flex;justify-content:flex-end;margin-top:12px}.task-actions button{width:150px}.task-status{display:grid;grid-template-columns:115px 1fr;gap:7px 12px;margin-top:13px}.task-status span:nth-child(odd){color:var(--muted)}
+    label{display:grid;gap:5px;color:var(--muted);font-size:13px}.pose{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.pose-title{display:flex;justify-content:space-between;align-items:center;margin:13px 0 7px}.pose-title strong{font-size:13px}.pose-title span{color:var(--muted);font-size:12px}
+    .task-layout{display:grid;grid-template-columns:minmax(0,1.28fr) minmax(340px,.72fr);gap:16px;align-items:start}.task-left{min-width:0}.task-options{display:grid;grid-template-columns:1fr 1.35fr;gap:10px;margin-bottom:9px}.task-options .check{grid-column:1/-1}.check{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:7px;padding:9px}.check input{width:auto}.task-status{display:grid;grid-template-columns:92px 1fr;gap:7px 10px;margin-top:10px}.task-status span:nth-child(odd){color:var(--muted)}
     .task-visual{margin:14px 0;padding:12px;background:#0d141d;border:1px solid var(--line);border-radius:10px}.plot-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}.plot-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}.plot-tools button{width:auto;margin:0;padding:8px 12px}.plot-tools button.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset;background:#173454}.plot-tools .hint{margin:0 0 0 auto}.task-legend{display:flex;gap:13px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:8px}.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}.legend-line{display:inline-block;width:20px;border-top:2px solid currentColor;margin:0 5px 3px 0}.legend-line.dashed{border-top-style:dashed}#taskCanvas{width:100%;height:auto;display:block;background:#091019;border:1px solid var(--line);border-radius:8px;cursor:crosshair;touch-action:none}
     .feature-section{margin:14px 0;padding:12px;background:#0d141d;border:1px solid var(--line);border-radius:10px}.feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.feature-card{padding:10px;background:#091019;border:1px solid var(--line);border-radius:8px}.feature-card-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:6px}.feature-card-head span{color:var(--muted);font-size:12px}.feature-card canvas{display:block;width:100%;height:auto}
-    .demo-controls{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin:12px 0}.demo-controls button{height:100%;margin:0}.demo-notes{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}.demo-notes .hint{margin:0;padding:10px;background:#101720;border-radius:8px}.log-panel summary{cursor:pointer;font-weight:650}.log-panel pre{margin-bottom:0}
-    video{display:none;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:#000}iframe{width:100%;height:720px;border:1px solid var(--line);border-radius:10px;background:#0a0e13}
-    @media(max-width:1000px){.status-strip{grid-template-columns:repeat(3,1fr)}.demo-controls{grid-template-columns:repeat(2,1fr)}.pose{grid-template-columns:repeat(4,1fr)}}@media(max-width:700px){.system-head,.task-heading{align-items:stretch;flex-direction:column}.task-heading-actions{display:grid;grid-template-columns:repeat(3,1fr)}.task-heading-actions button{width:100%}.message{min-width:0}.status-strip,.demo-controls,.demo-notes,.feature-grid,.task-options{grid-template-columns:1fr}.pose{grid-template-columns:repeat(2,1fr)}.task-actions button{width:100%}iframe{height:680px}}
+    .control-panel{display:grid;gap:12px;position:sticky;top:14px}.control-section{padding:14px;background:#0d141d;border:1px solid var(--line);border-radius:10px}.control-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.control-title h2{margin:0}.action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.action-grid button{height:100%;margin:0}.action-grid .wide{grid-column:1/-1}.control-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0}.control-lamp{padding:8px 5px;border:1px solid var(--line);border-radius:7px;background:#101720;color:var(--muted);font-size:11px;text-align:center}.lamp{display:block;width:8px;height:8px;margin:0 auto 4px;border-radius:50%;background:#667386}.lamp.on{background:var(--green);box-shadow:0 0 7px #55d68b99}.lamp.off{background:var(--red)}.demo-fields{display:grid;gap:8px;margin-top:10px}.control-message{min-height:42px;margin-top:10px;padding:9px 10px;border-left:3px solid #46586f;border-radius:7px;background:#101720;color:var(--muted);font-size:12px;overflow-wrap:anywhere}.control-message.success{color:var(--green);border-color:var(--green)}.control-message.failed{color:var(--red);border-color:var(--red)}.recorder-status{display:grid;grid-template-columns:78px 1fr;gap:5px 8px;margin-top:10px;font-size:12px}.recorder-status span:nth-child(odd){color:var(--muted)}.log-panel summary{cursor:pointer;font-weight:650}.log-panel pre{margin-bottom:0}
+    video{display:none;width:100%;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:#000}
+    @media(max-width:1100px){.task-layout{grid-template-columns:1fr}.control-panel{position:static;grid-template-columns:repeat(2,minmax(0,1fr))}.status-strip{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.system-head,.task-heading{align-items:stretch;flex-direction:column}.message{min-width:0}.status-strip,.feature-grid,.task-options,.control-panel{grid-template-columns:1fr}.task-options .check{grid-column:auto}.pose{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body><main>
-  <div class="top"><h1>Stage Constraint Workstation</h1><div id="busy" class="badge">正在连接…</div></div>
+  <div class="top"><h1>Stage Constraint Workstation</h1><div id="busy" class="badge">Connecting...</div></div>
   <section class="panel system-panel">
-    <div class="system-head"><h2>系统状态</h2><div id="message" class="message">等待状态…</div></div>
+    <div class="system-head"><h2>System Status</h2><div id="message" class="message">Waiting for status...</div></div>
     <div class="status-strip">
       <div class="status-item"><span>Docker</span><span id="container" class="value">—</span></div>
       <div class="status-item"><span>Robot network</span><span id="network" class="value">—</span></div>
@@ -40,20 +40,20 @@
   </section>
   <div class="workspace">
       <section class="panel">
-        <div class="task-heading"><h2>Task 执行</h2><div class="task-heading-actions"><button id="returnHome" class="primary">回到舒适位置（Position）</button><button id="taskSimulate" class="simulate">Simulate</button><button id="taskExecute" class="primary">Execute</button></div></div>
-        <div class="hint">选择任务并设置 Cartesian 起点和终点。机器人先移动到起点（不记录），随后执行对应的多阶段 planner 路径；task 轨迹和元数据始终自动保存。</div>
-        <div class="task-options">
-          <label>任务<select id="taskType"><option value="BarClean" selected>Bar Clean</option></select></label>
-          <label>规划约束<select id="constraintSource"><option value="true">True constraints</option></select></label>
-          <label class="check"><input id="taskVideoRecord" type="checkbox">保存仿真视频（会显著增加仿真耗时）</label>
-        </div>
-        <div id="taskStages" class="hint">S1 Approach · S2 Longitudinal clean · S3 Free reposition · S4 Right-to-left discharge · S5 Depart</div>
-        <div class="hint">Simulate 使用隔离的 PyBullet 容器；Execute 完成规划后等待 FRI Position，SmartPAD 启动 FRI 即自动执行。</div>
-        <div class="task-visual">
-          <div class="plot-head"><strong>Task XY 轨迹与场景</strong><span id="sceneSource" class="badge">固定参考</span></div>
+        <div class="task-heading"><h2>Task Planning, Execution, and Demo Collection</h2></div>
+        <div class="task-layout">
+          <div class="task-left">
+            <div class="task-options">
+              <label>Task<select id="taskType"><option value="BarClean" selected>Bar Clean</option></select></label>
+              <label>Constraint Source<select id="constraintSource"><option value="true">True constraints</option></select></label>
+              <label class="check"><input id="taskVideoRecord" type="checkbox">Save simulation video (substantially increases simulation time)</label>
+            </div>
+            <div id="taskStages" class="hint">S1 Approach · S2 Longitudinal clean · S3 Free reposition · S4 Right-to-left discharge · S5 Depart</div>
+            <div class="task-visual">
+          <div class="plot-head"><strong>Task XY Trajectory and Scene</strong><span id="sceneSource" class="badge">Fixed reference</span></div>
           <div class="plot-tools">
-            <span id="pointTarget" class="badge">下一次点击：Start</span>
-            <span class="hint">依次点击设置 Start、Goal；第三次点击重新设置 Start。只修改 x / y，z 与姿态保持不变。</span>
+            <span id="pointTarget" class="badge">Next click: Start</span>
+            <span class="hint">Click to set Start, then Goal. A third click starts over. Only x/y change; z and orientation stay fixed.</span>
           </div>
           <canvas id="taskCanvas" width="820" height="480"></canvas>
           <div class="task-legend">
@@ -62,12 +62,12 @@
             <span id="stageColorLegend"><i class="legend-line dashed" style="color:#c69cff"></i>Stage-colored plan</span>
             <span><i class="legend-line" style="color:#68a9ff"></i>Executed trajectory</span>
             <span><i class="legend-dot" style="background:#f0b65d"></i>Current EE</span>
-            <span><i class="legend-line dashed" style="color:#b9c4d2"></i>虚线表示固定回退对象</span>
+            <span><i class="legend-line dashed" style="color:#b9c4d2"></i>Dashed objects use fixed fallback poses</span>
             <span id="taskEeValue">EE: —</span><span id="traceCount">0 points</span>
           </div>
-        </div>
-        <div class="feature-section">
-          <div class="plot-head"><strong>Constraint Relevant Features</strong><span class="hint">紫色：Plan · 彩色：Executed · 橙色：True · 青色：Learned · 竖线：Stage 切换</span></div>
+            </div>
+            <div class="feature-section">
+          <div class="plot-head"><strong>Constraint-Relevant Features</strong><span class="hint">Purple: Plan · Colored: Executed · Orange: True · Cyan: Learned · Vertical lines: Stage transitions</span></div>
           <div class="feature-grid">
             <div class="feature-card"><div class="feature-card-head"><strong>Obstacle clearance</strong><span id="featureObstacleValue">—</span></div><canvas id="featureObstacle" width="580" height="220"></canvas></div>
             <div class="feature-card"><div class="feature-card-head"><strong>Surface distance</strong><span id="featureSurfaceValue">—</span></div><canvas id="featureSurface" width="580" height="220"></canvas></div>
@@ -77,40 +77,65 @@
             <div class="feature-card"><div class="feature-card-head"><strong>Tool yaw relative to bar</strong><span id="featureYawValue">—</span></div><canvas id="featureYaw" width="580" height="220"></canvas></div>
             <div id="featureAxialCard" class="feature-card" style="display:none"><div class="feature-card-head"><strong>Bar axial offset (task x)</strong><span id="featureAxialValue">—</span></div><canvas id="featureAxial" width="580" height="220"></canvas></div>
           </div>
+            </div>
+            <div class="pose-title"><strong>Start pose</strong><span>frame: iiwa14_link_0 · metre / fixed-axis RPY (°)</span></div>
+            <div class="pose" id="startPose">
+              <label>x<input data-key="x" type="number" step="0.001" value="0.6183"></label><label>y<input data-key="y" type="number" step="0.001" value="-0.1613"></label><label>z<input data-key="z" type="number" step="0.001" value="0.26584"></label><label>Roll (°)<input data-key="roll" type="number" step="0.1" value="180"></label><label>Pitch (°)<input data-key="pitch" type="number" step="0.1" value="0"></label><label>Yaw (°)<input data-key="yaw" type="number" step="0.1" value="180"></label>
+            </div>
+            <div class="pose-title"><strong>Goal pose</strong><span id="plannerStageCount">5-stage constraint planner</span></div>
+            <div class="pose" id="goalPose">
+              <label>x<input data-key="x" type="number" step="0.001" value="0.45"></label><label>y<input data-key="y" type="number" step="0.001" value="-0.44"></label><label>z<input data-key="z" type="number" step="0.001" value="0.26584"></label><label>Roll (°)<input data-key="roll" type="number" step="0.1" value="180"></label><label>Pitch (°)<input data-key="pitch" type="number" step="0.1" value="0"></label><label>Yaw (°)<input data-key="yaw" type="number" step="0.1" value="180"></label>
+            </div>
+            <video id="taskVideo" controls preload="metadata"></video>
+          </div>
+
+          <aside class="control-panel">
+            <section class="control-section">
+              <div class="control-title"><h2>Task Controls</h2><span id="taskPhaseBadge" class="badge">idle</span></div>
+              <div class="action-grid">
+                <button id="returnHome" class="primary wide">Return Home (Position)</button>
+                <button id="taskSimulate" class="simulate">Simulate</button>
+                <button id="taskExecute" class="primary">Execute</button>
+                <button id="taskAbort" class="danger wide">Stop Task</button>
+              </div>
+              <div class="task-status"><span>Task</span><span id="taskIdState">BarClean</span><span>Constraints</span><span id="taskConstraintState">True constraints</span><span>Mode</span><span id="taskModeState">—</span><span>Phase</span><span id="taskPhase">idle</span><span>Data</span><span id="taskRecording">Auto-save</span><span>Video</span><span id="taskVideoState">Off</span><span>Output</span><span id="taskOutput">—</span></div>
+            </section>
+
+            <section class="control-section">
+              <div class="control-title"><h2>Demo Collection (Torque)</h2><span id="demoReadyBadge" class="badge">Connecting...</span></div>
+              <div class="hint">Enter Demo, then select TORQUE in FRIOverlayGripper on the SmartPAD. Recording becomes available as soon as FRI is ready.</div>
+              <div class="action-grid">
+                <button id="prepareDemo" class="primary">Enter Demo</button>
+                <button id="releaseControl" class="danger">Exit Demo</button>
+              </div>
+              <div class="control-status-grid">
+                <div class="control-lamp"><i id="demoJointLamp" class="lamp"></i>Joint</div>
+                <div class="control-lamp"><i id="demoTfLamp" class="lamp"></i>EE TF</div>
+                <div class="control-lamp"><i id="demoRecorderLamp" class="lamp"></i>Recorder</div>
+                <div class="control-lamp"><i id="demoFriLamp" class="lamp"></i>FRI Active</div>
+                <div class="control-lamp"><i id="demoTorqueLamp" class="lamp"></i>Torque</div>
+                <div class="control-lamp"><i id="demoGateLamp" class="lamp"></i>Motion Gate</div>
+              </div>
+              <div class="demo-fields">
+                <label>Demo label<input id="demoLabel" value="demo_01" maxlength="60"></label>
+                <label>Notes<input id="demoNotes" placeholder="Optional: direction, material, experimental conditions"></label>
+                <button id="demoRecord" class="danger">Start Recording</button>
+              </div>
+              <div class="recorder-status"><span>State</span><span id="demoRecorderState">Waiting</span><span>Session</span><span id="demoSessionState">—</span><span>Save path</span><span>data/demos/</span></div>
+              <div id="demoControlMessage" class="control-message">Waiting for Demo station status...</div>
+            </section>
+          </aside>
         </div>
-        <div class="pose-title"><strong>Start pose</strong><span>frame: iiwa14_link_0 · metre / quaternion</span></div>
-        <div class="pose" id="startPose">
-          <label>x<input data-key="x" type="number" step="0.001" value="0.6183"></label><label>y<input data-key="y" type="number" step="0.001" value="-0.1613"></label><label>z<input data-key="z" type="number" step="0.001" value="0.26584"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
-        </div>
-        <div class="pose-title"><strong>Goal pose</strong><span id="plannerStageCount">5-stage constraint planner</span></div>
-        <div class="pose" id="goalPose">
-          <label>x<input data-key="x" type="number" step="0.001" value="0.45"></label><label>y<input data-key="y" type="number" step="0.001" value="-0.44"></label><label>z<input data-key="z" type="number" step="0.001" value="0.26584"></label><label>qx<input data-key="qx" type="number" step="0.001" value="0"></label><label>qy<input data-key="qy" type="number" step="0.001" value="1"></label><label>qz<input data-key="qz" type="number" step="0.001" value="0"></label><label>qw<input data-key="qw" type="number" step="0.001" value="0"></label>
-        </div>
-        <div class="task-actions"><button id="taskAbort" class="danger">停止 Task</button></div>
-        <div class="task-status"><span>Task</span><span id="taskIdState">BarClean</span><span>Constraints</span><span id="taskConstraintState">True constraints</span><span>Mode</span><span id="taskModeState">—</span><span>Phase</span><span id="taskPhase">idle</span><span>Data</span><span id="taskRecording">自动保存</span><span>Video</span><span id="taskVideoState">关闭</span><span>Output</span><span id="taskOutput">—</span></div>
-        <video id="taskVideo" controls preload="metadata"></video>
       </section>
-      <section class="panel">
-        <h2>Demo 采集（Torque）</h2>
-        <div class="hint">后台工作站、OptiTrack 和 recorder 常驻运行，不代表拥有机器人控制权。先准备 Demo / Torque，再在 SmartPAD 启动 FRIOverlayGripper 并选择 TORQUE；下方只负责示教、辅助和录制。</div>
-        <div class="demo-controls">
-          <button id="prepareDemo" class="primary">准备 Demo / Torque</button>
-          <button id="releaseControl" class="danger">释放机器人控制（回到 Idle）</button>
-        </div>
-        <div class="demo-notes">
-          <div class="hint">从 Planner 切换时会先停止任务、关闭 Position gate、清零旧目标并确认旧 driver 退出，再启动 Torque controller。</div>
-          <div class="hint">Execute 会反向执行同样的 Idle 过渡，因此不需要手动关闭 Demo driver；切换期间不会保留上一次轨迹或辅助状态。</div>
-        </div>
-        <iframe id="demoFrame" title="Demo collection panel"></iframe>
-      </section>
-      <details class="panel log-panel"><summary>运行日志</summary><pre id="logs"></pre></details>
+      <details class="panel log-panel"><summary>Runtime Logs</summary><pre id="logs"></pre></details>
   </div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
 const taskCanvas=$('taskCanvas'),taskContext=taskCanvas.getContext('2d');
 const FIXED_OBSTACLE_ENVELOPE_RADIUS_M=0.120;
-let token='',state=null,lastDemoRunning=false,videoLoaded=false,localMessageUntil=0,abortPending=false,settingsTimer=null;
+let token='',state=null,videoLoaded=false,localMessageUntil=0,abortPending=false,settingsTimer=null;
+let demoState=null,demoBusy=false,demoMessageUntil=0;
 let visualization={trace:[],planned_trace:[],current_ee:null,scene_geometry:{},source:'fallback',feature_series:{samples:[]},planned_feature_series:{samples:[]},stage_boundary_indices:[],stage_boundary_times:[],stage_transition_end_times:[]};
 let pointTarget='start',goalPending=false,plotTransform=null;
 const featurePlots=[
@@ -127,8 +152,22 @@ const stageColors=['#55d68b','#68a9ff','#c69cff','#f0b65d','#ff7f6e','#4fd1c5'];
 
 function flag(element,on,yes,no){element.textContent=on?yes:no;element.className='value '+(on?'ok':'warn')}
 function showError(text){localMessageUntil=Date.now()+12000;$('message').textContent=text;$('message').className='message error'}
-function readPose(id){const pose={};document.querySelectorAll('#'+id+' input').forEach(input=>pose[input.dataset.key]=Number(input.value));return pose}
-function writePose(id,pose){document.querySelectorAll('#'+id+' input').forEach(input=>input.value=Number(pose[input.dataset.key]).toFixed(4))}
+function demoLamp(id,on){$(id).className='lamp '+(on?'on':'off')}
+function showDemoMessage(text,ok){demoMessageUntil=Date.now()+10000;$('demoControlMessage').textContent=text;$('demoControlMessage').className='control-message '+(ok===true?'success':ok===false?'failed':'')}
+async function demoPost(path,body={}){demoBusy=true;renderDemoControls();try{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),data=await response.json();if(!response.ok||!data.ok)throw Error(data.message||response.statusText);showDemoMessage(data.message,true);return data}catch(error){showDemoMessage(error.message,false);throw error}finally{demoBusy=false;await pollDemo()}}
+function renderDemoControls(){
+  const dependencies=demoState?.dependencies||{},control=state?.robot_control||{mode:'idle'},mainBusy=Boolean(state?.job?.busy),stationOnline=Boolean(state?.demo_running&&demoState),modeActive=Boolean(demoState?.mode_active),recording=Boolean(demoState?.recording),ready=Boolean(demoState?.ready),badge=$('demoReadyBadge');
+  for(const [id,key] of [['demoJointLamp','joint_state'],['demoTfLamp','ee_tf'],['demoRecorderLamp','recorder'],['demoFriLamp','fri_commanding'],['demoTorqueLamp','fri_torque_mode'],['demoGateLamp','motion_gate']])demoLamp(id,Boolean(dependencies[key]));
+  badge.textContent=!stationOnline?'Demo Station Offline':recording?'Recording':modeActive?'Demo Ready':ready?'Ready to Record':'Waiting for FRI Torque';badge.className='badge '+(!stationOnline?'bad':modeActive||ready?'ok':'warn');
+  $('prepareDemo').disabled=mainBusy||control.mode==='demo';$('releaseControl').disabled=mainBusy||control.mode==='idle';$('demoRecord').disabled=demoBusy||(!recording&&!modeActive&&!ready);$('demoLabel').disabled=demoBusy||recording;$('demoNotes').disabled=demoBusy||recording;if(state)$('taskType').disabled=mainBusy||taskIsActive()||recording;
+  $('demoRecord').textContent=recording?'Stop and Save Rosbag':'Start Recording';$('demoRecord').className=recording?'primary':'danger';$('demoRecorderState').textContent=demoState?.recorder_state||'Waiting';$('demoSessionState').textContent=demoState?.recorder_session||'—';
+  if(Date.now()>=demoMessageUntil){$('demoControlMessage').textContent=!stationOnline?'Demo station is unavailable. Select Prepare Torque Link first.':demoState?.message||'Waiting for Demo status...';$('demoControlMessage').className='control-message'}
+}
+async function pollDemo(){try{const response=await fetch('/demo/api/state',{cache:'no-store'});if(!response.ok)throw Error(`Demo station unavailable (${response.status})`);demoState=await response.json()}catch(error){demoState=null;if(Date.now()>=demoMessageUntil){$('demoControlMessage').textContent=error.message;$('demoControlMessage').className='control-message failed'}}finally{renderDemoControls()}}
+function quaternionFromRpyDegrees(roll,pitch,yaw){const scale=Math.PI/360,hr=roll*scale,hp=pitch*scale,hy=yaw*scale,cr=Math.cos(hr),sr=Math.sin(hr),cp=Math.cos(hp),sp=Math.sin(hp),cy=Math.cos(hy),sy=Math.sin(hy),quaternion={qx:sr*cp*cy-cr*sp*sy,qy:cr*sp*cy+sr*cp*sy,qz:cr*cp*sy-sr*sp*cy,qw:cr*cp*cy+sr*sp*sy},norm=Math.hypot(quaternion.qx,quaternion.qy,quaternion.qz,quaternion.qw);Object.keys(quaternion).forEach(key=>quaternion[key]/=norm);return quaternion}
+function rpyDegreesFromQuaternion(pose){let qx=Number(pose.qx),qy=Number(pose.qy),qz=Number(pose.qz),qw=Number(pose.qw),norm=Math.hypot(qx,qy,qz,qw);if(!Number.isFinite(norm)||norm<1e-12)return{roll:0,pitch:0,yaw:0};qx/=norm;qy/=norm;qz/=norm;qw/=norm;const roll=Math.atan2(2*(qw*qx+qy*qz),1-2*(qx*qx+qy*qy)),pitch=Math.asin(Math.max(-1,Math.min(1,2*(qw*qy-qz*qx)))),yaw=Math.atan2(2*(qw*qz+qx*qy),1-2*(qy*qy+qz*qz)),degrees=180/Math.PI;return{roll:roll*degrees,pitch:pitch*degrees,yaw:yaw*degrees}}
+function readPose(id){const values={};document.querySelectorAll('#'+id+' input').forEach(input=>values[input.dataset.key]=Number(input.value));return{x:values.x,y:values.y,z:values.z,...quaternionFromRpyDegrees(values.roll,values.pitch,values.yaw)}}
+function writePose(id,pose){const values={...pose,...rpyDegreesFromQuaternion(pose)};document.querySelectorAll('#'+id+' input').forEach(input=>input.value=Number(values[input.dataset.key]).toFixed(['x','y','z'].includes(input.dataset.key)?4:1))}
 function writePoseXY(id,x,y){document.querySelector(`#${id} input[data-key="x"]`).value=x.toFixed(4);document.querySelector(`#${id} input[data-key="y"]`).value=y.toFixed(4)}
 function applyTaskDefaults(taskId){const profile=taskProfiles[taskId],settings=state?.gui_settings||{},start=settings.start_by_task?.[taskId]||profile?.start,goal=settings.goal_by_task?.[taskId]||profile?.goal;if(start)writePose('startPose',start);if(goal)writePose('goalPose',goal);$('taskVideoRecord').checked=settings.render_video===true;goalPending=false;setPointTarget('start');syncConstraintSources(true);drawTaskPlot()}
 function syncConstraintSources(preferSaved=false){const taskId=$('taskType').value,select=$('constraintSource'),sources=state?.constraint_sources?.[taskId]||[{id:'true',label:'True constraints',compatible:true}],saved=state?.gui_settings?.constraint_source_by_task?.[taskId]||'true',current=select.value;select.innerHTML=sources.map(source=>`<option value="${source.id}" ${source.compatible?'':`disabled title="${source.reason||'incompatible'}"`}>${source.label}${source.compatible?'':` (incompatible)`}</option>`).join('');const selected=!preferSaved&&sources.some(source=>source.id===current&&source.compatible)?current:saved;select.value=sources.some(source=>source.id===selected&&source.compatible)?selected:'true'}
@@ -141,9 +180,9 @@ function renderTaskButtons(){
   sim.textContent=active&&mode==='simulator'?'Stop Simulation':'Simulate';sim.className=active&&mode==='simulator'?'danger':'simulate';sim.disabled=abortPending||(active?mode!=='simulator':busy||goalPending);
   real.textContent=active&&mode==='real'?'Stop Execution':'Execute';real.className=active&&mode==='real'?'danger':'primary';real.disabled=abortPending||(active?mode!=='real':busy||goalPending);
 }
-function setPointTarget(target){pointTarget=target;$('pointTarget').textContent=`下一次点击：${target==='start'?'Start':'Goal'}`;renderTaskButtons()}
-function sceneLabel(source){return source==='simulation'?'PyBullet 实时':source==='optitrack'?'OptiTrack 实时':'固定参考'}
-function poseMatches(first,second){return first&&second&&['x','y','z','qx','qy','qz','qw'].every(key=>Math.abs(Number(first[key])-Number(second[key]))<1e-6)}
+function setPointTarget(target){pointTarget=target;$('pointTarget').textContent=`Next click: ${target==='start'?'Start':'Goal'}`;renderTaskButtons()}
+function sceneLabel(source){return source==='simulation'?'PyBullet Live':source==='optitrack'?'OptiTrack Live':'Fixed Reference'}
+function poseMatches(first,second){if(!first||!second||!['x','y','z'].every(key=>Math.abs(Number(first[key])-Number(second[key]))<1e-6))return false;const direct=['qx','qy','qz','qw'].every(key=>Math.abs(Number(first[key])-Number(second[key]))<1e-6),negated=['qx','qy','qz','qw'].every(key=>Math.abs(Number(first[key])+Number(second[key]))<1e-6);return direct||negated}
 function planMatchesSelection(){return poseMatches(state?.task?.start,readPose('startPose'))&&poseMatches(state?.task?.goal,readPose('goalPose'))}
 function directionArrow(context,points,color){if(points.length<2)return;const lengths=[];let total=0;for(let index=1;index<points.length;index++){const length=Math.hypot(points[index][0]-points[index-1][0],points[index][1]-points[index-1][1]);lengths.push(length);total+=length}if(total<8)return;let target=total*.58,segment=0;while(segment<lengths.length-1&&target>lengths[segment]){target-=lengths[segment];segment++}const first=points[segment],second=points[segment+1],length=Math.max(lengths[segment],1e-9),phase=Math.min(1,Math.max(0,target/length)),x=first[0]+phase*(second[0]-first[0]),y=first[1]+phase*(second[1]-first[1]),angle=Math.atan2(second[1]-first[1],second[0]-first[0]),size=9;context.fillStyle=color;context.beginPath();context.moveTo(x+size*Math.cos(angle),y+size*Math.sin(angle));context.lineTo(x+size*Math.cos(angle+2.55),y+size*Math.sin(angle+2.55));context.lineTo(x+size*Math.cos(angle-2.55),y+size*Math.sin(angle-2.55));context.closePath();context.fill()}
 
@@ -166,7 +205,7 @@ function drawFeaturePlots(){
     context.clearRect(0,0,width,height);context.fillStyle='#091019';context.fillRect(0,0,width,height);
     const valid=index<0?[]:samples.filter(sample=>Array.isArray(sample)&&Number.isFinite(sample[0])&&Number.isFinite(sample[index+1]));
     const plannedValid=plannedIndex<0?[]:plannedSamples.filter(sample=>Array.isArray(sample)&&Number.isFinite(sample[0])&&Number.isFinite(sample[plannedIndex+1]));
-    const referenceSeries=plannedValid.length?plannedSeries:series,references=featureReferences(referenceSeries,plot.name),planningReferences=referenceSeries.planning_constraint_source&&referenceSeries.planning_constraint_source!=='true'?featureReferences(referenceSeries,plot.name,'planning_constraint_specs'):[];if(!valid.length&&!plannedValid.length){context.fillStyle='#8191a6';context.font='13px system-ui';context.fillText('等待 Planner 特征数据',left,Math.round(height/2));$(plot.value).textContent='—';continue}
+    const referenceSeries=plannedValid.length?plannedSeries:series,references=featureReferences(referenceSeries,plot.name),planningReferences=referenceSeries.planning_constraint_source&&referenceSeries.planning_constraint_source!=='true'?featureReferences(referenceSeries,plot.name,'planning_constraint_specs'):[];if(!valid.length&&!plannedValid.length){context.fillStyle='#8191a6';context.font='13px system-ui';context.fillText('Waiting for planner feature data',left,Math.round(height/2));$(plot.value).textContent='—';continue}
     const times=valid.map(sample=>Number(sample[0])),plannedTimes=plannedValid.map(sample=>Number(sample[0])),values=valid.map(sample=>Number(sample[index+1])),plannedValues=plannedValid.map(sample=>Number(sample[plannedIndex+1])),referenceValues=[...references,...planningReferences].map(value=>value.value),tmax=Math.max(1,...times,...plannedTimes,...boundaries,...transitionEnds);
     let ymin=Math.min(...values,...plannedValues,...referenceValues),ymax=Math.max(...values,...plannedValues,...referenceValues),span=ymax-ymin;if(span<1e-6){span=Math.max(.02,Math.abs(ymax)*.2);ymin-=span/2;ymax+=span/2}else{ymin-=span*.12;ymax+=span*.12}
     const px=time=>left+time/tmax*(width-left-right),py=value=>height-bottom-(value-ymin)/(ymax-ymin)*(height-top-bottom);
@@ -186,28 +225,28 @@ function drawFeaturePlots(){
 
 function drawTaskPlot(){
   const context=taskContext,canvas=taskCanvas,width=canvas.width,height=canvas.height,margin=48;
-  const trace=visualization.trace||[],plannedTrace=planMatchesSelection()?(visualization.planned_trace||[]):[],current=visualization.current_ee,scene=visualization.scene_geometry||{};
+  const toPlot=point=>[Number(point[1]),Number(point[0])],trace=(visualization.trace||[]).map(toPlot),plannedTrace=(planMatchesSelection()?(visualization.planned_trace||[]):[]).map(toPlot),current=visualization.current_ee,scene=visualization.scene_geometry||{};
   const start=readPose('startPose'),goal=readPose('goalPose');
-  const points=[[start.x,start.y],...plannedTrace,...trace];if(!goalPending)points.push([goal.x,goal.y]);if(current)points.push([current.x,current.y]);
+  const startPoint=[start.y,start.x],goalPoint=[goal.y,goal.x],currentPoint=current?[current.y,current.x]:null,points=[startPoint,...plannedTrace,...trace];if(!goalPending)points.push(goalPoint);if(currentPoint)points.push(currentPoint);
   let barCorners=[];
-  if(scene.bar){const [cx,cy]=scene.bar.pivot,[ax,ay]=scene.bar.axis,[umin,umax]=scene.bar.outline_u,[vmin,vmax]=scene.bar.outline_v,lx=-ay,ly=ax;barCorners=[[umin,vmin],[umax,vmin],[umax,vmax],[umin,vmax]].map(([u,v])=>[cx+u*ax+v*lx,cy+u*ay+v*ly]);points.push(...barCorners)}
-  if(scene.obstacle){const [cx,cy]=scene.obstacle.center,r=Math.max(scene.obstacle.radius,FIXED_OBSTACLE_ENVELOPE_RADIUS_M);points.push([cx-r,cy-r],[cx+r,cy+r])}
-  let xmin=.30,xmax=.85,ymin=-.55,ymax=.25;
+  if(scene.bar){const [cx,cy]=scene.bar.pivot,[ax,ay]=scene.bar.axis,[umin,umax]=scene.bar.outline_u,[vmin,vmax]=scene.bar.outline_v,lx=-ay,ly=ax;barCorners=[[umin,vmin],[umax,vmin],[umax,vmax],[umin,vmax]].map(([u,v])=>toPlot([cx+u*ax+v*lx,cy+u*ay+v*ly]));points.push(...barCorners)}
+  if(scene.obstacle){const [robotX,robotY]=scene.obstacle.center,r=Math.max(scene.obstacle.radius,FIXED_OBSTACLE_ENVELOPE_RADIUS_M),cx=robotY,cy=robotX;points.push([cx-r,cy-r],[cx+r,cy+r])}
+  let xmin=-.55,xmax=.25,ymin=.30,ymax=.85;
   if(points.length){xmin=Math.min(xmin,...points.map(point=>point[0]));xmax=Math.max(xmax,...points.map(point=>point[0]));ymin=Math.min(ymin,...points.map(point=>point[1]));ymax=Math.max(ymax,...points.map(point=>point[1]));const centerX=.5*(xmin+xmax),centerY=.5*(ymin+ymax);let spanX=Math.max(.12,(xmax-xmin)*1.15),spanY=Math.max(.12,(ymax-ymin)*1.15),aspect=(width-2*margin)/(height-2*margin);if(spanX/spanY>aspect)spanY=spanX/aspect;else spanX=spanY*aspect;xmin=centerX-.5*spanX;xmax=centerX+.5*spanX;ymin=centerY-.5*spanY;ymax=centerY+.5*spanY}
-  const px=x=>margin+(x-xmin)/(xmax-xmin)*(width-2*margin),py=y=>height-margin-(y-ymin)/(ymax-ymin)*(height-2*margin);
+  const px=x=>width-margin-(x-xmin)/(xmax-xmin)*(width-2*margin),py=y=>height-margin-(y-ymin)/(ymax-ymin)*(height-2*margin);
   plotTransform={xmin,xmax,ymin,ymax,margin,width,height};context.clearRect(0,0,width,height);context.fillStyle='#091019';context.fillRect(0,0,width,height);
   context.strokeStyle='#263444';context.lineWidth=1;context.fillStyle='#8191a6';context.font='12px system-ui';
   for(let index=0;index<=6;index++){const x=xmin+index*(xmax-xmin)/6,y=ymin+index*(ymax-ymin)/6;context.beginPath();context.moveTo(px(x),margin);context.lineTo(px(x),height-margin);context.stroke();context.fillText(x.toFixed(3),px(x)-18,height-20);context.beginPath();context.moveTo(margin,py(y));context.lineTo(width-margin,py(y));context.stroke();context.fillText(y.toFixed(3),6,py(y)+4)}
-  context.fillStyle='#aab7c7';context.fillText('X (m)',width/2-15,height-5);context.save();context.translate(13,height/2);context.rotate(-Math.PI/2);context.fillText('Y (m)',0,0);context.restore();
-  if(!goalPending&&!plannedTrace.length){context.setLineDash([7,6]);context.strokeStyle='#64748a';context.lineWidth=1.5;context.beginPath();context.moveTo(px(start.x),py(start.y));context.lineTo(px(goal.x),py(goal.y));context.stroke();context.setLineDash([])}
-  if(scene.obstacle){const [cx,cy]=scene.obstacle.center,r=scene.obstacle.radius,live=scene.obstacle.live!==false,envelopeRadius=Math.abs(px(cx+FIXED_OBSTACLE_ENVELOPE_RADIUS_M)-px(cx)),screenRadius=Math.abs(px(cx+r)-px(cx));context.setLineDash(live?[]:[8,6]);context.fillStyle='rgba(239,107,115,.055)';context.strokeStyle='rgba(239,107,115,.38)';context.lineWidth=1.5;context.beginPath();context.arc(px(cx),py(cy),envelopeRadius,0,2*Math.PI);context.fill();context.stroke();context.fillStyle=live?'rgba(239,107,115,.18)':'rgba(239,107,115,.05)';context.strokeStyle='#ef6b73';context.lineWidth=2;context.beginPath();context.arc(px(cx),py(cy),screenRadius,0,2*Math.PI);context.fill();context.stroke();context.setLineDash([])}
+  context.fillStyle='#aab7c7';context.fillText('Y (m)',width/2-15,height-5);context.save();context.translate(13,height/2);context.rotate(-Math.PI/2);context.fillText('X (m)',0,0);context.restore();
+  if(!goalPending&&!plannedTrace.length){context.setLineDash([7,6]);context.strokeStyle='#64748a';context.lineWidth=1.5;context.beginPath();context.moveTo(px(startPoint[0]),py(startPoint[1]));context.lineTo(px(goalPoint[0]),py(goalPoint[1]));context.stroke();context.setLineDash([])}
+  if(scene.obstacle){const [robotX,robotY]=scene.obstacle.center,cx=robotY,cy=robotX,r=scene.obstacle.radius,live=scene.obstacle.live!==false,envelopeRadius=Math.abs(px(cx+FIXED_OBSTACLE_ENVELOPE_RADIUS_M)-px(cx)),screenRadius=Math.abs(px(cx+r)-px(cx));context.setLineDash(live?[]:[8,6]);context.fillStyle='rgba(239,107,115,.055)';context.strokeStyle='rgba(239,107,115,.38)';context.lineWidth=1.5;context.beginPath();context.arc(px(cx),py(cy),envelopeRadius,0,2*Math.PI);context.fill();context.stroke();context.fillStyle=live?'rgba(239,107,115,.18)':'rgba(239,107,115,.05)';context.strokeStyle='#ef6b73';context.lineWidth=2;context.beginPath();context.arc(px(cx),py(cy),screenRadius,0,2*Math.PI);context.fill();context.stroke();context.setLineDash([])}
   if(scene.bar&&barCorners.length===4){const live=scene.bar.live!==false;context.setLineDash(live?[]:[8,6]);context.fillStyle=live?'rgba(185,196,210,.20)':'rgba(185,196,210,.04)';context.strokeStyle='#b9c4d2';context.lineWidth=2;context.beginPath();barCorners.forEach((point,index)=>index?context.lineTo(px(point[0]),py(point[1])):context.moveTo(px(point[0]),py(point[1])));context.closePath();context.fill();context.stroke();context.setLineDash([])}
   const profile=taskProfiles[$('taskType').value]||{count:0,stages:[]},rawBoundaries=planMatchesSelection()&&Array.isArray(visualization.stage_boundary_indices)?visualization.stage_boundary_indices:[],validBoundaries=rawBoundaries.length===profile.count&&rawBoundaries.every((value,index)=>Number.isInteger(value)&&value>=0&&value<plannedTrace.length&&(index===0||value>rawBoundaries[index-1]));let stageSegments=[];
   if(plannedTrace.length>1){if(validBoundaries){stageSegments=rawBoundaries.map((end,index)=>({index,points:plannedTrace.slice(index===0?0:rawBoundaries[index-1],end+1)}))}else stageSegments=[{index:0,points:plannedTrace}];context.setLineDash([8,5]);stageSegments.forEach(segment=>{const color=stageColors[segment.index%stageColors.length],screenPoints=segment.points.map(point=>[px(point[0]),py(point[1])]);context.strokeStyle=color;context.lineWidth=3;context.beginPath();screenPoints.forEach((point,index)=>index?context.lineTo(point[0],point[1]):context.moveTo(point[0],point[1]));context.stroke();directionArrow(context,screenPoints,color)});context.setLineDash([]);if(validBoundaries){rawBoundaries.forEach((boundary,index)=>{const point=plannedTrace[boundary],color=stageColors[index%stageColors.length];context.fillStyle='#091019';context.strokeStyle=color;context.lineWidth=1.5;context.beginPath();context.arc(px(point[0]),py(point[1]),5,0,2*Math.PI);context.fill();context.stroke();context.fillStyle=color;context.font='bold 9px system-ui';context.fillText(`S${index+1}`,px(point[0])-5,py(point[1])-8)})}}
   if(trace.length>1){context.strokeStyle='#68a9ff';context.lineWidth=3;context.beginPath();trace.forEach((point,index)=>index?context.lineTo(px(point[0]),py(point[1])):context.moveTo(px(point[0]),py(point[1])));context.stroke()}
-  const marker=(pose,color,label)=>{context.fillStyle=color;context.beginPath();context.arc(px(pose.x),py(pose.y),7,0,2*Math.PI);context.fill();context.fillStyle='#07111c';context.font='bold 10px system-ui';context.fillText(label,px(pose.x)-3.5,py(pose.y)+3.5)};
-  marker(start,'#55d68b','S');if(!goalPending)marker(goal,'#ff6b72','G');
-  if(current){context.fillStyle='#f0b65d';context.beginPath();context.arc(px(current.x),py(current.y),6,0,2*Math.PI);context.fill();$('taskEeValue').textContent=`EE: x=${current.x.toFixed(4)}, y=${current.y.toFixed(4)}, z=${current.z.toFixed(4)} m`}else $('taskEeValue').textContent='EE: —';
+  const marker=(point,color,label)=>{context.fillStyle=color;context.beginPath();context.arc(px(point[0]),py(point[1]),7,0,2*Math.PI);context.fill();context.fillStyle='#07111c';context.font='bold 10px system-ui';context.fillText(label,px(point[0])-3.5,py(point[1])+3.5)};
+  marker(startPoint,'#55d68b','S');if(!goalPending)marker(goalPoint,'#ff6b72','G');
+  if(currentPoint){context.fillStyle='#f0b65d';context.beginPath();context.arc(px(currentPoint[0]),py(currentPoint[1]),6,0,2*Math.PI);context.fill();$('taskEeValue').textContent=`EE: x=${current.x.toFixed(4)}, y=${current.y.toFixed(4)}, z=${current.z.toFixed(4)} m`}else $('taskEeValue').textContent='EE: —';
   $('stageColorLegend').innerHTML=profile.stages.map((name,index)=>`<i class="legend-line dashed" style="color:${stageColors[index%stageColors.length]}"></i>S${index+1} ${name}`).join(' · ');$('traceCount').textContent=`Plan ${plannedTrace.length} · Executed ${trace.length} points`;$('sceneSource').textContent=sceneLabel(visualization.source);drawFeaturePlots();
 }
 
@@ -215,22 +254,23 @@ async function poll(){try{const response=await fetch('/api/state',{cache:'no-sto
 async function pollVisualization(){try{const response=await fetch('/api/task/visualization',{cache:'no-store'});if(response.ok){visualization=await response.json();drawTaskPlot()}}catch(error){}finally{setTimeout(pollVisualization,250)}}
 function render(){
   syncTaskProfiles();
-  flag($('container'),state.container_running,'运行中','已停止');flag($('driver'),state.driver_running,'运行中','已停止');flag($('demo'),state.demo_running,'运行中','已停止');flag($('simulator'),state.simulator_running,'运行中','已停止');flag($('network'),state.robot_network.configured,'已配置','未配置');const control=state.robot_control||{mode:'idle',label:'Idle',healthy:true},controlWaiting=control.mode==='idle'||control.mode.endsWith('_waiting');$('controlMode').textContent=control.label;$('controlMode').className='value '+(controlWaiting?'warn':control.healthy?'ok':'bad');
+  flag($('container'),state.container_running,'Running','Stopped');flag($('driver'),state.driver_running,'Running','Stopped');flag($('demo'),state.demo_running,'Running','Stopped');flag($('simulator'),state.simulator_running,'Running','Stopped');flag($('network'),state.robot_network.configured,'Configured','Not configured');const control=state.robot_control||{mode:'idle',label:'Idle',healthy:true},controlWaiting=control.mode==='idle'||control.mode.endsWith('_waiting');$('controlMode').textContent=control.label;$('controlMode').className='value '+(controlWaiting?'warn':control.healthy?'ok':'bad');
   const busy=state.job.busy,task=state.task||{},activeMessage=busy&&task.message?task.message:state.job.message;if(!taskActivePhases.includes(task.phase))abortPending=false;$('busy').textContent=busy?state.job.name:'Ready';$('busy').className='badge '+(busy?'warn':'ok');if(Date.now()>=localMessageUntil){$('message').textContent=activeMessage;$('message').className='message'}$('logs').textContent=state.logs.join('\n');$('logs').scrollTop=$('logs').scrollHeight;
-  $('prepareDemo').disabled=busy||control.mode==='demo';const homeActive=taskActivePhases.includes(task.phase)&&task.mode==='home';$('returnHome').textContent=homeActive?'停止回位':'回到舒适位置（Position）';$('returnHome').className=homeActive?'danger':'primary';$('returnHome').disabled=abortPending||(taskActivePhases.includes(task.phase)?!homeActive:busy);$('releaseControl').disabled=busy||control.mode==='idle';renderTaskButtons();$('taskType').disabled=busy||taskActivePhases.includes(task.phase);$('constraintSource').disabled=busy||taskActivePhases.includes(task.phase);$('taskVideoRecord').disabled=busy;$('taskAbort').disabled=abortPending||!taskActivePhases.includes(task.phase);if(task.task_id&&$('taskType').value!==task.task_id){$('taskType').value=task.task_id;applyTaskDefaults(task.task_id)}const profile=taskProfiles[$('taskType').value]||{count:0,stages:[]};$('taskStages').textContent=profile.stages.map((name,index)=>`S${index+1} ${name}`).join(' · ');$('plannerStageCount').textContent=`${profile.count}-stage constraint planner`;$('featureAxialCard').style.display=$('taskType').value==='BarClean'?'block':'none';$('taskIdState').textContent=task.task_id||'—';$('taskConstraintState').textContent=task.constraint_source_label||'True constraints';$('taskModeState').textContent=task.mode||'—';$('taskPhase').textContent=task.message||task.phase||'idle';$('taskRecording').textContent=task.mode==='home'?'不保存':'自动保存';$('taskVideoState').textContent=task.video?'开启':'关闭';$('taskOutput').textContent=task.run_directory?task.run_directory.replace('/data/',state.project_root+'/data/'):'—';
-  if(task.phase==='starting'){videoLoaded=false;$('taskVideo').pause();$('taskVideo').removeAttribute('src');$('taskVideo').style.display='none'}if(task.video_available&&!videoLoaded){$('taskVideo').style.display='block';$('taskVideo').src='/api/task/video?v='+Date.now();videoLoaded=true}if(task.phase==='complete'&&!task.video_available)$('taskVideo').style.display='none';if(state.demo_running&&!lastDemoRunning)$('demoFrame').src=state.demo_url+'/?reload='+Date.now();lastDemoRunning=state.demo_running;drawTaskPlot();
+  const homeActive=taskActivePhases.includes(task.phase)&&task.mode==='home';$('returnHome').textContent=homeActive?'Stop Return Home':'Return Home (Position)';$('returnHome').className=(homeActive?'danger':'primary')+' wide';$('returnHome').disabled=abortPending||(taskActivePhases.includes(task.phase)?!homeActive:busy);renderTaskButtons();$('taskType').disabled=busy||taskActivePhases.includes(task.phase);$('constraintSource').disabled=busy||taskActivePhases.includes(task.phase);$('taskVideoRecord').disabled=busy;$('taskAbort').disabled=abortPending||!taskActivePhases.includes(task.phase);if(task.task_id&&$('taskType').value!==task.task_id){$('taskType').value=task.task_id;applyTaskDefaults(task.task_id)}const profile=taskProfiles[$('taskType').value]||{count:0,stages:[]};$('taskStages').textContent=profile.stages.map((name,index)=>`S${index+1} ${name}`).join(' · ');$('plannerStageCount').textContent=`${profile.count}-stage constraint planner`;$('featureAxialCard').style.display=$('taskType').value==='BarClean'?'block':'none';$('taskIdState').textContent=task.task_id||'—';$('taskConstraintState').textContent=task.constraint_source_label||'True constraints';$('taskModeState').textContent=task.mode||'—';$('taskPhase').textContent=task.message||task.phase||'idle';$('taskPhaseBadge').textContent=task.phase||'idle';$('taskPhaseBadge').className='badge '+(taskActivePhases.includes(task.phase)?'warn':task.phase==='failed'?'bad':'ok');$('taskRecording').textContent=task.mode==='home'?'Not saved':'Auto-save';$('taskVideoState').textContent=task.video?'On':'Off';$('taskOutput').textContent=task.run_directory?task.run_directory.replace('/data/',state.project_root+'/data/'):'—';renderDemoControls();
+  if(task.phase==='starting'){videoLoaded=false;$('taskVideo').pause();$('taskVideo').removeAttribute('src');$('taskVideo').style.display='none'}if(task.video_available&&!videoLoaded){$('taskVideo').style.display='block';$('taskVideo').src='/api/task/video?v='+Date.now();videoLoaded=true}if(task.phase==='complete'&&!task.video_available)$('taskVideo').style.display='none';drawTaskPlot();
 }
 async function action(path,body={}){const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Stage-Token':token},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.message);await poll()}
 
-taskCanvas.addEventListener('click',event=>{if(state?.job?.busy){showError('Task 运行期间不能修改起点或终点');return}if(!plotTransform)return;const rectangle=taskCanvas.getBoundingClientRect(),canvasX=(event.clientX-rectangle.left)*taskCanvas.width/rectangle.width,canvasY=(event.clientY-rectangle.top)*taskCanvas.height/rectangle.height,{xmin,xmax,ymin,ymax,margin,width,height}=plotTransform;if(canvasX<margin||canvasX>width-margin||canvasY<margin||canvasY>height-margin)return;const x=xmin+(canvasX-margin)/(width-2*margin)*(xmax-xmin),y=ymax-(canvasY-margin)/(height-2*margin)*(ymax-ymin),target=pointTarget;writePoseXY(target==='start'?'startPose':'goalPose',x,y);goalPending=target==='start';setPointTarget(target==='start'?'goal':'start');drawTaskPlot();saveSettings()});
+taskCanvas.addEventListener('click',event=>{if(state?.job?.busy){showError('Start and goal cannot be changed while a task is running.');return}if(!plotTransform)return;const rectangle=taskCanvas.getBoundingClientRect(),canvasX=(event.clientX-rectangle.left)*taskCanvas.width/rectangle.width,canvasY=(event.clientY-rectangle.top)*taskCanvas.height/rectangle.height,{xmin,xmax,ymin,ymax,margin,width,height}=plotTransform;if(canvasX<margin||canvasX>width-margin||canvasY<margin||canvasY>height-margin)return;const robotY=xmax-(canvasX-margin)/(width-2*margin)*(xmax-xmin),robotX=ymax-(canvasY-margin)/(height-2*margin)*(ymax-ymin),target=pointTarget;writePoseXY(target==='start'?'startPose':'goalPose',robotX,robotY);goalPending=target==='start';setPointTarget(target==='start'?'goal':'start');drawTaskPlot();saveSettings()});
 document.querySelectorAll('#startPose input,#goalPose input').forEach(input=>input.addEventListener('input',()=>{drawTaskPlot();saveSettings()}));
-$('prepareDemo').onclick=()=>action('/api/control/demo').catch(error=>showError(error.message));$('returnHome').onclick=()=>taskIsActive()&&state?.task?.mode==='home'?stopTask():action('/api/control/home').catch(error=>showError(error.message));$('releaseControl').onclick=()=>action('/api/control/idle').catch(error=>showError(error.message));
+$('prepareDemo').onclick=()=>action('/api/control/demo').then(pollDemo).catch(error=>showError(error.message));$('returnHome').onclick=()=>taskIsActive()&&state?.task?.mode==='home'?stopTask():action('/api/control/home').catch(error=>showError(error.message));$('releaseControl').onclick=()=>action('/api/control/idle').then(pollDemo).catch(error=>showError(error.message));
+$('demoRecord').onclick=async()=>{try{const recording=Boolean(demoState?.recording);if(!recording){await demoPost('/demo/api/task',{task_id:$('taskType').value});if(!demoState?.mode_active)await demoPost('/demo/api/demo_mode',{enabled:true})}await demoPost('/demo/api/record',{enabled:!recording,label:$('demoLabel').value.trim()||'demo',notes:$('demoNotes').value.trim()})}catch(error){}}
+$('demoLabel').value=localStorage.getItem('stageDemoLabel')||'demo_01';$('demoNotes').value=localStorage.getItem('stageDemoNotes')||'';$('demoLabel').oninput=()=>localStorage.setItem('stageDemoLabel',$('demoLabel').value);$('demoNotes').oninput=()=>localStorage.setItem('stageDemoNotes',$('demoNotes').value);
 $('taskType').onchange=()=>{applyTaskDefaults($('taskType').value);action('/api/task/select',{task_id:$('taskType').value}).then(saveSettings).catch(error=>{showError(error.message);poll()})};
 $('constraintSource').onchange=saveSettings;$('taskVideoRecord').onchange=saveSettings;
-window.addEventListener('message',event=>{if(event.origin!==window.location.origin||event.data?.type!=='stage-task-select')return;action('/api/task/select',{task_id:event.data.task_id}).catch(error=>{showError(error.message);poll()})});
 function executeTask(mode){action('/api/task/execute',{task_id:$('taskType').value,constraint_source_id:$('constraintSource').value,mode,render_video:$('taskVideoRecord').checked,start:readPose('startPose'),goal:readPose('goalPose')}).catch(error=>showError(error.message))}
 function stopTask(){abortPending=true;renderTaskButtons();$('taskAbort').disabled=true;action('/api/task/abort').catch(error=>{abortPending=false;showError(error.message);poll()})}
 $('taskSimulate').onclick=()=>taskIsActive()?stopTask():executeTask('simulator');$('taskExecute').onclick=()=>taskIsActive()?stopTask():executeTask('real');
 $('taskAbort').onclick=stopTask;
-drawTaskPlot();poll();pollVisualization();setInterval(poll,2000);
+drawTaskPlot();poll();pollDemo();pollVisualization();setInterval(poll,2000);setInterval(pollDemo,500);
 </script></body></html>

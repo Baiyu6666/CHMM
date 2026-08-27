@@ -750,23 +750,41 @@ class StageConstraintTrajectoryOptimizer:
         return np.asarray([index for index in range(int(length)) if index not in fixed], dtype=int)
 
     @staticmethod
-    def _pack(positions, raw_axes, yaws, free_positions, free_yaws):
+    def _pack(
+        positions,
+        raw_axes,
+        yaws,
+        free_positions,
+        free_axes,
+        free_yaws,
+    ):
         return np.concatenate(
             [
                 positions[free_positions].reshape(-1),
-                raw_axes.reshape(-1),
+                raw_axes[free_axes].reshape(-1),
                 yaws[free_yaws].reshape(-1),
             ]
         )
 
     @staticmethod
-    def _unpack(values, position_template, yaw_template, free_positions, free_yaws):
+    def _unpack(
+        values,
+        position_template,
+        axis_template,
+        yaw_template,
+        free_positions,
+        free_axes,
+        free_yaws,
+    ):
         values = np.asarray(values, dtype=float)
         position_count = 3 * len(free_positions)
         positions = np.asarray(position_template, dtype=float).copy()
         positions[free_positions] = values[:position_count].reshape((-1, 3))
-        axis_count = 3 * len(position_template)
-        raw_axes = values[position_count:position_count + axis_count].reshape((-1, 3))
+        axis_count = 3 * len(free_axes)
+        raw_axes = np.asarray(axis_template, dtype=float).copy()
+        raw_axes[free_axes] = values[
+            position_count:position_count + axis_count
+        ].reshape((-1, 3))
         axes = _unit(raw_axes, "optimized tool axes")
         yaws = np.asarray(yaw_template, dtype=float).copy()
         yaws[free_yaws] = values[position_count + axis_count:]
@@ -776,8 +794,10 @@ class StageConstraintTrajectoryOptimizer:
         self,
         values,
         position_template,
+        axis_template,
         yaw_template,
         free_positions,
+        free_axes,
         free_yaws,
         stage_weights,
         target_steps,
@@ -788,7 +808,13 @@ class StageConstraintTrajectoryOptimizer:
         obstacle_pose,
     ):
         positions, raw_axes, axes, yaws = self._unpack(
-            values, position_template, yaw_template, free_positions, free_yaws
+            values,
+            position_template,
+            axis_template,
+            yaw_template,
+            free_positions,
+            free_axes,
+            free_yaws,
         )
         residuals = []
         position_delta = np.diff(positions, axis=0)
@@ -991,6 +1017,7 @@ class StageConstraintTrajectoryOptimizer:
             settling_windows,
         )
         free_positions = self._free_position_indices(len(position_template), endpoint_indices)
+        free_axes = np.arange(1, len(position_template) - 1, dtype=int)
         free_yaws = np.arange(1, len(position_template) - 1, dtype=int)
         target_steps = np.linalg.norm(np.diff(position_template, axis=0), axis=1)
         best = None
@@ -1003,23 +1030,34 @@ class StageConstraintTrajectoryOptimizer:
                 positions_initial[free_positions] += rng.normal(
                     scale=0.004 * attempt, size=(len(free_positions), 3)
                 )
-                axes_initial = _unit(
-                    axes_initial + rng.normal(scale=0.06 * attempt, size=axes_initial.shape),
+                axes_initial[free_axes] = _unit(
+                    axes_initial[free_axes]
+                    + rng.normal(
+                        scale=0.06 * attempt,
+                        size=(len(free_axes), 3),
+                    ),
                     "initial tool axes",
                 )
                 yaws_initial[free_yaws] += rng.normal(
                     scale=0.04 * attempt, size=len(free_yaws)
                 )
             initial = self._pack(
-                positions_initial, axes_initial, yaws_initial, free_positions, free_yaws
+                positions_initial,
+                axes_initial,
+                yaws_initial,
+                free_positions,
+                free_axes,
+                free_yaws,
             )
             result = least_squares(
                 self._residual,
                 initial,
                 args=(
                     position_template,
+                    axis_template,
                     yaw_template,
                     free_positions,
+                    free_axes,
                     free_yaws,
                     stage_weights,
                     target_steps,
@@ -1046,7 +1084,13 @@ class StageConstraintTrajectoryOptimizer:
 
         score, result = best
         positions, _raw_axes, axes, yaws = self._unpack(
-            result.x, position_template, yaw_template, free_positions, free_yaws
+            result.x,
+            position_template,
+            axis_template,
+            yaw_template,
+            free_positions,
+            free_axes,
+            free_yaws,
         )
         optimized_settling_distances = transition_distances.copy()
         for window in settling_windows:

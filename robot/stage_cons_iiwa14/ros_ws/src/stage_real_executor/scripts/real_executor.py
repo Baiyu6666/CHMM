@@ -795,58 +795,34 @@ class RealExecutor:
                     definition.get("frame_id"), self._base_frame
                 )
             )
-        pose = definition.get("pose", {})
         try:
-            position = np.asarray(
-                [pose["x"], pose["y"], pose["z"]], dtype=float
-            )
-            quaternion = np.asarray(
-                [pose["qx"], pose["qy"], pose["qz"], pose["qw"]], dtype=float
+            joint_position = np.asarray(
+                definition["joint_position_reference"], dtype=float
             )
             execution = definition["execution"]
             approach_speed = float(execution["approach_speed_mps"])
-            position_tolerance = float(
-                execution["approach_position_tolerance_m"]
-            )
-            joint_bridge_limit = float(
-                execution["approach_joint_bridge_limit_rad"]
-            )
         except (KeyError, TypeError, ValueError) as error:
             raise ValidationError("Home configuration is incomplete or invalid") from error
-        if not np.all(np.isfinite(position)) or not np.all(np.isfinite(quaternion)):
-            raise ValidationError("Home pose contains non-finite values")
-        return position, quaternion, approach_speed, position_tolerance, joint_bridge_limit
+        if joint_position.shape != (len(self._joint_names),):
+            raise ValidationError("Home configuration must contain seven joint positions")
+        if not np.all(np.isfinite(joint_position)):
+            raise ValidationError("Home joint positions contain non-finite values")
+        return joint_position, approach_speed
 
     def _build_home_plan(self, q_current):
-        (
-            position,
-            quaternion,
-            approach_speed,
-            position_tolerance,
-            joint_bridge_limit,
-        ) = self._load_home_definition()
+        joint_position, approach_speed = self._load_home_definition()
         self._trajectory_compiler.set_task_speeds(
             approach_speed, self._task_speed
         )
-        self._trajectory_compiler.set_approach_position_tolerance(
-            position_tolerance
-        )
-        self._trajectory_compiler.set_approach_joint_bridge_limit(
-            joint_bridge_limit
-        )
-        axis = self._trajectory_compiler.tool_z_from_quaternion(quaternion)
-        # Two identical task samples let the shared compiler produce exactly
-        # the Stage-0 segment while leaving a stationary task segment unused.
-        plan = self._trajectory_compiler.compile(
-            np.repeat(position[None, :], 2, axis=0),
-            np.repeat(axis[None, :], 2, axis=0),
+        plan = self._trajectory_compiler.compile_joint_home(
             q_current,
             abort_requested=self._abort.is_set,
+            target_q=joint_position,
         )
         plan["path_serial"] = self._path_serial
         plan["task_id"] = "RobotHome"
         plan["operation"] = "home"
-        plan["home_position"] = position.tolist()
+        plan["home_joint_position"] = joint_position.tolist()
         return plan
 
     def _return_home(self, _request):
@@ -865,7 +841,7 @@ class RealExecutor:
             self._abort.clear()
             self._publish(
                 "home_preparing",
-                message="Building the vertical-first trajectory to Robot Home",
+                message="Building a joint-posture trajectory to Robot Home",
             )
             prepared = self._build_home_plan(current)
             latest = self._fresh_joint_position()
@@ -1203,16 +1179,6 @@ class RealExecutor:
         try:
             if operation == "home":
                 self._run_segment("returning_home", prepared["approach"])
-                actual = self._fresh_joint_position()
-                home_error = float(
-                    np.max(np.abs(actual - prepared["approach"]["position"][-1]))
-                )
-                if home_error > math.radians(1.0):
-                    raise ValidationError(
-                        "Robot did not settle at Home ({:.3f} rad)".format(
-                            home_error
-                        )
-                    )
                 message = "Robot returned Home"
             else:
                 self._run_segment("moving_to_start", prepared["approach"])

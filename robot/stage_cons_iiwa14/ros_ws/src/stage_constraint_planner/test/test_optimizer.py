@@ -33,6 +33,51 @@ def test_smoothstep5_stays_inside_unit_interval_near_upper_endpoint():
     assert np.all(1.0 - smoothed >= 0.0)
 
 
+def test_orientation_unpack_keeps_user_start_and_goal_as_fixed_boundaries():
+    positions = np.asarray(
+        [
+            [0.0, 0.0, 0.2],
+            [0.1, 0.0, 0.2],
+            [0.2, 0.0, 0.2],
+            [0.3, 0.0, 0.2],
+        ]
+    )
+    axes = np.asarray(
+        [
+            [0.20, 0.0, -0.98],
+            [0.10, 0.0, -0.99],
+            [-0.10, 0.0, -0.99],
+            [-0.25, 0.0, -0.97],
+        ]
+    )
+    axes /= np.linalg.norm(axes, axis=1, keepdims=True)
+    yaws = np.asarray([0.3, 0.2, -0.1, -0.4])
+    free = np.asarray([1, 2], dtype=int)
+
+    packed = StageConstraintTrajectoryOptimizer._pack(
+        positions,
+        axes,
+        yaws,
+        free,
+        free,
+        free,
+    )
+    _, _, unpacked_axes, unpacked_yaws = (
+        StageConstraintTrajectoryOptimizer._unpack(
+            packed,
+            positions,
+            axes,
+            yaws,
+            free,
+            free,
+            free,
+        )
+    )
+
+    assert np.allclose(unpacked_axes[[0, -1]], axes[[0, -1]])
+    assert np.allclose(unpacked_yaws[[0, -1]], yaws[[0, -1]])
+
+
 def test_transform_pose_maps_optitrack_axes_into_robot_frame():
     rotation = np.asarray(
         [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
@@ -191,7 +236,6 @@ def test_bar_clean_subgoals_are_stored_as_final_coordinates_without_offsets():
     assert "endpoint_group_offsets" not in config
     assert np.allclose(optimizer._endpoint_positions_bar, endpoints)
     assert np.isclose(endpoints[1, 1], 0.0)
-    assert np.isclose(endpoints[2, 1] - endpoints[3, 1], 0.1145)
 
 
 def test_full_orientation_reconstruction_preserves_bar_relative_yaw():

@@ -167,6 +167,8 @@ def main() -> None:
             / "robot_home.json"
         )
         definition = json.loads(home_path.read_text(encoding="utf-8"))
+        home_execution = definition["execution"]
+        home_joints = np.asarray(definition["joint_position_reference"], dtype=float)
         pose = definition["pose"]
         position = [pose[key] for key in ("x", "y", "z")]
         quaternion = [pose[key] for key in ("qx", "qy", "qz", "qw")]
@@ -255,6 +257,8 @@ def main() -> None:
         ).read_text(encoding="utf-8")
     )
     execution = task_definition["execution"]
+    if arguments.home:
+        execution = home_execution
     compiler = CartesianTrajectoryCompiler(
         bullet,
         physics,
@@ -268,10 +272,19 @@ def main() -> None:
         velocity_scale=0.25,
         acceleration_limit=1.00,
         approach_speed=float(execution["approach_speed_mps"]),
-        task_speed=float(execution["task_speed_mps"]),
+        task_speed=float(
+            execution.get(
+                "task_speed_mps",
+                task_definition["execution"]["task_speed_mps"],
+            )
+        ),
         position_tolerance=0.003 if arguments.tool_z_only else 0.002,
-        approach_position_tolerance=0.01,
-        approach_joint_bridge_limit=3.0,
+        approach_position_tolerance=float(
+            execution.get("approach_position_tolerance_m", 0.01)
+        ),
+        approach_joint_bridge_limit=float(
+            execution.get("approach_joint_bridge_limit_rad", 3.0)
+        ),
         minimum_approach_z=0.20,
         approach_clearance_z=0.33,
     )
@@ -284,19 +297,18 @@ def main() -> None:
             math.cos(angle) * x_axes
             + math.sin(angle) * np.cross(axes, x_axes)
         )
-    result = compiler.compile(
-        positions,
-        axes,
-        start_q,
-        tool_x_axes=None if arguments.tool_z_only else x_axes,
-        tool_x_active=(
-            None
-            if arguments.home or arguments.tool_z_only
-            else tool_yaw_active
-        ),
-        approach_obstacle=None if arguments.home else approach_obstacle,
-        stage_timing=None if arguments.home else stage_timing,
-    )
+    if arguments.home:
+        result = compiler.compile_joint_home(start_q, home_joints)
+    else:
+        result = compiler.compile(
+            positions,
+            axes,
+            start_q,
+            tool_x_axes=None if arguments.tool_z_only else x_axes,
+            tool_x_active=None if arguments.tool_z_only else tool_yaw_active,
+            approach_obstacle=approach_obstacle,
+            stage_timing=stage_timing,
+        )
     selected_spin = None
     if arguments.tool_z_only:
         actual_x = np.asarray(

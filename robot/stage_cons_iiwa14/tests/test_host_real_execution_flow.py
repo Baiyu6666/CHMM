@@ -400,12 +400,13 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject._robot_iface_state = lambda: {"configured": True}
         self.subject._ros_nodes = lambda: ["/iiwa14/iiwa_driver"]
         self.subject._running_iiwa_controllers = lambda: ["SafeTorqueController"]
+        self.subject._start_demo_process = lambda: events.append("demo")
         self.subject._stop_driver_process = lambda: events.append("stop")
         self.subject._spawn = lambda *_args: events.append("spawn")
 
         self.subject.prepare_demo_control()
 
-        self.assertEqual(events, [])
+        self.assertEqual(events, ["demo"])
 
     def test_demo_prepare_releases_position_station_before_torque_driver(self):
         events = []
@@ -420,6 +421,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject._release_robot_control = (
             lambda reason: events.append(("release_position", reason))
         )
+        self.subject._start_demo_process = lambda: events.append(("demo",))
         self.subject._driver_process_containers = lambda: []
         self.subject._run = lambda *_args, **_kwargs: None
         self.subject._spawn = lambda name, command: (
@@ -432,9 +434,10 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject.prepare_demo_control()
 
         self.assertEqual(events[0][0], "release_position")
-        self.assertEqual(events[1][0], "driver")
-        self.assertIn("iiwa14_bringup.launch", events[1][1])
-        self.assertEqual(events[2], ("ready", child))
+        self.assertEqual(events[1], ("demo",))
+        self.assertEqual(events[2][0], "driver")
+        self.assertIn("iiwa14_bringup.launch", events[2][1])
+        self.assertEqual(events[3], ("ready", child))
 
     def test_demo_prepare_routes_even_final_hold_through_release(self):
         events = []
@@ -446,6 +449,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             "PositionTrajectoryController"
         ]
         self.subject._release_robot_control = lambda reason: events.append(reason)
+        self.subject._start_demo_process = lambda: None
         self.subject._driver_process_containers = lambda: []
         child = types.SimpleNamespace(poll=lambda: None)
         self.subject._run = lambda *_args, **_kwargs: None
@@ -456,6 +460,16 @@ class HostRealExecutionFlowTest(unittest.TestCase):
 
         self.assertEqual(len(events), 1)
         self.assertIn("Demo / Torque", events[0])
+
+    def test_controller_probe_force_kills_a_hung_rosservice(self):
+        self.subject._container_running = lambda: True
+        completed = subprocess.CompletedProcess([], 124, "", "")
+        with mock.patch.object(self.module.subprocess, "run", return_value=completed) as run:
+            self.assertIsNone(self.subject._running_iiwa_controllers())
+
+        command = run.call_args.args[0]
+        self.assertIn("--kill-after=0.25s", command)
+        self.assertLess(command.index("--kill-after=0.25s"), command.index("0.75s"))
 
     def test_control_mode_requires_one_unambiguous_owner(self):
         classify = self.subject._control_mode_from_graph

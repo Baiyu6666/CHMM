@@ -600,6 +600,22 @@ class CartesianTrajectoryCompiler:
             )
         return minimum_sv
 
+    def _collision_checks(self, q_path, phase_name):
+        """Reject self-collision without applying Cartesian singularity gates."""
+        for sample_index, q in enumerate(q_path):
+            self._set_q(q)
+            collision_pair = self._self_collision_pair()
+            if collision_pair is not None:
+                raise TrajectoryValidationError(
+                    "{} self-collision at joint sample {}/{} between links {} and {}".format(
+                        phase_name,
+                        sample_index + 1,
+                        len(q_path),
+                        collision_pair[0],
+                        collision_pair[1],
+                    )
+                )
+
     def _approach_workspace_checks(self, q_path, enforce_transit_floor=True):
         tcp_positions = []
         for q in q_path:
@@ -1227,6 +1243,78 @@ class CartesianTrajectoryCompiler:
                 orthogonal.append(x_axis / np.linalg.norm(x_axis))
             x_axes = np.asarray(orthogonal)
         return positions, axes, x_axes, distance
+
+    def compile_joint_home(self, start_q, target_q, abort_requested=None):
+        """Compile a collision-checked joint move to a saved comfortable posture.
+
+        Robot Home is a posture, not a Cartesian tracking task.  Solving a long
+        lift/lateral Cartesian path with free yaw can select an unreachable IK
+        branch even when both the current and saved Home postures are valid.
+        Interpolate the measured joints directly and retain the same controller
+        interpolation, workspace, collision, singularity, velocity and
+        acceleration checks used by normal execution.
+        """
+        start_q = np.asarray(start_q, dtype=float)
+        target_q = np.asarray(target_q, dtype=float)
+        abort_requested = abort_requested or (lambda: False)
+        if start_q.shape != (self._dof,) or target_q.shape != (self._dof,):
+            raise TrajectoryValidationError(
+                "Robot Home needs {} measured and target joints".format(self._dof)
+            )
+        if not np.all(np.isfinite(start_q)) or not np.all(np.isfinite(target_q)):
+            raise TrajectoryValidationError("Robot Home joints must be finite")
+        if np.any(start_q < self._lower) or np.any(start_q > self._upper):
+            raise TrajectoryValidationError("Current joints exceed a position limit")
+        if np.any(target_q < self._lower) or np.any(target_q > self._upper):
+            raise TrajectoryValidationError("Saved Robot Home exceeds a joint limit")
+        if abort_requested():
+            raise TrajectoryValidationError("Return Home compilation aborted")
+
+        try:
+            q_path = self._densify_joint_path(
+                np.vstack((start_q, target_q)), self._max_joint_step
+            )
+            tcp_positions = np.asarray(
+                [self.tip_state(q)[0] for q in q_path], dtype=float
+            )
+            tcp_distance = float(
+                np.sum(np.linalg.norm(np.diff(tcp_positions, axis=0), axis=1))
+            )
+            minimum_duration = tcp_distance / max(self._approach_speed, 1e-4)
+            approach = self.time_parameterize(q_path, minimum_duration)
+            if abort_requested():
+                raise TrajectoryValidationError("Return Home compilation aborted")
+            validation_path = approach["_validation_position"]
+            minimum_z = self._approach_workspace_checks(validation_path)
+            self._collision_checks(validation_path, "Return Home")
+            return {
+                "start": start_q.copy(),
+                "approach": approach,
+                "metrics": {
+                    "home_strategy": "joint_posture",
+                    "approach_points": len(q_path),
+                    "approach_duration_s": approach["duration"],
+                    "approach_distance_m": tcp_distance,
+                    "maximum_joint_step_rad": float(
+                        np.max(np.abs(np.diff(q_path, axis=0)))
+                    ),
+                    "minimum_approach_tcp_z_m": minimum_z,
+                    "maximum_interpolated_joint_velocity_ratio": approach[
+                        "maximum_interpolated_velocity_ratio"
+                    ],
+                    "maximum_interpolated_joint_acceleration_ratio": approach[
+                        "maximum_interpolated_acceleration_ratio"
+                    ],
+                    "maximum_interpolated_joint_velocity_rad_s": approach[
+                        "maximum_interpolated_velocity_rad_s"
+                    ],
+                    "maximum_interpolated_joint_acceleration_rad_s2": approach[
+                        "maximum_interpolated_acceleration_rad_s2"
+                    ],
+                },
+            }
+        finally:
+            self._set_q(start_q)
 
     def compile(
         self,

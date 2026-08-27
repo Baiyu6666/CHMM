@@ -450,6 +450,10 @@ class DemoGui:
             return True, self._message
 
     def set_assistance(self, channel, enabled):
+        # LEGACY ONLY: orientation hold and vertical damping are intentionally
+        # absent from the workstation control panel.  They remain here solely
+        # for the old standalone Demo page and are not part of the maintained
+        # Demo workflow; new code must not depend on or extend these channels.
         with self._service_lock:
             with self._lock:
                 if not self._driver_demo_active:

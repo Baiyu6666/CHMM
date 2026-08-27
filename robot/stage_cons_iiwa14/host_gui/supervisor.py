@@ -663,7 +663,8 @@ class Supervisor:
         try:
             result = subprocess.run(
                 [
-                    "docker", "exec", CONTAINER, "timeout", "0.75s", "/entrypoint.sh",
+                    "docker", "exec", CONTAINER,
+                    "timeout", "--kill-after=0.25s", "0.75s", "/entrypoint.sh",
                     "rosservice", "call", "/iiwa14/controller_manager/list_controllers",
                 ],
                 text=True,
@@ -2348,7 +2349,7 @@ class Supervisor:
             return
         self._set_task_state(
             phase="home_preparing",
-            message="Validating the vertical-first trajectory to Robot Home",
+            message="Validating the joint-posture trajectory to Robot Home",
         )
         execution_may_have_started = True
         try:
@@ -3246,6 +3247,7 @@ class Supervisor:
                 controller_snapshot = self._running_iiwa_controllers()
                 running_controllers = set(controller_snapshot or [])
                 if "SafeTorqueController" in running_controllers:
+                    self._start_demo_process()
                     self.log("Demo / Torque driver is already running")
                     return
                 self.log(
@@ -3265,6 +3267,11 @@ class Supervisor:
                     "An iiwa driver process already exists in container(s): "
                     + ", ".join(conflicts)
                 )
+            # The Demo station is a separate ROS launch from the torque driver.
+            # A container rebuild/recreate terminates it while the host GUI
+            # remains alive, so every Demo transition must restore and verify
+            # the recorder/UI chain instead of assuming it is persistent.
+            self._start_demo_process()
             # Ensure assistance cannot be left active by a previous ROS graph.
             self._run(
                 [

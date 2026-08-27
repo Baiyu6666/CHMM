@@ -169,7 +169,7 @@
       "feature_name": "tool_yaw",
       "stage": 1,
       "semantics": "target_value",
-      "value": -0.7853981633974483,
+      "value": -0.657767869890225,
       "scale": 0.035,
       "weight": 2.0
     },
@@ -207,7 +207,7 @@
       "feature_name": "tool_yaw",
       "stage": 3,
       "semantics": "target_value",
-      "value": -0.7853981633974483,
+      "value": -0.657767869890225,
       "scale": 0.035,
       "weight": 2.0
     }

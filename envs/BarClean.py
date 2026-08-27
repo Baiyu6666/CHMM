@@ -141,24 +141,9 @@ class BarCleanEnv(BarInspectEnv):
         self.discharge_height_variation = float(discharge_height_variation)
         if discharge_standoff <= 0.0:
             raise ValueError("The stage-four surface target must be positive.")
-        if not np.allclose(
-            endpoints[2:, 0] - discharge_axial_reference,
-            float(discharge_axial["value"]),
-            atol=1e-9,
-        ) or not np.allclose(
-            endpoints[2:, 2], discharge_standoff, atol=1e-9
-        ):
-            raise ValueError(
-                "Stage-four endpoints do not satisfy their axial/surface targets."
-            )
-        if not np.isclose(
-            endpoints[1, 1], float(clean_lateral["value"]), atol=1e-9
-        ) or not np.isclose(
-            endpoints[1, 2], float(clean_surface["value"]), atol=1e-9
-        ):
-            raise ValueError(
-                "Stage-two endpoint does not satisfy its lateral/surface targets."
-            )
+        # Endpoints are approximate task goals, not constraint definitions.  Real
+        # demonstrations need not hit them exactly, and planning profiles may tune
+        # endpoint positions independently from learned/true feature targets.
         if self.discharge_axial_noise_std < 0.0 or self.discharge_height_variation < 0.0:
             raise ValueError(
                 "discharge_axial_noise_std and discharge_height_variation must be non-negative."
@@ -621,12 +606,173 @@ def load_BarClean(
     seed=2026,
     env_kwargs=None,
     demo_kwargs=None,
+    processed_demo_path=None,
     **extra_env_kwargs,
 ):
     env_config = dict(env_kwargs or {})
     env_config.update(extra_env_kwargs)
     run_config = dict(demo_kwargs or {})
     env = BarCleanEnv(**env_config)
+
+    if processed_demo_path is not None:
+        data_path = Path(processed_demo_path).expanduser()
+        if not data_path.is_absolute():
+            data_path = PROJECT_ROOT / data_path
+        with np.load(data_path, allow_pickle=False) as archive:
+            required = {
+                "trajectory",
+                "features",
+                "feature_names",
+                "timestamps",
+                "coarse_bounds_indices",
+                "demo_bar_poses",
+                "demo_obstacle_poses",
+            }
+            missing = sorted(required.difference(archive.files))
+            if missing:
+                raise ValueError(
+                    f"Processed BarClean data {data_path} is missing keys: {missing}"
+                )
+            all_trajectories = np.asarray(archive["trajectory"], dtype=float)
+            all_features = np.asarray(archive["features"], dtype=float)
+            all_timestamps = np.asarray(archive["timestamps"], dtype=float)
+            bounds = np.asarray(archive["coarse_bounds_indices"], dtype=int)
+            feature_names = [str(name) for name in archive["feature_names"].tolist()]
+            demo_bar_poses = np.asarray(archive["demo_bar_poses"], dtype=float)
+            demo_obstacle_poses = np.asarray(
+                archive["demo_obstacle_poses"], dtype=float
+            )
+            source_demo_ids = np.asarray(
+                archive["source_demo_ids"]
+                if "source_demo_ids" in archive.files
+                else np.arange(len(bounds)),
+                dtype=int,
+            )
+            cutpoint_annotation_kind = str(
+                np.asarray(
+                    archive["cutpoint_annotation_kind"]
+                    if "cutpoint_annotation_kind" in archive.files
+                    else "motion_phase_stage_boundaries"
+                ).item()
+            )
+            cutpoint_evaluation_role = str(
+                np.asarray(
+                    archive["cutpoint_evaluation_role"]
+                    if "cutpoint_evaluation_role" in archive.files
+                    else "task_informed_reference"
+                ).item()
+            )
+
+        expected_names = [spec["name"] for spec in env.get_feature_schema()]
+        if feature_names != expected_names:
+            raise ValueError(
+                "Processed BarClean feature order does not match the environment schema: "
+                f"got {feature_names}, expected {expected_names}."
+            )
+        if bounds.ndim != 2 or bounds.shape[1] != 6:
+            raise ValueError(
+                "coarse_bounds_indices must have shape (num_demos, 6) for five stages."
+            )
+        if int(n_demos) > len(bounds):
+            raise ValueError(
+                f"Requested {n_demos} demos, but {data_path} contains only {len(bounds)}."
+            )
+        if demo_bar_poses.shape != (len(bounds), 7):
+            raise ValueError(
+                "demo_bar_poses must have shape (num_demos, 7), got "
+                f"{demo_bar_poses.shape}."
+            )
+        if demo_obstacle_poses.shape != (len(bounds), 7):
+            raise ValueError(
+                "demo_obstacle_poses must have shape (num_demos, 7), got "
+                f"{demo_obstacle_poses.shape}."
+            )
+        if source_demo_ids.shape != (len(bounds),):
+            raise ValueError(
+                "source_demo_ids must have shape (num_demos,), got "
+                f"{source_demo_ids.shape}."
+            )
+
+        demo_scenes = [
+            BarInspectScene(
+                bar_pose_optitrack=bar_pose,
+                obstacle_pose_optitrack=obstacle_pose,
+            )
+            for bar_pose, obstacle_pose in zip(demo_bar_poses, demo_obstacle_poses)
+        ]
+        env.set_scene(demo_scenes[0])
+        env.set_demo_scenes(demo_scenes)
+
+        demos = []
+        features = []
+        true_labels = []
+        true_cutpoints = []
+        timestamps = []
+        scene_specs = []
+        for demo_index, row in enumerate(bounds[: int(n_demos)]):
+            row = np.asarray(row, dtype=int)
+            if not (
+                row[0] >= 0
+                and row[-1] <= len(all_trajectories)
+                and np.all(np.diff(row) > 0)
+            ):
+                raise ValueError(
+                    f"Invalid five-stage bounds for demo {demo_index}: {row.tolist()}"
+                )
+            begin, end = int(row[0]), int(row[-1])
+            demos.append(all_trajectories[begin:end].copy())
+            features.append(all_features[begin:end].copy())
+            stage_lengths = np.diff(row)
+            true_labels.append(
+                np.repeat(np.arange(5, dtype=int), stage_lengths.astype(int))
+            )
+            true_cutpoints.append((row[1:-1] - begin).astype(int))
+            demo_time = all_timestamps[begin:end].copy()
+            timestamps.append(demo_time - demo_time[0])
+            scene_specs.append(
+                {
+                    "demo_index": int(demo_index),
+                    "source_demo_id": int(source_demo_ids[demo_index]),
+                    "source": "processed_real_demo",
+                    "processed_demo_path": str(data_path),
+                    "recording_bounds": row.tolist(),
+                    **demo_scenes[demo_index].to_dict(),
+                }
+            )
+
+        return TaskBundle(
+            name=env.task_name,
+            demos=demos,
+            features=features,
+            env=env,
+            true_taus=None,
+            true_cutpoints=true_cutpoints,
+            true_labels=true_labels,
+            feature_schema=env.get_feature_schema(),
+            true_constraints=env.get_true_constraints(),
+            constraint_specs=env.get_constraint_specs(),
+            meta={
+                "seed": int(seed),
+                "task_name": env.task_name,
+                "data_source": "processed_real_demo",
+                "processed_demo_path": str(data_path),
+                "cutpoint_annotation_kind": cutpoint_annotation_kind,
+                "cutpoint_evaluation_role": cutpoint_evaluation_role,
+                "cutpoint_annotations": {
+                    "kind": cutpoint_annotation_kind,
+                    "is_ground_truth": False,
+                    "usage": "5 Hz motion-phase stage references",
+                },
+                "stage_specs": env.get_stage_specs(),
+                "scene_specs": scene_specs,
+                "timestamps": timestamps,
+                "observation_specs": env.get_observation_spec(),
+                "planning_profile": env.get_planning_profile(),
+                "render_camera_presets": env.get_render_camera_presets(),
+                "asset_handles": env.get_asset_handles(),
+                "default_learning_features": list(env.default_learning_features),
+            },
+        )
 
     demos = []
     features = []

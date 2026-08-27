@@ -1,0 +1,75 @@
+{
+  "bag_file": "demo.bag",
+  "experiment": "stage_constraint",
+  "finished_at_utc": "2026-08-27T08:33:30.945919+00:00",
+  "label": "demo_r01",
+  "operator_notes": "",
+  "optional_topics": [
+    "/tf_static",
+    "/iiwa14/additional_outputs",
+    "/iiwa14/fri_diagnostics",
+    "/iiwa14/commanding_status",
+    "/iiwa14/SafeTorqueController/command",
+    "/iiwa14/demo_virtual_fixture/status",
+    "/vrpn_client_node/iiwa14/pose",
+    "/vrpn_client_node/baiyu_bar/pose",
+    "/vrpn_client_node/baiyu_obs_bar/pose",
+    "/stage_cons/plan"
+  ],
+  "optitrack": {
+    "base_rigid_body": "iiwa14",
+    "object_rigid_body": "baiyu_bar",
+    "obstacle_rigid_body": "baiyu_obs_bar",
+    "server": "128.178.145.104"
+  },
+  "recorded_topics": [
+    "/iiwa14/joint_states",
+    "/tf",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
+    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
+    "/tf_static",
+    "/iiwa14/additional_outputs",
+    "/iiwa14/fri_diagnostics",
+    "/iiwa14/commanding_status",
+    "/iiwa14/SafeTorqueController/command",
+    "/iiwa14/demo_virtual_fixture/status",
+    "/vrpn_client_node/iiwa14/pose",
+    "/vrpn_client_node/baiyu_bar/pose",
+    "/vrpn_client_node/baiyu_obs_bar/pose",
+    "/stage_cons/plan",
+    "/stage_cons/demo_marker"
+  ],
+  "recording_state": "completed",
+  "required_topics": [
+    "/iiwa14/joint_states",
+    "/tf",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
+    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14"
+  ],
+  "robot": {
+    "name": "iiwa14"
+  },
+  "rosbag_pid": 243628,
+  "rosbag_return_code": 0,
+  "schema_version": 1,
+  "session_id": "20260827T083229_976380Z_demo_r01",
+  "started_at_utc": "2026-08-27T08:32:29.976380+00:00",
+  "task_id": "BarClean",
+  "topic_types_at_start": {
+    "/iiwa14/SafeTorqueController/command": "std_msgs/Float64MultiArray",
+    "/iiwa14/additional_outputs": "iiwa_driver/AdditionalOutputs",
+    "/iiwa14/commanding_status": "std_msgs/Bool",
+    "/iiwa14/demo_virtual_fixture/status": "std_msgs/Float64MultiArray",
+    "/iiwa14/fri_diagnostics": "iiwa_driver/FriDiagnostics",
+    "/iiwa14/joint_states": "sensor_msgs/JointState",
+    "/stage_cons/demo_marker": "std_msgs/String",
+    "/stage_cons/plan": null,
+    "/tf": "tf2_msgs/TFMessage",
+    "/tf_static": "tf2_msgs/TFMessage",
+    "/vrpn_client_node/baiyu_bar/pose": "geometry_msgs/PoseStamped",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14": "geometry_msgs/PoseStamped",
+    "/vrpn_client_node/baiyu_obs_bar/pose": "geometry_msgs/PoseStamped",
+    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14": "geometry_msgs/PoseStamped",
+    "/vrpn_client_node/iiwa14/pose": "geometry_msgs/PoseStamped"
+  }
+}

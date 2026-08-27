@@ -1,28 +1,26 @@
 {
   "schema_version": 1,
   "frame_id": "iiwa14_link_0",
-  "captured_from": "measured robot pose on 2026-08-24",
+  "captured_from": "offline-selected comfortable branch for the BarClean workspace on 2026-08-27",
   "pose": {
-    "x": 0.68477651,
-    "y": 0.01630373,
-    "z": 0.33116155,
-    "qx": -0.49420326,
-    "qy": -0.86555559,
-    "qz": 0.05969546,
-    "qw": 0.05489182
+    "x": 0.68372703,
+    "y": 0.01605977,
+    "z": 0.33073452,
+    "qx": -0.00481996,
+    "qy": 0.99670911,
+    "qz": -0.02416525,
+    "qw": -0.07722539
   },
   "joint_position_reference": [
-    0.50062919,
-    1.22457303,
-    -1.09616224,
-    -1.09874688,
-    -2.21954748,
-    -1.45924345,
-    -2.53476729
+    0.05961299,
+    0.96198410,
+    -0.06020073,
+    -1.10392477,
+    0.00395374,
+    1.23205567,
+    0.01003284
   ],
   "execution": {
-    "approach_speed_mps": 0.06,
-    "approach_position_tolerance_m": 0.01,
-    "approach_joint_bridge_limit_rad": 3.0
+    "approach_speed_mps": 0.06
   }
 }
