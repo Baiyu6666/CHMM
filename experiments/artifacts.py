@@ -216,6 +216,152 @@ def _map_mode_scores(result: Mapping[str, Any], stage: int, feature: int) -> dic
     return {name: value / total for name, value in weights.items()}
 
 
+def _quaternion_to_matrix(quaternion: Any) -> np.ndarray:
+    values = np.asarray(quaternion, dtype=float).reshape(4)
+    norm = float(np.linalg.norm(values))
+    if not np.all(np.isfinite(values)) or norm <= 1e-12:
+        raise ValueError("Endpoint quaternion must be finite and nonzero")
+    x, y, z, w = values / norm
+    return np.asarray(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=float,
+    )
+
+
+def _matrix_to_quaternion(matrix: Any) -> np.ndarray:
+    rotation = np.asarray(matrix, dtype=float).reshape(3, 3)
+    eigenvalues, eigenvectors = np.linalg.eigh(
+        np.asarray(
+            [
+                [
+                    rotation[0, 0] - rotation[1, 1] - rotation[2, 2],
+                    rotation[1, 0] + rotation[0, 1],
+                    rotation[2, 0] + rotation[0, 2],
+                    rotation[1, 2] - rotation[2, 1],
+                ],
+                [
+                    rotation[1, 0] + rotation[0, 1],
+                    rotation[1, 1] - rotation[0, 0] - rotation[2, 2],
+                    rotation[2, 1] + rotation[1, 2],
+                    rotation[2, 0] - rotation[0, 2],
+                ],
+                [
+                    rotation[2, 0] + rotation[0, 2],
+                    rotation[2, 1] + rotation[1, 2],
+                    rotation[2, 2] - rotation[0, 0] - rotation[1, 1],
+                    rotation[0, 1] - rotation[1, 0],
+                ],
+                [
+                    rotation[1, 2] - rotation[2, 1],
+                    rotation[2, 0] - rotation[0, 2],
+                    rotation[0, 1] - rotation[1, 0],
+                    rotation[0, 0] + rotation[1, 1] + rotation[2, 2],
+                ],
+            ],
+            dtype=float,
+        )
+        / 3.0
+    )
+    quaternion = np.asarray(eigenvectors[:, int(np.argmax(eigenvalues))], dtype=float)
+    quaternion /= np.linalg.norm(quaternion)
+    return quaternion if quaternion[3] >= 0.0 else -quaternion
+
+
+def _mean_quaternion(quaternions: Any) -> np.ndarray:
+    values = np.asarray(quaternions, dtype=float)
+    if values.ndim != 2 or values.shape[1] != 4 or not len(values):
+        raise ValueError("Endpoint quaternion aggregation requires an N x 4 matrix")
+    norms = np.linalg.norm(values, axis=1)
+    if not np.all(np.isfinite(values)) or np.any(norms <= 1e-12):
+        raise ValueError("Endpoint quaternions must be finite and nonzero")
+    unit = values / norms[:, None]
+    eigenvalues, eigenvectors = np.linalg.eigh(unit.T @ unit)
+    mean = np.asarray(eigenvectors[:, int(np.argmax(eigenvalues))], dtype=float)
+    mean /= np.linalg.norm(mean)
+    return mean if mean[3] >= 0.0 else -mean
+
+
+def _aggregate_learned_endpoint_poses(result: Mapping[str, Any]) -> tuple[list[list[float]], dict[str, Any]]:
+    dataset = result.get("dataset")
+    demos = list(getattr(dataset, "demos", []))
+    env = getattr(dataset, "env", None)
+    cutpoints = result.get("joint_result", {}).get("cutpoints_hat")
+    if cutpoints is None:
+        segmentation = result.get("segmentation")
+        cutpoints = getattr(segmentation, "cutpoints", None)
+    if not demos or cutpoints is None or len(cutpoints) != len(demos):
+        raise ValueError("Learned endpoint export requires one segmentation per demo")
+    required_attributes = (
+        "table_surface_point",
+        "table_normal",
+        "_bar_geometry_trace",
+        "get_demo_scene",
+    )
+    if env is None or any(not hasattr(env, name) for name in required_attributes):
+        raise ValueError("Learned endpoint export requires a task-frame-aware environment")
+
+    n_endpoints = len(np.asarray(cutpoints[0], dtype=int).reshape(-1))
+    if n_endpoints < 1:
+        raise ValueError("Learned endpoint export requires at least one stage boundary")
+    poses_by_endpoint: list[list[np.ndarray]] = [[] for _ in range(n_endpoints)]
+    per_demo_poses: list[list[list[float]]] = []
+    table_point = np.asarray(env.table_surface_point, dtype=float).reshape(3)
+    table_normal = np.asarray(env.table_normal, dtype=float).reshape(3)
+    table_normal /= np.linalg.norm(table_normal)
+
+    for demo_index, (demo, demo_cutpoints) in enumerate(zip(demos, cutpoints)):
+        trajectory = np.asarray(demo, dtype=float)
+        boundaries = np.asarray(demo_cutpoints, dtype=int).reshape(-1)
+        if trajectory.ndim != 2 or trajectory.shape[1] < 7:
+            raise ValueError("Learned endpoint export requires xyz+xyzw demo poses")
+        if len(boundaries) != n_endpoints or np.any(boundaries <= 0) or np.any(boundaries >= len(trajectory)):
+            raise ValueError("Learned stage boundaries are invalid for endpoint export")
+        scene = env.get_demo_scene(demo_index)
+        bar_reference, bar_axis, bar_lateral = env._bar_geometry_trace(
+            trajectory, scene=scene
+        )
+        reference = np.asarray(bar_reference[0], dtype=float).reshape(3)
+        rotation_world_from_task = np.column_stack(
+            (
+                np.asarray(bar_axis[0], dtype=float).reshape(3),
+                np.asarray(bar_lateral[0], dtype=float).reshape(3),
+                table_normal,
+            )
+        )
+        origin = reference - table_normal * float((reference - table_point) @ table_normal)
+        demo_poses = []
+        for endpoint_index, boundary in enumerate(boundaries):
+            sample = trajectory[int(boundary) - 1]
+            position_task = rotation_world_from_task.T @ (sample[:3] - origin)
+            rotation_task = rotation_world_from_task.T @ _quaternion_to_matrix(sample[3:7])
+            quaternion_task = _matrix_to_quaternion(rotation_task)
+            pose_task = np.concatenate((position_task, quaternion_task))
+            poses_by_endpoint[endpoint_index].append(pose_task)
+            demo_poses.append(pose_task.tolist())
+        per_demo_poses.append(demo_poses)
+
+    aggregate = []
+    for endpoint_values in poses_by_endpoint:
+        values = np.asarray(endpoint_values, dtype=float)
+        aggregate.append(
+            np.concatenate(
+                (np.mean(values[:, :3], axis=0), _mean_quaternion(values[:, 3:7]))
+            ).tolist()
+        )
+    return aggregate, {
+        "position_aggregation": "arithmetic_mean",
+        "orientation_aggregation": "markley_quaternion_mean",
+        "sample_policy": "last_sample_before_predicted_cutpoint",
+        "coordinate_frame": "bar_table_task",
+        "demo_count": len(demos),
+        "per_demo_endpoint_poses_bar": per_demo_poses,
+    }
+
+
 def _extract_learned_constraint_artifact(
     *,
     dataset_name: str,
@@ -232,14 +378,6 @@ def _extract_learned_constraint_artifact(
     if semantics.shape[1] != len(feature_names):
         raise ValueError("Learned constraint feature names do not match matrix width")
 
-    scales = np.asarray(
-        metrics.get("ConstraintFeatureScales", np.ones(len(feature_names))), dtype=float
-    ).reshape(-1)
-    if scales.size != len(feature_names):
-        raise ValueError("Learned constraint feature scales do not match feature names")
-    if not np.all(np.isfinite(scales)) or np.any(scales <= 0.0):
-        raise ValueError("Learned constraint feature scales must be positive and finite")
-
     dataset = result.get("dataset")
     schema_by_name = {
         str(spec.get("name")): dict(spec)
@@ -250,9 +388,8 @@ def _extract_learned_constraint_artifact(
             "name": name,
             "unit": str(schema_by_name.get(name, {}).get("unit", "")),
             "frame": str(schema_by_name.get(name, {}).get("frame", "")),
-            "scale": _finite_or_none(scales[index]),
         }
-        for index, name in enumerate(feature_names)
+        for name in feature_names
     ]
     dataset_meta = getattr(dataset, "meta", {}) or {}
     observation_specs = dataset_meta.get("observation_specs", {})
@@ -266,11 +403,9 @@ def _extract_learned_constraint_artifact(
         if isinstance(observation_specs, Mapping)
         else {}
     )
-    planning_profile = result.get("learned_planning_profile")
-    if planning_profile is None:
-        planning_profile = dataset_meta.get("planning_profile")
-    if not isinstance(planning_profile, Mapping):
-        raise ValueError("A learned constraint artifact requires a planning profile")
+    endpoint_poses, endpoint_aggregation = _aggregate_learned_endpoint_poses(result)
+    if len(endpoint_poses) != semantics.shape[0] - 1:
+        raise ValueError("Learned endpoint count does not match the learned stage count")
 
     pairs = []
     for stage in range(semantics.shape[0]):
@@ -287,7 +422,6 @@ def _extract_learned_constraint_artifact(
                 "feature_name": feature_name,
                 "mode": mode,
                 "value": None if mode == "inactive" else _finite_or_none(values[stage, feature]),
-                "scale": _finite_or_none(scales[feature]),
                 "mode_scores": _map_mode_scores(result, stage, feature),
             }
             if mode != "inactive" and pair["value"] is None:
@@ -301,7 +435,7 @@ def _extract_learned_constraint_artifact(
             pairs.append(pair)
 
     return {
-        "schema_version": 3,
+        "schema_version": 5,
         "artifact_type": "learned_stage_constraints",
         "task_id": str(dataset_name),
         "method_name": str(method_name),
@@ -310,7 +444,9 @@ def _extract_learned_constraint_artifact(
         "feature_schema": feature_schema,
         "task_frame": task_frame,
         "feature_definition": feature_definition,
-        "planning_profile": json.loads(json.dumps(dict(planning_profile))),
+        "endpoint_coordinate_frame": "bar_table_task",
+        "stage_endpoint_poses_bar": endpoint_poses,
+        "endpoint_aggregation": endpoint_aggregation,
         "feature_stage_modes": pairs,
         "true_constraint_specs": getattr(dataset, "constraint_specs", None),
     }

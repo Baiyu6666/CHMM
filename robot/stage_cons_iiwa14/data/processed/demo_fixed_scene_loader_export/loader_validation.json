@@ -1,0 +1,93 @@
+{
+  "loader": "envs.BarClean.load_BarClean",
+  "demo_count": 7,
+  "points_per_demo": [
+    134,
+    129,
+    114,
+    123,
+    120,
+    129,
+    128
+  ],
+  "feature_count": 10,
+  "feature_names": [
+    "obstacle_clearance",
+    "table_dist",
+    "bar_lateral_offset",
+    "tool_pitch",
+    "tool_roll",
+    "motion_axis_err",
+    "speed",
+    "angular_speed",
+    "bar_axial_offset",
+    "tool_yaw"
+  ],
+  "dt_s": 0.2,
+  "source_demo_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "coarse_bounds_shape": [
+    7,
+    6
+  ],
+  "stage_lengths_per_demo": [
+    [
+      42,
+      33,
+      17,
+      13,
+      29
+    ],
+    [
+      35,
+      32,
+      18,
+      11,
+      33
+    ],
+    [
+      22,
+      43,
+      14,
+      16,
+      19
+    ],
+    [
+      41,
+      28,
+      15,
+      11,
+      28
+    ],
+    [
+      37,
+      29,
+      9,
+      16,
+      29
+    ],
+    [
+      49,
+      26,
+      13,
+      14,
+      27
+    ],
+    [
+      40,
+      27,
+      14,
+      19,
+      28
+    ]
+  ],
+  "all_finite": true,
+  "missing_required_keys": []
+}

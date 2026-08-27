@@ -50,6 +50,66 @@ class HostRealExecutionFlowTest(unittest.TestCase):
     def test_barinspect_is_hidden_from_active_gui_tasks(self):
         self.assertEqual(set(self.subject._task_profiles), {"BarClean"})
 
+    def test_scene_source_is_persisted_without_discarding_other_env_values(self):
+        project_root = Path(self._temporary_directory.name)
+        env_file = project_root / ".env"
+        env_file.write_text(
+            "USER_UID=1007\nSCENE_POSE_SOURCE=fixed\nOPTITRACK_OBJECT=baiyu_bar\n",
+            encoding="utf-8",
+        )
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.subject._write_env_value("SCENE_POSE_SOURCE", "optitrack")
+
+        self.assertEqual(
+            env_file.read_text(encoding="utf-8"),
+            "USER_UID=1007\nSCENE_POSE_SOURCE=optitrack\nOPTITRACK_OBJECT=baiyu_bar\n",
+        )
+
+    def test_scene_source_switch_restarts_demo_station_when_robot_is_idle(self):
+        project_root = Path(self._temporary_directory.name)
+        (project_root / ".env").write_text(
+            "SCENE_POSE_SOURCE=fixed\n", encoding="utf-8"
+        )
+        nodes = {
+            "/stage_demo_gui",
+            "/fixed_scene_bar_publisher",
+            "/fixed_scene_obstacle_publisher",
+        }
+        events = []
+        self.subject._ros_nodes = lambda: list(nodes)
+        self.subject._driver_binary_running = lambda: False
+        self.subject._container_running = lambda: False
+        self.subject._signal_child = lambda name: events.append("stop:" + name)
+        self.subject._start_demo_process = lambda: events.append("start:demo")
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.subject.set_scene_pose_source({"source": "optitrack"})
+            self.subject._job.join(timeout=2.0)
+
+        self.assertTrue(self.subject._job_ok)
+        self.assertEqual(
+            (project_root / ".env").read_text(encoding="utf-8"),
+            "SCENE_POSE_SOURCE=optitrack\n",
+        )
+        self.assertEqual(events, ["stop:demo", "stop:tracking", "start:demo"])
+
+    def test_scene_source_switch_is_rejected_while_driver_is_running(self):
+        project_root = Path(self._temporary_directory.name)
+        (project_root / ".env").write_text(
+            "SCENE_POSE_SOURCE=fixed\n", encoding="utf-8"
+        )
+        self.subject._ros_nodes = lambda: ["/iiwa14/iiwa_driver"]
+        self.subject._driver_binary_running = lambda: True
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.subject.set_scene_pose_source({"source": "optitrack"})
+            self.subject._job.join(timeout=2.0)
+
+        self.assertFalse(self.subject._job_ok)
+        self.assertIn("release robot control", self.subject._job_message)
+        self.assertEqual(
+            (project_root / ".env").read_text(encoding="utf-8"),
+            "SCENE_POSE_SOURCE=fixed\n",
+        )
+
     def test_real_trace_uses_position_station_tf_and_survives_completion(self):
         pose = self._pose(0.61, -0.17)
         self.subject._robot_ee_pose = lambda: dict(pose)
@@ -193,8 +253,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             "/iiwa14/iiwa_driver",
             "/iiwa14/real_executor",
             "/stage_constraint_planner",
-            "/vrpn_client_node",
-            "/optitrack_base_transform",
+            "/fixed_scene_bar_publisher",
+            "/fixed_scene_obstacle_publisher",
         ]
         self.subject._start_optitrack_process = lambda: self.fail(
             "fast path must not probe OptiTrack topics"
@@ -214,8 +274,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             "/iiwa14/iiwa_driver",
             "/iiwa14/real_executor",
             "/stage_constraint_planner",
-            "/vrpn_client_node",
-            "/optitrack_base_transform",
+            "/fixed_scene_bar_publisher",
+            "/fixed_scene_obstacle_publisher",
         ]
         self.subject._real_station_interfaces_ready = (
             lambda: checks.append("interfaces") or True
@@ -584,6 +644,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject._optitrack_settings = lambda: (
             "10.0.0.8", "robot_base", "tracked_bar", "tracked_ball"
         )
+        self.subject._scene_pose_source = lambda: "optitrack"
         self.subject._ros_nodes = lambda: []
         self.subject._spawn = lambda name, command: (
             calls.append((name, command)) or child
@@ -602,12 +663,15 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.assertIn("base_name:=robot_base", command)
         self.assertIn("object_name:=tracked_bar", command)
         self.assertIn("obstacle_name:=tracked_ball", command)
+        self.assertIn("use_fixed_scene:=false", command)
         self.assertEqual(calls[1], (child, "robot_base", "tracked_bar", "tracked_ball"))
 
-    def test_existing_tracking_chain_checks_raw_then_transformed_poses(self):
+    def test_fixed_scene_checks_only_the_two_published_poses(self):
         checked = []
+        self.subject._scene_pose_source = lambda: "fixed"
         self.subject._ros_nodes = lambda: [
-            "/vrpn_client_node", "/optitrack_base_transform"
+            "/fixed_scene_bar_publisher",
+            "/fixed_scene_obstacle_publisher",
         ]
         self.subject._topic_has_fresh_message = (
             lambda topic: checked.append(topic) or True
@@ -620,17 +684,16 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.assertEqual(
             checked,
             [
-                "/vrpn_client_node/iiwa14/pose",
-                "/vrpn_client_node/baiyu_bar/pose",
-                "/vrpn_client_node/baiyu_obs_bar/pose",
                 "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
                 "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
             ],
         )
 
     def test_optitrack_diagnostic_identifies_missing_base_pose(self):
+        self.subject._scene_pose_source = lambda: "optitrack"
         self.subject._ros_nodes = lambda: [
-            "/vrpn_client_node", "/optitrack_base_transform"
+            "/vrpn_client_node",
+            "/optitrack_base_transform",
         ]
         self.subject._topic_has_fresh_message = (
             lambda topic: topic != "/vrpn_client_node/iiwa14/pose"
@@ -650,8 +713,10 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         spawned = []
         child = types.SimpleNamespace(poll=lambda: None)
         self.subject._container_running = lambda: True
+        self.subject._scene_pose_source = lambda: "fixed"
         self.subject._ros_nodes = lambda: [
-            "/vrpn_client_node", "/optitrack_base_transform"
+            "/fixed_scene_bar_publisher",
+            "/fixed_scene_obstacle_publisher",
         ]
         self.subject._optitrack_settings = lambda: (
             "128.178.145.104", "iiwa14", "baiyu_bar", "baiyu_obs_bar"
@@ -665,6 +730,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
 
         self.assertEqual(spawned[0][0], "demo")
         self.assertIn("start_optitrack:=false", spawned[0][1])
+        self.assertIn("use_fixed_scene:=true", spawned[0][1])
 
     def test_wait_for_fri_accepts_an_already_active_position_session(self):
         reads = []
@@ -829,8 +895,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             {
                 "task_id": "BarClean",
                 "trace": [[float(index), 0.0] for index in range(6)],
-                "feature_names": ["surface_dist"],
-                "feature_schema": [{"name": "surface_dist", "unit": "m"}],
+                "feature_names": ["table_dist"],
+                "feature_schema": [{"name": "table_dist", "unit": "m"}],
                 "constraint_specs": [],
                 "feature_samples": [[float(index), 0.02] for index in range(6)],
                 "stage_boundaries": [1, 2, 3, 4, 5],
@@ -981,7 +1047,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         surface_specs = [
             spec
             for spec in self.subject._task_feature_series["constraint_specs"]
-            if spec["feature_name"] == "surface_dist" and spec["stage"] == 1
+            if spec["feature_name"] == "table_dist" and spec["stage"] == 1
         ]
 
         self.assertEqual(len(surface_specs), 1)

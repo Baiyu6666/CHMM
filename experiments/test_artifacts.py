@@ -1,11 +1,32 @@
 from types import SimpleNamespace
 
+import numpy as np
+
 from experiments.artifacts import _extract_learned_constraint_artifact
+
+
+class _EndpointEnv:
+    table_surface_point = np.zeros(3)
+    table_normal = np.asarray([0.0, 0.0, 1.0])
+
+    @staticmethod
+    def get_demo_scene(_demo_index):
+        return None
+
+    @staticmethod
+    def _bar_geometry_trace(trajectory, scene=None):
+        del scene
+        count = len(trajectory)
+        return (
+            np.zeros((count, 3)),
+            np.repeat([[1.0, 0.0, 0.0]], count, axis=0),
+            np.repeat([[0.0, 1.0, 0.0]], count, axis=0),
+        )
 
 
 def test_map_artifact_contains_every_feature_stage_pair_and_inactive_mode():
     metrics = {
-        "ConstraintFeatureNames": ["surface_dist", "tool_pitch"],
+        "ConstraintFeatureNames": ["table_dist", "tool_pitch"],
         "ConstraintLearnedSemanticsMatrix": [
             ["inactive", "target_value"],
             ["lower_bound", "upper_bound"],
@@ -29,8 +50,21 @@ def test_map_artifact_contains_every_feature_stage_pair_and_inactive_mode():
         ]
     )
     dataset = SimpleNamespace(
+        demos=[
+            np.asarray(
+                [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                 [1.0, 0.0, 0.1, 0.0, 0.0, 0.0, 1.0],
+                 [2.0, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0]]
+            ),
+            np.asarray(
+                [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                 [3.0, 0.0, 0.3, 0.0, 0.0, 0.0, -1.0],
+                 [4.0, 0.0, 0.4, 0.0, 0.0, 0.0, 1.0]]
+            ),
+        ],
+        env=_EndpointEnv(),
         feature_schema=[
-            {"name": "surface_dist", "unit": "m", "frame": "bar_table_task.z"},
+            {"name": "table_dist", "unit": "m", "frame": "bar_table_task.z"},
             {"name": "tool_pitch", "unit": "rad", "frame": "bar_table_task orientation"},
         ],
         constraint_specs=[],
@@ -56,7 +90,11 @@ def test_map_artifact_contains_every_feature_stage_pair_and_inactive_mode():
         },
     )
     result = {
-        "joint_result": {"metrics": metrics, "model": model},
+        "joint_result": {
+            "metrics": metrics,
+            "model": model,
+            "cutpoints_hat": [np.asarray([2]), np.asarray([2])],
+        },
         "dataset": dataset,
     }
 
@@ -67,16 +105,21 @@ def test_map_artifact_contains_every_feature_stage_pair_and_inactive_mode():
         result=result,
     )
 
-    assert artifact["schema_version"] == 3
+    assert artifact["schema_version"] == 5
     assert artifact["task_id"] == "BarClean"
     assert artifact["task_frame"]["frame_id"] == "bar_table_task"
     assert artifact["feature_definition"]["id"] == "bar_table_features_v1"
-    assert artifact["planning_profile"]["stage_endpoint_positions_bar"] == [
-        [0.2, 0.0, 0.1]
-    ]
+    assert artifact["endpoint_coordinate_frame"] == "bar_table_task"
+    assert np.allclose(
+        artifact["stage_endpoint_poses_bar"][0],
+        [2.0, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0],
+    )
+    assert artifact["endpoint_aggregation"]["demo_count"] == 2
     assert artifact["feature_schema"][0]["frame"] == "bar_table_task.z"
     assert len(artifact["feature_stage_modes"]) == 4
     inactive = artifact["feature_stage_modes"][0]
     assert inactive["mode"] == "inactive"
     assert inactive["value"] is None
+    assert "scale" not in inactive
+    assert "planning_profile" not in artifact
     assert inactive["mode_scores"]["inactive"] > inactive["mode_scores"]["target_value"]

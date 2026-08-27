@@ -2,13 +2,14 @@
   "schema_version": 1,
   "frame_id": "iiwa14_link_0",
   "source": {
-    "processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_03_continuous/demo_03_10_demos_5hz_coarse.npz",
-    "bar_field": "locked_bar_pose",
-    "obstacle_field": "locked_obstacle_pose",
+    "bar_calibration": "data/demos/BarClean/20260827T155047_325922Z_demo_bar_fixed_moving/demo.bag",
+    "bar_method": "robust orthogonal line fit to the 8-45 s robot-internal flange trajectory",
+    "obstacle_method": "manually supplied center XY; z is display-only table plus radius",
     "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_01_5hz_coarse.npz",
     "ik_seed_field": "joint_positions",
     "ik_seed_sample_index": 305
   },
+  "fixed_pose_publish_rate": 20.0,
   "optitrack_to_robot": {
     "rotation": [
       [0.0, 0.0, 1.0],
@@ -22,14 +23,14 @@
     "size": [0.8, 0.8, 0.05]
   },
   "bar": {
-    "locked_pose_optitrack": [
-      -0.2630417860411133,
-      0.03313749922852528,
-      0.6092574709562736,
-      0.0015703503318544448,
-      -0.9996697540523543,
-      0.017056898211676573,
-      0.019156697422511443
+    "locked_pose_robot": [
+      0.64223939,
+      -0.08751724,
+      0.12537,
+      0.0,
+      0.0,
+      -0.75356339,
+      0.65737525
     ],
     "axis_local": [1.0, 0.0, 0.0],
     "outline_u": [-0.15, 0.15],
@@ -37,15 +38,7 @@
     "height": 0.032
   },
   "obstacle": {
-    "locked_pose_optitrack": [
-      -0.012291830559654215,
-      0.0627478191532751,
-      0.599625257339464,
-      0.9040141924227553,
-      0.09293160310267357,
-      0.3933348023030686,
-      0.139319023612021
-    ],
+    "locked_pose_robot": [0.6482, 0.1373, 0.13437, 0.0, 0.0, 0.0, 1.0],
     "radius": 0.025
   },
   "feature_runtime": {

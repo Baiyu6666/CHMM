@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from envs import load_env  # noqa: E402
+from experiments.artifacts import _aggregate_learned_endpoint_poses  # noqa: E402
 
 
 def convert(constraints_path: Path, task_id: str | None = None) -> Path:
@@ -19,15 +24,10 @@ def convert(constraints_path: Path, task_id: str | None = None) -> Path:
         constraints["ConstraintLearnedSemanticsMatrix"], dtype=object
     )
     values = np.asarray(constraints["ConstraintLearnedValueMatrix"], dtype=float)
-    scales = np.asarray(
-        constraints.get("ConstraintFeatureScales", np.ones(len(names))), dtype=float
-    ).reshape(-1)
     if semantics.ndim != 2 or values.shape != semantics.shape:
         raise ValueError("Constraint semantics and value matrices must have equal 2-D shapes")
-    if semantics.shape[1] != len(names) or scales.size != len(names):
+    if semantics.shape[1] != len(names):
         raise ValueError("Constraint matrix columns do not match feature metadata")
-    if not np.all(np.isfinite(scales)) or np.any(scales <= 0.0):
-        raise ValueError("Constraint feature scales must be positive and finite")
 
     pairs = []
     for stage in range(semantics.shape[0]):
@@ -49,7 +49,6 @@ def convert(constraints_path: Path, task_id: str | None = None) -> Path:
                     "feature_name": name,
                     "mode": mode,
                     "value": value,
-                    "scale": float(scales[feature]),
                     "mode_scores": {},
                     "confidence": None,
                 }
@@ -63,8 +62,26 @@ def convert(constraints_path: Path, task_id: str | None = None) -> Path:
         / "robot/stage_cons_iiwa14/ros_ws/src/stage_constraint_planner/config/bar_clean_true.json"
     )
     definition = json.loads(definition_path.read_text(encoding="utf-8"))
+    config_snapshot = json.loads(
+        constraints_path.with_name("config_snapshot.json").read_text(encoding="utf-8")
+    )
+    segmentation = json.loads(
+        constraints_path.with_name("segmentation.json").read_text(encoding="utf-8")
+    )
+    dataset = load_env(
+        str(config_snapshot["dataset_name"]),
+        **dict(config_snapshot["dataset_kwargs"]),
+    )
+    endpoint_poses, endpoint_aggregation = _aggregate_learned_endpoint_poses(
+        {
+            "dataset": dataset,
+            "joint_result": {"cutpoints_hat": segmentation["predicted_cutpoints"]},
+        }
+    )
+    if len(endpoint_poses) != int(semantics.shape[0]) - 1:
+        raise ValueError("Learned endpoint count does not match the learned stage count")
     artifact = {
-        "schema_version": 3,
+        "schema_version": 5,
         "artifact_type": "learned_stage_constraints",
         "task_id": resolved_task,
         "method_name": str(metadata["method_name"]),
@@ -74,15 +91,14 @@ def convert(constraints_path: Path, task_id: str | None = None) -> Path:
             {
                 "name": name,
                 "unit": str(definition["feature_units"].get(name, "")),
-                "scale": float(scales[index]),
             }
-            for index, name in enumerate(names)
+            for name in names
         ],
         "task_frame": dict(definition["task_frame"]),
         "feature_definition": dict(definition["feature_definition"]),
-        "planning_profile": {
-            key: definition[key] for key in definition["planning_profile_fields"]
-        },
+        "endpoint_coordinate_frame": "bar_table_task",
+        "stage_endpoint_poses_bar": endpoint_poses,
+        "endpoint_aggregation": endpoint_aggregation,
         "feature_stage_modes": pairs,
         "true_constraint_specs": constraints.get("constraint_specs"),
     }

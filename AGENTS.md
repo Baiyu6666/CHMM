@@ -5,6 +5,7 @@
 - 默认使用项目python interpeter 也就是conda segment。要装新的包或者运行代码都用这个环境
 - 显示公式和表格的时候都是用unicode
 - 给我run 实验相关命令的时候默认使用run_benchmark  而不是run one。使用我的方法，MAP，SWCL的时候始终只使用一个method seed，不需要重复不同seed
+- 修改某些代码，加入需要重启gui，重启服务，重新build才会生效，只要你检查到FRI没有处于激活状态，你就直接帮我重启了
 
 # 效率与验证策略
 

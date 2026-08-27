@@ -25,17 +25,17 @@
   "stage_names": ["approach", "vertical_scan", "oblique_scan", "depart"],
   "visualization_features": [
     "obstacle_clearance",
-    "surface_dist",
+    "table_dist",
     "bar_lateral_offset",
     "tool_pitch",
-    "tool_plane_err"
+    "tool_roll"
   ],
   "feature_units": {
     "obstacle_clearance": "m",
-    "surface_dist": "m",
+    "table_dist": "m",
     "bar_lateral_offset": "m",
     "tool_pitch": "rad",
-    "tool_plane_err": "rad"
+    "tool_roll": "rad"
   },
   "endpoint_fit": {
     "source": "robot/stage_cons_iiwa14/data/processed/demo_03_continuous/demo_03_10_demos_5hz_coarse.npz",
@@ -79,7 +79,7 @@
       "weight": 1.5
     },
     {
-      "feature_name": "surface_dist",
+      "feature_name": "table_dist",
       "stage": 1,
       "semantics": "target_value",
       "value": 0.08,
@@ -100,14 +100,14 @@
       "scale": 0.0482
     },
     {
-      "feature_name": "tool_plane_err",
+      "feature_name": "tool_roll",
       "stage": 1,
       "semantics": "target_value",
       "value": 0.0,
       "scale": 0.0411
     },
     {
-      "feature_name": "surface_dist",
+      "feature_name": "table_dist",
       "stage": 2,
       "semantics": "target_value",
       "value": 0.08,
@@ -128,7 +128,7 @@
       "scale": 0.1660
     },
     {
-      "feature_name": "tool_plane_err",
+      "feature_name": "tool_roll",
       "stage": 2,
       "semantics": "target_value",
       "value": 0.0,

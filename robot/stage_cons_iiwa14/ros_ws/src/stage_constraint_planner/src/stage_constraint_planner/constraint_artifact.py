@@ -1,10 +1,39 @@
-import copy
 import json
 import math
 import os
 
 
 ACTIVE_MODES = frozenset({"target_value", "lower_bound", "upper_bound"})
+
+
+def _task_fixed_term_parameters(true_terms, stage, feature_name):
+    exact = [
+        term
+        for term in true_terms
+        if int(term["stage"]) == int(stage)
+        and str(term["feature_name"]) == str(feature_name)
+    ]
+    candidates = exact or [
+        term
+        for term in true_terms
+        if str(term["feature_name"]) == str(feature_name)
+    ]
+    parameters = {
+        (float(term["scale"]), float(term.get("weight", 1.0)))
+        for term in candidates
+    }
+    if len(parameters) != 1:
+        raise ValueError(
+            "Task-fixed scale/weight is missing or ambiguous for stage {} feature {}".format(
+                int(stage), str(feature_name)
+            )
+        )
+    scale, weight = next(iter(parameters))
+    if not math.isfinite(scale) or scale <= 0.0:
+        raise ValueError("Task-fixed constraint scale must be positive and finite")
+    if not math.isfinite(weight) or weight < 0.0:
+        raise ValueError("Task-fixed constraint weight must be nonnegative and finite")
+    return scale, weight
 
 
 def _resolved_artifact_path(source, learned_root):
@@ -22,7 +51,7 @@ def _resolved_artifact_path(source, learned_root):
 
 
 def configure_planning_profile(config, task_id, source, learned_root):
-    """Resolve a complete true or learned profile into one shared planner config."""
+    """Apply learned modes, values, and endpoints to task-fixed planner settings."""
     true_terms = [dict(value) for value in config["constraint_terms"]]
     source = str(source).strip()
     config["true_constraint_terms"] = true_terms
@@ -36,7 +65,7 @@ def configure_planning_profile(config, task_id, source, learned_root):
         artifact = json.load(handle)
     if artifact.get("artifact_type") != "learned_stage_constraints":
         raise ValueError("Selected file is not a learned constraint artifact")
-    if int(artifact.get("schema_version", -1)) != 3:
+    if int(artifact.get("schema_version", -1)) != 5:
         raise ValueError("Unsupported learned constraint schema version")
     if str(artifact.get("task_id")) != task_id:
         raise ValueError(
@@ -63,24 +92,28 @@ def configure_planning_profile(config, task_id, source, learned_root):
     if dict(artifact.get("feature_definition", {})) != expected_feature_definition:
         raise ValueError("Learned feature definition does not match the planner")
 
-    profile = artifact.get("planning_profile")
-    if not isinstance(profile, dict):
-        raise ValueError("Learned artifact has no planning profile")
-    profile_keys = [str(key) for key in config["planning_profile_fields"]]
-    missing_profile_keys = [key for key in profile_keys if key not in profile]
-    if missing_profile_keys:
-        raise ValueError(
-            "Learned planning profile is missing: {}".format(
-                ", ".join(missing_profile_keys)
-            )
-        )
-    for key in profile_keys:
-        config[key] = copy.deepcopy(profile[key])
-
     n_stages = len(config["stage_names"])
-    endpoints = config["stage_endpoint_positions_bar"]
-    if not isinstance(endpoints, list) or len(endpoints) != n_stages - 1:
-        raise ValueError("Learned profile endpoints do not match its stage count")
+    if str(artifact.get("endpoint_coordinate_frame", "")) != str(
+        config.get("endpoint_coordinate_frame", "")
+    ):
+        raise ValueError("Learned endpoint coordinate frame does not match the planner")
+    endpoint_poses = artifact.get("stage_endpoint_poses_bar")
+    if not isinstance(endpoint_poses, list) or len(endpoint_poses) != n_stages - 1:
+        raise ValueError("Learned artifact has no matching aggregated endpoint poses")
+    normalized_endpoint_poses = []
+    for pose in endpoint_poses:
+        if not isinstance(pose, list) or len(pose) != 7:
+            raise ValueError("Learned endpoint poses must contain xyz+xyzw")
+        values = [float(value) for value in pose]
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Learned endpoint poses must be finite")
+        quaternion_norm = math.sqrt(sum(value * value for value in values[3:]))
+        if quaternion_norm <= 1e-9:
+            raise ValueError("Learned endpoint quaternion must be nonzero")
+        values[3:] = [value / quaternion_norm for value in values[3:]]
+        normalized_endpoint_poses.append(values)
+    config["stage_endpoint_poses_bar"] = normalized_endpoint_poses
+    config["stage_endpoint_positions_bar"] = [pose[:3] for pose in normalized_endpoint_poses]
     if int(artifact.get("num_stages", -1)) != n_stages:
         raise ValueError("Learned constraint stage count does not match the task")
 
@@ -127,14 +160,11 @@ def configure_planning_profile(config, task_id, source, learned_root):
                 )
             )
         value = float(pair["value"])
-        scale = float(pair.get("scale", 1.0))
-        weight = float(pair.get("weight", 1.0))
         if not math.isfinite(value):
             raise ValueError("Learned constraint value must be finite")
-        if not math.isfinite(scale) or scale <= 0.0:
-            raise ValueError("Learned constraint scale must be positive and finite")
-        if not math.isfinite(weight) or weight < 0.0:
-            raise ValueError("Learned constraint weight must be nonnegative and finite")
+        scale, weight = _task_fixed_term_parameters(
+            true_terms, stage, feature_name
+        )
         planning_terms.append(
             {
                 "feature_name": feature_name,

@@ -13,6 +13,10 @@ target_include_directories(optitrack_base_transform PRIVATE
 )
 target_link_libraries(optitrack_base_transform ${catkin_LIBRARIES})
 
+catkin_install_python(PROGRAMS scripts/fixed_pose_publisher.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 install(TARGETS optitrack_base_transform
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

@@ -1,0 +1,35 @@
+{
+  "source": "ee_pose.csv",
+  "recording_duration_s": 76.27946400642395,
+  "stationary_marker_interval_s": [
+    33.484952211380005,
+    42.03977847099304
+  ],
+  "stationary_marker_strict_duration_s": 8.554826259613037,
+  "circular_interval_s": [
+    42.8747193813324,
+    71.64454460144043
+  ],
+  "circular_duration_s": 28.769825220108032,
+  "retained_samples": 1264,
+  "fitted_obstacle_center_xy_m": [
+    0.6482404602182538,
+    0.13729369973306801
+  ],
+  "fitted_radius_mm": 77.8280515946952,
+  "center_distance_mean_mm": 78.19720218537033,
+  "center_distance_median_mm": 77.92554695116877,
+  "center_distance_p05_p95_mm": [
+    67.1314422078175,
+    91.73688984155264
+  ],
+  "radial_rmse_mm": 7.805211429307487,
+  "net_revolutions": 5.197774152623336,
+  "total_angular_travel_revolutions": 5.197774152623336,
+  "flange_z_median_mm": 321.2730035594394,
+  "flange_z_p05_p95_mm": [
+    302.8213525970332,
+    340.3135253705794
+  ],
+  "note": "Center is identifiable in robot-base XY only; the bag contains no recorded obstacle pose topic, so obstacle Z is not inferred from circular flange motion."
+}

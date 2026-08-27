@@ -72,10 +72,10 @@ class BarCleanEnv(BarInspectEnv):
     task_name = "BarClean"
     default_learning_features = (
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "bar_lateral_offset",
         "tool_pitch",
-        "tool_plane_err",
+        "tool_roll",
         "tool_yaw",
         "bar_axial_offset",
     )
@@ -102,12 +102,12 @@ class BarCleanEnv(BarInspectEnv):
         self.feature_definition = dict(definition["feature_definition"])
 
         stage0_clearance = _required_term(definition, 0, "obstacle_clearance")
-        clean_surface = _required_term(definition, 1, "surface_dist")
+        clean_surface = _required_term(definition, 1, "table_dist")
         clean_lateral = _required_term(definition, 1, "bar_lateral_offset")
         clean_pitch = _required_term(definition, 1, "tool_pitch")
         clean_yaw = _required_term(definition, 1, "tool_yaw")
         discharge_axial = _required_term(definition, 3, "bar_axial_offset")
-        discharge_surface = _required_term(definition, 3, "surface_dist")
+        discharge_surface = _required_term(definition, 3, "table_dist")
         discharge_pitch = _required_term(definition, 3, "tool_pitch")
         discharge_yaw = _required_term(definition, 3, "tool_yaw")
         for term in (
@@ -345,10 +345,10 @@ class BarCleanEnv(BarInspectEnv):
         for column, name in enumerate(
             (
                 "obstacle_clearance",
-                "surface_dist",
+                "table_dist",
                 "bar_lateral_offset",
                 "tool_pitch",
-                "tool_plane_err",
+                "tool_roll",
             )
         ):
             base_features[:, column] = planner_features[name]
@@ -605,14 +605,17 @@ def load_BarClean(
     n_demos=10,
     seed=2026,
     env_kwargs=None,
-    demo_kwargs=None,
     processed_demo_path=None,
+    source_demo_ids=None,
     **extra_env_kwargs,
 ):
+    if processed_demo_path is None:
+        raise ValueError(
+            "BarClean requires processed_demo_path; synthetic dataset generation is not supported"
+        )
+
     env_config = dict(env_kwargs or {})
     env_config.update(extra_env_kwargs)
-    run_config = dict(demo_kwargs or {})
-    env = BarCleanEnv(**env_config)
 
     if processed_demo_path is not None:
         data_path = Path(processed_demo_path).expanduser()
@@ -627,6 +630,9 @@ def load_BarClean(
                 "coarse_bounds_indices",
                 "demo_bar_poses",
                 "demo_obstacle_poses",
+                "downsample_hz",
+                "optitrack_to_robot_rotation",
+                "optitrack_to_robot_translation",
             }
             missing = sorted(required.difference(archive.files))
             if missing:
@@ -642,7 +648,14 @@ def load_BarClean(
             demo_obstacle_poses = np.asarray(
                 archive["demo_obstacle_poses"], dtype=float
             )
-            source_demo_ids = np.asarray(
+            downsample_hz = float(np.asarray(archive["downsample_hz"]).item())
+            tracker_rotation = np.asarray(
+                archive["optitrack_to_robot_rotation"], dtype=float
+            )
+            tracker_translation = np.asarray(
+                archive["optitrack_to_robot_translation"], dtype=float
+            )
+            archive_source_demo_ids = np.asarray(
                 archive["source_demo_ids"]
                 if "source_demo_ids" in archive.files
                 else np.arange(len(bounds)),
@@ -663,6 +676,19 @@ def load_BarClean(
                 ).item()
             )
 
+        if not np.isfinite(downsample_hz) or downsample_hz <= 0.0:
+            raise ValueError(
+                f"Processed BarClean downsample_hz must be positive, got {downsample_hz}."
+            )
+        env_config.update(
+            {
+                "dt": 1.0 / downsample_hz,
+                "optitrack_to_robot_rotation": tracker_rotation,
+                "optitrack_to_robot_translation": tracker_translation,
+            }
+        )
+        env = BarCleanEnv(**env_config)
+
         expected_names = [spec["name"] for spec in env.get_feature_schema()]
         if feature_names != expected_names:
             raise ValueError(
@@ -672,10 +698,6 @@ def load_BarClean(
         if bounds.ndim != 2 or bounds.shape[1] != 6:
             raise ValueError(
                 "coarse_bounds_indices must have shape (num_demos, 6) for five stages."
-            )
-        if int(n_demos) > len(bounds):
-            raise ValueError(
-                f"Requested {n_demos} demos, but {data_path} contains only {len(bounds)}."
             )
         if demo_bar_poses.shape != (len(bounds), 7):
             raise ValueError(
@@ -687,11 +709,54 @@ def load_BarClean(
                 "demo_obstacle_poses must have shape (num_demos, 7), got "
                 f"{demo_obstacle_poses.shape}."
             )
-        if source_demo_ids.shape != (len(bounds),):
+        if archive_source_demo_ids.shape != (len(bounds),):
             raise ValueError(
                 "source_demo_ids must have shape (num_demos,), got "
-                f"{source_demo_ids.shape}."
+                f"{archive_source_demo_ids.shape}."
             )
+
+        if source_demo_ids is None:
+            requested_count = int(n_demos)
+            if requested_count <= 0:
+                raise ValueError("n_demos must be positive")
+            if requested_count > len(bounds):
+                raise ValueError(
+                    f"Requested {n_demos} demos, but {data_path} contains only {len(bounds)}."
+                )
+            selected_archive_indices = list(range(requested_count))
+        else:
+            requested_source_ids = [int(value) for value in source_demo_ids]
+            if not requested_source_ids:
+                raise ValueError("source_demo_ids must contain at least one demo ID")
+            if len(set(requested_source_ids)) != len(requested_source_ids):
+                raise ValueError(
+                    f"source_demo_ids contains duplicates: {requested_source_ids}"
+                )
+            archive_id_to_index = {}
+            duplicate_archive_ids = set()
+            for archive_index, source_id in enumerate(archive_source_demo_ids.tolist()):
+                source_id = int(source_id)
+                if source_id in archive_id_to_index:
+                    duplicate_archive_ids.add(source_id)
+                archive_id_to_index[source_id] = int(archive_index)
+            if duplicate_archive_ids:
+                raise ValueError(
+                    "Processed BarClean data contains duplicate source_demo_ids: "
+                    f"{sorted(duplicate_archive_ids)}"
+                )
+            missing_source_ids = [
+                source_id
+                for source_id in requested_source_ids
+                if source_id not in archive_id_to_index
+            ]
+            if missing_source_ids:
+                raise ValueError(
+                    f"Requested source_demo_ids {missing_source_ids} are not present in {data_path}; "
+                    f"available IDs are {archive_source_demo_ids.tolist()}."
+                )
+            selected_archive_indices = [
+                archive_id_to_index[source_id] for source_id in requested_source_ids
+            ]
 
         demo_scenes = [
             BarInspectScene(
@@ -700,8 +765,12 @@ def load_BarClean(
             )
             for bar_pose, obstacle_pose in zip(demo_bar_poses, demo_obstacle_poses)
         ]
-        env.set_scene(demo_scenes[0])
-        env.set_demo_scenes(demo_scenes)
+        selected_demo_scenes = [
+            demo_scenes[archive_index]
+            for archive_index in selected_archive_indices
+        ]
+        env.set_scene(selected_demo_scenes[0])
+        env.set_demo_scenes(selected_demo_scenes)
 
         demos = []
         features = []
@@ -709,7 +778,8 @@ def load_BarClean(
         true_cutpoints = []
         timestamps = []
         scene_specs = []
-        for demo_index, row in enumerate(bounds[: int(n_demos)]):
+        for demo_index, archive_index in enumerate(selected_archive_indices):
+            row = bounds[archive_index]
             row = np.asarray(row, dtype=int)
             if not (
                 row[0] >= 0
@@ -732,11 +802,12 @@ def load_BarClean(
             scene_specs.append(
                 {
                     "demo_index": int(demo_index),
-                    "source_demo_id": int(source_demo_ids[demo_index]),
+                    "archive_demo_index": int(archive_index),
+                    "source_demo_id": int(archive_source_demo_ids[archive_index]),
                     "source": "processed_real_demo",
                     "processed_demo_path": str(data_path),
                     "recording_bounds": row.tolist(),
-                    **demo_scenes[demo_index].to_dict(),
+                    **demo_scenes[archive_index].to_dict(),
                 }
             )
 
@@ -756,6 +827,10 @@ def load_BarClean(
                 "task_name": env.task_name,
                 "data_source": "processed_real_demo",
                 "processed_demo_path": str(data_path),
+                "source_demo_ids": [
+                    int(archive_source_demo_ids[index])
+                    for index in selected_archive_indices
+                ],
                 "cutpoint_annotation_kind": cutpoint_annotation_kind,
                 "cutpoint_evaluation_role": cutpoint_evaluation_role,
                 "cutpoint_annotations": {
@@ -773,54 +848,5 @@ def load_BarClean(
                 "default_learning_features": list(env.default_learning_features),
             },
         )
-
-    demos = []
-    features = []
-    true_labels = []
-    true_cutpoints = []
-    timestamps = []
-    scene_specs = []
-    for demo_index in range(int(n_demos)):
-        scene = env.sample_scene(seed=int(seed) + demo_index)
-        scene["demo_index"] = int(demo_index)
-        scene["rollout_seed"] = int(seed) + demo_index
-        latent = env.rollout_demo(
-            scene,
-            seed=int(seed) + demo_index,
-            **run_config,
-        )
-        observation = env.compute_observation(latent, scene)
-        demos.append(np.asarray(observation["trajectory"], dtype=float))
-        features.append(np.asarray(observation["features"], dtype=float))
-        true_labels.append(np.asarray(observation["true_labels"], dtype=int))
-        true_cutpoints.append(np.asarray(observation["true_cutpoints"], dtype=int))
-        timestamps.append(np.asarray(observation["timestamps"], dtype=float))
-        scene_specs.append(scene)
-
-    return TaskBundle(
-        name=env.task_name,
-        demos=demos,
-        features=features,
-        env=env,
-        true_taus=None,
-        true_cutpoints=true_cutpoints,
-        true_labels=true_labels,
-        feature_schema=env.get_feature_schema(),
-        true_constraints=env.get_true_constraints(),
-        constraint_specs=env.get_constraint_specs(),
-        meta={
-            "seed": int(seed),
-            "task_name": env.task_name,
-            "stage_specs": env.get_stage_specs(),
-            "scene_specs": scene_specs,
-            "timestamps": timestamps,
-            "observation_specs": env.get_observation_spec(),
-            "planning_profile": env.get_planning_profile(),
-            "render_camera_presets": env.get_render_camera_presets(),
-            "asset_handles": env.get_asset_handles(),
-            "default_learning_features": list(env.default_learning_features),
-        },
-    )
-
 
 __all__ = ["BarCleanEnv", "BarInspectScene", "load_BarClean"]

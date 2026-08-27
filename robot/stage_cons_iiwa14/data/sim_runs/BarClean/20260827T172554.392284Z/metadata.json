@@ -1,0 +1,112 @@
+{
+  "acceleration_limit_rad_s2": 1.0,
+  "approach_speed_mps": 0.126,
+  "auto_goal_distance": 0.15,
+  "bar_center_xy": [
+    0.64223939,
+    -0.08751724
+  ],
+  "bar_reference_xy": [
+    0.64223939,
+    -0.08751724
+  ],
+  "bar_size": [
+    0.3,
+    0.06,
+    0.032
+  ],
+  "bar_yaw": -1.7069319990855438,
+  "constraint_source": "/learned_constraints/map_balanced_pooled/BarClean/method_seed_000/learned_constraints.json",
+  "created_utc": "2026-08-27T17:26:13.270106+00:00",
+  "frame_id": "iiwa14_link_0",
+  "motion_speed_scale": 1.0,
+  "obstacle_center": [
+    0.6482,
+    0.1373,
+    0.13437
+  ],
+  "obstacle_radius": 0.025,
+  "orientation_control": "position_plus_full_orientation",
+  "physics_hz": 240.0,
+  "planner": "stage_constraint_planner/task_planner",
+  "publish_hz": 60.0,
+  "pybullet_api_version": 202010061,
+  "render_video": false,
+  "scene_bar_live": true,
+  "scene_config": "/workcell_definition/demo_scene.json",
+  "scene_locked_bar_pose": [
+    0.64223939,
+    -0.08751724,
+    0.12537,
+    0.0,
+    0.0,
+    -0.75356339,
+    0.65737525
+  ],
+  "scene_locked_obstacle_pose": [
+    0.6482,
+    0.1373,
+    0.13437,
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scene_obstacle_live": true,
+  "scene_snapshot_source": "fixed",
+  "scene_source": {
+    "bar_calibration": "data/demos/BarClean/20260827T155047_325922Z_demo_bar_fixed_moving/demo.bag",
+    "bar_method": "robust orthogonal line fit to the 8-45 s robot-internal flange trajectory",
+    "ik_seed_field": "joint_positions",
+    "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_01_5hz_coarse.npz",
+    "ik_seed_sample_index": 305,
+    "obstacle_method": "manually supplied center XY; z is display-only table plus radius"
+  },
+  "simulator": "pybullet",
+  "status": "complete",
+  "table_center_xy": [
+    0.645219695,
+    0.024891380000000005
+  ],
+  "table_size": [
+    0.8,
+    0.8,
+    0.05
+  ],
+  "table_top_z": 0.10937,
+  "task_id": "BarClean",
+  "task_speed_mps": 0.084,
+  "trajectory_compiler": "stage_cartesian_trajectory/CartesianTrajectoryCompiler",
+  "trajectory_metrics": {
+    "approach_distance_m": 0.2088321379890489,
+    "approach_duration_s": 5.570310439091909,
+    "approach_points": 22,
+    "approach_timing_iterations": 2,
+    "approach_timing_overhead_s": 2.17343969864988,
+    "maximum_ik_position_error_m": 0.0002074605266479712,
+    "maximum_ik_tool_x_error_deg": 0.0008273573241967128,
+    "maximum_ik_tool_z_error_deg": 0.005453529541573942,
+    "maximum_interpolated_joint_acceleration_rad_s2": 0.9996448281328512,
+    "maximum_interpolated_joint_acceleration_ratio": 0.9996448281328512,
+    "maximum_interpolated_joint_velocity_rad_s": 0.5833584958030588,
+    "maximum_interpolated_joint_velocity_ratio": 0.9903401408182345,
+    "maximum_joint_step_rad": 0.08848399031573051,
+    "minimum_approach_tcp_z_m": 0.2214437872171402,
+    "minimum_jacobian_singular_value": 0.1243104775306655,
+    "task_cartesian_minimum_duration_s": 14.72220421299756,
+    "task_duration_s": 18.86256899205593,
+    "task_length_m": 1.0820773516780497,
+    "task_minimum_speed_scale": 0.5,
+    "task_points": 228,
+    "task_timing_iterations": 3,
+    "task_timing_overhead_s": 3.6403647790583697
+  },
+  "velocity_scale": 0.25,
+  "video_fps": 30,
+  "video_path": null,
+  "video_size": [
+    640,
+    480
+  ],
+  "video_slowdown": 1.0
+}

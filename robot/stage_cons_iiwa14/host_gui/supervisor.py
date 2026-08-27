@@ -865,13 +865,10 @@ class Supervisor:
     @classmethod
     def _load_fixed_scene_geometry(cls) -> Dict[str, object]:
         config = json.loads(SCENE_CONFIG.read_text(encoding="utf-8"))
-        transform = config["optitrack_to_robot"]
-        rotation = [[float(value) for value in row] for row in transform["rotation"]]
-        translation = [float(value) for value in transform["translation"]]
         bar = config["bar"]
         obstacle = config["obstacle"]
-        bar_pose = [float(value) for value in bar["locked_pose_optitrack"]]
-        obstacle_pose = [float(value) for value in obstacle["locked_pose_optitrack"]]
+        bar_pose = [float(value) for value in bar["locked_pose_robot"]]
+        obstacle_pose = [float(value) for value in obstacle["locked_pose_robot"]]
         if len(bar_pose) != 7 or len(obstacle_pose) != 7:
             raise ValueError("Demo scene object poses must contain seven values")
 
@@ -882,22 +879,19 @@ class Supervisor:
         x, y, z, w = (
             value / quaternion_norm for value in (x, y, z, w)
         )
-        tracker_rotation = [
+        bar_rotation = [
             [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
             [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
             [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
         ]
-        tracker_axis = cls._rotate_vector(
-            tracker_rotation, [float(value) for value in bar["axis_local"]]
+        robot_axis = cls._rotate_vector(
+            bar_rotation, [float(value) for value in bar["axis_local"]]
         )
-        robot_axis = cls._rotate_vector(rotation, tracker_axis)
         axis_norm = math.hypot(robot_axis[0], robot_axis[1])
         if axis_norm <= 1e-12:
             raise ValueError("Demo scene bar axis is vertical in the robot frame")
-        bar_reference = cls._transform_point(rotation, translation, bar_pose[:3])
-        obstacle_reference = cls._transform_point(
-            rotation, translation, obstacle_pose[:3]
-        )
+        bar_reference = bar_pose[:3]
+        obstacle_reference = obstacle_pose[:3]
         return {
             "bar": {
                 "pivot": bar_reference[:2],
@@ -992,7 +986,7 @@ class Supervisor:
         self, task_id: str, artifact: Dict[str, object]
     ) -> Tuple[bool, str]:
         try:
-            if int(artifact.get("schema_version", -1)) != 3:
+            if int(artifact.get("schema_version", -1)) != 5:
                 return False, "unsupported schema version"
             task_definition = json.loads(
                 TASK_CONFIGS[task_id].read_text(encoding="utf-8")
@@ -1014,22 +1008,27 @@ class Supervisor:
                 task_definition.get("feature_definition", {})
             ):
                 return False, "feature definition does not match"
-            planning_profile = artifact.get("planning_profile")
-            if not isinstance(planning_profile, dict):
-                return False, "planning profile is missing"
-            profile_keys = set(task_definition["planning_profile_fields"])
-            if not profile_keys.issubset(planning_profile):
-                return False, "planning profile is incomplete"
             n_stages = int(artifact["num_stages"])
             expected_stages = int(self._task_profiles[task_id]["n_stages"])
             if n_stages != expected_stages:
                 return False, "{} stages; task requires {}".format(
                     n_stages, expected_stages
                 )
-            if len(planning_profile["stage_names"]) != n_stages or len(
-                planning_profile["stage_endpoint_positions_bar"]
-            ) != n_stages - 1:
-                return False, "planning profile endpoints do not match its stages"
+            if str(artifact.get("endpoint_coordinate_frame", "")) != str(
+                task_definition.get("endpoint_coordinate_frame", "")
+            ):
+                return False, "endpoint coordinate frame does not match"
+            endpoint_poses = artifact.get("stage_endpoint_poses_bar")
+            if not isinstance(endpoint_poses, list) or len(endpoint_poses) != n_stages - 1:
+                return False, "aggregated endpoint poses do not match the stages"
+            for pose in endpoint_poses:
+                if not isinstance(pose, list) or len(pose) != 7:
+                    return False, "endpoint poses must contain xyz+xyzw"
+                values = [float(value) for value in pose]
+                if not all(math.isfinite(value) for value in values):
+                    return False, "endpoint poses must be finite"
+                if math.sqrt(sum(value * value for value in values[3:])) <= 1e-9:
+                    return False, "endpoint quaternion must be nonzero"
             schema = artifact["feature_schema"]
             pairs = artifact["feature_stage_modes"]
             if not isinstance(schema, list) or not schema or not isinstance(pairs, list):
@@ -1045,6 +1044,7 @@ class Supervisor:
                 str(spec["name"])
                 for spec in self._task_feature_definitions[task_id]["schema"]
             }
+            true_terms = [dict(term) for term in task_definition["constraint_terms"]]
             unsupported = set()
             for pair in pairs:
                 stage = int(pair["stage"])
@@ -1065,14 +1065,28 @@ class Supervisor:
                     if name not in supported:
                         unsupported.add(name)
                     value = float(pair["value"])
-                    scale = float(pair.get("scale", 1.0))
-                    weight = float(pair.get("weight", 1.0))
                     if not math.isfinite(value):
                         return False, "active constraint value is not finite"
+                    exact = [
+                        term for term in true_terms
+                        if int(term["stage"]) == stage
+                        and str(term["feature_name"]) == name
+                    ]
+                    candidates = exact or [
+                        term for term in true_terms
+                        if str(term["feature_name"]) == name
+                    ]
+                    parameters = {
+                        (float(term["scale"]), float(term.get("weight", 1.0)))
+                        for term in candidates
+                    }
+                    if len(parameters) != 1:
+                        return False, "task-fixed scale/weight is missing or ambiguous"
+                    scale, weight = next(iter(parameters))
                     if not math.isfinite(scale) or scale <= 0.0:
-                        return False, "constraint scale must be positive and finite"
+                        return False, "task-fixed constraint scale is invalid"
                     if not math.isfinite(weight) or weight < 0.0:
-                        return False, "constraint weight must be nonnegative and finite"
+                        return False, "task-fixed constraint weight is invalid"
             if seen_pairs != expected_pairs:
                 return False, "feature-stage matrix is incomplete"
             if unsupported:
@@ -1279,7 +1293,7 @@ class Supervisor:
         return {
             "current_ee": current_ee,
             "scene_geometry": scene,
-            "source": "optitrack" if live_objects else "fallback",
+            "source": self._scene_pose_source() if live_objects else "fallback",
         }
 
     @staticmethod
@@ -1364,7 +1378,7 @@ class Supervisor:
                     "live": True,
                 },
             },
-            "source": "optitrack",
+            "source": self._scene_pose_source(),
         }
 
     def _simulation_scene_snapshot(self) -> Dict[str, object]:
@@ -1509,6 +1523,7 @@ class Supervisor:
                 ],
                 "constraint_sources": json.loads(json.dumps(self._constraint_sources)),
                 "gui_settings": json.loads(json.dumps(self._gui_settings)),
+                "scene_pose_source": self._scene_pose_source(),
                 "container_running": self._container_running(),
                 "driver_running": driver_node_running or driver_process_running,
                 "robot_control": robot_control,
@@ -1881,6 +1896,57 @@ class Supervisor:
             self._read_env_value("OPTITRACK_OBSTACLE", "baiyu_obs_bar"),
         )
 
+    def _scene_pose_source(self) -> str:
+        source = self._read_env_value("SCENE_POSE_SOURCE", "fixed").lower()
+        if source not in {"fixed", "optitrack"}:
+            raise RuntimeError("SCENE_POSE_SOURCE must be fixed or optitrack")
+        return source
+
+    @staticmethod
+    def _write_env_value(key: str, value: str) -> None:
+        env_file = PROJECT_ROOT / ".env"
+        lines = (
+            env_file.read_text(encoding="utf-8").splitlines()
+            if env_file.exists()
+            else []
+        )
+        replacement = "{}={}".format(key, value)
+        updated: List[str] = []
+        replaced = False
+        for raw in lines:
+            stripped = raw.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                current_key = stripped.split("=", 1)[0].strip()
+                if current_key == key:
+                    if not replaced:
+                        updated.append(replacement)
+                        replaced = True
+                    continue
+            updated.append(raw)
+        if not replaced:
+            updated.append(replacement)
+        temporary = env_file.with_name(env_file.name + ".tmp")
+        temporary.write_text("\n".join(updated) + "\n", encoding="utf-8")
+        if env_file.exists():
+            os.chmod(temporary, env_file.stat().st_mode)
+        temporary.replace(env_file)
+
+    def _scene_tracking_nodes(self) -> set:
+        if self._scene_pose_source() == "fixed":
+            return {
+                "/fixed_scene_bar_publisher",
+                "/fixed_scene_obstacle_publisher",
+            }
+        return {"/vrpn_client_node", "/optitrack_base_transform"}
+
+    def _inactive_scene_tracking_nodes(self) -> set:
+        if self._scene_pose_source() == "fixed":
+            return {"/vrpn_client_node", "/optitrack_base_transform"}
+        return {
+            "/fixed_scene_bar_publisher",
+            "/fixed_scene_obstacle_publisher",
+        }
+
     @staticmethod
     def _topic_has_fresh_message(
         topic: str, timeout: float = 3.0, max_age: float = 1.0
@@ -1923,15 +1989,12 @@ class Supervisor:
         obstacle: str,
         timeout: float = 20.0,
     ) -> None:
-        required_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
-        raw_topics = (
+        source = self._scene_pose_source()
+        required_nodes = self._scene_tracking_nodes()
+        raw_topics = () if source == "fixed" else (
             ("base", base, "/vrpn_client_node/{}/pose".format(base)),
             ("object", obj, "/vrpn_client_node/{}/pose".format(obj)),
-            (
-                "obstacle",
-                obstacle,
-                "/vrpn_client_node/{}/pose".format(obstacle),
-            ),
+            ("obstacle", obstacle, "/vrpn_client_node/{}/pose".format(obstacle)),
         )
         transformed_topics = (
             "/vrpn_client_node/{}/pose_from_{}".format(obj, base),
@@ -1961,8 +2024,8 @@ class Supervisor:
                     ]
                 if not missing_raw and not missing_transformed:
                     self.log(
-                        "OptiTrack is ready: {}, {}, and {} are publishing fresh poses".format(
-                            base, obj, obstacle
+                        "Scene input is ready from {}: {} and {} are publishing fresh poses".format(
+                            source, obj, obstacle
                         )
                     )
                     return
@@ -1987,6 +2050,12 @@ class Supervisor:
                     )
                 )
             )
+        if source == "fixed":
+            raise RuntimeError(
+                "Fixed scene publishers did not deliver fresh poses: {}".format(
+                    ", ".join(missing_transformed)
+                )
+            )
         raise RuntimeError(
             "OptiTrack raw poses are fresh, but these base-relative topics did not "
             "deliver a new pose: {}. Inspect the base-transform node.".format(
@@ -1998,8 +2067,17 @@ class Supervisor:
         if not self._container_running():
             raise RuntimeError("Container is not running")
         server, base, obj, obstacle = self._optitrack_settings()
-        required_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        source = self._scene_pose_source()
+        required_nodes = self._scene_tracking_nodes()
         nodes = set(self._ros_nodes())
+        conflicts = nodes.intersection(self._inactive_scene_tracking_nodes())
+        if conflicts:
+            raise RuntimeError(
+                "Scene source changed to '{}', but nodes from the other source are still running: {}. "
+                "Stop the workstation once, then restart it.".format(
+                    source, ", ".join(sorted(conflicts))
+                )
+            )
         if required_nodes.issubset(nodes):
             self.log("Reusing the running OptiTrack ROS chain")
             self._wait_for_optitrack_ready(None, base, obj, obstacle)
@@ -2019,6 +2097,7 @@ class Supervisor:
                 "base_name:={}".format(base),
                 "object_name:={}".format(obj),
                 "obstacle_name:={}".format(obstacle),
+                "use_fixed_scene:={}".format("true" if source == "fixed" else "false"),
             ],
         )
         try:
@@ -2036,7 +2115,7 @@ class Supervisor:
             "/iiwa14/real_executor",
             "/stage_constraint_planner",
         }
-        tracking_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        tracking_nodes = self._scene_tracking_nodes()
         nodes = set(self._ros_nodes())
         station_running = station_nodes.issubset(nodes)
         tracking_running = tracking_nodes.issubset(nodes)
@@ -2511,7 +2590,7 @@ class Supervisor:
             "obstacle_clearance": math.sqrt(
                 sum(value * value for value in obstacle_radial)
             ) - float(definition["obstacle_radius"]),
-            "surface_dist": sum(
+            "table_dist": sum(
                 (position[index] - table_point[index]) * normal[index]
                 for index in range(3)
             ),
@@ -2519,7 +2598,7 @@ class Supervisor:
                 relative_bar[index] * lateral[index] for index in range(3)
             ),
             "tool_pitch": math.atan2(down_component, forward_component),
-            "tool_plane_err": math.asin(max(-1.0, min(1.0, plane_component))),
+            "tool_roll": math.asin(max(-1.0, min(1.0, plane_component))),
             "tool_yaw": math.atan2(
                 sum(
                     tool_x_horizontal[index] * lateral[index]
@@ -3106,6 +3185,74 @@ class Supervisor:
 
         self._start_job("Start workstation", task)
 
+    def set_scene_pose_source(self, payload: Dict[str, object]) -> None:
+        source = str(payload.get("source", "")).strip().lower()
+        if source not in {"fixed", "optitrack"}:
+            raise ValueError("Scene pose source must be fixed or optitrack")
+
+        def task() -> None:
+            current = self._scene_pose_source()
+            if source == current:
+                self.log("Scene pose source is already " + source)
+                return
+            nodes = set(self._ros_nodes())
+            if (
+                "/iiwa14/iiwa_driver" in nodes
+                or self._driver_binary_running()
+                or self._task_state.get("phase") in TASK_ACTIVE_PHASES
+            ):
+                raise RuntimeError(
+                    "Exit Demo / release robot control and stop the active task before changing the scene source"
+                )
+
+            demo_was_running = "/stage_demo_gui" in nodes
+            tracking_was_running = bool(
+                nodes.intersection(
+                    self._scene_tracking_nodes()
+                    | self._inactive_scene_tracking_nodes()
+                )
+            )
+            self._signal_child("demo")
+            self._signal_child("tracking")
+            if self._container_running():
+                self._run(
+                    [
+                        "docker",
+                        "exec",
+                        CONTAINER,
+                        "bash",
+                        "-lc",
+                        "pkill -INT -f '[r]oslaunch stage_demo_gui demo_station.launch' || true; "
+                        "pkill -INT -f '[r]oslaunch stage_optitrack optitrack.launch' || true",
+                    ],
+                    check=False,
+                    timeout=8,
+                )
+                scene_nodes = (
+                    self._scene_tracking_nodes()
+                    | self._inactive_scene_tracking_nodes()
+                    | {"/stage_demo_gui"}
+                )
+                deadline = time.monotonic() + 8.0
+                while time.monotonic() < deadline:
+                    if not set(self._ros_nodes()).intersection(scene_nodes):
+                        break
+                    time.sleep(0.25)
+                else:
+                    raise RuntimeError(
+                        "Scene publishers did not stop; stop the workstation before changing the source"
+                    )
+
+            with self._lock:
+                self._write_env_value("SCENE_POSE_SOURCE", source)
+            self.log("Scene pose source changed from {} to {}".format(current, source))
+            if demo_was_running:
+                self._start_demo_process()
+            elif tracking_was_running:
+                self._start_optitrack_process()
+
+        self._start_job("Switch scene pose source", task)
+
     def rebuild_image(self) -> None:
         def task() -> None:
             conflicts = self._driver_process_containers()
@@ -3166,10 +3313,8 @@ class Supervisor:
         required_nodes = {
             "/demo_recorder",
             "/iiwa14/demo_virtual_fixture",
-            "/optitrack_base_transform",
             "/stage_demo_gui",
-            "/vrpn_client_node",
-        }
+        } | self._scene_tracking_nodes()
         deadline = time.monotonic() + timeout
         stable_since: Optional[float] = None
         while time.monotonic() < deadline:
@@ -3203,7 +3348,18 @@ class Supervisor:
             self.log("Demo station is already running")
             return
         server, base, obj, obstacle = self._optitrack_settings()
-        tracking_nodes = {"/vrpn_client_node", "/optitrack_base_transform"}
+        source = self._scene_pose_source()
+        tracking_nodes = self._scene_tracking_nodes()
+        conflicts = set(self._ros_nodes()).intersection(
+            self._inactive_scene_tracking_nodes()
+        )
+        if conflicts:
+            raise RuntimeError(
+                "Scene source changed to '{}', but nodes from the other source are still running: {}. "
+                "Stop the workstation once, then restart it.".format(
+                    source, ", ".join(sorted(conflicts))
+                )
+            )
         start_optitrack = not tracking_nodes.issubset(set(self._ros_nodes()))
         child = self._spawn(
             "demo",
@@ -3218,6 +3374,7 @@ class Supervisor:
                 "start_optitrack:={}".format(
                     "true" if start_optitrack else "false"
                 ),
+                "use_fixed_scene:={}".format("true" if source == "fixed" else "false"),
                 f"optitrack_server:={server}",
                 f"optitrack_base:={base}",
                 f"optitrack_object:={obj}",
@@ -3562,6 +3719,8 @@ class Handler(BaseHTTPRequestHandler):
                 SUPERVISOR.select_task(payload)
             elif self.path == "/api/settings":
                 SUPERVISOR.update_gui_settings(payload)
+            elif self.path == "/api/scene/source":
+                SUPERVISOR.set_scene_pose_source(payload)
             elif self.path == "/api/task/abort":
                 SUPERVISOR.abort_task()
             else:

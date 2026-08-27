@@ -69,16 +69,16 @@ class BarInspectEnv:
     Only the configured tool axis is used for orientation features.  Rotation
     about that axis is deliberately absent from the feature set and is free.
     The steel-bar pose supplies direction only for learned task features;
-    ``surface_dist`` is measured from a separately calibrated fixed table plane.
+    ``table_dist`` is measured from a separately calibrated fixed table plane.
     """
 
     task_name = "BarInspect"
     default_learning_features = (
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "bar_lateral_offset",
         "tool_pitch",
-        "tool_plane_err",
+        "tool_roll",
     )
 
     def __init__(
@@ -527,7 +527,7 @@ class BarInspectEnv:
             {"id": 0, "column_idx": 0, "name": "obstacle_clearance", "unit": "m",
              "frame": "frozen scene snapshot",
              "description": "EE radial clearance from the infinite vertical obstacle cylinder; positive outside"},
-            {"id": 1, "column_idx": 1, "name": "surface_dist", "unit": "m",
+            {"id": 1, "column_idx": 1, "name": "table_dist", "unit": "m",
              "frame": "bar_table_task.z / calibrated table",
              "description": "Signed EE distance to the fixed calibrated table plane along its normal"},
             {"id": 2, "column_idx": 2, "name": "bar_lateral_offset", "unit": "m",
@@ -536,7 +536,7 @@ class BarInspectEnv:
             {"id": 3, "column_idx": 3, "name": "tool_pitch", "unit": "rad",
              "frame": "bar_table_task orientation",
              "description": "Signed tool-axis pitch above the table plane; downward vertical is pi/2"},
-            {"id": 4, "column_idx": 4, "name": "tool_plane_err", "unit": "rad",
+            {"id": 4, "column_idx": 4, "name": "tool_roll", "unit": "rad",
              "frame": "bar_table_task orientation",
              "description": "Signed tool-axis deviation from the plane spanned by bar axis and table normal"},
             {"id": 5, "column_idx": 5, "name": "motion_axis_err", "unit": "rad",
@@ -550,21 +550,21 @@ class BarInspectEnv:
     def get_true_constraints(self):
         return {
             "obstacle_min_clearance": float(self.obstacle_min_clearance),
-            "surface_distance_target": float(self.scan_standoff),
+            "table_distance_target": float(self.scan_standoff),
             "bar_lateral_target": float(self.scan_lateral_offset),
             "stage2_pitch_target": float(self.stage2_pitch),
             "stage3_pitch_target": float(self.stage3_pitch),
-            "tool_plane_target": 0.0,
+            "tool_roll_target": 0.0,
         }
 
     def get_constraint_specs(self):
         stage_scan_common = [
-            {"feature_name": "surface_dist", "semantics": "target_value",
-             "oracle_key": "surface_distance_target"},
+            {"feature_name": "table_dist", "semantics": "target_value",
+             "oracle_key": "table_distance_target"},
             {"feature_name": "bar_lateral_offset", "semantics": "target_value",
              "oracle_key": "bar_lateral_target"},
-            {"feature_name": "tool_plane_err", "semantics": "target_value",
-             "oracle_key": "tool_plane_target"},
+            {"feature_name": "tool_roll", "semantics": "target_value",
+             "oracle_key": "tool_roll_target"},
         ]
         specs = [
             {"feature_name": "obstacle_clearance", "stage": 0, "semantics": "lower_bound",
@@ -598,7 +598,7 @@ class BarInspectEnv:
             "table_plane": {
                 "surface_point_base": self.table_surface_point.tolist(),
                 "normal_base": self.table_normal.tolist(),
-                "surface_dist_definition": "dot(ee_position - surface_point_base, normal_base)",
+                "table_dist_definition": "dot(ee_position - surface_point_base, normal_base)",
                 "calibration_source": "demo_surface stable contact segment, 2026-08-19",
             },
             "optitrack_obstacle_pose": {
@@ -618,7 +618,7 @@ class BarInspectEnv:
                 "tracker_to_robot_rotation": self.optitrack_to_robot_rotation.tolist(),
                 "tracker_to_robot_translation": self.optitrack_to_robot_translation.tolist(),
                 "scene_field": "bar_pose_optitrack",
-                "usage": "bar direction and diagnostic bar-relative coordinates only; not surface_dist",
+                "usage": "bar direction and diagnostic bar-relative coordinates only; not table_dist",
                 "fallback": "static bar reference point and bar axis from the environment config",
             },
             "orientation_definition": {
@@ -881,13 +881,13 @@ class BarInspectEnv:
         obstacle_clearance = np.linalg.norm(obstacle_radial, axis=1) - self.obstacle_radius
         relative_bar = tcp - bar_reference_point
         relative_table = tcp - self.table_surface_point[None, :]
-        surface_dist = relative_table @ self.table_normal
+        table_dist = relative_table @ self.table_normal
         bar_progress = np.sum(relative_bar * bar_axis, axis=1)
         bar_lateral_offset = np.sum(relative_bar * bar_lateral, axis=1)
         down_component = -(tool_axis @ self.table_normal)
         forward_component = np.sum(tool_axis * bar_axis, axis=1)
         tool_pitch = np.arctan2(down_component, forward_component)
-        tool_plane_err = np.arcsin(
+        tool_roll = np.arcsin(
             np.clip(np.sum(tool_axis * bar_lateral, axis=1), -1.0, 1.0)
         )
 
@@ -919,10 +919,10 @@ class BarInspectEnv:
         features = np.column_stack(
             [
                 obstacle_clearance,
-                surface_dist,
+                table_dist,
                 bar_lateral_offset,
                 tool_pitch,
-                tool_plane_err,
+                tool_roll,
                 motion_axis_err,
                 speed,
                 angular_speed,

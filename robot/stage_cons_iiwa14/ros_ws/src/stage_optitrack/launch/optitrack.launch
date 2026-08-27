@@ -7,11 +7,14 @@
   <arg name="obstacle_name" default="baiyu_obs_bar"/>
   <arg name="output_frame" default="base"/>
   <arg name="base_timeout" default="0.25"/>
+  <arg name="use_fixed_scene" default="true"/>
+  <arg name="fixed_scene_config" default="/workcell_definition/demo_scene.json"/>
 
   <node pkg="vrpn_client_ros"
         type="vrpn_client_node"
         name="vrpn_client_node"
         output="screen"
+        unless="$(arg use_fixed_scene)"
         required="true">
     <param name="server" value="$(arg server)"/>
     <param name="port" value="$(arg port)"/>
@@ -25,10 +28,37 @@
         type="optitrack_base_transform"
         name="optitrack_base_transform"
         output="screen"
+        unless="$(arg use_fixed_scene)"
         required="true">
     <param name="base_name" value="$(arg base_name)"/>
     <param name="output_frame" value="$(arg output_frame)"/>
     <param name="base_timeout" value="$(arg base_timeout)"/>
     <rosparam param="object_names" subst_value="true">[$(arg object_name), $(arg obstacle_name)]</rosparam>
+  </node>
+
+  <node pkg="stage_optitrack"
+        type="fixed_pose_publisher.py"
+        name="fixed_scene_bar_publisher"
+        output="screen"
+        if="$(arg use_fixed_scene)"
+        required="true">
+    <param name="base_name" value="$(arg base_name)"/>
+    <param name="object_name" value="$(arg object_name)"/>
+    <param name="object_key" value="bar"/>
+    <param name="output_frame" value="$(arg output_frame)"/>
+    <param name="scene_config" value="$(arg fixed_scene_config)"/>
+  </node>
+
+  <node pkg="stage_optitrack"
+        type="fixed_pose_publisher.py"
+        name="fixed_scene_obstacle_publisher"
+        output="screen"
+        if="$(arg use_fixed_scene)"
+        required="true">
+    <param name="base_name" value="$(arg base_name)"/>
+    <param name="object_name" value="$(arg obstacle_name)"/>
+    <param name="object_key" value="obstacle"/>
+    <param name="output_frame" value="$(arg output_frame)"/>
+    <param name="scene_config" value="$(arg fixed_scene_config)"/>
   </node>
 </launch>

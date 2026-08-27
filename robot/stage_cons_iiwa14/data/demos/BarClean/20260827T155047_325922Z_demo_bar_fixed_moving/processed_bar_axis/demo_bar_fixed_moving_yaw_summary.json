@@ -1,0 +1,24 @@
+{
+  "source_bag": "demo.bag",
+  "analysis_hz": 20.0,
+  "recording_duration_s": 58.1499445438385,
+  "selected_middle_interval_s": [
+    8.0,
+    45.0
+  ],
+  "selected_samples": 740,
+  "recommended_bar_yaw_deg": 82.88130581546906,
+  "equivalent_axis_yaw_deg": -97.11869418453094,
+  "previous_fixed_yaw_deg": 83.9705,
+  "recommended_minus_previous_deg": -1.089194184530939,
+  "endpoint_turnaround_crosscheck_yaw_deg": 83.11249870195819,
+  "axis_direction_xy": [
+    0.1239252433292537,
+    0.9922915569860429
+  ],
+  "axial_span_mm": 286.6506484284342,
+  "orthogonal_rmse_mm": 3.526339874832842,
+  "orthogonal_abs_p95_mm": 6.606483060330523,
+  "max_joint_resampling_gap_ms": 2.1986961364746094,
+  "interpretation": "Yaw has a 180-degree axis ambiguity. The recommended sign matches the existing fixed-bar convention near +84 degrees."
+}

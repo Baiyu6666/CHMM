@@ -140,13 +140,11 @@ class DemoRecorder:
                     topic: published.get(topic) for topic in all_topics
                 },
                 "robot": {"name": rospy.get_param("~robot_name", "iiwa14")},
-                "optitrack": {
-                    "server": rospy.get_param("~optitrack_server", ""),
-                    "base_rigid_body": rospy.get_param("~optitrack_base", "iiwa14"),
-                    "object_rigid_body": rospy.get_param(
-                        "~optitrack_object", "baiyu_bar"
-                    ),
-                    "obstacle_rigid_body": rospy.get_param(
+                "scene_pose": {
+                    "source": rospy.get_param("~scene_pose_source", "fixed"),
+                    "base_name": rospy.get_param("~optitrack_base", "iiwa14"),
+                    "bar_name": rospy.get_param("~optitrack_object", "baiyu_bar"),
+                    "obstacle_name": rospy.get_param(
                         "~optitrack_obstacle", "baiyu_obs_bar"
                     ),
                 },

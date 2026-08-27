@@ -22,7 +22,9 @@ class DemoGui:
 
     def __init__(self):
         self._lock = threading.RLock()
-        self._service_lock = threading.Lock()
+        # Recording may need to arm Demo mode first.  Keep both operations in
+        # one serialized control transaction while allowing that nested call.
+        self._service_lock = threading.RLock()
         self._mode_requested = False
         self._driver_demo_active = False
         self._mode_loss_cleanup_running = False
@@ -362,8 +364,23 @@ class DemoGui:
                 and self._fri_commanding,
                 "fri_torque_mode": self._fresh(self._last_command_mode, 0.5)
                 and self._fri_command_mode == 3,
-                "motion_gate": self._fresh(self._last_motion_gate, 0.5),
+                "motion_gate": self._fresh(self._last_motion_gate, 0.5)
+                and self._driver_demo_active,
             }
+
+    def _mode_dependencies(self):
+        dependencies = self._dependencies()
+        return {
+            name: dependencies[name]
+            for name in (
+                "joint_state",
+                "ee_tf",
+                "fixture",
+                "recorder",
+                "fri_commanding",
+                "fri_torque_mode",
+            )
+        }
 
     def state(self):
         dependencies = self._dependencies()
@@ -374,6 +391,7 @@ class DemoGui:
                 "available_tasks": sorted(self.TASK_IDS),
                 "mode_active": self._driver_demo_active,
                 "mode_requested": self._mode_requested,
+                "mode_ready": all(self._mode_dependencies().values()),
                 "ready": all(dependencies.values()),
                 "dependencies": dependencies,
                 "scene_geometry": {
@@ -406,7 +424,11 @@ class DemoGui:
     def set_mode(self, enabled):
         with self._service_lock:
             if enabled:
-                missing = [name for name, ready in self._dependencies().items() if not ready]
+                missing = [
+                    name
+                    for name, ready in self._mode_dependencies().items()
+                    if not ready
+                ]
                 if missing:
                     return False, "Not ready: " + ", ".join(missing)
                 ok, message = self._call_set_bool(self._all_service, False)
@@ -472,8 +494,11 @@ class DemoGui:
     def set_recording(self, enabled, payload):
         with self._service_lock:
             with self._lock:
-                if enabled and not self._driver_demo_active:
-                    return False, "Activate demo mode first"
+                mode_active = self._driver_demo_active
+            if enabled and not mode_active:
+                ok, message = self.set_mode(True)
+                if not ok:
+                    return False, "Could not activate Demo mode: " + message
             try:
                 if enabled:
                     label = str(payload.get("label", "demo")).strip() or "demo"

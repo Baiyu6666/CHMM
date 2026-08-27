@@ -308,34 +308,25 @@ class IiwaPyBulletSim:
     def _load_demo_scene(self, path):
         with open(path, "r") as handle:
             config = json.load(handle)
-        transform = config["optitrack_to_robot"]
-        rotation = np.asarray(transform["rotation"], dtype=float)
-        translation = np.asarray(transform["translation"], dtype=float)
-        if rotation.shape != (3, 3) or translation.shape != (3,):
-            raise ValueError("Demo scene transform has invalid dimensions")
 
         table = config["table"]
         bar = config["bar"]
         obstacle = config["obstacle"]
-        bar_pose = np.asarray(bar["locked_pose_optitrack"], dtype=float)
-        obstacle_pose = np.asarray(obstacle["locked_pose_optitrack"], dtype=float)
+        bar_pose = np.asarray(bar["locked_pose_robot"], dtype=float)
+        obstacle_pose = np.asarray(obstacle["locked_pose_robot"], dtype=float)
         if bar_pose.shape != (7,) or obstacle_pose.shape != (7,):
             raise ValueError("Demo scene object poses must contain seven values")
 
-        bar_reference = rotation @ bar_pose[:3] + translation
-        obstacle_reference = rotation @ obstacle_pose[:3] + translation
-        tracker_rotation = self._rotation_from_quaternion(bar_pose[3:])
-        obstacle_tracker_rotation = self._rotation_from_quaternion(obstacle_pose[3:])
-        self.bar_reference_position = bar_reference.tolist()
-        self.bar_reference_orientation = self._quaternion_from_rotation(
-            rotation @ tracker_rotation
-        )
-        self.obstacle_reference_position = obstacle_reference.tolist()
+        bar_rotation = self._rotation_from_quaternion(bar_pose[3:])
+        obstacle_rotation = self._rotation_from_quaternion(obstacle_pose[3:])
+        self.bar_reference_position = bar_pose[:3].tolist()
+        self.bar_reference_orientation = self._quaternion_from_rotation(bar_rotation)
+        self.obstacle_reference_position = obstacle_pose[:3].tolist()
         self.obstacle_reference_orientation = self._quaternion_from_rotation(
-            rotation @ obstacle_tracker_rotation
+            obstacle_rotation
         )
         axis_local = np.asarray(bar["axis_local"], dtype=float)
-        bar_axis = rotation @ tracker_rotation @ axis_local
+        bar_axis = bar_rotation @ axis_local
         bar_axis[2] = 0.0
         axis_norm = float(np.linalg.norm(bar_axis[:2]))
         if axis_norm <= 1e-12:
@@ -350,7 +341,7 @@ class IiwaPyBulletSim:
         self.scene_locked_obstacle_pose = obstacle_pose.tolist()
         self.table_top_z = float(table["top_z"])
         self.table_size = [float(value) for value in table["size"]]
-        self.bar_reference_xy = bar_reference[:2].tolist()
+        self.bar_reference_xy = bar_pose[:2].tolist()
         self.bar_axis_xy = bar_axis[:2].tolist()
         self.bar_lateral_xy = [-self.bar_axis_xy[1], self.bar_axis_xy[0]]
         self.bar_outline_u = [float(value) for value in bar["outline_u"]]
@@ -371,8 +362,8 @@ class IiwaPyBulletSim:
         ]
         self.obstacle_radius = float(obstacle["radius"])
         self.obstacle_center = [
-            float(obstacle_reference[0]),
-            float(obstacle_reference[1]),
+            float(obstacle_pose[0]),
+            float(obstacle_pose[1]),
             self.table_top_z + self.obstacle_radius,
         ]
         self.table_center_xy = [
@@ -1304,7 +1295,7 @@ class IiwaPyBulletSim:
                 relative_obstacle @ self.feature_table_normal
             )
             obstacle_clearance = float(np.linalg.norm(obstacle_radial) - self.obstacle_radius)
-            surface_dist = float(
+            table_dist = float(
                 (np.asarray(ee_position) - self.feature_table_surface_point)
                 @ self.feature_table_normal
             )
@@ -1315,7 +1306,7 @@ class IiwaPyBulletSim:
             down_component = -float(tool_axis @ self.feature_table_normal)
             forward_component = float(tool_axis @ bar_axis_3d)
             tool_pitch = math.atan2(down_component, forward_component)
-            tool_plane_err = math.asin(
+            tool_roll = math.asin(
                 float(np.clip(tool_axis @ bar_lateral_3d, -1.0, 1.0))
             )
             tool_yaw = math.atan2(
@@ -1333,10 +1324,10 @@ class IiwaPyBulletSim:
             )
             feature_values = {
                 "obstacle_clearance": obstacle_clearance,
-                "surface_dist": surface_dist,
+                "table_dist": table_dist,
                 "bar_lateral_offset": bar_lateral_offset,
                 "tool_pitch": tool_pitch,
-                "tool_plane_err": tool_plane_err,
+                "tool_roll": tool_roll,
                 "tool_yaw": tool_yaw,
                 "bar_axial_offset": bar_axial_offset,
             }

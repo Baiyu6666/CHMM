@@ -47,23 +47,31 @@ def _task_config():
             "smoothness_scale": 0.2,
         },
         "optimizer_weights": {"constraint": 3.0},
-        "feature_units": {"surface_dist": "m", "tool_pitch": "rad"},
+        "feature_units": {"table_dist": "m", "tool_pitch": "rad"},
         "constraint_terms": [
             {
-                "feature_name": "surface_dist",
+                "feature_name": "table_dist",
                 "stage": 0,
                 "semantics": "target_value",
                 "value": 0.02,
                 "scale": 0.01,
                 "weight": 2.0,
-            }
+            },
+            {
+                "feature_name": "tool_pitch",
+                "stage": 0,
+                "semantics": "target_value",
+                "value": 1.2,
+                "scale": 0.05,
+                "weight": 4.0,
+            },
         ],
     }
 
 
 def _artifact():
     return {
-        "schema_version": 3,
+        "schema_version": 5,
         "artifact_type": "learned_stage_constraints",
         "task_id": "BarClean",
         "task_frame": {
@@ -71,65 +79,39 @@ def _artifact():
             "snapshot_policy": "frozen_per_task",
         },
         "feature_definition": {"id": "test_features_v1"},
-        "planning_profile": {
-            "stage_names": ["learned_s1", "learned_s2"],
-            "endpoint_coordinate_frame": "bar_table_task",
-            "stage_endpoint_positions_bar": [[0.25, -0.1, 0.08]],
-            "planner": {
-                "control_spacing_m": 0.02,
-                "output_spacing_m": 0.004,
-                "output_axis_spacing_deg": 1.0,
-                "min_control_points": 5,
-                "max_control_points": 9,
-                "max_nfev": 40,
-                "multi_start": 2,
-            },
-            "position_smooth_scale": 0.03,
-            "axis_smooth_scale": 0.3,
-            "yaw_smooth_scale": 0.4,
-            "constraint_transition": {"fraction": 0.1, "min_distance": 0.02, "max_distance": 0.06},
-            "constraint_settling": {
-                "control_points": 3,
-                "max_progress_m": 0.006,
-                "progress_weight": 0.8,
-                "smoothness_scale": 0.1,
-            },
-            "optimizer_weights": {"constraint": 4.0},
-        },
+        "endpoint_coordinate_frame": "bar_table_task",
+        "stage_endpoint_poses_bar": [
+            [0.25, -0.1, 0.08, 0.0, 0.0, 0.0, 1.0]
+        ],
         "num_stages": 2,
         "feature_schema": [
-            {"name": "surface_dist", "unit": "m", "scale": 0.01},
-            {"name": "tool_pitch", "unit": "rad", "scale": 0.1},
+            {"name": "table_dist", "unit": "m"},
+            {"name": "tool_pitch", "unit": "rad"},
         ],
         "feature_stage_modes": [
             {
                 "stage": 0,
-                "feature_name": "surface_dist",
+                "feature_name": "table_dist",
                 "mode": "inactive",
                 "value": None,
-                "scale": 0.01,
             },
             {
                 "stage": 0,
                 "feature_name": "tool_pitch",
                 "mode": "lower_bound",
                 "value": 1.1,
-                "scale": 0.1,
             },
             {
                 "stage": 1,
-                "feature_name": "surface_dist",
+                "feature_name": "table_dist",
                 "mode": "upper_bound",
                 "value": 0.04,
-                "scale": 0.01,
-                "weight": 3.0,
             },
             {
                 "stage": 1,
                 "feature_name": "tool_pitch",
                 "mode": "target_value",
                 "value": 1.4,
-                "scale": 0.1,
             },
         ],
     }
@@ -154,11 +136,17 @@ def test_dense_artifact_replaces_terms_and_skips_inactive(tmp_path):
     assert len(config["constraint_terms"]) == 3
     assert config["constraint_terms"][0]["semantics"] == "lower_bound"
     assert config["constraint_terms"][1]["semantics"] == "upper_bound"
-    assert config["constraint_terms"][1]["weight"] == 3.0
+    assert config["constraint_terms"][0]["scale"] == 0.05
+    assert config["constraint_terms"][0]["weight"] == 4.0
+    assert config["constraint_terms"][1]["scale"] == 0.01
+    assert config["constraint_terms"][1]["weight"] == 2.0
     assert config["true_constraint_terms"][0]["value"] == 0.02
-    assert config["stage_names"] == ["learned_s1", "learned_s2"]
+    assert config["stage_names"] == ["s1", "s2"]
     assert config["stage_endpoint_positions_bar"] == [[0.25, -0.1, 0.08]]
-    assert config["planner"]["control_spacing_m"] == 0.02
+    assert config["stage_endpoint_poses_bar"] == [
+        [0.25, -0.1, 0.08, 0.0, 0.0, 0.0, 1.0]
+    ]
+    assert config["planner"]["control_spacing_m"] == 0.04
 
 
 def test_artifact_must_contain_every_candidate_pair(tmp_path):

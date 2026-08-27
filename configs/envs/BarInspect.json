@@ -27,15 +27,15 @@
       "n_stages": 4,
       "selected_raw_feature_ids": [
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "tool_pitch",
-        "tool_plane_err"
+        "tool_roll"
       ],
       "feature_model_types": {
         "obstacle_clearance": "trunc_t_lower_z",
-        "surface_dist": "student_t",
+        "table_dist": "student_t",
         "tool_pitch": "student_t",
-        "tool_plane_err": "student_t"
+        "tool_roll": "student_t"
       },
       "max_iter": 10,
       "duration_min": 8,
@@ -52,9 +52,9 @@
       "n_stages": 4,
       "selected_raw_feature_ids": [
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "tool_pitch",
-        "tool_plane_err"
+        "tool_roll"
       ],
       "max_iter": 8,
       "duration_min": 8,
@@ -72,9 +72,9 @@
       "n_stages": 4,
       "selected_raw_feature_ids": [
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "tool_pitch",
-        "tool_plane_err"
+        "tool_roll"
       ],
       "max_iter": 8,
       "duration_min": 8,
@@ -93,10 +93,10 @@
       "n_stages": 4,
       "selected_raw_feature_ids": [
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "bar_lateral_offset",
         "tool_pitch",
-        "tool_plane_err",
+        "tool_roll",
         "speed"
       ],
       "max_iter": 8,
@@ -117,9 +117,9 @@
         "n_stages": 4,
         "selected_raw_feature_ids": [
           "obstacle_clearance",
-          "surface_dist",
+          "table_dist",
           "tool_pitch",
-          "tool_plane_err"
+          "tool_roll"
         ]
       },
       "posthoc_constraint": {
@@ -130,15 +130,15 @@
       "n_stages": 4,
       "selected_raw_feature_ids": [
         "obstacle_clearance",
-        "surface_dist",
+        "table_dist",
         "tool_pitch",
-        "tool_plane_err"
+        "tool_roll"
       ],
       "feature_model_types": {
         "obstacle_clearance": "trunc_t_lower_z",
-        "surface_dist": "student_t",
+        "table_dist": "student_t",
         "tool_pitch": "student_t",
-        "tool_plane_err": "student_t"
+        "tool_roll": "student_t"
       },
       "fixed_feature_mask": [
         [1, 0, 0, 0],
@@ -153,9 +153,9 @@
         "n_stages": 4,
         "selected_raw_feature_ids": [
           "obstacle_clearance",
-          "surface_dist",
+          "table_dist",
           "tool_pitch",
-          "tool_plane_err"
+          "tool_roll"
         ]
       },
       "posthoc_constraint": {
@@ -168,9 +168,9 @@
         "n_stages": 4,
         "selected_raw_feature_ids": [
           "obstacle_clearance",
-          "surface_dist",
+          "table_dist",
           "tool_pitch",
-          "tool_plane_err"
+          "tool_roll"
         ]
       },
       "posthoc_constraint": {
@@ -183,9 +183,9 @@
         "n_stages": 4,
         "selected_raw_feature_ids": [
           "obstacle_clearance",
-          "surface_dist",
+          "table_dist",
           "tool_pitch",
-          "tool_plane_err"
+          "tool_roll"
         ]
       },
       "posthoc_constraint": {
@@ -198,9 +198,9 @@
         "n_stages": 4,
         "selected_raw_feature_ids": [
           "obstacle_clearance",
-          "surface_dist",
+          "table_dist",
           "tool_pitch",
-          "tool_plane_err"
+          "tool_roll"
         ]
       },
       "posthoc_constraint": {
@@ -213,9 +213,9 @@
         "n_stages": 4,
         "selected_raw_feature_ids": [
           "obstacle_clearance",
-          "surface_dist",
+          "table_dist",
           "tool_pitch",
-          "tool_plane_err"
+          "tool_roll"
         ],
         "use_state": true,
         "use_velocity": false,

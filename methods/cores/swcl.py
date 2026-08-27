@@ -567,6 +567,14 @@ class StageWiseConstraintLearningModel:
         full_stack = np.concatenate(raw_features, axis=0)
         self.feat_mean = np.mean(full_stack, axis=0)
         self.feat_std = np.std(full_stack, axis=0) + 1e-8
+        if str(getattr(self.env, "task_name", "")) == "BarClean":
+            name_to_column = {
+                str(spec.get("name", f"f{spec_idx}")): int(spec.get("column_idx", spec_idx))
+                for spec_idx, spec in enumerate(self.raw_feature_specs)
+            }
+            yaw_scale = float(self.feat_std[name_to_column["tool_yaw"]])
+            for feature_name in ("tool_pitch", "tool_roll"):
+                self.feat_std[name_to_column[feature_name]] = yaw_scale
         self.standardized_features = []
         for F_raw in raw_features:
             F_sel = F_raw[:, self.selected_feature_columns]

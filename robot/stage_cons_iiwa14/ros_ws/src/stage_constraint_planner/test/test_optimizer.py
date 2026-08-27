@@ -284,17 +284,20 @@ def test_bar_clean_user_stage_three_is_free_and_stage_four_has_five_equalities()
     stage_four = {term["feature_name"]: term for term in by_stage[3]}
     assert set(stage_four) == {
         "bar_axial_offset",
-        "surface_dist",
+        "table_dist",
         "tool_pitch",
-        "tool_plane_err",
+        "tool_roll",
         "tool_yaw",
     }
     assert all(term["semantics"] == "target_value" for term in stage_four.values())
     assert np.isclose(stage_four["bar_axial_offset"]["value"], 0.0)
-    assert np.isclose(stage_four["surface_dist"]["value"], 0.07004)
+    assert np.isclose(stage_four["table_dist"]["value"], 0.07004)
     assert np.isclose(stage_four["tool_pitch"]["value"], np.deg2rad(90.0))
-    assert np.isclose(stage_four["tool_plane_err"]["value"], 0.0)
-    assert np.isclose(stage_four["tool_yaw"]["value"], np.deg2rad(-45.0))
+    assert np.isclose(stage_four["tool_roll"]["value"], 0.0)
+    stage_two_yaw = next(
+        term for term in by_stage[1] if term["feature_name"] == "tool_yaw"
+    )
+    assert np.isclose(stage_four["tool_yaw"]["value"], stage_two_yaw["value"])
 
 
 def test_constraint_settling_is_used_only_when_next_stage_adds_constraints():
@@ -337,12 +340,53 @@ def test_constraint_settling_reserves_progress_without_changing_endpoints():
     assert np.allclose(positions[endpoint_indices], endpoints[1:])
 
 
+def test_learned_endpoint_pose_orientations_anchor_each_stage_boundary():
+    config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
+    config = json.loads(config_path.read_text())
+    optimizer = StageConstraintTrajectoryOptimizer(config)
+    endpoints = np.asarray(
+        [
+            [0.0, 0.0, 0.2],
+            [0.1, 0.0, 0.2],
+            [0.2, 0.0, 0.2],
+            [0.3, 0.0, 0.2],
+            [0.4, 0.0, 0.2],
+            [0.5, 0.0, 0.2],
+        ]
+    )
+    endpoint_axes = np.asarray(
+        [
+            [0.0, 0.0, 1.0],
+            [0.2, 0.0, 0.98],
+            [0.4, 0.0, 0.92],
+            [0.6, 0.0, 0.8],
+            [0.4, 0.0, 0.92],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    endpoint_axes /= np.linalg.norm(endpoint_axes, axis=1, keepdims=True)
+    endpoint_yaws = np.asarray([0.1, 0.3, 0.5, 0.7, 0.9, 1.1])
+
+    _, axes, yaws, _, endpoint_indices = optimizer._initial_trajectory(
+        endpoints,
+        endpoint_axes[0],
+        endpoint_axes[-1],
+        endpoint_yaws[0],
+        endpoint_yaws[-1],
+        endpoint_axes=endpoint_axes,
+        endpoint_yaws=endpoint_yaws,
+    )
+
+    assert np.allclose(axes[endpoint_indices], endpoint_axes[1:])
+    assert np.allclose(yaws[endpoint_indices], endpoint_yaws[1:])
+
+
 def test_tool_yaw_active_mask_follows_loaded_constraint_terms():
     labels = np.asarray([0, 0, 1, 1, 2, 3, 4])
     terms = [
         {"feature_name": "tool_yaw", "stage": 1},
         {"feature_name": "tool_yaw", "stage": 3},
-        {"feature_name": "surface_dist", "stage": 3},
+        {"feature_name": "table_dist", "stage": 3},
     ]
 
     active = StageConstraintTrajectoryOptimizer._feature_active_mask(

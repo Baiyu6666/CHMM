@@ -57,7 +57,7 @@ def _task_coordinates(features: np.ndarray, env: BarCleanEnv) -> np.ndarray:
         + float(env.task_definition["bar_axial_offset_reference"])
     )
     lateral = features[:, columns["bar_lateral_offset"]]
-    height = features[:, columns["surface_dist"]]
+    height = features[:, columns["table_dist"]]
     return np.column_stack([axial, lateral, height])
 
 
