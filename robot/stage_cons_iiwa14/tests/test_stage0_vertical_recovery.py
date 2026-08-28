@@ -26,7 +26,10 @@ class StageZeroVerticalRecoveryTest(unittest.TestCase):
         self.compiler._approach_clearance_z = 0.33
         self.compiler._approach_spacing = 0.01
         self.compiler._approach_axis_spacing = math.radians(2.0)
+        self.compiler._position_tolerance = 0.002
         self.compiler._approach_position_tolerance = 0.005
+        self.compiler._max_joint_step = 0.15
+        self.compiler._approach_speed = 0.06
 
     @staticmethod
     def obstacle():
@@ -139,6 +142,77 @@ class StageZeroVerticalRecoveryTest(unittest.TestCase):
         )
         self.assertAlmostEqual(float(positions[first_lateral - 1, 2]), 0.33)
 
+    def test_home_vertical_recovery_preserves_xy_and_full_orientation(self):
+        start_q = np.zeros(7)
+        rotation = np.asarray(
+            [
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ]
+        )
+        self.compiler.tip_state = lambda _q: (
+            np.asarray([0.70, -0.15, 0.10]),
+            rotation,
+        )
+
+        def continuous_ik(positions, _axes, *_args, **_kwargs):
+            return (
+                np.repeat(start_q[None, :], len(positions), axis=0),
+                [0.0] * len(positions),
+                [0.0] * len(positions),
+                [0.0] * len(positions),
+            )
+
+        self.compiler._continuous_ik = mock.Mock(side_effect=continuous_ik)
+        self.compiler._densify_joint_path = lambda path, _step: path
+        self.compiler.time_parameterize = mock.Mock(
+            side_effect=lambda path, duration: {
+                "position": path,
+                "duration": duration,
+            }
+        )
+
+        recovery, recovered_q, distance, *_errors = (
+            self.compiler._home_vertical_recovery(start_q, lambda: False)
+        )
+
+        call = self.compiler._continuous_ik.call_args
+        positions, axes = call.args[:2]
+        np.testing.assert_allclose(
+            positions[:, :2],
+            np.repeat([[0.70, -0.15]], len(positions), axis=0),
+        )
+        self.assertAlmostEqual(float(positions[-1, 2]), 0.202)
+        np.testing.assert_allclose(
+            axes, np.repeat(rotation[None, :, 2], len(positions), axis=0)
+        )
+        np.testing.assert_allclose(
+            call.kwargs["x_axes"],
+            np.repeat(rotation[None, :, 0], len(positions), axis=0),
+        )
+        self.assertTrue(np.all(call.kwargs["x_active"]))
+        self.assertAlmostEqual(distance, 0.102)
+        np.testing.assert_allclose(recovered_q, start_q)
+        self.assertIsNotNone(recovery)
+
+    def test_home_vertical_recovery_is_skipped_at_safe_height(self):
+        start_q = np.zeros(7)
+        self.compiler.tip_state = lambda _q: (
+            np.asarray([0.70, -0.15, 0.20]),
+            np.eye(3),
+        )
+        self.compiler._continuous_ik = mock.Mock()
+
+        recovery, recovered_q, distance, *_errors = (
+            self.compiler._home_vertical_recovery(start_q, lambda: False)
+        )
+
+        self.assertIsNone(recovery)
+        np.testing.assert_allclose(recovered_q, start_q)
+        self.assertEqual(distance, 0.0)
+        self.compiler._continuous_ik.assert_not_called()
+
     def test_workspace_check_accepts_vertical_recovery_from_below_floor(self):
         self.compiler.tip_state = lambda q: (np.asarray(q), np.eye(3))
         path = np.asarray(
@@ -167,7 +241,7 @@ class StageZeroVerticalRecoveryTest(unittest.TestCase):
         with self.assertRaisesRegex(TrajectoryValidationError, "moves TCP laterally"):
             self.compiler._approach_workspace_checks(path)
 
-    def test_compile_keeps_stage_zero_yaw_free_and_masks_task_yaw(self):
+    def test_compile_enforces_full_6d_start_and_goal_while_masking_interior_yaw(self):
         compiler = object.__new__(CartesianTrajectoryCompiler)
         compiler._dof = 2
         compiler._lower = np.full(2, -2.0)
@@ -239,8 +313,8 @@ class StageZeroVerticalRecoveryTest(unittest.TestCase):
             compiler._approach_samples.call_args.kwargs["target_x"],
             [1.0, 0.0, 0.0],
         )
-        np.testing.assert_array_equal(ik_calls[0]["x_active"], [False])
-        np.testing.assert_array_equal(ik_calls[1]["x_active"], [True, False])
+        np.testing.assert_array_equal(ik_calls[0]["x_active"], [True])
+        np.testing.assert_array_equal(ik_calls[1]["x_active"], [True, True])
 
 
 if __name__ == "__main__":

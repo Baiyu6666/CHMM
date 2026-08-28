@@ -367,7 +367,7 @@ def render_s5_demonstrations(
         pybullet_client = int(pybullet_module.connect(pybullet_module.GUI))
 
     try:
-        for local_idx, demo_idx in enumerate(selected, start=1):
+        for selection_index, demo_idx in enumerate(selected):
             scene = _bundle_scene(bundle, int(demo_idx))
             trajectory = np.asarray(bundle.demos[int(demo_idx)], dtype=float)
             cutpoints = [int(v) for v in np.asarray(bundle.true_cutpoints[int(demo_idx)], dtype=int).reshape(-1).tolist()]
@@ -399,8 +399,8 @@ def render_s5_demonstrations(
                 )
                 obs = env.compute_observation(replay_latent, scene)
             print(
-                f"[demo {local_idx:02d}/{len(selected):02d}] "
-                f"loaded idx={demo_idx} from training demo bundle",
+                f"[demo {int(demo_idx):02d}] loaded from training demo bundle "
+                f"(item {selection_index + 1}/{len(selected)})",
                 flush=True,
             )
 
@@ -459,7 +459,11 @@ def render_s5_demonstrations(
             effective_realtime = bool(realtime) or int(gui) == 2
             if combine_video:
                 pause_seconds = 1.5 if gui_hold_seconds is None else float(gui_hold_seconds)
-                effective_hold_seconds = 0.0 if int(local_idx) == len(selected) else float(max(0.0, pause_seconds))
+                effective_hold_seconds = (
+                    0.0
+                    if int(selection_index) == len(selected) - 1
+                    else float(max(0.0, pause_seconds))
+                )
             else:
                 effective_hold_seconds = (
                     (-1.0 if int(gui) == 2 else 2.0)
@@ -525,7 +529,6 @@ def render_s5_demonstrations(
             violation_features.append(feature_matrix)
             violation_cutpoints.append(cutpoints)
             summary = {
-                "demo_local_index": int(local_idx),
                 "demo_index": int(demo_idx),
                 "seed": int(seed),
                 "rollout_backend": str(latent.get("rollout_backend", env.rollout_backend)),
@@ -567,8 +570,8 @@ def render_s5_demonstrations(
                     f"attempt={int(ik_filter.get('attempt', 0)) + 1}/{ik_filter.get('max_attempts')}"
                 )
             print(
-                f"[demo {local_idx:02d}/{len(selected):02d}] "
-                f"idx={demo_idx}, points={len(trajectory)}, "
+                f"[demo {int(demo_idx):02d}] item={selection_index + 1}/{len(selected)}, "
+                f"points={len(trajectory)}, "
                 f"features={feature_plot_path}, "
                 f"video={render_summary.get('video_path')}, frames={render_summary.get('frames_written')}"
                 f"{attempt_text}"

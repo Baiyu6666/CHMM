@@ -15,23 +15,6 @@ from envs.BarClean import BarCleanEnv  # noqa: E402
 from envs.BarInspect import BarInspectScene  # noqa: E402
 
 
-DEFAULT_INPUT = (
-    PROJECT_ROOT
-    / "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/"
-    "demo_fixed_scene_7_demos_20hz_loader_input.npz"
-)
-DEFAULT_OUTPUT = (
-    PROJECT_ROOT
-    / "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/"
-    "demo_fixed_scene_7_demos_10hz_training.npz"
-)
-DEFAULT_ANNOTATION_REFERENCE = (
-    PROJECT_ROOT
-    / "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/"
-    "demo_fixed_scene_7_demos_5hz_training.npz"
-)
-
-
 def _resolve(path: str | Path) -> Path:
     resolved = Path(path).expanduser()
     if not resolved.is_absolute():
@@ -228,12 +211,12 @@ def motion_phase_stage_bounds(
 
 
 def process_bar_clean_archive(
-    input_path: str | Path = DEFAULT_INPUT,
-    output_path: str | Path = DEFAULT_OUTPUT,
+    input_path: str | Path,
+    output_path: str | Path,
     *,
-    output_hz: float = 10.0,
+    output_hz: float = 5.0,
     exclude_demo_ids: tuple[int, ...] = (),
-    annotation_reference_path: str | Path | None = DEFAULT_ANNOTATION_REFERENCE,
+    annotation_reference_path: str | Path | None = None,
 ) -> dict[str, object]:
     source_path = _resolve(input_path)
     destination = _resolve(output_path)
@@ -389,7 +372,16 @@ def process_bar_clean_archive(
             if reference_annotation_kind is not None
             else f"{float(output_hz):g}hz_task_motion_direction_change_points"
         ),
-        "cutpoint_evaluation_role": np.asarray("motion_phase_reference"),
+        "cutpoint_evaluation_role": np.asarray(
+            "human_reviewed_reference"
+            if reference_annotation_kind is not None
+            and "human_reviewed" in reference_annotation_kind
+            else (
+                "external_annotation_reference"
+                if reference_annotation_kind is not None
+                else "automatic_motion_phase_proposal"
+            )
+        ),
         "scene_pose_policy": np.asarray("per_demo_robust_static_lock"),
         "optitrack_to_robot_rotation": tracker_rotation,
         "optitrack_to_robot_translation": tracker_translation,
@@ -420,9 +412,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Convert motion-trimmed BarClean demos into a reusable training archive."
     )
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--output-hz", type=float, default=10.0)
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output-hz", type=float, default=5.0)
     parser.add_argument(
         "--exclude-demo-ids",
         default="",
@@ -431,8 +423,11 @@ def main() -> None:
     parser.add_argument(
         "--annotation-reference",
         type=Path,
-        default=DEFAULT_ANNOTATION_REFERENCE,
-        help="Archive whose cutpoint times are mapped onto the new sampling grid.",
+        default=None,
+        help=(
+            "Optional reviewed annotation archive whose cutpoint times are mapped "
+            "onto the new sampling grid. Without it, motion-based proposals are used."
+        ),
     )
     args = parser.parse_args()
     summary = process_bar_clean_archive(

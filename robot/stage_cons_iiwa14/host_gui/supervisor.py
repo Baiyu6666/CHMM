@@ -56,6 +56,7 @@ TASK_ACTIVE_PHASES = frozenset(
         "home_preparing",
         "home_repreparing",
         "home_prepared",
+        "home_recovering",
         "returning_home",
         "executing",
     }
@@ -75,6 +76,7 @@ TASK_CONFIGS = {
     ),
 }
 FEATURE_SAMPLE_HZ = 20.0
+CAMERA_PREVIEW_MARKER = "Stage Camera Preview"
 
 
 class RosTopicStream:
@@ -350,6 +352,316 @@ class RosTfPoseStream:
             thread.join(timeout=2.0)
 
 
+class TaskVideoRecorder:
+    """Record one V4L2 stream inside an absolute robot-motion time window."""
+
+    def __init__(
+        self,
+        device: str = "/dev/video10",
+        width: int = 1920,
+        height: int = 1080,
+        fps: float = 30.0,
+    ) -> None:
+        self._device = device
+        self._width = int(width)
+        self._height = int(height)
+        self._fps = float(fps)
+        self._process: Optional[subprocess.Popen[bytes]] = None
+        self._log_stream = None
+        self._final_path: Optional[Path] = None
+        self._partial_path: Optional[Path] = None
+        self._metadata_path: Optional[Path] = None
+        self._last_error: Optional[str] = None
+
+    @property
+    def active(self) -> bool:
+        return self._process is not None and self._process.poll() is None
+
+    @property
+    def started(self) -> bool:
+        return self._process is not None
+
+    @property
+    def last_error(self) -> Optional[str]:
+        return self._last_error
+
+    def preflight(self) -> None:
+        if not Path(self._device).exists():
+            raise RuntimeError(
+                "Video recording requested, but {} does not exist; start "
+                "android-camera-v4l2 first".format(self._device)
+            )
+        command = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-f", "v4l2", "-framerate", str(int(round(self._fps))),
+            "-video_size", "{}x{}".format(self._width, self._height),
+            # Read several frames so a stale v4l2loopback frame cannot make a
+            # disconnected phone camera look healthy.
+            "-i", self._device, "-frames:v", "3", "-f", "null", "-",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError("Video recording requires ffmpeg on the host") from error
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                "{} exists but did not deliver fresh {}x{} frames within 3 s; "
+                "start or reconnect the phone camera".format(
+                    self._device, self._width, self._height
+                )
+            ) from error
+        if result.returncode != 0:
+            detail = result.stderr.strip() or "frame capture failed"
+            raise RuntimeError(
+                "Could not read {}x{} video from {}: {}".format(
+                    self._width, self._height, self._device, detail
+                )
+            )
+
+    def start(
+        self,
+        output_directory: Path,
+        motion_start_unix_ns: int,
+        motion_end_unix_ns: int,
+    ) -> Path:
+        if self.active:
+            raise RuntimeError("Task video recorder is already active")
+        self._last_error = None
+        if motion_end_unix_ns <= motion_start_unix_ns:
+            raise RuntimeError("Real executor returned an invalid video time window")
+        output_directory.mkdir(parents=True, exist_ok=True)
+        final_path = output_directory / "execution.mp4"
+        partial_path = output_directory / "execution.partial.mp4"
+        metadata_path = output_directory / "execution_video_metadata.json"
+        log_path = output_directory / "execution_video_ffmpeg.log"
+        for path in (final_path, partial_path, metadata_path, log_path):
+            if path.exists():
+                raise RuntimeError("Refusing to overwrite existing task video file " + str(path))
+
+        # V4L2 timestamps use CLOCK_MONOTONIC, while ROS reports Unix time.
+        # Capture the clock offset once and let FFmpeg discard every frame
+        # outside the executor's scheduled task-motion interval.
+        clock_offset_ns = time.time_ns() - time.monotonic_ns()
+        motion_start_monotonic_s = (
+            motion_start_unix_ns - clock_offset_ns
+        ) / 1e9
+        motion_end_monotonic_s = (
+            motion_end_unix_ns - clock_offset_ns
+        ) / 1e9
+        select_filter = (
+            "select=between(t\\,{:.9f}\\,{:.9f}),setpts=PTS-STARTPTS".format(
+                motion_start_monotonic_s, motion_end_monotonic_s
+            )
+        )
+        command = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y", "-nostdin",
+            "-copyts",
+            "-thread_queue_size", "1024",
+            "-f", "v4l2", "-framerate", str(int(round(self._fps))),
+            "-video_size", "{}x{}".format(self._width, self._height),
+            "-i", self._device,
+            "-an", "-vf", select_filter, "-vsync", "vfr",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            str(partial_path),
+        ]
+        metadata = {
+            "schema_version": 1,
+            "device": self._device,
+            "width": self._width,
+            "height": self._height,
+            "fps": self._fps,
+            "codec": "libx264-crf18-veryfast",
+            "motion_start_unix_ns": int(motion_start_unix_ns),
+            "motion_end_unix_ns": int(motion_end_unix_ns),
+            "motion_start_monotonic_s": motion_start_monotonic_s,
+            "motion_end_monotonic_s": motion_end_monotonic_s,
+        }
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        log_stream = log_path.open("wb")
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=log_stream,
+                start_new_session=True,
+            )
+        except Exception:
+            log_stream.close()
+            raise
+        self._process = process
+        self._log_stream = log_stream
+        self._final_path = final_path
+        self._partial_path = partial_path
+        self._metadata_path = metadata_path
+        time.sleep(0.15)
+        if process.poll() is not None:
+            self.stop(completed=False)
+            detail = log_path.read_text(encoding="utf-8", errors="replace").strip()
+            raise RuntimeError("FFmpeg video recorder exited during startup: " + detail)
+        if time.time_ns() >= motion_start_unix_ns:
+            self.stop(completed=False)
+            raise RuntimeError(
+                "FFmpeg did not arm before the scheduled robot-motion start"
+            )
+        return final_path
+
+    def stop(self, completed: bool) -> Optional[Path]:
+        process = self._process
+        final_path = self._final_path
+        partial_path = self._partial_path
+        metadata_path = self._metadata_path
+        self._process = None
+        self._final_path = None
+        self._partial_path = None
+        self._metadata_path = None
+        if process is not None and process.poll() is None:
+            if completed:
+                drain_delay_s = self._completion_drain_delay(metadata_path)
+                if drain_delay_s > 0.0:
+                    time.sleep(drain_delay_s)
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=20.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=3.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=2.0)
+        if self._log_stream is not None:
+            self._log_stream.close()
+            self._log_stream = None
+        if partial_path is None:
+            self._last_error = "video output path was not initialized"
+            return None
+        packet_count, recorded_duration_s = self._video_stats(partial_path)
+        if packet_count <= 0:
+            self._last_error = "recording contains no video packets"
+            self._delete_incomplete_video(
+                partial_path, metadata_path, self._last_error
+            )
+            return None
+        coverage_error = None
+        if completed and metadata_path is not None and metadata_path.is_file():
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            expected_duration_s = (
+                int(metadata["motion_end_unix_ns"])
+                - int(metadata["motion_start_unix_ns"])
+            ) / 1e9
+            coverage_tolerance_s = max(0.2, 2.0 / self._fps)
+            if recorded_duration_s + coverage_tolerance_s < expected_duration_s:
+                completed = False
+                coverage_error = (
+                    "recorded {:.3f} s of the scheduled {:.3f} s motion window"
+                ).format(recorded_duration_s, expected_duration_s)
+                self._last_error = coverage_error
+        if completed and final_path is not None:
+            self._last_error = None
+            partial_path.replace(final_path)
+            if metadata_path is not None and metadata_path.is_file():
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                metadata["completed"] = True
+                metadata["video_file"] = final_path.name
+                metadata_path.write_text(
+                    json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            return final_path
+        failure_reason = coverage_error or "recording interrupted before completion"
+        self._last_error = failure_reason
+        self._delete_incomplete_video(partial_path, metadata_path, failure_reason)
+        return None
+
+    @staticmethod
+    def _delete_incomplete_video(
+        video_path: Path,
+        metadata_path: Optional[Path],
+        error: str,
+    ) -> None:
+        try:
+            video_path.unlink()
+        except FileNotFoundError:
+            pass
+        if metadata_path is None or not metadata_path.is_file():
+            return
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["completed"] = False
+        metadata["video_file"] = None
+        metadata["video_deleted"] = True
+        metadata["error"] = error
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _completion_drain_delay(metadata_path: Optional[Path]) -> float:
+        if metadata_path is None or not metadata_path.is_file():
+            return 0.0
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            motion_end_unix_ns = int(metadata["motion_end_unix_ns"])
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return 0.0
+        # The completion status and the final wireless camera frame travel on
+        # independent queues. Keep FFmpeg alive briefly after the scheduled
+        # endpoint so frames already captured by the phone can drain. The
+        # select filter still discards every timestamp beyond motion_end.
+        drain_until_unix_ns = motion_end_unix_ns + 500_000_000
+        return min(1.0, max(0.0, (drain_until_unix_ns - time.time_ns()) / 1e9))
+
+    @staticmethod
+    def _video_stats(path: Path) -> Tuple[int, float]:
+        if not path.is_file() or path.stat().st_size == 0:
+            return 0, 0.0
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-count_packets", "-show_entries", "stream=nb_read_packets",
+                    "-show_entries", "format=duration", "-of", "json", str(path),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=5.0,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return 0, 0.0
+        if result.returncode != 0:
+            return 0, 0.0
+        try:
+            payload = json.loads(result.stdout)
+            packet_count = int(payload["streams"][0]["nb_read_packets"])
+            duration_s = float(payload["format"]["duration"])
+            return packet_count, duration_s
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+            return 0, 0.0
+
+
 class Supervisor:
     def __init__(self) -> None:
         self.token = secrets.token_urlsafe(32)
@@ -364,6 +676,8 @@ class Supervisor:
         self._tf_pose_streams: Dict[Tuple[str, str, str], RosTfPoseStream] = {}
         self._real_station_verified = False
         self._task_abort = threading.Event()
+        self._task_video_recorder = TaskVideoRecorder()
+        self._camera_preview_process: Optional[subprocess.Popen[bytes]] = None
         self._task_state: Dict[str, object] = {
             "task_id": "BarClean",
             "mode": "simulator",
@@ -373,6 +687,9 @@ class Supervisor:
             "message": "No task has been started",
             "run_directory": None,
             "video_available": False,
+            "review_pending": False,
+            "review_status": None,
+            "final_result_directory": None,
         }
         self._fixed_scene_geometry = self._load_fixed_scene_geometry()
         scene_config = json.loads(SCENE_CONFIG.read_text(encoding="utf-8"))
@@ -428,6 +745,7 @@ class Supervisor:
         return stream.read(timeout=timeout, max_age=max_age)
 
     def shutdown(self) -> None:
+        self._task_video_recorder.stop(completed=False)
         with self._lock:
             streams = [
                 *self._topic_streams.values(),
@@ -547,7 +865,13 @@ class Supervisor:
 
     @staticmethod
     def _ensure_data_directories() -> None:
-        for relative_path in ("data/demos", "data/models", "data/real_runs", "data/sim_runs"):
+        for relative_path in (
+            "data/demos",
+            "data/final_video_runs",
+            "data/models",
+            "data/real_runs",
+            "data/sim_runs",
+        ):
             (PROJECT_ROOT / relative_path).mkdir(parents=True, exist_ok=True)
 
     @staticmethod
@@ -926,19 +1250,49 @@ class Supervisor:
             }
         return profiles
 
+    @staticmethod
+    def _stage_one_obstacle_clearance(
+        constraint_specs: object,
+    ) -> Optional[float]:
+        if not isinstance(constraint_specs, list):
+            return None
+        for raw_spec in constraint_specs:
+            if not isinstance(raw_spec, dict):
+                continue
+            try:
+                if (
+                    int(raw_spec.get("stage", -1)) != 0
+                    or str(raw_spec.get("feature_name")) != "obstacle_clearance"
+                    or str(raw_spec.get("semantics", raw_spec.get("mode")))
+                    != "lower_bound"
+                ):
+                    continue
+                value = float(raw_spec["value"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            return value if math.isfinite(value) and value >= 0.0 else None
+        return None
+
     def _discover_constraint_sources(self) -> Dict[str, List[Dict[str, object]]]:
-        sources: Dict[str, List[Dict[str, object]]] = {
-            task_id: [
+        sources: Dict[str, List[Dict[str, object]]] = {}
+        for task_id in self._task_profiles:
+            task_definition = json.loads(
+                TASK_CONFIGS[task_id].read_text(encoding="utf-8")
+            )
+            sources[task_id] = [
                 {
                     "id": "true",
                     "label": "True constraints",
                     "task_id": task_id,
                     "container_path": "true",
                     "compatible": True,
+                    "stage1_obstacle_clearance_m": (
+                        self._stage_one_obstacle_clearance(
+                            task_definition.get("constraint_terms")
+                        )
+                    ),
                 }
             ]
-            for task_id in self._task_profiles
-        }
         for method_name in sorted(MAP_METHODS):
             pattern = "{}/*/method_seed_*/learned_constraints.json".format(
                 method_name
@@ -976,6 +1330,11 @@ class Supervisor:
                             "compatible": compatible,
                             "reason": reason,
                             "created_at_utc": metadata.get("created_at_utc"),
+                            "stage1_obstacle_clearance_m": (
+                                self._stage_one_obstacle_clearance(
+                                    artifact.get("feature_stage_modes")
+                                )
+                            ),
                         }
                     )
                 except (KeyError, OSError, TypeError, ValueError):
@@ -1138,7 +1497,7 @@ class Supervisor:
                 name: dict(profile["default_goal"])
                 for name, profile in self._task_profiles.items()
             },
-            "render_video": False,
+            "record_video": False,
         }
 
     @staticmethod
@@ -1177,7 +1536,7 @@ class Supervisor:
                 source_id = str(saved_sources.get(name, "true"))
                 if any(option["id"] == source_id and option["compatible"] for option in options):
                     settings["constraint_source_by_task"][name] = source_id
-        settings["render_video"] = saved.get("render_video", False) is True
+        settings["record_video"] = saved.get("record_video", False) is True
         return settings
 
     def _save_gui_settings(self) -> None:
@@ -1220,8 +1579,8 @@ class Supervisor:
                 self._gui_settings["start_by_task"][task_id] = start
             if goal is not None:
                 self._gui_settings["goal_by_task"][task_id] = goal
-            if "render_video" in payload:
-                self._gui_settings["render_video"] = payload["render_video"] is True
+            if "record_video" in payload:
+                self._gui_settings["record_video"] = payload["record_video"] is True
             self._save_gui_settings()
             if str(self._task_state.get("task_id")) == task_id:
                 self._task_state["constraint_source_id"] = source_id
@@ -1527,6 +1886,7 @@ class Supervisor:
                 "container_running": self._container_running(),
                 "driver_running": driver_node_running or driver_process_running,
                 "robot_control": robot_control,
+                "camera_preview_running": self.camera_preview_running(),
                 "demo_running": "/stage_demo_gui" in nodes,
                 "simulator_running": self._named_container_running(SIM_CONTAINER),
                 "task": {
@@ -2227,6 +2587,7 @@ class Supervisor:
         start: Dict[str, float],
         goal: Dict[str, float],
         constraint_source: str = "true",
+        record_video: bool = False,
     ) -> None:
         if not self._container_running():
             raise RuntimeError("Start the workstation container first")
@@ -2241,12 +2602,20 @@ class Supervisor:
         self._reset_task_visualization(task_id)
         self._set_task_state(
             task_id=task_id, mode="real", phase="starting",
-            data_saved=True, video=False,
+            data_saved=True, video=record_video,
             start=start, goal=goal,
             message="Checking or reusing the iiwa14 Position station",
             run_directory=None, video_available=False,
+            review_pending=False, review_status=None,
+            final_result_directory=None,
             constraint_source=constraint_source,
         )
+        if record_video:
+            self._set_task_state(
+                message="Checking the 1920x1080 camera stream before robot preparation"
+            )
+            self._task_video_recorder.preflight()
+            self.log("Task video source /dev/video10 is ready at 1920x1080")
         self._start_real_station()
         if self._task_abort.is_set():
             self._abort_real_and_confirm("user stopped the task during station startup")
@@ -2335,6 +2704,7 @@ class Supervisor:
         # already have armed and started. Any subsequent supervisor failure must
         # therefore explicitly abort and confirm the stopped state.
         execution_may_have_started = True
+        video_started = False
         try:
             response = self._real_ros(
                 "rosservice", "call", "/iiwa14/real_executor/execute", timeout=10.0
@@ -2372,10 +2742,66 @@ class Supervisor:
                     video_available=False,
                 )
                 if phase == "executing":
+                    if record_video and not video_started:
+                        run_directory = self._real_run_host_directory(
+                            status.get("run_directory")
+                        )
+                        try:
+                            motion_start_unix_ns = int(
+                                status["motion_start_unix_ns"]
+                            )
+                            motion_end_unix_ns = int(
+                                status["motion_end_unix_ns"]
+                            )
+                        except (KeyError, TypeError, ValueError) as error:
+                            raise RuntimeError(
+                                "Real executor status has no valid task-motion video window; "
+                                "rebuild and restart the workstation"
+                            ) from error
+                        if time.time_ns() >= motion_start_unix_ns:
+                            raise RuntimeError(
+                                "Video recorder received the task-motion start too late; "
+                                "aborting instead of saving an unsynchronized experiment"
+                            )
+                        self._task_video_recorder.start(
+                            run_directory,
+                            motion_start_unix_ns,
+                            motion_end_unix_ns,
+                        )
+                        video_started = True
+                        self.log(
+                            "Task video armed for the exact executing interval "
+                            "({:.3f} s)".format(
+                                (motion_end_unix_ns - motion_start_unix_ns) / 1e9
+                            )
+                        )
                     self._update_real_visualization()
                 if phase == "complete":
                     self._update_real_visualization()
                     execution_may_have_started = False
+                    if record_video:
+                        video_path = self._task_video_recorder.stop(completed=True)
+                        if video_path is None:
+                            detail = getattr(
+                                self._task_video_recorder,
+                                "last_error",
+                                None,
+                            )
+                            raise RuntimeError(
+                                "Robot completed, but the synchronized camera recording "
+                                "is incomplete: " + (detail or "unknown video error")
+                            )
+                        self.log("Task video saved: " + str(video_path))
+                        self._set_task_state(
+                            video_available=True,
+                            review_pending=True,
+                            review_status="pending",
+                            final_result_directory=None,
+                            message=(
+                                "Task and video completed; review the playback, then "
+                                "accept or reject this run as a final result"
+                            ),
+                        )
                     return
                 if phase in ("failed", "rejected", "protective_stop"):
                     raise RuntimeError(message)
@@ -2388,6 +2814,10 @@ class Supervisor:
             if execution_may_have_started:
                 self._abort_real_and_confirm(str(error))
             raise
+        finally:
+            if self._task_video_recorder.started:
+                self._task_video_recorder.stop(completed=False)
+                self.log("Incomplete task video deleted after interruption")
 
     def _return_robot_home(self) -> None:
         if not self._container_running():
@@ -2414,7 +2844,7 @@ class Supervisor:
             return
         status = self._read_real_status()
         if status.get("execution_active") is True or str(status.get("phase", "")) in {
-            "moving_to_start", "executing", "returning_home"
+            "moving_to_start", "executing", "home_recovering", "returning_home"
         }:
             raise RuntimeError("The real executor is already running a robot motion")
         if status.get("protective_stop") is True:
@@ -2483,6 +2913,11 @@ class Supervisor:
             raise
 
     def return_robot_home(self) -> None:
+        with self._lock:
+            if self._task_state.get("review_pending") is True:
+                raise RuntimeError(
+                    "Review the completed task video before starting Return Home"
+                )
         self._start_job(
             "Return robot Home", self._return_robot_home, reset_task_abort=True
         )
@@ -2878,6 +3313,11 @@ class Supervisor:
             raise ValueError("Unknown task_id {}".format(task_id))
         with self._lock:
             selected_task = str(self._task_state.get("task_id", "BarClean"))
+            review_pending = self._task_state.get("review_pending") is True
+        if review_pending:
+            raise RuntimeError(
+                "Review the completed task video before starting another run"
+            )
         if task_id != selected_task:
             raise ValueError("Select {} in the GUI before execution".format(task_id))
         mode = str(payload.get("mode", "simulator"))
@@ -2885,8 +3325,8 @@ class Supervisor:
             raise ValueError("mode must be simulator or real")
         start = self._validated_pose("start", payload.get("start"))
         goal = self._validated_pose("goal", payload.get("goal"))
-        render_video_preference = payload.get("render_video", False) is True
-        render_video = render_video_preference and mode == "simulator"
+        record_video = payload.get("record_video", False) is True
+        render_video = record_video and mode == "simulator"
         source_id = str(
             payload.get(
                 "constraint_source_id",
@@ -2900,7 +3340,7 @@ class Supervisor:
                 "constraint_source_id": source_id,
                 "start": start,
                 "goal": goal,
-                "render_video": render_video_preference,
+                "record_video": record_video,
             }
         )
         self._set_task_state(
@@ -2909,14 +3349,19 @@ class Supervisor:
         )
 
         if mode == "real":
-            self._start_job(
-                "Execute real task",
-                lambda: self._execute_real_task(
+            def real_task() -> None:
+                self._sync_camera_preview(record_video)
+                self._execute_real_task(
                     task_id,
                     start,
                     goal,
                     str(constraint_source["container_path"]),
-                ),
+                    record_video,
+                )
+
+            self._start_job(
+                "Execute real task",
+                real_task,
                 reset_task_abort=True,
             )
             return
@@ -2938,6 +3383,9 @@ class Supervisor:
                 message="Starting or reusing the persistent simulator",
                 run_directory=None,
                 video_available=False,
+                review_pending=False,
+                review_status=None,
+                final_result_directory=None,
                 constraint_source_id=source_id,
                 constraint_source_label=constraint_source["label"],
             )
@@ -3018,6 +3466,9 @@ class Supervisor:
         with self._lock:
             busy = self._job is not None and self._job.is_alive()
             phase = str(self._task_state.get("phase", "idle"))
+            review_pending = self._task_state.get("review_pending") is True
+        if review_pending:
+            raise RuntimeError("Review the completed task video before switching tasks")
         if busy or phase in TASK_ACTIVE_PHASES:
             raise RuntimeError("Cannot switch tasks while execution is active")
         request = Request(
@@ -3056,6 +3507,9 @@ class Supervisor:
             message="{} selected".format(self._task_profiles[task_id]["display_name"]),
             run_directory=None,
             video_available=False,
+            review_pending=False,
+            review_status=None,
+            final_result_directory=None,
         )
 
     def abort_task(self) -> None:
@@ -3109,11 +3563,280 @@ class Supervisor:
                 )
                 return
 
+    @staticmethod
+    def _real_run_host_directory(run_directory: object) -> Path:
+        if not isinstance(run_directory, str):
+            raise RuntimeError("Real executor did not provide an output directory for video")
+        try:
+            relative = Path(run_directory).relative_to("/data/demos")
+        except ValueError as error:
+            raise RuntimeError("Unsafe real-run video output path") from error
+        if not relative.parts or any(part in ("", ".", "..") for part in relative.parts):
+            raise RuntimeError("Unsafe real-run video output path")
+        return PROJECT_ROOT / "data" / "demos" / relative
+
+    def _camera_preview_pids(self) -> List[int]:
+        process = self._camera_preview_process
+        if process is not None and process.poll() is not None:
+            self._camera_preview_process = None
+        pids = []
+        proc_root = Path("/proc")
+        try:
+            entries = list(proc_root.iterdir())
+        except OSError:
+            return pids
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                arguments = [
+                    value.decode("utf-8", errors="replace")
+                    for value in (entry / "cmdline").read_bytes().split(b"\0")
+                    if value
+                ]
+            except OSError:
+                continue
+            if (
+                any(Path(argument).name == "ffplay" for argument in arguments[:3])
+                and "/dev/video10" in arguments
+                and any(CAMERA_PREVIEW_MARKER in argument for argument in arguments)
+            ):
+                pids.append(int(entry.name))
+        return sorted(pids)
+
+    def camera_preview_running(self) -> bool:
+        return bool(self._camera_preview_pids())
+
+    def _sync_camera_preview(self, enabled: bool) -> None:
+        pids = self._camera_preview_pids()
+        if enabled:
+            if pids:
+                self.log(
+                    "Reusing the existing low-bandwidth camera preview (PID {})".format(
+                        pids[0]
+                    )
+                )
+                return
+            if not Path("/dev/video10").exists():
+                raise RuntimeError(
+                    "Cannot open the camera preview because /dev/video10 does not exist"
+                )
+            log_path = PROJECT_ROOT / "data" / "camera_preview_ffplay.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            command = [
+                "ffplay",
+                "-hide_banner",
+                "-loglevel", "warning",
+                "-nostats",
+                "-f", "v4l2",
+                "-framerate", "30",
+                "-video_size", "1920x1080",
+                "-fflags", "nobuffer",
+                "-flags", "low_delay",
+                "-i", "/dev/video10",
+                "-an",
+                "-vf", "fps=5,scale=640:-2",
+                "-framedrop",
+                "-window_title", CAMERA_PREVIEW_MARKER + " (640px · 5 fps)",
+            ]
+            try:
+                with log_path.open("ab") as log_stream:
+                    process = subprocess.Popen(
+                        command,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=log_stream,
+                        start_new_session=True,
+                    )
+            except FileNotFoundError as error:
+                raise RuntimeError("Camera preview requires ffplay on the host") from error
+            self._camera_preview_process = process
+            time.sleep(0.25)
+            if process.poll() is not None:
+                self._camera_preview_process = None
+                detail = log_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip()
+                raise RuntimeError(
+                    "Camera preview exited during startup: "
+                    + (detail[-1200:] or "unknown ffplay error")
+                )
+            self.log("Opened low-bandwidth camera preview at 640 px / 5 fps")
+            return
+
+        if not pids:
+            self.log("Camera preview is already closed")
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and self._camera_preview_pids():
+            time.sleep(0.05)
+        remaining = self._camera_preview_pids()
+        for pid in remaining:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process = self._camera_preview_process
+        if process is not None:
+            try:
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                pass
+            self._camera_preview_process = None
+        self.log("Closed the low-bandwidth camera preview because video was unchecked")
+
+    @staticmethod
+    def _archive_final_video_run(
+        task_state: Dict[str, object], visualization: Dict[str, object]
+    ) -> Path:
+        task_id = str(task_state.get("task_id", ""))
+        if not task_id or Path(task_id).name != task_id or task_id in (".", ".."):
+            raise RuntimeError("Unsafe task name for the final video archive")
+        source_directory = Supervisor._real_run_host_directory(
+            task_state.get("run_directory")
+        )
+        if not source_directory.is_dir():
+            raise RuntimeError("The completed real-run directory no longer exists")
+        required_names = (
+            "execution.mp4",
+            "real_task.bag",
+            "metadata.json",
+            "execution_video_metadata.json",
+        )
+        source_root = source_directory.resolve()
+        for name in required_names:
+            source = source_directory / name
+            try:
+                source.resolve().relative_to(source_root)
+            except ValueError as error:
+                raise RuntimeError("Unsafe file in the completed real run") from error
+            if not source.is_file() or source.stat().st_size == 0:
+                raise RuntimeError(
+                    "Cannot accept this run: required artifact {} is missing or empty".format(
+                        name
+                    )
+                )
+
+        destination_parent = PROJECT_ROOT / "data" / "final_video_runs" / task_id
+        destination_parent.mkdir(parents=True, exist_ok=True)
+        destination = destination_parent / source_directory.name
+        if destination.exists():
+            raise RuntimeError("This run already exists in the final video archive")
+        visualization_temporary = source_directory / ".visualization.json.tmp"
+        result_temporary = source_directory / ".result.json.tmp"
+        visualization_temporary.write_text(
+            json.dumps(visualization, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        visualization_temporary.replace(source_directory / "visualization.json")
+        files = {
+            path.name: {"bytes": path.stat().st_size}
+            for path in source_directory.iterdir()
+            if path.is_file()
+            and path.name != "result.json"
+            and path != result_temporary
+        }
+        manifest = {
+            "schema_version": 1,
+            "status": "accepted_final",
+            "accepted_at_utc": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+            ),
+            "task_id": task_id,
+            "source_run_directory": str(task_state.get("run_directory")),
+            "task": task_state,
+            "files": files,
+        }
+        result_temporary.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        result_temporary.replace(source_directory / "result.json")
+        source_directory.replace(destination)
+        return destination
+
+    def review_task_video(self, payload: Dict[str, object]) -> None:
+        decision = str(payload.get("decision", "")).strip().lower()
+        if decision not in ("accept", "reject"):
+            raise ValueError("Video review decision must be accept or reject")
+        with self._lock:
+            if self._job is not None and self._job.is_alive():
+                raise RuntimeError("Wait for the current GUI job to finish")
+            task_state = json.loads(json.dumps(self._task_state))
+        if task_state.get("review_pending") is not True:
+            raise RuntimeError("There is no completed video waiting for review")
+        if (
+            task_state.get("phase") != "complete"
+            or task_state.get("mode") != "real"
+            or task_state.get("video") is not True
+            or self.task_video_path() is None
+        ):
+            raise RuntimeError("The pending review has no complete real-task video")
+        if decision == "reject":
+            video_path = self.task_video_path()
+            if video_path is None:
+                raise RuntimeError("The rejected task video no longer exists")
+            video_path.unlink()
+            self._set_task_state(
+                review_pending=False,
+                review_status="rejected",
+                final_result_directory=None,
+                video_available=False,
+                message=(
+                    "Run was not selected as final; its video was permanently deleted"
+                ),
+            )
+            self.log("Rejected task video permanently deleted: " + str(video_path))
+            return
+
+        visualization = self.task_visualization()
+        run_directory = task_state.get("run_directory")
+
+        def archive() -> None:
+            destination = self._archive_final_video_run(task_state, visualization)
+            with self._lock:
+                if self._task_state.get("run_directory") != run_directory:
+                    raise RuntimeError("The reviewed run changed while it was archived")
+                self._task_state.update(
+                    review_pending=False,
+                    review_status="accepted",
+                    final_result_directory=str(destination),
+                    message="Run accepted as final and moved to " + str(destination),
+                )
+            self.log("Final video run moved without duplication: " + str(destination))
+
+        self._start_job("Archive final video run", archive)
+
     def task_video_path(self) -> Optional[Path]:
         with self._lock:
             run_directory = self._task_state.get("run_directory")
+            mode = str(self._task_state.get("mode", ""))
+            review_status = str(self._task_state.get("review_status", ""))
+            final_result_directory = self._task_state.get("final_result_directory")
         if not isinstance(run_directory, str):
             return None
+        if mode == "real":
+            if review_status == "accepted" and isinstance(
+                final_result_directory, str
+            ):
+                final_root = (PROJECT_ROOT / "data" / "final_video_runs").resolve()
+                final_directory = Path(final_result_directory)
+                try:
+                    final_directory.resolve().relative_to(final_root)
+                except ValueError:
+                    return None
+                path = final_directory / "execution.mp4"
+                return path if path.is_file() else None
+            try:
+                path = self._real_run_host_directory(run_directory) / "execution.mp4"
+            except RuntimeError:
+                return None
+            return path if path.is_file() else None
         try:
             relative = Path(run_directory).relative_to("/data/sim_runs")
         except ValueError:
@@ -3715,6 +4438,8 @@ class Handler(BaseHTTPRequestHandler):
                 SUPERVISOR.stop_all()
             elif self.path == "/api/task/execute":
                 SUPERVISOR.execute_task(payload)
+            elif self.path == "/api/task/video-review":
+                SUPERVISOR.review_task_video(payload)
             elif self.path == "/api/task/select":
                 SUPERVISOR.select_task(payload)
             elif self.path == "/api/settings":

@@ -1,84 +1,12 @@
 {
   "name": "BarClean",
-  "n_demos": 7,
-  "source_demo_ids": [0, 1, 2, 3, 4, 5, 6],
-  "processed_demo_path": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/demo_fixed_scene_7_demos_10hz_training.npz",
+  "n_demos": 10,
+  "source_demo_ids": [
+    3, 5,6,7,8,9
+  ],
+  "processed_demo_path": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5_plus_previous6/training_5hz.npz",
   "seed": 2026,
   "method_overrides": {
-    "swcl": {
-      "n_stages": 5,
-      "selected_raw_feature_ids": [
-        "obstacle_clearance",
-        "table_dist",
-        "tool_pitch",
-        "tool_roll",
-        "tool_yaw",
-        "bar_axial_offset"
-      ],
-      "feature_model_types": {
-        "obstacle_clearance": "trunc_t_lower_z",
-        "table_dist": "student_t",
-        "tool_pitch": "student_t",
-        "tool_roll": "student_t",
-        "tool_yaw": "student_t",
-        "bar_axial_offset": "student_t"
-      },
-      "max_iter": 10,
-      "duration_min": 16,
-      "duration_max": null,
-      "fixed_true_cutpoint_indices": [0, 1, 2, 3],
-      "lambda_activation_consensus": 0.75,
-      "lambda_param_consensus": 0.5,
-      "lambda_ineq_constraint": 0.02,
-      "truncated_inequality_z_threshold": -0.2,
-      "truncated_z_score_mode": "soft_fit_minus_baseline",
-      "equality_dispersion_ratio_threshold": 0.06
-    },
-    "map": {
-      "n_stages": 5,
-      "selected_raw_feature_ids": [
-        "obstacle_clearance",
-        "table_dist",
-        "tool_pitch",
-        "tool_roll",
-        "tool_yaw",
-        "bar_axial_offset"
-      ],
-      "max_iter": 8,
-      "duration_min": 16,
-      "duration_max": null,
-      "fixed_true_cutpoint_indices": [0, 1, 2, 3],
-      "constraint_core_trim": 0,
-      "map_eq_sigma": 0.32,
-      "map_c_bg": 5.0,
-      "map_c_ineq": 5.0,
-      "map_boundary_quantile": 0.05,
-      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-      "map_active_mode_prior": null
-    },
-    "map_pooled": {
-      "n_stages": 5,
-      "selected_raw_feature_ids": [
-        "obstacle_clearance",
-        "table_dist",
-        "tool_pitch",
-        "tool_roll",
-        "tool_yaw",
-        "bar_axial_offset"
-      ],
-      "max_iter": 8,
-      "duration_min": 16,
-      "duration_max": null,
-      "fixed_true_cutpoint_indices": [0, 1, 2, 3],
-      "constraint_core_trim": 0,
-      "map_eq_sigma": 0.32,
-      "map_c_bg": 5.0,
-      "map_c_ineq": 5.0,
-      "map_boundary_quantile": 0.05,
-      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-      "map_active_mode_prior": null,
-      "map_mode_aggregation": "pooled"
-    },
     "map_balanced_pooled": {
       "n_stages": 5,
       "selected_raw_feature_ids": [
@@ -93,149 +21,53 @@
       "max_iter": 8,
       "duration_min": 8,
       "duration_max": null,
-      "fixed_true_cutpoint_indices": [2],
+      "fixed_true_cutpoint_indices": [],
       "constraint_core_trim": 0,
       "map_eq_sigma": 0.1,
+      "map_eq_distribution": "student-t",
+      "map_nu_eq": 5.0,
       "map_c_bg": 3,
-      "map_c_ineq": 0.0,
+      "map_c_ineq": 3.0,
       "map_boundary_quantile": 0.05,
-      "map_activation_prior": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-      "map_active_mode_prior": null,
-      "map_mode_aggregation": "demo_balanced_pooled"
-    },
-    "gmmhmm": {
-      "segmenter": {
-        "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "obstacle_clearance",
-          "table_dist",
-          "tool_pitch",
-          "tool_roll",
-          "tool_yaw",
-          "bar_axial_offset"
-        ]
-      },
-      "posthoc_constraint": {
-        "posthoc_training_mode": "voting"
-      }
-    },
-    "fchmm": {
-      "n_stages": 5,
-      "selected_raw_feature_ids": [
-        "obstacle_clearance",
-        "table_dist",
-        "tool_pitch",
-        "tool_roll",
-        "tool_yaw",
-        "bar_axial_offset"
+      "map_activation_prior": [
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5,
+        0.5
       ],
-      "feature_model_types": {
-        "obstacle_clearance": "trunc_t_lower_z",
-        "table_dist": "student_t",
-        "tool_pitch": "student_t",
-        "tool_roll": "student_t",
-        "tool_yaw": "student_t",
-        "bar_axial_offset": "student_t"
-      },
-      "fixed_feature_mask": [
-        [1, 0, 0, 0, 0, 0],
-        [0, 1, 1, 1, 1, 0],
-        [0, 0, 0, 0, 0, 0],
-        [0, 1, 1, 1, 1, 1],
-        [0, 0, 0, 0, 0, 0]
-      ],
-      "feat_weight": 0.2
-    },
-    "hmm": {
-      "segmenter": {
-        "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "obstacle_clearance",
-          "table_dist",
-          "tool_pitch",
-          "tool_roll",
-          "tool_yaw",
-          "bar_axial_offset"
-        ]
-      },
-      "posthoc_constraint": {
-        "posthoc_training_mode": "voting",
-        "fixed_feature_mask": null
-      }
-    },
-    "arhsmm": {
-      "segmenter": {
-        "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "obstacle_clearance",
-          "table_dist",
-          "tool_pitch",
-          "tool_roll",
-          "tool_yaw",
-          "bar_axial_offset"
-        ]
-      },
-      "posthoc_constraint": {
-        "posthoc_training_mode": "voting",
-        "fixed_feature_mask": null
-      }
-    },
-    "changepoint": {
-      "segmenter": {
-        "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "obstacle_clearance",
-          "table_dist",
-          "tool_pitch",
-          "tool_roll",
-          "tool_yaw",
-          "bar_axial_offset"
-        ]
-      },
-      "posthoc_constraint": {
-        "posthoc_training_mode": "voting",
-        "fixed_feature_mask": null
-      }
-    },
-    "changeforest": {
-      "segmenter": {
-        "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "obstacle_clearance",
-          "table_dist",
-          "tool_pitch",
-          "tool_roll",
-          "tool_yaw",
-          "bar_axial_offset"
-        ]
-      },
-      "posthoc_constraint": {
-        "posthoc_training_mode": "voting",
-        "fixed_feature_mask": null
-      }
-    },
-    "cluster": {
-      "segmenter": {
-        "n_stages": 5,
-        "selected_raw_feature_ids": [
-          "obstacle_clearance",
-          "table_dist",
-          "tool_pitch",
-          "tool_roll",
-          "tool_yaw",
-          "bar_axial_offset"
+      "map_active_mode_prior": {
+        "eq": [
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333
         ],
-        "use_state": true,
-        "use_velocity": false,
-        "use_env_features": true,
-        "feature_distance_weight": 0.3,
-        "min_len": 8,
-        "init_mode": "random_stage_ends"
+        "lb": [
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333
+        ],
+        "ub": [
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.3333333333333333
+        ]
       },
-      "posthoc_constraint": {
-        "posthoc_training_mode": "voting",
-        "fixed_feature_mask": null
-      }
+      "map_mode_aggregation": "demo_balanced_pooled"
     }
   }
 }

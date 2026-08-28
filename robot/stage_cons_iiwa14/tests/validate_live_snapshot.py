@@ -127,6 +127,12 @@ def main() -> None:
         help="compile the external Robot Home pose instead of the latched planner path",
     )
     parser.add_argument(
+        "--minimum-approach-z",
+        type=float,
+        default=0.20,
+        help="offline TCP transit floor in metres",
+    )
+    parser.add_argument(
         "--start-joints",
         nargs=7,
         type=float,
@@ -285,7 +291,7 @@ def main() -> None:
         approach_joint_bridge_limit=float(
             execution.get("approach_joint_bridge_limit_rad", 3.0)
         ),
-        minimum_approach_z=0.20,
+        minimum_approach_z=arguments.minimum_approach_z,
         approach_clearance_z=0.33,
     )
     bases = [compiler.tool_basis_from_quaternion(value) for value in quaternions]

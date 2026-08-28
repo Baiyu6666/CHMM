@@ -52,13 +52,26 @@ def test_orientation_unpack_keeps_user_start_and_goal_as_fixed_boundaries():
     )
     axes /= np.linalg.norm(axes, axis=1, keepdims=True)
     yaws = np.asarray([0.3, 0.2, -0.1, -0.4])
+    candidate_axes = axes.copy()
+    candidate_axes[1:3] = np.asarray(
+        [[0.0, 0.0, -1.0], [0.0, 0.2, -0.98]]
+    )
+    candidate_axes[1:3] /= np.linalg.norm(
+        candidate_axes[1:3], axis=1, keepdims=True
+    )
+    candidate_yaws = yaws.copy()
+    candidate_yaws[1:3] = [0.6, 0.4]
     free = np.asarray([1, 2], dtype=int)
+    no_normal_positions = np.empty(0, dtype=int)
+    normal = np.asarray([0.0, 0.0, 1.0])
 
     packed = StageConstraintTrajectoryOptimizer._pack(
         positions,
-        axes,
-        yaws,
+        candidate_axes,
+        candidate_yaws,
         free,
+        no_normal_positions,
+        normal,
         free,
         free,
     )
@@ -69,6 +82,8 @@ def test_orientation_unpack_keeps_user_start_and_goal_as_fixed_boundaries():
             axes,
             yaws,
             free,
+            no_normal_positions,
+            normal,
             free,
             free,
         )
@@ -76,6 +91,62 @@ def test_orientation_unpack_keeps_user_start_and_goal_as_fixed_boundaries():
 
     assert np.allclose(unpacked_axes[[0, -1]], axes[[0, -1]])
     assert np.allclose(unpacked_yaws[[0, -1]], yaws[[0, -1]])
+    assert np.allclose(unpacked_axes[1:3], candidate_axes[1:3])
+    assert np.allclose(unpacked_yaws[1:3], candidate_yaws[1:3])
+
+
+def test_position_unpack_keeps_endpoint_horizontal_coordinates_and_goal_fixed():
+    template = np.asarray(
+        [
+            [0.0, 0.0, 0.1],
+            [0.1, 0.2, 0.1],
+            [0.2, 0.3, 0.1],
+            [0.3, 0.4, 0.1],
+            [0.4, 0.5, 0.1],
+            [0.5, 0.6, 0.1],
+        ]
+    )
+    endpoint_indices = np.asarray([1, 3, 5], dtype=int)
+    free = StageConstraintTrajectoryOptimizer._free_position_indices(
+        len(template), endpoint_indices
+    )
+    normal_indices = endpoint_indices[:-1]
+    normal = np.asarray([0.0, 0.0, 1.0])
+    candidate = template.copy()
+    candidate[free] += [0.01, -0.02, 0.03]
+    candidate[normal_indices] += [0.04, -0.05, 0.06]
+    axes = np.tile([0.0, 0.0, -1.0], (len(template), 1))
+    yaws = np.zeros(len(template))
+    no_orientation = np.empty(0, dtype=int)
+
+    packed = StageConstraintTrajectoryOptimizer._pack(
+        candidate,
+        axes,
+        yaws,
+        free,
+        normal_indices,
+        normal,
+        no_orientation,
+        no_orientation,
+    )
+    positions, _, _, _ = StageConstraintTrajectoryOptimizer._unpack(
+        packed,
+        template,
+        axes,
+        yaws,
+        free,
+        normal_indices,
+        normal,
+        no_orientation,
+        no_orientation,
+    )
+
+    assert free.tolist() == [2, 4]
+    assert np.allclose(positions[free], candidate[free])
+    assert np.allclose(positions[normal_indices, :2], template[normal_indices, :2])
+    assert np.allclose(positions[normal_indices, 2], candidate[normal_indices, 2])
+    assert np.allclose(positions[0], template[0])
+    assert np.allclose(positions[-1], template[-1])
 
 
 def test_transform_pose_maps_optitrack_axes_into_robot_frame():
@@ -238,6 +309,79 @@ def test_bar_clean_subgoals_are_stored_as_final_coordinates_without_offsets():
     assert np.isclose(endpoints[1, 1], 0.0)
 
 
+def test_endpoint_keeps_task_xy_while_normal_coordinate_satisfies_constraint():
+    config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
+    config = json.loads(config_path.read_text())
+    config["stage_endpoint_positions_bar"][3][2] = 0.20
+    config["constraint_terms"] = [
+        {
+            "feature_name": "table_dist",
+            "stage": 3,
+            "semantics": "target_value",
+            "value": 0.07004,
+            "scale": 0.003,
+            "weight": 1.5,
+        }
+    ]
+    optimizer = StageConstraintTrajectoryOptimizer(
+        config,
+        control_spacing=0.06,
+        output_spacing=0.02,
+        min_control_points=5,
+        max_control_points=6,
+        max_nfev=120,
+        multi_start=1,
+    )
+    start = np.asarray([0.6183, -0.1613, 0.26584, 0.0, 1.0, 0.0, 0.0])
+    goal = np.asarray([0.45, -0.44, 0.26584, 0.0, 1.0, 0.0, 0.0])
+    bar = np.asarray([0.60, -0.20, 0.24, 0.0, 0.0, 0.0, 1.0])
+    obstacle = np.asarray([0.60, 0.20, 0.24, 0.0, 0.0, 0.0, 1.0])
+
+    planned = optimizer.plan(start, goal, bar, obstacle, seed=11)
+
+    target = planned["stage_endpoint_targets_world"][3]
+    achieved = planned["stage_endpoints_world"][3]
+    task_frame = build_bar_table_task_frame(
+        bar,
+        obstacle,
+        config["table_surface_point"],
+        config["table_normal"],
+        config.get("bar_axis_local", [1.0, 0.0, 0.0]),
+        optimizer._canonical_bar_axis,
+    )
+    position_error_task = (
+        task_frame["rotation_world_from_task"].T @ (achieved - target)
+    )
+    table_z = float(config["table_surface_point"][2])
+    constraint_target = float(config["constraint_terms"][0]["value"])
+    target_violation = abs(target[2] - table_z - constraint_target)
+    achieved_violation = abs(achieved[2] - table_z - constraint_target)
+    goal_axis = quaternion_to_matrix(goal[3:7])[:, 2]
+    goal_yaw = tool_yaw_from_quaternion(goal[3:7], task_frame)
+
+    assert np.allclose(planned["positions"][0], start[:3])
+    assert np.allclose(planned["positions"][-1], goal[:3])
+    assert np.allclose(planned["tool_axes"][-1], goal_axis)
+    assert abs(
+        np.arctan2(
+            np.sin(planned["tool_yaws"][-1] - goal_yaw),
+            np.cos(planned["tool_yaws"][-1] - goal_yaw),
+        )
+    ) < 1e-9
+    assert np.allclose(position_error_task[:2], 0.0, atol=1e-9)
+    assert achieved_violation < 0.1 * target_violation
+    assert abs(position_error_task[2]) > 0.05
+    assert planned["endpoint_report"][3]["position_error"] < 1e-9
+    assert planned["endpoint_report"][3]["horizontal_position_error"] < 1e-9
+    assert abs(planned["endpoint_report"][3]["vertical_target_delta"]) > 0.05
+    assert planned["endpoint_report"][-1]["position_error"] < 1e-9
+    assert planned["endpoint_report"][-1]["axis_error"] < 1e-9
+    assert planned["endpoint_report"][-1]["yaw_error"] < 1e-9
+    assert planned["tool_yaw_active"][0]
+    assert planned["tool_yaw_active"][-1]
+    assert planned["endpoint_objective"] == 0.0
+
+
 def test_full_orientation_reconstruction_preserves_bar_relative_yaw():
     frame = {
         "axial": np.asarray([1.0, 0.0, 0.0]),
@@ -290,7 +434,7 @@ def test_bar_clean_user_stage_three_is_free_and_stage_four_has_five_equalities()
         "tool_yaw",
     }
     assert all(term["semantics"] == "target_value" for term in stage_four.values())
-    assert np.isclose(stage_four["bar_axial_offset"]["value"], 0.0)
+    assert np.isclose(stage_four["bar_axial_offset"]["value"], -0.023)
     assert np.isclose(stage_four["table_dist"]["value"], 0.07004)
     assert np.isclose(stage_four["tool_pitch"]["value"], np.deg2rad(90.0))
     assert np.isclose(stage_four["tool_roll"]["value"], 0.0)
@@ -340,7 +484,7 @@ def test_constraint_settling_reserves_progress_without_changing_endpoints():
     assert np.allclose(positions[endpoint_indices], endpoints[1:])
 
 
-def test_learned_endpoint_pose_orientations_anchor_each_stage_boundary():
+def test_learned_endpoint_pose_orientations_initialize_each_stage_boundary():
     config_path = Path(__file__).resolve().parents[1] / "config" / "bar_clean_true.json"
     config = json.loads(config_path.read_text())
     optimizer = StageConstraintTrajectoryOptimizer(config)

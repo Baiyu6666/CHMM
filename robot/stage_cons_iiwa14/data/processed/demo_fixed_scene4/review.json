@@ -1,0 +1,747 @@
+{
+  "schema_version": 1,
+  "task_id": "BarClean",
+  "dataset_id": "demo_fixed_scene4",
+  "source_bag": "robot/stage_cons_iiwa14/data/demos/BarClean/20260828T123219_078726Z_demo_fixed_scene4/demo.bag",
+  "analysis_archive": "analysis.npz",
+  "analysis_hz": 20.0,
+  "settings": {
+    "stationary_threshold_rad_s": 0.1,
+    "minimum_dwell_s": 3.0,
+    "stationary_bridge_s": 0.35,
+    "minimum_demo_duration_s": 15.0,
+    "endpoint_tolerance_m": 0.065,
+    "bar_north_end_axial_m": -0.15,
+    "north_start_margin_m": 0.0,
+    "scene_config": "robot/stage_cons_iiwa14/ros_ws/src/stage_iiwa_sim/config/demo_scene.json",
+    "scene_config_sha256": "1bd63858a511ff584232a41666bf1f940295a73a1c832974cbeffe61a63b357e",
+    "task_definition": "robot/stage_cons_iiwa14/ros_ws/src/stage_constraint_planner/config/bar_clean_true.json",
+    "task_definition_sha256": "51727baca078caa07db101965a0f4cf0c6d43d9d9a03083d3551d0f310b4a2ba"
+  },
+  "quality": {
+    "max_joint_resample_gap_s": 0.006369590759277344,
+    "max_bar_resample_gap_s": 0.027150630950927734,
+    "max_obstacle_resample_gap_s": 0.031072616577148438,
+    "all_analysis_values_finite": true
+  },
+  "automatic_rejected_intervals": [
+    {
+      "source_interval_id": 1,
+      "start_index": 1218,
+      "end_index": 1487,
+      "duration_s": 13.45,
+      "start_task_xyz_m": [
+        0.363581,
+        -0.213451,
+        0.280156
+      ],
+      "bar_north_end_axial_m": -0.15,
+      "north_start_limit_axial_m": -0.15,
+      "start_north_of_bar": false,
+      "endpoint_min_distance_m": [
+        0.271607,
+        0.295569,
+        0.364248,
+        0.291368
+      ],
+      "endpoint_nearest_indices": [
+        65,
+        24,
+        28,
+        27
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached",
+        "start is not north of the bar's north end"
+      ]
+    },
+    {
+      "source_interval_id": 3,
+      "start_index": 2357,
+      "end_index": 2552,
+      "duration_s": 9.75,
+      "start_task_xyz_m": [
+        -0.06537,
+        0.109066,
+        0.358512
+      ],
+      "bar_north_end_axial_m": -0.15,
+      "north_start_limit_axial_m": -0.15,
+      "start_north_of_bar": false,
+      "endpoint_min_distance_m": [
+        0.277388,
+        0.41157,
+        0.391216,
+        0.427409
+      ],
+      "endpoint_nearest_indices": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached",
+        "start is not north of the bar's north end"
+      ]
+    },
+    {
+      "source_interval_id": 5,
+      "start_index": 3379,
+      "end_index": 3690,
+      "duration_s": 15.55,
+      "start_task_xyz_m": [
+        0.38976,
+        -0.184443,
+        0.318103
+      ],
+      "bar_north_end_axial_m": -0.15,
+      "north_start_limit_axial_m": -0.15,
+      "start_north_of_bar": false,
+      "endpoint_min_distance_m": [
+        0.241209,
+        0.234362,
+        0.295267,
+        0.233026
+      ],
+      "endpoint_nearest_indices": [
+        48,
+        25,
+        27,
+        29
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "not all task endpoints reached",
+        "start is not north of the bar's north end"
+      ]
+    },
+    {
+      "source_interval_id": 7,
+      "start_index": 4494,
+      "end_index": 4795,
+      "duration_s": 15.05,
+      "start_task_xyz_m": [
+        0.446937,
+        -0.27823,
+        0.147523
+      ],
+      "bar_north_end_axial_m": -0.15,
+      "north_start_limit_axial_m": -0.15,
+      "start_north_of_bar": false,
+      "endpoint_min_distance_m": [
+        0.312329,
+        0.274355,
+        0.358972,
+        0.269146
+      ],
+      "endpoint_nearest_indices": [
+        119,
+        19,
+        21,
+        19
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "not all task endpoints reached",
+        "start is not north of the bar's north end"
+      ]
+    },
+    {
+      "source_interval_id": 9,
+      "start_index": 5637,
+      "end_index": 5730,
+      "duration_s": 4.65,
+      "start_task_xyz_m": [
+        -0.078613,
+        -0.276399,
+        0.223239
+      ],
+      "bar_north_end_axial_m": -0.15,
+      "north_start_limit_axial_m": -0.15,
+      "start_north_of_bar": false,
+      "endpoint_min_distance_m": [
+        0.26386,
+        0.424342,
+        0.448525,
+        0.388087
+      ],
+      "endpoint_nearest_indices": [
+        16,
+        18,
+        19,
+        0
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached",
+        "start is not north of the bar's north end"
+      ]
+    }
+  ],
+  "demos": [
+    {
+      "demo_id": 0,
+      "source_interval_id": 0,
+      "start_index": 507,
+      "end_index": 1131,
+      "start_s": 25.35,
+      "end_s": 56.55,
+      "duration_s": 31.2,
+      "automatic_start_index": 507,
+      "automatic_end_index": 1131,
+      "cutpoints_local_indices": [
+        165,
+        272,
+        443,
+        503
+      ],
+      "automatic_cutpoints_local_indices": [
+        165,
+        272,
+        443,
+        464
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "start_task_xyz_m": [
+          -0.533702,
+          -0.253486,
+          0.2316
+        ],
+        "bar_north_end_axial_m": -0.15,
+        "north_start_limit_axial_m": -0.15,
+        "start_north_of_bar": true,
+        "endpoint_min_distance_m": [
+          0.010089,
+          0.024318,
+          0.018896,
+          0.024212
+        ],
+        "endpoint_nearest_indices": [
+          169,
+          276,
+          429,
+          511
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 1,
+      "source_interval_id": 2,
+      "start_index": 1580,
+      "end_index": 2269,
+      "start_s": 79.0,
+      "end_s": 113.45,
+      "duration_s": 34.45,
+      "automatic_start_index": 1580,
+      "automatic_end_index": 2269,
+      "cutpoints_local_indices": [
+        160,
+        293,
+        512,
+        556
+      ],
+      "automatic_cutpoints_local_indices": [
+        179,
+        246,
+        512,
+        556
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "start_task_xyz_m": [
+          -0.484231,
+          0.014209,
+          0.216923
+        ],
+        "bar_north_end_axial_m": -0.15,
+        "north_start_limit_axial_m": -0.15,
+        "start_north_of_bar": true,
+        "endpoint_min_distance_m": [
+          0.009601,
+          0.018557,
+          0.004589,
+          0.014676
+        ],
+        "endpoint_nearest_indices": [
+          173,
+          314,
+          499,
+          548
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 2,
+      "source_interval_id": 4,
+      "start_index": 2649,
+      "end_index": 3260,
+      "start_s": 132.45,
+      "end_s": 163.0,
+      "duration_s": 30.55,
+      "automatic_start_index": 2649,
+      "automatic_end_index": 3260,
+      "cutpoints_local_indices": [
+        148,
+        270,
+        452,
+        502
+      ],
+      "automatic_cutpoints_local_indices": [
+        182,
+        270,
+        452,
+        505
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "start_task_xyz_m": [
+          -0.522143,
+          -0.044219,
+          0.2161
+        ],
+        "bar_north_end_axial_m": -0.15,
+        "north_start_limit_axial_m": -0.15,
+        "start_north_of_bar": true,
+        "endpoint_min_distance_m": [
+          0.009318,
+          0.01397,
+          0.006194,
+          0.013044
+        ],
+        "endpoint_nearest_indices": [
+          150,
+          273,
+          452,
+          490
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 3,
+      "source_interval_id": 6,
+      "start_index": 3826,
+      "end_index": 4379,
+      "start_s": 191.3,
+      "end_s": 218.95,
+      "duration_s": 27.65,
+      "automatic_start_index": 3826,
+      "automatic_end_index": 4379,
+      "cutpoints_local_indices": [
+        145,
+        268,
+        442,
+        486
+      ],
+      "automatic_cutpoints_local_indices": [
+        170,
+        268,
+        442,
+        490
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "start_task_xyz_m": [
+          -0.490936,
+          -0.201038,
+          0.229537
+        ],
+        "bar_north_end_axial_m": -0.15,
+        "north_start_limit_axial_m": -0.15,
+        "start_north_of_bar": true,
+        "endpoint_min_distance_m": [
+          0.008101,
+          0.033013,
+          0.007033,
+          0.008746
+        ],
+        "endpoint_nearest_indices": [
+          148,
+          274,
+          425,
+          476
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 4,
+      "source_interval_id": 8,
+      "start_index": 4927,
+      "end_index": 5521,
+      "start_s": 246.35,
+      "end_s": 276.05,
+      "duration_s": 29.7,
+      "automatic_start_index": 4927,
+      "automatic_end_index": 5521,
+      "cutpoints_local_indices": [
+        128,
+        249,
+        424,
+        475
+      ],
+      "automatic_cutpoints_local_indices": [
+        128,
+        249,
+        424,
+        483
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "start_task_xyz_m": [
+          -0.422607,
+          0.057531,
+          0.182212
+        ],
+        "bar_north_end_axial_m": -0.15,
+        "north_start_limit_axial_m": -0.15,
+        "start_north_of_bar": true,
+        "endpoint_min_distance_m": [
+          0.01213,
+          0.037095,
+          0.006811,
+          0.023098
+        ],
+        "endpoint_nearest_indices": [
+          141,
+          249,
+          406,
+          472
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 5,
+      "source_interval_id": 10,
+      "start_index": 5874,
+      "end_index": 6432,
+      "start_s": 293.7,
+      "end_s": 321.6,
+      "duration_s": 27.9,
+      "automatic_start_index": 5874,
+      "automatic_end_index": 6432,
+      "cutpoints_local_indices": [
+        153,
+        270,
+        426,
+        476
+      ],
+      "automatic_cutpoints_local_indices": [
+        153,
+        270,
+        426,
+        484
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "start_task_xyz_m": [
+          -0.41416,
+          0.091926,
+          0.229491
+        ],
+        "bar_north_end_axial_m": -0.15,
+        "north_start_limit_axial_m": -0.15,
+        "start_north_of_bar": true,
+        "endpoint_min_distance_m": [
+          0.011309,
+          0.007859,
+          0.010804,
+          0.008788
+        ],
+        "endpoint_nearest_indices": [
+          172,
+          273,
+          405,
+          468
+        ],
+        "endpoint_order_valid": true
+      }
+    }
+  ],
+  "review": {
+    "demo_boundaries_confirmed": true,
+    "cutpoints_confirmed": true
+  },
+  "export": {
+    "status": "complete",
+    "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+    "output_hz": 5.0,
+    "activated": true,
+    "summary": {
+      "output": "/home/baiyu/LearnStageConstraints/robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "demo_count": 6,
+      "source_demo_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "excluded_source_demo_ids": [],
+      "source_hz": 20.0,
+      "output_hz": 5.0,
+      "points_per_demo": [
+        157,
+        173,
+        154,
+        139,
+        150,
+        141
+      ],
+      "stage_lengths_per_demo": [
+        [
+          41,
+          27,
+          43,
+          15,
+          31
+        ],
+        [
+          40,
+          33,
+          55,
+          11,
+          34
+        ],
+        [
+          37,
+          30,
+          46,
+          13,
+          28
+        ],
+        [
+          36,
+          31,
+          44,
+          11,
+          17
+        ],
+        [
+          32,
+          30,
+          44,
+          13,
+          31
+        ],
+        [
+          38,
+          29,
+          40,
+          12,
+          22
+        ]
+      ],
+      "boundary_task_xyz_m": [
+        [
+          [
+            -0.11053962277592824,
+            -0.0010581557873053087,
+            0.09704893324810868
+          ],
+          [
+            0.19934301530854456,
+            -0.0042889809839061765,
+            0.09107715959716664
+          ],
+          [
+            0.1848875005087888,
+            0.05332818627721241,
+            0.06531248929316755
+          ],
+          [
+            0.1800547932482238,
+            -0.07253506503427587,
+            0.06479591255887313
+          ]
+        ],
+        [
+          [
+            -0.12221236629707108,
+            0.00012349186738616215,
+            0.09632426772604227
+          ],
+          [
+            0.15031180694621657,
+            0.003610014385277016,
+            0.09453425555566367
+          ],
+          [
+            0.20348860116180426,
+            0.07492720031554582,
+            0.06324841936363135
+          ],
+          [
+            0.19007688164863795,
+            -0.06897658716898657,
+            0.0633758644589382
+          ]
+        ],
+        [
+          [
+            -0.10666326294319531,
+            0.006218888147470987,
+            0.09399737978231762
+          ],
+          [
+            0.20215901595162464,
+            0.00038812225549917647,
+            0.0981756867073251
+          ],
+          [
+            0.1938910529305007,
+            0.07533093587971226,
+            0.06584183837191507
+          ],
+          [
+            0.1829685438769455,
+            -0.09675599310464678,
+            0.06618914766062176
+          ]
+        ],
+        [
+          [
+            -0.1146425126824118,
+            0.010761145009897432,
+            0.09641857366110904
+          ],
+          [
+            0.18657853444566014,
+            -0.0010280108661017324,
+            0.10265751988704855
+          ],
+          [
+            0.20359104210591833,
+            0.05320879129458821,
+            0.06266849411679723
+          ],
+          [
+            0.18772055881460323,
+            -0.08860664629972127,
+            0.06915343870201157
+          ]
+        ],
+        [
+          [
+            -0.1354316933114549,
+            0.006416952013960336,
+            0.09395678610741323
+          ],
+          [
+            0.20175382402170533,
+            0.004259195926849746,
+            0.11227829098397449
+          ],
+          [
+            0.1904489176340944,
+            0.07835761185875569,
+            0.06341068319777976
+          ],
+          [
+            0.1784413814237453,
+            -0.0638592234031253,
+            0.06509343821196412
+          ]
+        ],
+        [
+          [
+            -0.13226266882524632,
+            0.007696401053979916,
+            0.09713218410974042
+          ],
+          [
+            0.19491611381317894,
+            -0.009444786844427677,
+            0.09298134211527403
+          ],
+          [
+            0.21240572334405394,
+            0.07120254875072558,
+            0.06249100171000471
+          ],
+          [
+            0.1954877192984658,
+            -0.07886466857409184,
+            0.06583055469209739
+          ]
+        ]
+      ]
+    },
+    "validation": {
+      "loader": "envs.BarClean.load_BarClean",
+      "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "demo_count": 6,
+      "points_per_demo": [
+        157,
+        173,
+        154,
+        139,
+        150,
+        141
+      ],
+      "feature_count": 10,
+      "feature_names": [
+        "obstacle_clearance",
+        "table_dist",
+        "bar_lateral_offset",
+        "tool_pitch",
+        "tool_roll",
+        "motion_axis_err",
+        "speed",
+        "angular_speed",
+        "bar_axial_offset",
+        "tool_yaw"
+      ],
+      "true_cutpoints": [
+        [
+          41,
+          68,
+          111,
+          126
+        ],
+        [
+          40,
+          73,
+          128,
+          139
+        ],
+        [
+          37,
+          67,
+          113,
+          126
+        ],
+        [
+          36,
+          67,
+          111,
+          122
+        ],
+        [
+          32,
+          62,
+          106,
+          119
+        ],
+        [
+          38,
+          67,
+          107,
+          119
+        ]
+      ],
+      "all_finite": true
+    }
+  }
+}

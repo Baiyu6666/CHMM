@@ -745,7 +745,7 @@ def _draw_per_demo_cutpoint_comparison(ax, learner):
     ax.set_xticks(np.linspace(0.0, 1.0, 5))
     ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax.set_yticks(np.arange(num_demos, dtype=float))
-    ax.set_yticklabels([str(idx + 1) for idx in range(num_demos)])
+    ax.set_yticklabels([str(idx) for idx in range(num_demos)])
     ax.invert_yaxis()
     ax.grid(axis="x", color="#D1D5DB", linewidth=0.55, alpha=0.72)
     ax.tick_params(labelsize=PAPER_TICK_SIZE)

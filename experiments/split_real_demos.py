@@ -61,16 +61,16 @@ def main():
 
     args.outdir.mkdir(parents=True, exist_ok=True)
     demo_records = []
-    for number, (start, end) in enumerate(demos, start=1):
+    for demo_id, (start, end) in enumerate(demos):
         segment = data[start:end + 1].copy()
         global_time = segment[:, 0].copy()
         segment[:, 0] -= segment[0, 0]
-        output = args.outdir / f"demo_{number:02d}.csv"
+        output = args.outdir / f"demo_{demo_id:02d}.csv"
         output_header = ["time_s", "recording_time_s", *header[1:]]
         np.savetxt(output, np.column_stack([segment[:, 0], global_time, segment[:, 1:]]),
                    delimiter=",", header=",".join(output_header), comments="", fmt="%.10g")
         demo_records.append({
-            "demo": number,
+            "demo_id": demo_id,
             "start_time_s": float(time[start]),
             "end_time_s": float(time[end]),
             "duration_s": float(time[end] - time[start]),
@@ -111,10 +111,10 @@ def main():
     for record, (start, end) in zip(demo_records, demos):
         for axis in axes[:2]:
             axis.axvspan(time[start], time[end], alpha=0.12, label=None)
-            axis.text((time[start] + time[end]) / 2, axis.get_ylim()[1], f"D{record['demo']}",
+            axis.text((time[start] + time[end]) / 2, axis.get_ylim()[1], f"D{record['demo_id']}",
                       ha="center", va="top", fontsize=9)
         axes[2].plot(smooth_xyz[start:end + 1, 0], smooth_xyz[start:end + 1, 1],
-                     linewidth=1.4, label=f"D{record['demo']}")
+                     linewidth=1.4, label=f"D{record['demo_id']}")
     axes[2].set_xlabel("EE x [m]")
     axes[2].set_ylabel("EE y [m]")
     axes[2].axis("equal")

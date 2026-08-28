@@ -36,6 +36,8 @@ METHODS = {
     "_fri_failure_reason",
     "_refresh_prepared_start",
     "_synchronize_and_arm",
+    "_run_segment",
+    "_wait_for_task_start",
     "_execution_worker",
     "_disarm_position_commands",
     "_abort_execution",
@@ -143,6 +145,9 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.subject._joint_names = ["iiwa14_joint_{}".format(i) for i in range(1, 8)]
         self.subject._joint_state_timeout = 0.5
         self.subject._start_drift_limit = math.radians(0.5)
+        self.subject._task_start_settle_tolerance = math.radians(1.0)
+        self.subject._task_start_settle_timeout = 2.0
+        self.subject._task_start_settle_samples = 1
         self.subject._controller_desired_position = None
         self.subject._controller_state_received = 0.0
         self.subject._protective_stop = False
@@ -293,10 +298,49 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         error = self.subject._controller_command_error(np.arange(7, dtype=float))
         self.assertEqual(error, 0.0)
 
+    def test_executing_status_exposes_scheduled_motion_video_window(self):
+        class Nanoseconds:
+            def __init__(self, value):
+                self.value = int(value)
+
+            def __add__(self, other):
+                return Nanoseconds(self.value + other.value)
+
+            def to_nsec(self):
+                return self.value
+
+        goal = types.SimpleNamespace(
+            trajectory=types.SimpleNamespace(
+                header=types.SimpleNamespace(stamp=Nanoseconds(10_000_000_000)),
+                points=[
+                    types.SimpleNamespace(time_from_start=Nanoseconds(300_000_000)),
+                    types.SimpleNamespace(time_from_start=Nanoseconds(2_300_000_000)),
+                ],
+            )
+        )
+        published = []
+        self.subject._goal = lambda _segment: goal
+        self.subject._publish = lambda phase, **fields: published.append(
+            (phase, fields)
+        )
+        self.subject._fri_failure_reason = lambda: None
+        self.subject._abort.clear()
+
+        self.subject._run_segment("executing", {"duration": 2.0})
+
+        self.assertEqual(len(self.subject._client.goals), 1)
+        self.assertEqual(published[0][0], "executing")
+        self.assertEqual(
+            published[0][1]["motion_start_unix_ns"], 10_300_000_000
+        )
+        self.assertEqual(
+            published[0][1]["motion_end_unix_ns"], 12_300_000_000
+        )
+
     def test_success_keeps_final_goal_armed_and_heartbeat_alive(self):
         events = []
         self.subject._run_segment = lambda name, _segment: events.append(name)
-        self.subject._fresh_joint_position = lambda: np.zeros(7)
+        self.subject._wait_for_task_start = lambda _target: events.append("settled")
         self.subject._start_recording = lambda: self.fail("recording was disabled")
         self.subject._stop_recording = lambda: events.append("recording_stopped")
         self.subject._publish = lambda phase, **fields: events.append(
@@ -318,6 +362,8 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.assertEqual(self.subject._client.cancel_count, 0)
         self.assertEqual(self.subject.disarm_count, 0)
         self.assertIn("moving_to_start", events)
+        self.assertLess(events.index("moving_to_start"), events.index("settled"))
+        self.assertLess(events.index("settled"), events.index("executing"))
         self.assertIn("executing", events)
         self.assertTrue(
             any(
@@ -334,6 +380,78 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         )
         self.subject._publish_position_heartbeat(None)
         self.assertEqual(len(published), 1)
+
+    def test_task_start_wait_accepts_tracking_after_three_settled_samples(self):
+        errors = iter([0.026, 0.018, 0.016, 0.015, 0.014])
+        self.subject._task_start_settle_samples = 3
+        self.subject._fresh_joint_position = mock.Mock(
+            side_effect=lambda: np.asarray([next(errors)] + [0.0] * 6)
+        )
+        self.subject._fri_failure_reason = lambda: None
+
+        with mock.patch.object(time, "sleep", return_value=None):
+            final_error = self.subject._wait_for_task_start(np.zeros(7))
+
+        self.assertAlmostEqual(final_error, 0.014)
+        self.assertEqual(self.subject._fresh_joint_position.call_count, 5)
+
+    def test_task_start_wait_times_out_without_relaxing_one_degree_limit(self):
+        self.subject._task_start_settle_timeout = 0.1
+        self.subject._fresh_joint_position = lambda: np.asarray(
+            [0.026] + [0.0] * 6
+        )
+        self.subject._fri_failure_reason = lambda: None
+
+        with mock.patch.object(time, "monotonic", side_effect=[0.0, 0.2]):
+            with self.assertRaisesRegex(RuntimeError, "0.026 rad after 0.1 s"):
+                self.subject._wait_for_task_start(np.zeros(7))
+
+    def test_low_home_runs_vertical_recovery_before_joint_home(self):
+        events = []
+        self.subject._run_segment = lambda name, _segment: events.append(name)
+        self.subject._fresh_joint_position = lambda: np.zeros(7)
+        self.subject._stop_recording = lambda: events.append("recording_stopped")
+        self.subject._publish = lambda phase, **_fields: events.append(phase)
+        prepared = {
+            "operation": "home",
+            "recovery": object(),
+            "approach": {"position": np.zeros((2, 7))},
+            "metrics": {},
+        }
+
+        self.subject._execution_worker(prepared)
+
+        self.assertLess(
+            events.index("home_recovering"), events.index("returning_home")
+        )
+        self.assertTrue(self.subject._holding_final_position)
+        self.assertTrue(self.subject._position_armed)
+
+    def test_home_abort_after_recovery_does_not_send_joint_home(self):
+        events = []
+
+        def run_segment(name, _segment):
+            events.append(name)
+            if name == "home_recovering":
+                self.subject._abort.set()
+
+        self.subject._run_segment = run_segment
+        self.subject._fresh_joint_position = lambda: np.zeros(7)
+        self.subject._stop_recording = lambda: None
+        self.subject._publish = lambda phase, **_fields: events.append(phase)
+        prepared = {
+            "operation": "home",
+            "recovery": object(),
+            "approach": {"position": np.zeros((2, 7))},
+            "metrics": {},
+        }
+
+        self.subject._execution_worker(prepared)
+
+        self.assertIn("home_recovering", events)
+        self.assertNotIn("returning_home", events)
+        self.assertIn("aborted", events)
+        self.assertFalse(self.subject._position_armed)
 
     def test_failed_task_cancels_goal_and_disarms(self):
         def run_segment(name, _segment):

@@ -5,7 +5,7 @@
     "bar_calibration": "data/demos/BarClean/20260827T155047_325922Z_demo_bar_fixed_moving/demo.bag",
     "bar_method": "robust orthogonal line fit to the 8-45 s robot-internal flange trajectory",
     "obstacle_method": "manually supplied center XY; z is display-only table plus radius",
-    "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_01_5hz_coarse.npz",
+    "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_00_5hz_coarse.npz",
     "ik_seed_field": "joint_positions",
     "ik_seed_sample_index": 305
   },

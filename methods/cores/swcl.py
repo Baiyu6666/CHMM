@@ -729,7 +729,8 @@ class StageWiseConstraintLearningModel:
                     ):
                         elapsed = time.time() - start_time
                         print(
-                            f"[SWCL] DP prep demo {demo_idx + 1}/{len(self.demos)}: "
+                            f"[SWCL] DP prep demo_id={demo_idx} "
+                            f"(item {demo_idx + 1}/{len(self.demos)}): "
                             f"{local_idx + 1}/{demo_total} local segments | "
                             f"overall {overall_done}/{total_items} ({elapsed:.1f}s elapsed)",
                             flush=True,
@@ -777,7 +778,8 @@ class StageWiseConstraintLearningModel:
                         rate = overall_done / max(elapsed, 1e-9)
                         pct = 100.0 * overall_done / max(total_items, 1)
                         print(
-                            f"[SWCL] DP prep demo {demo_idx + 1}/{len(self.demos)}: "
+                            f"[SWCL] DP prep demo_id={demo_idx} "
+                            f"(item {demo_idx + 1}/{len(self.demos)}): "
                             f"{demo_done}/{demo_total} local segments | "
                             f"overall {overall_done}/{total_items} ({pct:.1f}%, {rate:.1f} seg/s, {elapsed:.1f}s elapsed)",
                             flush=True,

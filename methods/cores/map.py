@@ -1371,127 +1371,18 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
             fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92), pad=0.7)
             save_figure(fig, out_dir / f"density_demo_{int(demo_idx):02d}.png", dpi=180)
 
-    def _plot_map_vote_summary(
-        self,
-        iteration: int,
-        selected_infos: Sequence[dict],
-        total_loss: float,
-        *,
-        force: bool = False,
-    ) -> None:
-        should_plot, _ = self._map_should_plot_iteration(int(iteration))
-        if not force and not should_plot:
-            return
-        out_dir = learner_plot_dir(self)
-        n_demos = len(selected_infos)
-        col_labels = [f"d{idx}" for idx in range(n_demos)] + ["shared"]
-        fig, axes = plt.subplots(
-            self.num_stages,
-            1,
-            figsize=(max(7.5, 1.35 * (n_demos + 1)), max(2.2, 1.15 * self.num_stages * self.num_features)),
-            squeeze=False,
-        )
-        for stage_idx in range(self.num_stages):
-            ax = axes[stage_idx][0]
-            ax.axis("off")
-            rows = []
-            row_labels = []
-            for feat_idx in range(self.num_features):
-                row_labels.append(self._map_feature_name(feat_idx))
-                cells = []
-                local_modes = []
-                for info in selected_infos:
-                    stage_params = info["stage_params"][stage_idx]
-                    mode = self._kind_to_mode(self._stage_feature_kind(stage_params, feat_idx))
-                    local_modes.append(mode)
-                    vec = self._stage_feature_vector(stage_params, feat_idx)
-                    cost = float(np.asarray(stage_params.feature_constraint_costs, dtype=float)[feat_idx])
-                    cells.append(f"{mode}\np={self._map_param_text(mode, vec)}\nc={cost:.1f}")
-                shared_mode = self._kind_to_mode(self.shared_param_kinds[stage_idx][feat_idx])
-                shared_vec = self.shared_param_vectors[stage_idx][feat_idx]
-                mstep_costs = {}
-                try:
-                    mstep_costs = dict(self.map_shared_mode_costs_[stage_idx][feat_idx])
-                except Exception:
-                    mstep_costs = {}
-                costs_text = " ".join(
-                    f"{mode}:{float(mstep_costs[mode]):.1f}"
-                    for mode in ("inactive", "eq", "lb", "ub")
-                    if mode in mstep_costs and np.isfinite(float(mstep_costs[mode]))
-                )
-                vote_info = {}
-                try:
-                    vote_info = dict(self.map_shared_mode_votes_[stage_idx][feat_idx])
-                except Exception:
-                    vote_info = {}
-                vote_counts = dict(vote_info.get("vote_counts", {}))
-                votes_text = " ".join(
-                    f"{mode}:{int(vote_counts[mode])}"
-                    for mode in ("inactive", "eq", "lb", "ub")
-                    if int(vote_counts.get(mode, 0)) > 0
-                )
-                aggregation = str(vote_info.get("aggregation", self.map_mode_aggregation))
-                shared_lines = [
-                    f"{shared_mode} [{aggregation}]",
-                    f"p={self._map_param_text(shared_mode, shared_vec)}",
-                ]
-                if votes_text:
-                    shared_lines.append(f"votes {votes_text}")
-                shared_lines.append(costs_text)
-                cells.append("\n".join(shared_lines))
-                rows.append(cells)
-            table = ax.table(
-                cellText=rows,
-                rowLabels=row_labels,
-                colLabels=col_labels,
-                loc="center",
-                cellLoc="center",
-                rowLoc="center",
-            )
-            table.auto_set_font_size(False)
-            table.set_fontsize(7)
-            table.scale(1.0, 1.55)
-            for (row, col), cell in table.get_celld().items():
-                cell.set_edgecolor("#CBD5E1")
-                cell.set_linewidth(0.6)
-                if row == 0 or col == -1:
-                    cell.set_facecolor("#F1F5F9")
-                elif col == n_demos:
-                    cell.set_facecolor("#FEF3C7")
-                else:
-                    cell.set_facecolor("white")
-            ax.set_title(f"stage {stage_idx + 1}", fontsize=10, pad=8)
-        fig.suptitle(f"MAP M-step summary | final | total={float(total_loss):.3f}", fontsize=12)
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94), pad=0.6)
-        save_figure(fig, out_dir / "map_mstep_summary.png", dpi=190)
-
-    def _plot_map_diagnostics(self, iteration: int, selected_infos: Sequence[dict], total_loss: float) -> None:
+    def _plot_map_final_pooled_diagnostics(self, iteration: int, selected_infos: Sequence[dict]) -> None:
         try:
-            self._plot_map_pooled_mode_density_diagnostics(int(iteration), selected_infos)
-            self._plot_map_mode_density_diagnostics(int(iteration), selected_infos)
-            self._plot_map_vote_summary(int(iteration), selected_infos, float(total_loss))
+            self._plot_map_pooled_mode_density_diagnostics(int(iteration), selected_infos, force=True)
         except Exception as exc:
             if self.verbose:
-                print(f"[MAP] diagnostic plots skipped at iter {int(iteration) + 1:04d}: {exc}")
-
-    def _plot_map_final_pooled_diagnostics(self, iteration: int, selected_infos: Sequence[dict]) -> None:
+                print(f"[MAP] final pooled distribution plot skipped: {exc}")
         if self.map_save_density_plots:
-            try:
-                self._plot_map_pooled_mode_density_diagnostics(int(iteration), selected_infos, force=True)
-            except Exception as exc:
-                if self.verbose:
-                    print(f"[MAP] final pooled distribution plot skipped: {exc}")
             try:
                 self._plot_map_mode_density_diagnostics(int(iteration), selected_infos, force=True)
             except Exception as exc:
                 if self.verbose:
                     print(f"[MAP] final per-demo distribution plots skipped: {exc}")
-        try:
-            total_loss = float(self.loss_total[-1]) if self.loss_total else float("nan")
-            self._plot_map_vote_summary(int(iteration), selected_infos, total_loss, force=True)
-        except Exception as exc:
-            if self.verbose:
-                print(f"[MAP] final M-step vote summary plot skipped: {exc}")
 
     def _mode_fit_likelihood_cost(self, fit: _MAPModeFit) -> float:
         return float(fit.summary.get("nll", 0.0))

@@ -66,7 +66,7 @@ def main():
     ):
         axis = time_axes[demo_index]
         slices = stage_slices(cutpoints, len(trajectory))
-        demo_record = {"demo": demo_index + 1, "stages": []}
+        demo_record = {"demo_id": demo_index, "stages": []}
         for stage_index, segment in enumerate(slices):
             local_time = time[segment]
             local_speed = speed[segment]
@@ -85,7 +85,7 @@ def main():
             })
         for cutpoint in cutpoints:
             axis.axvline(time[int(cutpoint)], color="0.25", linestyle="--", linewidth=0.8)
-        axis.set_title(f"Demo {demo_index + 1}")
+        axis.set_title(f"Demo {demo_index}")
         axis.set_xlabel("Time from trimmed demo start [s]")
         axis.set_ylabel("Planar speed [mm/s]")
         axis.grid(alpha=0.2)

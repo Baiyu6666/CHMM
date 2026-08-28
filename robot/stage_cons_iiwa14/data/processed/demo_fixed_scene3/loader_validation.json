@@ -1,0 +1,86 @@
+{
+  "loader": "envs.BarClean.load_BarClean",
+  "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+  "demo_count": 9,
+  "points_per_demo": [
+    127,
+    153,
+    143,
+    180,
+    186,
+    193,
+    168,
+    166,
+    173
+  ],
+  "feature_count": 10,
+  "feature_names": [
+    "obstacle_clearance",
+    "table_dist",
+    "bar_lateral_offset",
+    "tool_pitch",
+    "tool_roll",
+    "motion_axis_err",
+    "speed",
+    "angular_speed",
+    "bar_axial_offset",
+    "tool_yaw"
+  ],
+  "true_cutpoints": [
+    [
+      37,
+      60,
+      89,
+      102
+    ],
+    [
+      42,
+      69,
+      111,
+      124
+    ],
+    [
+      42,
+      67,
+      102,
+      113
+    ],
+    [
+      44,
+      79,
+      143,
+      156
+    ],
+    [
+      40,
+      67,
+      130,
+      144
+    ],
+    [
+      90,
+      104,
+      149,
+      168
+    ],
+    [
+      55,
+      85,
+      119,
+      134
+    ],
+    [
+      62,
+      87,
+      123,
+      134
+    ],
+    [
+      64,
+      92,
+      128,
+      140
+    ]
+  ],
+  "all_finite": true
+}

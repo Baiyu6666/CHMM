@@ -1,0 +1,954 @@
+{
+  "schema_version": 1,
+  "task_id": "BarClean",
+  "dataset_id": "demo_fixed_scene3",
+  "source_bag": "robot/stage_cons_iiwa14/data/demos/BarClean/20260828T071134_960601Z_demo_fixed_scene3/demo.bag",
+  "analysis_archive": "analysis.npz",
+  "analysis_hz": 20.0,
+  "settings": {
+    "stationary_threshold_rad_s": 0.1,
+    "minimum_dwell_s": 3.0,
+    "stationary_bridge_s": 0.35,
+    "minimum_demo_duration_s": 15.0,
+    "endpoint_tolerance_m": 0.065,
+    "scene_config": "robot/stage_cons_iiwa14/ros_ws/src/stage_iiwa_sim/config/demo_scene.json",
+    "scene_config_sha256": "dd86d9f2605625c92dd2ab1b3f1fe10165f63a33002c9a0441b139f106be9afc",
+    "task_definition": "robot/stage_cons_iiwa14/ros_ws/src/stage_constraint_planner/config/bar_clean_true.json",
+    "task_definition_sha256": "51727baca078caa07db101965a0f4cf0c6d43d9d9a03083d3551d0f310b4a2ba"
+  },
+  "quality": {
+    "max_joint_resample_gap_s": 0.007857799530029297,
+    "max_bar_resample_gap_s": 0.016363143920898438,
+    "max_obstacle_resample_gap_s": 0.02556610107421875,
+    "all_analysis_values_finite": true
+  },
+  "automatic_rejected_intervals": [
+    {
+      "source_interval_id": 0,
+      "start_index": 64,
+      "end_index": 269,
+      "duration_s": 10.25,
+      "endpoint_min_distance_m": [
+        0.225413,
+        0.277766,
+        0.306827,
+        0.288117
+      ],
+      "endpoint_nearest_indices": [
+        53,
+        26,
+        26,
+        29
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 2,
+      "start_index": 1031,
+      "end_index": 1162,
+      "duration_s": 6.55,
+      "endpoint_min_distance_m": [
+        0.295495,
+        0.473894,
+        0.477586,
+        0.466776
+      ],
+      "endpoint_nearest_indices": [
+        2,
+        2,
+        2,
+        2
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 4,
+      "start_index": 2008,
+      "end_index": 2220,
+      "duration_s": 10.6,
+      "endpoint_min_distance_m": [
+        0.308495,
+        0.185193,
+        0.237638,
+        0.217977
+      ],
+      "endpoint_nearest_indices": [
+        75,
+        58,
+        60,
+        58
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 6,
+      "start_index": 3002,
+      "end_index": 3250,
+      "duration_s": 12.4,
+      "endpoint_min_distance_m": [
+        0.423637,
+        0.281858,
+        0.362188,
+        0.285024
+      ],
+      "endpoint_nearest_indices": [
+        45,
+        21,
+        23,
+        21
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 8,
+      "start_index": 4180,
+      "end_index": 4355,
+      "duration_s": 8.75,
+      "endpoint_min_distance_m": [
+        0.309435,
+        0.482888,
+        0.506703,
+        0.475911
+      ],
+      "endpoint_nearest_indices": [
+        80,
+        0,
+        0,
+        0
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 11,
+      "start_index": 6916,
+      "end_index": 7182,
+      "duration_s": 13.3,
+      "endpoint_min_distance_m": [
+        0.204034,
+        0.25415,
+        0.311601,
+        0.241979
+      ],
+      "endpoint_nearest_indices": [
+        58,
+        32,
+        35,
+        36
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 13,
+      "start_index": 8084,
+      "end_index": 8238,
+      "duration_s": 7.7,
+      "endpoint_min_distance_m": [
+        0.308489,
+        0.476112,
+        0.503376,
+        0.45471
+      ],
+      "endpoint_nearest_indices": [
+        106,
+        4,
+        4,
+        3
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    },
+    {
+      "source_interval_id": 15,
+      "start_index": 9103,
+      "end_index": 9329,
+      "duration_s": 11.3,
+      "endpoint_min_distance_m": [
+        0.245459,
+        0.370776,
+        0.399214,
+        0.342814
+      ],
+      "endpoint_nearest_indices": [
+        16,
+        10,
+        11,
+        12
+      ],
+      "endpoint_order_valid": false,
+      "rejection_reasons": [
+        "duration below minimum",
+        "not all task endpoints reached"
+      ]
+    }
+  ],
+  "demos": [
+    {
+      "demo_id": 0,
+      "source_interval_id": 1,
+      "start_index": 362,
+      "end_index": 865,
+      "start_s": 18.1,
+      "end_s": 43.25,
+      "duration_s": 25.15,
+      "automatic_start_index": 362,
+      "automatic_end_index": 865,
+      "cutpoints_local_indices": [
+        149,
+        242,
+        357,
+        406
+      ],
+      "automatic_cutpoints_local_indices": [
+        149,
+        248,
+        357,
+        406
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.007473,
+          0.015228,
+          0.004935,
+          0.011734
+        ],
+        "endpoint_nearest_indices": [
+          156,
+          249,
+          344,
+          401
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 1,
+      "source_interval_id": 3,
+      "start_index": 1280,
+      "end_index": 1886,
+      "start_s": 64.0,
+      "end_s": 94.3,
+      "duration_s": 30.3,
+      "automatic_start_index": 1280,
+      "automatic_end_index": 1886,
+      "cutpoints_local_indices": [
+        167,
+        276,
+        443,
+        497
+      ],
+      "automatic_cutpoints_local_indices": [
+        167,
+        284,
+        443,
+        506
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.007749,
+          0.020894,
+          0.006319,
+          0.009775
+        ],
+        "endpoint_nearest_indices": [
+          174,
+          286,
+          436,
+          492
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 2,
+      "source_interval_id": 5,
+      "start_index": 2334,
+      "end_index": 2900,
+      "start_s": 116.7,
+      "end_s": 145.0,
+      "duration_s": 28.3,
+      "automatic_start_index": 2334,
+      "automatic_end_index": 2900,
+      "cutpoints_local_indices": [
+        166,
+        269,
+        406,
+        453
+      ],
+      "automatic_cutpoints_local_indices": [
+        166,
+        274,
+        406,
+        458
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.0085,
+          0.04965,
+          0.002797,
+          0.009616
+        ],
+        "endpoint_nearest_indices": [
+          178,
+          275,
+          387,
+          450
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 3,
+      "source_interval_id": 7,
+      "start_index": 3371,
+      "end_index": 4088,
+      "start_s": 168.55,
+      "end_s": 204.4,
+      "duration_s": 35.85,
+      "automatic_start_index": 3371,
+      "automatic_end_index": 4088,
+      "cutpoints_local_indices": [
+        176,
+        316,
+        571,
+        623
+      ],
+      "automatic_cutpoints_local_indices": [
+        176,
+        325,
+        571,
+        628
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.008877,
+          0.01115,
+          0.004943,
+          0.012909
+        ],
+        "endpoint_nearest_indices": [
+          192,
+          326,
+          565,
+          614
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 4,
+      "source_interval_id": 9,
+      "start_index": 4441,
+      "end_index": 5179,
+      "start_s": 222.05,
+      "end_s": 258.95,
+      "duration_s": 36.9,
+      "automatic_start_index": 4441,
+      "automatic_end_index": 5179,
+      "cutpoints_local_indices": [
+        159,
+        268,
+        520,
+        577
+      ],
+      "automatic_cutpoints_local_indices": [
+        159,
+        276,
+        520,
+        585
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.009181,
+          0.016925,
+          0.006209,
+          0.008945
+        ],
+        "endpoint_nearest_indices": [
+          167,
+          279,
+          515,
+          567
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 5,
+      "source_interval_id": 10,
+      "start_index": 6025,
+      "end_index": 6791,
+      "start_s": 263.35,
+      "end_s": 339.55,
+      "duration_s": 76.2,
+      "automatic_start_index": 5267,
+      "automatic_end_index": 6791,
+      "cutpoints_local_indices": [
+        361,
+        417,
+        598,
+        672
+      ],
+      "automatic_cutpoints_local_indices": [
+        1119,
+        1184,
+        1356,
+        1430
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.00787,
+          0.027252,
+          0.002308,
+          0.018466
+        ],
+        "endpoint_nearest_indices": [
+          1069,
+          1188,
+          1335,
+          1410
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 6,
+      "source_interval_id": 12,
+      "start_index": 7287,
+      "end_index": 7953,
+      "start_s": 364.35,
+      "end_s": 397.65,
+      "duration_s": 33.3,
+      "automatic_start_index": 7287,
+      "automatic_end_index": 7953,
+      "cutpoints_local_indices": [
+        219,
+        339,
+        475,
+        538
+      ],
+      "automatic_cutpoints_local_indices": [
+        219,
+        349,
+        475,
+        538
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.008607,
+          0.031819,
+          0.007832,
+          0.00901
+        ],
+        "endpoint_nearest_indices": [
+          237,
+          353,
+          476,
+          518
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 7,
+      "source_interval_id": 14,
+      "start_index": 8367,
+      "end_index": 9027,
+      "start_s": 418.35,
+      "end_s": 451.35,
+      "duration_s": 33.0,
+      "automatic_start_index": 8367,
+      "automatic_end_index": 9027,
+      "cutpoints_local_indices": [
+        247,
+        350,
+        492,
+        537
+      ],
+      "automatic_cutpoints_local_indices": [
+        247,
+        355,
+        492,
+        537
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.007917,
+          0.007693,
+          0.002949,
+          0.012709
+        ],
+        "endpoint_nearest_indices": [
+          260,
+          360,
+          456,
+          526
+        ],
+        "endpoint_order_valid": true
+      }
+    },
+    {
+      "demo_id": 8,
+      "source_interval_id": 16,
+      "start_index": 9422,
+      "end_index": 10109,
+      "start_s": 471.1,
+      "end_s": 505.45,
+      "duration_s": 34.35,
+      "automatic_start_index": 9422,
+      "automatic_end_index": 10109,
+      "cutpoints_local_indices": [
+        257,
+        369,
+        512,
+        560
+      ],
+      "automatic_cutpoints_local_indices": [
+        257,
+        380,
+        512,
+        560
+      ],
+      "cutpoint_proposal_method": "task_motion_direction",
+      "diagnostics": {
+        "endpoint_min_distance_m": [
+          0.012564,
+          0.013538,
+          0.014258,
+          0.024282
+        ],
+        "endpoint_nearest_indices": [
+          272,
+          386,
+          513,
+          554
+        ],
+        "endpoint_order_valid": true
+      }
+    }
+  ],
+  "review": {
+    "demo_boundaries_confirmed": true,
+    "cutpoints_confirmed": true
+  },
+  "export": {
+    "status": "complete",
+    "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+    "output_hz": 5.0,
+    "activated": true,
+    "summary": {
+      "output": "/home/baiyu/LearnStageConstraints/robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+      "demo_count": 9,
+      "source_demo_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "excluded_source_demo_ids": [],
+      "source_hz": 20.0,
+      "output_hz": 5.0,
+      "points_per_demo": [
+        127,
+        153,
+        143,
+        180,
+        186,
+        193,
+        168,
+        166,
+        173
+      ],
+      "stage_lengths_per_demo": [
+        [
+          37,
+          23,
+          29,
+          13,
+          25
+        ],
+        [
+          42,
+          27,
+          42,
+          13,
+          29
+        ],
+        [
+          42,
+          25,
+          35,
+          11,
+          30
+        ],
+        [
+          44,
+          35,
+          64,
+          13,
+          24
+        ],
+        [
+          40,
+          27,
+          63,
+          14,
+          42
+        ],
+        [
+          90,
+          14,
+          45,
+          19,
+          25
+        ],
+        [
+          55,
+          30,
+          34,
+          15,
+          34
+        ],
+        [
+          62,
+          25,
+          36,
+          11,
+          32
+        ],
+        [
+          64,
+          28,
+          36,
+          12,
+          33
+        ]
+      ],
+      "boundary_task_xyz_m": [
+        [
+          [
+            -0.11849694251668005,
+            0.010183575863566323,
+            0.09494313125523149
+          ],
+          [
+            0.18417315740535073,
+            0.011575091096195853,
+            0.08979614272908315
+          ],
+          [
+            0.19269719507072275,
+            0.07104271262631329,
+            0.06484921417867714
+          ],
+          [
+            0.1915658137758384,
+            -0.06852198869200021,
+            0.06438103974475587
+          ]
+        ],
+        [
+          [
+            -0.11549480233613338,
+            0.008389119493268826,
+            0.096344756645694
+          ],
+          [
+            0.1880900215030429,
+            0.018211603108154163,
+            0.09071800130354976
+          ],
+          [
+            0.20381541765251637,
+            0.07036481153785468,
+            0.064686504422522
+          ],
+          [
+            0.19518053213656322,
+            -0.06715021979571988,
+            0.06251479186257661
+          ]
+        ],
+        [
+          [
+            -0.12031501066572084,
+            0.0021562691168767237,
+            0.09625243417206056
+          ],
+          [
+            0.17415650045386755,
+            0.010403019866727438,
+            0.09445343330197933
+          ],
+          [
+            0.1913804432622937,
+            0.06482372075249439,
+            0.06430068589406349
+          ],
+          [
+            0.1971760190843991,
+            -0.06551994737876979,
+            0.06400151132304052
+          ]
+        ],
+        [
+          [
+            -0.12895674179012198,
+            -0.0024066610102719136,
+            0.09731266405545927
+          ],
+          [
+            0.19744698031345984,
+            0.00012970026483659608,
+            0.09097588567176723
+          ],
+          [
+            0.1965517250038022,
+            0.07316327944417714,
+            0.06575702380368298
+          ],
+          [
+            0.18170365980523734,
+            -0.09908354799988643,
+            0.06788659160854368
+          ]
+        ],
+        [
+          [
+            -0.11722955502156454,
+            0.003342018560693793,
+            0.09672277650058117
+          ],
+          [
+            0.19591234370034108,
+            0.011075961419314486,
+            0.09124279397421967
+          ],
+          [
+            0.19476861892324412,
+            0.0729033841619985,
+            0.06522833951593152
+          ],
+          [
+            0.1924189202316559,
+            -0.08161737196065423,
+            0.06288607651440087
+          ]
+        ],
+        [
+          [
+            0.023047923904924994,
+            0.004023507095357346,
+            0.09216356954202373
+          ],
+          [
+            0.1783005453131296,
+            0.011046104914054843,
+            0.09308872901808182
+          ],
+          [
+            0.1896879094063863,
+            0.059316868676412005,
+            0.06536240602611518
+          ],
+          [
+            0.18965480222119438,
+            -0.10151493083425242,
+            0.06545243964455663
+          ]
+        ],
+        [
+          [
+            -0.13547694001089958,
+            0.0002037062329656518,
+            0.09319819369033858
+          ],
+          [
+            0.18624006285576522,
+            0.013308474685457133,
+            0.08956031805893183
+          ],
+          [
+            0.20225763057067925,
+            0.07512287925471108,
+            0.06374323463018122
+          ],
+          [
+            0.19265818431565226,
+            -0.10545219539439689,
+            0.0702443304188877
+          ]
+        ],
+        [
+          [
+            -0.13667760954738298,
+            -0.004762948434553932,
+            0.09219223205617472
+          ],
+          [
+            0.18062179228238004,
+            0.0026279987992214393,
+            0.0880095077584673
+          ],
+          [
+            0.19258134175708197,
+            0.054460244717354736,
+            0.06301097636453637
+          ],
+          [
+            0.18469948378963216,
+            -0.08907973828325132,
+            0.06636646096908727
+          ]
+        ],
+        [
+          [
+            -0.13076100650022918,
+            0.005505031397718742,
+            0.0916926434431215
+          ],
+          [
+            0.16531395475534583,
+            -0.007997680638386278,
+            0.09568473751913983
+          ],
+          [
+            0.18575423150776893,
+            0.07950652391434733,
+            0.06284197987904416
+          ],
+          [
+            0.17806250103722393,
+            -0.06321354957062947,
+            0.061084769636522235
+          ]
+        ]
+      ]
+    },
+    "validation": {
+      "loader": "envs.BarClean.load_BarClean",
+      "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+      "demo_count": 9,
+      "points_per_demo": [
+        127,
+        153,
+        143,
+        180,
+        186,
+        193,
+        168,
+        166,
+        173
+      ],
+      "feature_count": 10,
+      "feature_names": [
+        "obstacle_clearance",
+        "table_dist",
+        "bar_lateral_offset",
+        "tool_pitch",
+        "tool_roll",
+        "motion_axis_err",
+        "speed",
+        "angular_speed",
+        "bar_axial_offset",
+        "tool_yaw"
+      ],
+      "true_cutpoints": [
+        [
+          37,
+          60,
+          89,
+          102
+        ],
+        [
+          42,
+          69,
+          111,
+          124
+        ],
+        [
+          42,
+          67,
+          102,
+          113
+        ],
+        [
+          44,
+          79,
+          143,
+          156
+        ],
+        [
+          40,
+          67,
+          130,
+          144
+        ],
+        [
+          90,
+          104,
+          149,
+          168
+        ],
+        [
+          55,
+          85,
+          119,
+          134
+        ],
+        [
+          62,
+          87,
+          123,
+          134
+        ],
+        [
+          64,
+          92,
+          128,
+          140
+        ]
+      ],
+      "all_finite": true
+    }
+  }
+}

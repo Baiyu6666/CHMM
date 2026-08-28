@@ -1,0 +1,15 @@
+{
+  "codec": "libx264-crf18-veryfast",
+  "completed": false,
+  "device": "/dev/video10",
+  "error": "recorded 14.800 s of the scheduled 15.010 s motion window",
+  "fps": 30.0,
+  "height": 1080,
+  "motion_end_monotonic_s": 3838404.890265093,
+  "motion_end_unix_ns": 1787939276668232325,
+  "motion_start_monotonic_s": 3838389.880349666,
+  "motion_start_unix_ns": 1787939261658316898,
+  "schema_version": 1,
+  "video_file": "execution_partial.mp4",
+  "width": 1920
+}

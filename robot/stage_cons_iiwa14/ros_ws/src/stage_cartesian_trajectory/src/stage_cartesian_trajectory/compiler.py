@@ -1244,15 +1244,63 @@ class CartesianTrajectoryCompiler:
             x_axes = np.asarray(orthogonal)
         return positions, axes, x_axes, distance
 
+    def _home_vertical_recovery(self, start_q, abort_requested):
+        """Keep the measured TCP pose fixed in XY/orientation while lifting."""
+        current_position, current_rotation = self.tip_state(start_q)
+        if current_position[2] >= self._minimum_approach_z - 1e-6:
+            return None, start_q.copy(), 0.0, [], [], []
+
+        # Aim one strict task-position tolerance above the floor. The floor
+        # remains the safety boundary; this margin prevents an IK solution at
+        # the tolerance edge from ending microscopically below it.
+        recovery_z = self._minimum_approach_z + self._position_tolerance
+        recovery_distance = float(recovery_z - current_position[2])
+        sample_count = max(
+            5,
+            int(math.ceil(recovery_distance / self._approach_spacing)),
+        )
+        phases = np.linspace(0.0, 1.0, sample_count + 1)[1:]
+        positions = np.repeat(current_position[None, :], sample_count, axis=0)
+        positions[:, 2] = current_position[2] + phases * recovery_distance
+        axes = np.repeat(current_rotation[None, :, 2], sample_count, axis=0)
+        x_axes = np.repeat(current_rotation[None, :, 0], sample_count, axis=0)
+        q_tail, position_errors, axis_errors, x_errors = self._continuous_ik(
+            positions,
+            axes,
+            start_q,
+            abort_requested,
+            "Return Home vertical recovery",
+            position_tolerance=self._position_tolerance,
+            final_position_tolerance=self._position_tolerance,
+            max_joint_step=self._max_joint_step,
+            x_axes=x_axes,
+            x_active=np.ones(sample_count, dtype=bool),
+        )
+        q_recovery = self._densify_joint_path(
+            np.vstack((start_q[None, :], q_tail)), self._max_joint_step
+        )
+        minimum_duration = recovery_distance / max(self._approach_speed, 1e-4)
+        recovery = self.time_parameterize(q_recovery, minimum_duration)
+        return (
+            recovery,
+            q_recovery[-1].copy(),
+            recovery_distance,
+            position_errors,
+            axis_errors,
+            x_errors,
+        )
+
     def compile_joint_home(self, start_q, target_q, abort_requested=None):
         """Compile a collision-checked joint move to a saved comfortable posture.
 
         Robot Home is a posture, not a Cartesian tracking task.  Solving a long
         lift/lateral Cartesian path with free yaw can select an unreachable IK
         branch even when both the current and saved Home postures are valid.
-        Interpolate the measured joints directly and retain the same controller
-        interpolation, workspace, collision, singularity, velocity and
-        acceleration checks used by normal execution.
+        If the measured TCP starts below the transit floor, first solve a
+        fixed-XY, fixed-orientation Cartesian lift. Only after that recovery
+        has completed may the executor start direct joint interpolation to
+        Home. Both segments retain workspace, collision, velocity and
+        acceleration validation.
         """
         start_q = np.asarray(start_q, dtype=float)
         target_q = np.asarray(target_q, dtype=float)
@@ -1271,46 +1319,98 @@ class CartesianTrajectoryCompiler:
             raise TrajectoryValidationError("Return Home compilation aborted")
 
         try:
+            (
+                recovery,
+                recovered_q,
+                recovery_distance,
+                recovery_position_errors,
+                recovery_axis_errors,
+                recovery_x_errors,
+            ) = self._home_vertical_recovery(start_q, abort_requested)
             q_path = self._densify_joint_path(
-                np.vstack((start_q, target_q)), self._max_joint_step
+                np.vstack((recovered_q, target_q)), self._max_joint_step
             )
             tcp_positions = np.asarray(
                 [self.tip_state(q)[0] for q in q_path], dtype=float
             )
-            tcp_distance = float(
+            home_tcp_distance = float(
                 np.sum(np.linalg.norm(np.diff(tcp_positions, axis=0), axis=1))
             )
-            minimum_duration = tcp_distance / max(self._approach_speed, 1e-4)
+            minimum_duration = home_tcp_distance / max(self._approach_speed, 1e-4)
             approach = self.time_parameterize(q_path, minimum_duration)
             if abort_requested():
                 raise TrajectoryValidationError("Return Home compilation aborted")
-            validation_path = approach["_validation_position"]
-            minimum_z = self._approach_workspace_checks(validation_path)
-            self._collision_checks(validation_path, "Return Home")
+            approach_validation = approach["_validation_position"]
+            minimum_z = self._approach_workspace_checks(approach_validation)
+            self._collision_checks(approach_validation, "Return Home")
+            if recovery is not None:
+                recovery_validation = recovery["_validation_position"]
+                minimum_z = min(
+                    minimum_z,
+                    self._approach_workspace_checks(recovery_validation),
+                )
+                self._collision_and_singularity_checks(
+                    recovery_validation, "Return Home vertical recovery"
+                )
+            timed_segments = [approach] if recovery is None else [recovery, approach]
             return {
                 "start": start_q.copy(),
+                "recovery": recovery,
                 "approach": approach,
                 "metrics": {
-                    "home_strategy": "joint_posture",
+                    "home_strategy": (
+                        "joint_posture"
+                        if recovery is None
+                        else "vertical_recovery_then_joint_posture"
+                    ),
+                    "vertical_recovery_required": recovery is not None,
+                    "vertical_recovery_distance_m": recovery_distance,
+                    "vertical_recovery_duration_s": (
+                        0.0 if recovery is None else recovery["duration"]
+                    ),
+                    "vertical_recovery_maximum_ik_position_error_m": (
+                        0.0
+                        if not recovery_position_errors
+                        else max(recovery_position_errors)
+                    ),
+                    "vertical_recovery_maximum_ik_tool_z_error_deg": (
+                        0.0
+                        if not recovery_axis_errors
+                        else math.degrees(max(recovery_axis_errors))
+                    ),
+                    "vertical_recovery_maximum_ik_tool_x_error_deg": (
+                        0.0
+                        if not recovery_x_errors
+                        else math.degrees(max(recovery_x_errors))
+                    ),
                     "approach_points": len(q_path),
                     "approach_duration_s": approach["duration"],
-                    "approach_distance_m": tcp_distance,
-                    "maximum_joint_step_rad": float(
-                        np.max(np.abs(np.diff(q_path, axis=0)))
+                    "approach_distance_m": recovery_distance + home_tcp_distance,
+                    "maximum_joint_step_rad": max(
+                        float(
+                            np.max(
+                                np.abs(np.diff(segment["position"], axis=0))
+                            )
+                        )
+                        for segment in timed_segments
                     ),
                     "minimum_approach_tcp_z_m": minimum_z,
-                    "maximum_interpolated_joint_velocity_ratio": approach[
-                        "maximum_interpolated_velocity_ratio"
-                    ],
-                    "maximum_interpolated_joint_acceleration_ratio": approach[
-                        "maximum_interpolated_acceleration_ratio"
-                    ],
-                    "maximum_interpolated_joint_velocity_rad_s": approach[
-                        "maximum_interpolated_velocity_rad_s"
-                    ],
-                    "maximum_interpolated_joint_acceleration_rad_s2": approach[
-                        "maximum_interpolated_acceleration_rad_s2"
-                    ],
+                    "maximum_interpolated_joint_velocity_ratio": max(
+                        segment["maximum_interpolated_velocity_ratio"]
+                        for segment in timed_segments
+                    ),
+                    "maximum_interpolated_joint_acceleration_ratio": max(
+                        segment["maximum_interpolated_acceleration_ratio"]
+                        for segment in timed_segments
+                    ),
+                    "maximum_interpolated_joint_velocity_rad_s": max(
+                        segment["maximum_interpolated_velocity_rad_s"]
+                        for segment in timed_segments
+                    ),
+                    "maximum_interpolated_joint_acceleration_rad_s2": max(
+                        segment["maximum_interpolated_acceleration_rad_s2"]
+                        for segment in timed_segments
+                    ),
                 },
             }
         finally:
@@ -1363,11 +1463,14 @@ class CartesianTrajectoryCompiler:
             if tool_x_active is None:
                 x_active = np.ones(len(x_axes), dtype=bool)
             else:
-                x_active = np.asarray(tool_x_active, dtype=bool)
+                x_active = np.asarray(tool_x_active, dtype=bool).copy()
                 if x_active.shape != (len(x_axes),):
                     raise TrajectoryValidationError(
                         "The Tool-X active mask must match the Cartesian path"
                     )
+            # Start and goal are user-specified 6D boundary poses.  Learned yaw
+            # activation only controls the interior of the task trajectory.
+            x_active[[0, -1]] = True
         elif tool_x_active is not None and np.any(
             np.asarray(tool_x_active, dtype=bool)
         ):
@@ -1388,6 +1491,10 @@ class CartesianTrajectoryCompiler:
                 target_x=None if x_axes is None else x_axes[0],
                 approach_obstacle=approach_obstacle,
             )
+            approach_x_active = None
+            if approach_x_axes is not None:
+                approach_x_active = np.zeros(len(approach_x_axes), dtype=bool)
+                approach_x_active[-1] = True
             (
                 q_approach_tail,
                 approach_position_error,
@@ -1403,11 +1510,7 @@ class CartesianTrajectoryCompiler:
                 final_position_tolerance=self._position_tolerance,
                 max_joint_step=self._approach_joint_bridge_limit,
                 x_axes=approach_x_axes,
-                x_active=(
-                    None
-                    if approach_x_axes is None
-                    else np.zeros(len(approach_x_axes), dtype=bool)
-                ),
+                x_active=approach_x_active,
             )
             q_approach = np.vstack((start_q[None, :], q_approach_tail))
             q_approach = self._densify_joint_path(

@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "artifact_type": "merged_barclean_dataset",
+  "output": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5_plus_previous6/training_5hz.npz",
+  "demo_count": 10,
+  "downsample_hz": 5.0,
+  "demo_mapping": [
+    {
+      "merged_demo_id": 0,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+      "source_demo_id": 0,
+      "source_archive_index": 0,
+      "source_bounds_indices": [
+        0,
+        41,
+        68,
+        111,
+        126,
+        157
+      ],
+      "points": 157
+    },
+    {
+      "merged_demo_id": 1,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+      "source_demo_id": 1,
+      "source_archive_index": 1,
+      "source_bounds_indices": [
+        157,
+        197,
+        230,
+        285,
+        296,
+        330
+      ],
+      "points": 173
+    },
+    {
+      "merged_demo_id": 2,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+      "source_demo_id": 2,
+      "source_archive_index": 2,
+      "source_bounds_indices": [
+        330,
+        367,
+        397,
+        443,
+        456,
+        484
+      ],
+      "points": 154
+    },
+    {
+      "merged_demo_id": 3,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+      "source_demo_id": 5,
+      "source_archive_index": 5,
+      "source_bounds_indices": [
+        764,
+        801,
+        824,
+        853,
+        866,
+        891
+      ],
+      "points": 127
+    },
+    {
+      "merged_demo_id": 4,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+      "source_demo_id": 6,
+      "source_archive_index": 6,
+      "source_bounds_indices": [
+        891,
+        933,
+        960,
+        1002,
+        1015,
+        1044
+      ],
+      "points": 153
+    },
+    {
+      "merged_demo_id": 5,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+      "source_demo_id": 7,
+      "source_archive_index": 7,
+      "source_bounds_indices": [
+        1044,
+        1086,
+        1111,
+        1146,
+        1157,
+        1187
+      ],
+      "points": 143
+    },
+    {
+      "merged_demo_id": 6,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5/training_5hz.npz",
+      "source_demo_id": 0,
+      "source_archive_index": 0,
+      "source_bounds_indices": [
+        0,
+        39,
+        69,
+        116,
+        135,
+        156
+      ],
+      "points": 156
+    },
+    {
+      "merged_demo_id": 7,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5/training_5hz.npz",
+      "source_demo_id": 1,
+      "source_archive_index": 1,
+      "source_bounds_indices": [
+        156,
+        186,
+        209,
+        244,
+        257,
+        272
+      ],
+      "points": 116
+    },
+    {
+      "merged_demo_id": 8,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5/training_5hz.npz",
+      "source_demo_id": 2,
+      "source_archive_index": 2,
+      "source_bounds_indices": [
+        272,
+        304,
+        327,
+        359,
+        372,
+        390
+      ],
+      "points": 118
+    },
+    {
+      "merged_demo_id": 9,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5/training_5hz.npz",
+      "source_demo_id": 3,
+      "source_archive_index": 3,
+      "source_bounds_indices": [
+        390,
+        419,
+        444,
+        475,
+        494,
+        513
+      ],
+      "points": 123
+    }
+  ],
+  "validation": {
+    "loader": "envs.BarClean.load_BarClean",
+    "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene5_plus_previous6/training_5hz.npz",
+    "demo_count": 10,
+    "source_demo_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "points_per_demo": [
+      157,
+      173,
+      154,
+      127,
+      153,
+      143,
+      156,
+      116,
+      118,
+      123
+    ],
+    "true_cutpoints": [
+      [
+        41,
+        68,
+        111,
+        126
+      ],
+      [
+        40,
+        73,
+        128,
+        139
+      ],
+      [
+        37,
+        67,
+        113,
+        126
+      ],
+      [
+        37,
+        60,
+        89,
+        102
+      ],
+      [
+        42,
+        69,
+        111,
+        124
+      ],
+      [
+        42,
+        67,
+        102,
+        113
+      ],
+      [
+        39,
+        69,
+        116,
+        135
+      ],
+      [
+        30,
+        53,
+        88,
+        101
+      ],
+      [
+        32,
+        55,
+        87,
+        100
+      ],
+      [
+        29,
+        54,
+        85,
+        104
+      ]
+    ],
+    "all_finite": true
+  }
+}

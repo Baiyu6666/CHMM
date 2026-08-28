@@ -216,7 +216,7 @@ def main():
         arrays[f"labels_{index}"] = labels
         original_index, source_file, _, _ = selected[index]
         records.append({
-            "demo": index, "original_demo": int(original_index),
+            "demo_id": index, "source_demo_id": int(original_index),
             "source_file": source_file.name,
             "candidate_start_index": int(start), "candidate_end_index": int(end),
             "frames": int(len(trajectory)), "duration_s": float(times[-1]),

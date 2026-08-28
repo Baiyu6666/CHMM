@@ -40,9 +40,7 @@
   "line_angle_degrees": 88.56679588527479,
   "demonstrations": [
     {
-      "demo": 0,
-      "original_demo": 1,
-      "source_file": "demo_02.csv",
+      "source_file": "demo_01.csv",
       "candidate_start_index": 82,
       "candidate_end_index": 989,
       "frames": 105,
@@ -54,12 +52,12 @@
       "cutpoint_times_s": [
         7.179981230999999,
         14.139967914
-      ]
+      ],
+      "demo_id": 0,
+      "source_demo_id": 1
     },
     {
-      "demo": 1,
-      "original_demo": 4,
-      "source_file": "demo_05.csv",
+      "source_file": "demo_04.csv",
       "candidate_start_index": 158,
       "candidate_end_index": 1266,
       "frames": 127,
@@ -71,12 +69,12 @@
       "cutpoint_times_s": [
         6.445009232,
         20.729882722
-      ]
+      ],
+      "demo_id": 1,
+      "source_demo_id": 4
     },
     {
-      "demo": 2,
-      "original_demo": 5,
-      "source_file": "demo_06.csv",
+      "source_file": "demo_05.csv",
       "candidate_start_index": 60,
       "candidate_end_index": 1004,
       "frames": 109,
@@ -88,12 +86,12 @@
       "cutpoint_times_s": [
         6.8099730019999996,
         13.794811012
-      ]
+      ],
+      "demo_id": 2,
+      "source_demo_id": 5
     },
     {
-      "demo": 3,
-      "original_demo": 6,
-      "source_file": "demo_07.csv",
+      "source_file": "demo_06.csv",
       "candidate_start_index": 213,
       "candidate_end_index": 921,
       "frames": 82,
@@ -105,7 +103,9 @@
       "cutpoint_times_s": [
         3.429987430999999,
         11.06491995
-      ]
+      ],
+      "demo_id": 3,
+      "source_demo_id": 6
     }
   ]
 }

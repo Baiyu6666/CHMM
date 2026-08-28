@@ -50,6 +50,23 @@ class HostRealExecutionFlowTest(unittest.TestCase):
     def test_barinspect_is_hidden_from_active_gui_tasks(self):
         self.assertEqual(set(self.subject._task_profiles), {"BarClean"})
 
+    def test_constraint_sources_expose_stage_one_obstacle_clearance(self):
+        sources = self.subject._constraint_sources["BarClean"]
+        true_source = next(source for source in sources if source["id"] == "true")
+        learned_source = next(
+            source
+            for source in sources
+            if source["id"].endswith(
+                "map_balanced_pooled/BarClean/method_seed_000/learned_constraints.json"
+            )
+        )
+
+        self.assertAlmostEqual(true_source["stage1_obstacle_clearance_m"], 0.095)
+        self.assertAlmostEqual(
+            learned_source["stage1_obstacle_clearance_m"],
+            0.06422238533038627,
+        )
+
     def test_scene_source_is_persisted_without_discarding_other_env_values(self):
         project_root = Path(self._temporary_directory.name)
         env_file = project_root / ".env"
@@ -219,7 +236,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "constraint_source_id": "true",
                 "start": start,
                 "goal": goal,
-                "render_video": True,
+                "record_video": True,
             }
         )
         restored = self.module.Supervisor()
@@ -227,9 +244,295 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             self.assertEqual(restored._gui_settings["task_id"], "BarClean")
             self.assertEqual(restored._gui_settings["start_by_task"]["BarClean"], start)
             self.assertEqual(restored._gui_settings["goal_by_task"]["BarClean"], goal)
-            self.assertTrue(restored._gui_settings["render_video"])
+            self.assertTrue(restored._gui_settings["record_video"])
         finally:
             restored.shutdown()
+
+    def test_real_video_is_armed_from_executor_motion_window(self):
+        motion_start_ns = self.module.time.time_ns() + int(10e9)
+        motion_end_ns = motion_start_ns + int(3e9)
+        statuses = iter(
+            [
+                {"path_serial": 20, "task_id": "BarClean", "phase": "idle"},
+                {
+                    "path_serial": 21,
+                    "task_id": "BarClean",
+                    "phase": "executing",
+                    "message": "executing",
+                    "run_directory": "/data/demos/BarClean/test_run",
+                    "motion_start_unix_ns": motion_start_ns,
+                    "motion_end_unix_ns": motion_end_ns,
+                },
+                {
+                    "path_serial": 21,
+                    "task_id": "BarClean",
+                    "phase": "complete",
+                    "message": "done",
+                    "run_directory": "/data/demos/BarClean/test_run",
+                },
+            ]
+        )
+        events = []
+
+        class FakeRecorder:
+            active = False
+            started = False
+
+            @staticmethod
+            def preflight():
+                events.append("video_preflight")
+
+            def start(self, directory, start_ns, end_ns):
+                events.append(("video_start", directory, start_ns, end_ns))
+                self.active = True
+                self.started = True
+                return directory / "execution.mp4"
+
+            def stop(self, completed):
+                events.append(("video_stop", completed))
+                self.active = False
+                self.started = False
+                return Path(self._output) / "execution.mp4"
+
+        recorder = FakeRecorder()
+        recorder._output = self._temporary_directory.name
+        self.subject._task_video_recorder = recorder
+        self.subject._container_running = lambda: True
+        self.subject._assert_container_storage_access = lambda *_args: None
+        self.subject._robot_iface_state = lambda: {"configured": True}
+        self.subject._start_real_station = lambda: events.append("station")
+        self.subject._read_real_status = lambda: next(statuses)
+        self.subject._wait_for_real_plan = lambda *_args: True
+        self.subject._read_plan_visualization = lambda _container: {}
+        self.subject._update_plan_visualization = lambda _payload: None
+        self.subject._wait_for_fri_position = lambda: True
+        self.subject._update_real_visualization = lambda: None
+
+        def real_ros(*arguments, timeout=10.0):
+            del timeout
+            if "submit_real_plan.py" in arguments:
+                return subprocess.CompletedProcess(
+                    arguments, 0, '{"success":true,"message":"planned"}\n', ""
+                )
+            return subprocess.CompletedProcess(arguments, 0, "success: True\n", "")
+
+        self.subject._real_ros = real_ros
+        project_root = Path(self._temporary_directory.name)
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.subject._execute_real_task(
+                "BarClean",
+                self._pose(0.635, -0.0362),
+                self._pose(0.5196, -0.2868),
+                record_video=True,
+            )
+
+        self.assertEqual(events[0], "video_preflight")
+        start_event = next(event for event in events if isinstance(event, tuple) and event[0] == "video_start")
+        self.assertEqual(
+            start_event,
+            (
+                "video_start",
+                project_root / "data/demos/BarClean/test_run",
+                motion_start_ns,
+                motion_end_ns,
+            ),
+        )
+        self.assertIn(("video_stop", True), events)
+        self.assertTrue(self.subject._task_state["video_available"])
+        self.assertTrue(self.subject._task_state["review_pending"])
+        self.assertEqual(self.subject._task_state["review_status"], "pending")
+
+    def _prepare_video_review_run(self, project_root):
+        run = project_root / "data/demos/BarClean/run_01"
+        run.mkdir(parents=True)
+        (run / "execution.mp4").write_bytes(b"synchronized-video")
+        (run / "real_task.bag").write_bytes(b"recorded-ros-state")
+        (run / "metadata.json").write_text(
+            '{"task_id":"BarClean"}\n', encoding="utf-8"
+        )
+        (run / "execution_video_metadata.json").write_text(
+            '{"completed":true}\n', encoding="utf-8"
+        )
+        self.subject._task_state.update(
+            {
+                "task_id": "BarClean",
+                "mode": "real",
+                "phase": "complete",
+                "video": True,
+                "video_available": True,
+                "review_pending": True,
+                "review_status": "pending",
+                "run_directory": "/data/demos/BarClean/run_01",
+                "start": self._pose(0.51, -0.12),
+                "goal": self._pose(0.63, -0.31),
+            }
+        )
+        return run
+
+    def test_accept_video_review_creates_self_contained_final_run(self):
+        project_root = Path(self._temporary_directory.name)
+        source = self._prepare_video_review_run(project_root)
+        visualization = {"trace": [[0.51, -0.12], [0.63, -0.31]]}
+        self.subject.task_visualization = lambda: visualization
+        final = project_root / "data/final_video_runs/BarClean/run_01"
+
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.subject.review_task_video({"decision": "accept"})
+            self.subject._job.join(timeout=3.0)
+            self.assertEqual(self.subject.task_video_path(), final / "execution.mp4")
+
+        self.assertTrue(self.subject._job_ok)
+        self.assertEqual(
+            {path.name for path in final.iterdir()},
+            {
+                "execution.mp4",
+                "real_task.bag",
+                "metadata.json",
+                "execution_video_metadata.json",
+                "visualization.json",
+                "result.json",
+            },
+        )
+        self.assertEqual((final / "real_task.bag").read_bytes(), b"recorded-ros-state")
+        self.assertEqual(
+            self.module.json.loads((final / "visualization.json").read_text()),
+            visualization,
+        )
+        manifest = self.module.json.loads((final / "result.json").read_text())
+        self.assertEqual(manifest["status"], "accepted_final")
+        self.assertEqual(
+            manifest["source_run_directory"], "/data/demos/BarClean/run_01"
+        )
+        self.assertFalse(source.exists(), "accepting must move, not copy, the run")
+        self.assertFalse(self.subject._task_state["review_pending"])
+        self.assertEqual(self.subject._task_state["review_status"], "accepted")
+        self.assertEqual(
+            self.subject._task_state["final_result_directory"], str(final)
+        )
+
+    def test_reject_video_review_deletes_video_but_keeps_state_data(self):
+        project_root = Path(self._temporary_directory.name)
+        source = self._prepare_video_review_run(project_root)
+
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.subject.review_task_video({"decision": "reject"})
+
+        self.assertTrue(source.is_dir())
+        self.assertFalse((source / "execution.mp4").exists())
+        self.assertEqual((source / "real_task.bag").read_bytes(), b"recorded-ros-state")
+        self.assertTrue((source / "metadata.json").is_file())
+        self.assertFalse((project_root / "data/final_video_runs").exists())
+        self.assertFalse(self.subject._task_state["review_pending"])
+        self.assertEqual(self.subject._task_state["review_status"], "rejected")
+        self.assertFalse(self.subject._task_state["video_available"])
+
+    def test_pending_video_review_blocks_the_next_execution(self):
+        self.subject._task_state["review_pending"] = True
+
+        with self.assertRaisesRegex(RuntimeError, "Review the completed task video"):
+            self.subject.execute_task({"task_id": "BarClean", "mode": "real"})
+
+    def test_real_execute_synchronizes_preview_with_video_checkbox(self):
+        events = []
+        self.subject._sync_camera_preview = (
+            lambda enabled: events.append(("preview", enabled))
+        )
+        self.subject._execute_real_task = (
+            lambda *_args: events.append(("execute", _args[-1]))
+        )
+        self.subject._start_job = (
+            lambda _name, target, reset_task_abort=False: target()
+        )
+        payload = {
+            "task_id": "BarClean",
+            "mode": "real",
+            "constraint_source_id": "true",
+            "start": self._pose(0.51, -0.12),
+            "goal": self._pose(0.63, -0.31),
+        }
+
+        self.subject.execute_task({**payload, "record_video": True})
+        self.subject.execute_task({**payload, "record_video": False})
+
+        self.assertEqual(
+            events,
+            [
+                ("preview", True),
+                ("execute", True),
+                ("preview", False),
+                ("execute", False),
+            ],
+        )
+
+    def test_camera_preview_reuses_existing_window(self):
+        self.subject._camera_preview_pids = lambda: [12345]
+
+        with mock.patch.object(self.module.subprocess, "Popen") as popen:
+            self.subject._sync_camera_preview(True)
+
+        popen.assert_not_called()
+
+    def test_completed_video_waits_for_wireless_tail_frames(self):
+        metadata = Path(self._temporary_directory.name) / "video_metadata.json"
+        metadata.write_text(
+            '{"motion_end_unix_ns":10000000000}\n', encoding="utf-8"
+        )
+
+        with mock.patch.object(self.module.time, "time_ns", return_value=10200000000):
+            delay = self.module.TaskVideoRecorder._completion_drain_delay(metadata)
+
+        self.assertAlmostEqual(delay, 0.3)
+
+        with mock.patch.object(self.module.time, "time_ns", return_value=10600000000):
+            self.assertEqual(
+                self.module.TaskVideoRecorder._completion_drain_delay(metadata), 0.0
+            )
+
+    def test_incomplete_video_is_deleted_instead_of_saved_as_partial(self):
+        directory = Path(self._temporary_directory.name)
+        partial = directory / "execution.partial.mp4"
+        metadata = directory / "execution_video_metadata.json"
+        partial.write_bytes(b"incomplete-video")
+        metadata.write_text(
+            '{"motion_start_unix_ns":1,"motion_end_unix_ns":2000000001}\n',
+            encoding="utf-8",
+        )
+        recorder = self.module.TaskVideoRecorder()
+        recorder._partial_path = partial
+        recorder._metadata_path = metadata
+        recorder._final_path = directory / "execution.mp4"
+        recorder._video_stats = lambda _path: (10, 0.5)
+
+        result = recorder.stop(completed=False)
+
+        self.assertIsNone(result)
+        self.assertFalse(partial.exists())
+        self.assertFalse((directory / "execution_partial.mp4").exists())
+        saved_metadata = self.module.json.loads(metadata.read_text())
+        self.assertTrue(saved_metadata["video_deleted"])
+        self.assertIsNone(saved_metadata["video_file"])
+        self.assertEqual(
+            saved_metadata["error"], "recording interrupted before completion"
+        )
+
+    def test_real_task_video_path_is_confined_to_real_run_root(self):
+        project_root = Path(self._temporary_directory.name)
+        video = project_root / "data/demos/BarClean/run_01/execution.mp4"
+        video.parent.mkdir(parents=True)
+        video.write_bytes(b"video")
+        self.subject._task_state.update(
+            {
+                "mode": "real",
+                "run_directory": "/data/demos/BarClean/run_01",
+            }
+        )
+
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.assertEqual(self.subject.task_video_path(), video)
+
+        self.subject._task_state["run_directory"] = "/data/demos/../escape"
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            self.assertIsNone(self.subject.task_video_path())
 
     def test_real_station_restores_tracking_even_when_executor_is_running(self):
         events = []

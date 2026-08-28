@@ -835,8 +835,10 @@ def load_BarClean(
                 "cutpoint_evaluation_role": cutpoint_evaluation_role,
                 "cutpoint_annotations": {
                     "kind": cutpoint_annotation_kind,
-                    "is_ground_truth": False,
-                    "usage": "5 Hz motion-phase stage references",
+                    "is_ground_truth": (
+                        cutpoint_evaluation_role == "human_reviewed_reference"
+                    ),
+                    "usage": "dataset-specific reviewed motion-phase stage references",
                 },
                 "stage_specs": env.get_stage_specs(),
                 "scene_specs": scene_specs,

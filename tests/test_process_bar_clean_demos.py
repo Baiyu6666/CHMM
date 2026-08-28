@@ -62,6 +62,9 @@ def test_process_barclean_maps_reference_cutpoint_times_to_new_rate(tmp_path):
         assert str(output["cutpoint_annotation_kind"]) == (
             "10hz_time_mapped_from_5hz_human_reference"
         )
+        assert str(output["cutpoint_evaluation_role"]) == (
+            "external_annotation_reference"
+        )
         for row in output["coarse_bounds_indices"]:
             expected = np.repeat(np.arange(5), np.diff(row))
             assert np.array_equal(output["coarse_stage_labels"][row[0] : row[-1]], expected)

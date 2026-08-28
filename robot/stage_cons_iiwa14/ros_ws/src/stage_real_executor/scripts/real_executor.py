@@ -62,6 +62,23 @@ class RealExecutor:
         self._joint_state_timeout = float(rospy.get_param("~joint_state_timeout", 0.5))
         self._fri_status_timeout = float(rospy.get_param("~fri_status_timeout", 0.5))
         self._start_drift_limit = float(rospy.get_param("~start_drift_limit_rad", math.radians(0.5)))
+        self._task_start_settle_tolerance = float(
+            rospy.get_param("~task_start_settle_tolerance_rad", math.radians(1.0))
+        )
+        self._task_start_settle_timeout = float(
+            rospy.get_param("~task_start_settle_timeout", 2.0)
+        )
+        self._task_start_settle_samples = int(
+            rospy.get_param("~task_start_settle_samples", 3)
+        )
+        if (
+            not math.isfinite(self._task_start_settle_tolerance)
+            or self._task_start_settle_tolerance <= 0.0
+            or not math.isfinite(self._task_start_settle_timeout)
+            or self._task_start_settle_timeout <= 0.0
+            or self._task_start_settle_samples < 1
+        ):
+            raise ValueError("Task-start settling parameters must be positive")
         self._max_joint_step = float(rospy.get_param("~max_joint_step_rad", 0.15))
         self._velocity_scale = float(rospy.get_param("~velocity_scale", 0.20))
         self._acceleration_limit = float(rospy.get_param("~acceleration_limit_rad_s2", 1.00))
@@ -1096,8 +1113,25 @@ class RealExecutor:
             self._holding_final_position = False
 
     def _run_segment(self, name, segment):
-        self._publish(name, message=name.replace("_", " "), duration_s=segment["duration"])
-        self._client.send_goal(self._goal(segment))
+        goal = self._goal(segment)
+        status_fields = {
+            "message": name.replace("_", " "),
+            "duration_s": segment["duration"],
+        }
+        if name == "executing":
+            trajectory_start = goal.trajectory.header.stamp
+            first_motion = goal.trajectory.points[0].time_from_start
+            final_motion = goal.trajectory.points[-1].time_from_start
+            status_fields.update(
+                motion_start_unix_ns=int(
+                    (trajectory_start + first_motion).to_nsec()
+                ),
+                motion_end_unix_ns=int(
+                    (trajectory_start + final_motion).to_nsec()
+                ),
+            )
+        self._publish(name, **status_fields)
+        self._client.send_goal(goal)
         deadline = time.monotonic() + segment["duration"] + 10.0
         while time.monotonic() < deadline:
             failure = self._fri_failure_reason()
@@ -1118,6 +1152,41 @@ class RealExecutor:
                 return
         self._client.cancel_goal()
         raise ValidationError("{} timed out".format(name))
+
+    def _wait_for_task_start(self, target):
+        """Wait briefly for physical tracking to settle at the compiled start.
+
+        The trajectory action can report success as soon as its time and velocity
+        conditions are satisfied.  Keep the final approach target held and retain
+        the original one-degree position criterion instead of rejecting one
+        transient joint-state sample immediately after action completion.
+        """
+        target = np.asarray(target, dtype=float)
+        deadline = time.monotonic() + self._task_start_settle_timeout
+        settled_samples = 0
+        last_error = math.inf
+        while True:
+            failure = self._fri_failure_reason()
+            if failure is not None:
+                self._latch_execution_failure(failure)
+                raise ValidationError(failure)
+            if self._abort.is_set():
+                raise ValidationError("Execution aborted while settling at task start")
+            actual = self._fresh_joint_position()
+            last_error = float(np.max(np.abs(actual - target)))
+            if last_error <= self._task_start_settle_tolerance:
+                settled_samples += 1
+                if settled_samples >= self._task_start_settle_samples:
+                    return last_error
+            else:
+                settled_samples = 0
+            if time.monotonic() >= deadline:
+                raise ValidationError(
+                    "Robot did not settle at task start ({:.3f} rad after {:.1f} s)".format(
+                        last_error, self._task_start_settle_timeout
+                    )
+                )
+            time.sleep(0.05)
 
     def _start_recording(self):
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -1178,20 +1247,35 @@ class RealExecutor:
         operation = str(prepared.get("operation", "task"))
         try:
             if operation == "home":
+                recovery = prepared.get("recovery")
+                if recovery is not None:
+                    self._run_segment("home_recovering", recovery)
+                    actual = self._fresh_joint_position()
+                    recovery_error = float(
+                        np.max(
+                            np.abs(
+                                actual - prepared["approach"]["position"][0]
+                            )
+                        )
+                    )
+                    if recovery_error > math.radians(1.0):
+                        raise ValidationError(
+                            "Robot did not settle after vertical Home recovery "
+                            "({:.3f} rad)".format(recovery_error)
+                        )
+                    if self._abort.is_set():
+                        raise ValidationError(
+                            "Return Home was cancelled after vertical recovery"
+                        )
+                    failure = self._fri_failure_reason()
+                    if failure is not None:
+                        self._latch_execution_failure(failure)
+                        raise ValidationError(failure)
                 self._run_segment("returning_home", prepared["approach"])
                 message = "Robot returned Home"
             else:
                 self._run_segment("moving_to_start", prepared["approach"])
-                actual = self._fresh_joint_position()
-                start_error = float(
-                    np.max(np.abs(actual - prepared["task"]["position"][0]))
-                )
-                if start_error > math.radians(1.0):
-                    raise ValidationError(
-                        "Robot did not settle at task start ({:.3f} rad)".format(
-                            start_error
-                        )
-                    )
+                self._wait_for_task_start(prepared["task"]["position"][0])
                 if self._record_requested:
                     self._start_recording()
                 self._run_segment("executing", prepared["task"])

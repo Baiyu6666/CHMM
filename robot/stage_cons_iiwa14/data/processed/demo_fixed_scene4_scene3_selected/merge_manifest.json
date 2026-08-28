@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "artifact_type": "merged_barclean_dataset",
+  "output": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+  "demo_count": 8,
+  "downsample_hz": 5.0,
+  "demo_mapping": [
+    {
+      "merged_demo_id": 0,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "source_demo_id": 0,
+      "source_archive_index": 0,
+      "source_bounds_indices": [
+        0,
+        41,
+        68,
+        111,
+        126,
+        157
+      ],
+      "points": 157
+    },
+    {
+      "merged_demo_id": 1,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "source_demo_id": 1,
+      "source_archive_index": 1,
+      "source_bounds_indices": [
+        157,
+        197,
+        230,
+        285,
+        296,
+        330
+      ],
+      "points": 173
+    },
+    {
+      "merged_demo_id": 2,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "source_demo_id": 2,
+      "source_archive_index": 2,
+      "source_bounds_indices": [
+        330,
+        367,
+        397,
+        443,
+        456,
+        484
+      ],
+      "points": 154
+    },
+    {
+      "merged_demo_id": 3,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "source_demo_id": 3,
+      "source_archive_index": 3,
+      "source_bounds_indices": [
+        484,
+        520,
+        551,
+        595,
+        606,
+        623
+      ],
+      "points": 139
+    },
+    {
+      "merged_demo_id": 4,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4/training_5hz.npz",
+      "source_demo_id": 5,
+      "source_archive_index": 5,
+      "source_bounds_indices": [
+        773,
+        811,
+        840,
+        880,
+        892,
+        914
+      ],
+      "points": 141
+    },
+    {
+      "merged_demo_id": 5,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+      "source_demo_id": 0,
+      "source_archive_index": 0,
+      "source_bounds_indices": [
+        0,
+        37,
+        60,
+        89,
+        102,
+        127
+      ],
+      "points": 127
+    },
+    {
+      "merged_demo_id": 6,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+      "source_demo_id": 1,
+      "source_archive_index": 1,
+      "source_bounds_indices": [
+        127,
+        169,
+        196,
+        238,
+        251,
+        280
+      ],
+      "points": 153
+    },
+    {
+      "merged_demo_id": 7,
+      "source_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene3/training_5hz.npz",
+      "source_demo_id": 2,
+      "source_archive_index": 2,
+      "source_bounds_indices": [
+        280,
+        322,
+        347,
+        382,
+        393,
+        423
+      ],
+      "points": 143
+    }
+  ],
+  "validation": {
+    "loader": "envs.BarClean.load_BarClean",
+    "training_archive": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene4_scene3_selected/training_5hz.npz",
+    "demo_count": 8,
+    "source_demo_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "points_per_demo": [
+      157,
+      173,
+      154,
+      139,
+      141,
+      127,
+      153,
+      143
+    ],
+    "true_cutpoints": [
+      [
+        41,
+        68,
+        111,
+        126
+      ],
+      [
+        40,
+        73,
+        128,
+        139
+      ],
+      [
+        37,
+        67,
+        113,
+        126
+      ],
+      [
+        36,
+        67,
+        111,
+        122
+      ],
+      [
+        38,
+        67,
+        107,
+        119
+      ],
+      [
+        37,
+        60,
+        89,
+        102
+      ],
+      [
+        42,
+        69,
+        111,
+        124
+      ],
+      [
+        42,
+        67,
+        102,
+        113
+      ]
+    ],
+    "all_finite": true
+  }
+}

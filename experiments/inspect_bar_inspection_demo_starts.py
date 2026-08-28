@@ -294,7 +294,7 @@ def build_diagnostics(args):
             max(0.22, float(np.percentile(speed[mask], 99)) * 1.05),
         )
         ax.set_title(
-            f"Demo {demo['demo_index'] + 1}: {demo['method']} ({demo['confidence']})"
+            f"Demo {demo['demo_index']}: {demo['method']} ({demo['confidence']})"
         )
         ax.set_xlabel("bag-relative time (s)")
         ax.set_ylabel("robot-base y (m)")

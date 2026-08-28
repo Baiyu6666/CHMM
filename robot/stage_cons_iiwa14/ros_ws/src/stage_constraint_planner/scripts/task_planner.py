@@ -517,6 +517,11 @@ class TaskPlannerNode:
                 },
                 "stage_names": [str(name) for name in config["stage_names"]],
                 "trace": positions[:, :2].tolist(),
+                "stage_endpoint_targets_world": planned[
+                    "stage_endpoint_targets_world"
+                ].tolist(),
+                "stage_endpoints_world": planned["stage_endpoints_world"].tolist(),
+                "endpoint_report": planned["endpoint_report"],
                 "feature_names": feature_names,
                 "feature_schema": [
                     {"name": name, "unit": str(feature_units.get(name, ""))}
@@ -577,6 +582,9 @@ class TaskPlannerNode:
                 "stage_boundaries": boundaries.data,
                 "stage_transition_windows": planned["stage_transition_windows"],
                 "objective": float(planned["objective"]),
+                "constraint_objective": float(planned["constraint_objective"]),
+                "endpoint_objective": float(planned["endpoint_objective"]),
+                "endpoint_report": planned["endpoint_report"],
                 "solver_success": bool(planned["solver_success"]),
                 "solver_evaluations": int(planned["solver_evaluations"]),
                 "constraint_report": planned["constraint_report"],

@@ -133,7 +133,7 @@ class DemoGuiStateTest(unittest.TestCase):
 
     def test_start_recording_arms_the_motion_gate_automatically(self):
         ok, message = self.subject.set_recording(
-            True, {"label": "demo_01", "notes": ""}
+            True, {"label": "demo_00", "notes": ""}
         )
 
         self.assertTrue(ok)
