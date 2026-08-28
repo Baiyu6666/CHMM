@@ -5,7 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/robot/stage_cons_iiwa14/ros_ws/src/stage_cartesian_trajectory/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/robot/stage_cons_iiwa14/ros_ws/src/stage_constraint_planner/src" isTestSource="false" />
     </content>
-    <orderEntry type="jdk" jdkName="~/miniforge3/envs/segment" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="segment" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PyDocumentationSettings">

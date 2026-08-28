@@ -1,8 +1,8 @@
 {
   "name": "BarClean",
-  "n_demos": 12,
-  "source_demo_ids": [7, 8, 9, 10, 11, 12],
-  "processed_demo_path": "robot/stage_cons_iiwa14/data/processed/demo_r02_auto/demo_r02_12_demos_5hz_training.npz",
+  "n_demos": 7,
+  "source_demo_ids": [0, 1, 2, 3, 4, 5, 6],
+  "processed_demo_path": "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/demo_fixed_scene_7_demos_10hz_training.npz",
   "seed": 2026,
   "method_overrides": {
     "swcl": {
@@ -24,7 +24,7 @@
         "bar_axial_offset": "student_t"
       },
       "max_iter": 10,
-      "duration_min": 8,
+      "duration_min": 16,
       "duration_max": null,
       "fixed_true_cutpoint_indices": [0, 1, 2, 3],
       "lambda_activation_consensus": 0.75,
@@ -45,7 +45,7 @@
         "bar_axial_offset"
       ],
       "max_iter": 8,
-      "duration_min": 8,
+      "duration_min": 16,
       "duration_max": null,
       "fixed_true_cutpoint_indices": [0, 1, 2, 3],
       "constraint_core_trim": 0,
@@ -67,7 +67,7 @@
         "bar_axial_offset"
       ],
       "max_iter": 8,
-      "duration_min": 8,
+      "duration_min": 16,
       "duration_max": null,
       "fixed_true_cutpoint_indices": [0, 1, 2, 3],
       "constraint_core_trim": 0,
@@ -91,9 +91,9 @@
         "tool_yaw"
       ],
       "max_iter": 8,
-      "duration_min": 4,
+      "duration_min": 8,
       "duration_max": null,
-      "fixed_true_cutpoint_indices": [0,1,2,3],
+      "fixed_true_cutpoint_indices": [2],
       "constraint_core_trim": 0,
       "map_eq_sigma": 0.1,
       "map_c_bg": 3,
@@ -229,7 +229,7 @@
         "use_velocity": false,
         "use_env_features": true,
         "feature_distance_weight": 0.3,
-        "min_len": 4,
+        "min_len": 8,
         "init_mode": "random_stage_ends"
       },
       "posthoc_constraint": {

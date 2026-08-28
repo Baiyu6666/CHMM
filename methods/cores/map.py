@@ -116,6 +116,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
         map_progress_kappa: float | None = None,
         map_progress_kappa_max: float = 100.0,
         save_paper_figures: bool = False,
+        map_save_density_plots: bool = False,
         **kwargs,
     ):
         kwargs = dict(kwargs)
@@ -199,6 +200,7 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 raise ValueError("map_progress_kappa must be null or a finite nonnegative scalar.")
         self.map_progress_kappa = map_progress_kappa
         self.save_paper_figures = bool(save_paper_figures)
+        self.map_save_density_plots = bool(map_save_density_plots)
         self.map_progress_kappa_max = float(map_progress_kappa_max)
         if not np.isfinite(self.map_progress_kappa_max) or self.map_progress_kappa_max <= 0.0:
             raise ValueError("map_progress_kappa_max must be a finite positive scalar.")
@@ -1473,16 +1475,17 @@ class StageWiseMAPConstraintLearningModel(StageWiseConstraintLearningModel):
                 print(f"[MAP] diagnostic plots skipped at iter {int(iteration) + 1:04d}: {exc}")
 
     def _plot_map_final_pooled_diagnostics(self, iteration: int, selected_infos: Sequence[dict]) -> None:
-        try:
-            self._plot_map_pooled_mode_density_diagnostics(int(iteration), selected_infos, force=True)
-        except Exception as exc:
-            if self.verbose:
-                print(f"[MAP] final pooled distribution plot skipped: {exc}")
-        try:
-            self._plot_map_mode_density_diagnostics(int(iteration), selected_infos, force=True)
-        except Exception as exc:
-            if self.verbose:
-                print(f"[MAP] final per-demo distribution plots skipped: {exc}")
+        if self.map_save_density_plots:
+            try:
+                self._plot_map_pooled_mode_density_diagnostics(int(iteration), selected_infos, force=True)
+            except Exception as exc:
+                if self.verbose:
+                    print(f"[MAP] final pooled distribution plot skipped: {exc}")
+            try:
+                self._plot_map_mode_density_diagnostics(int(iteration), selected_infos, force=True)
+            except Exception as exc:
+                if self.verbose:
+                    print(f"[MAP] final per-demo distribution plots skipped: {exc}")
         try:
             total_loss = float(self.loss_total[-1]) if self.loss_total else float("nan")
             self._plot_map_vote_summary(int(iteration), selected_infos, total_loss, force=True)

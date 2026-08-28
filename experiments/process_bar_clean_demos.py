@@ -17,13 +17,18 @@ from envs.BarInspect import BarInspectScene  # noqa: E402
 
 DEFAULT_INPUT = (
     PROJECT_ROOT
-    / "robot/stage_cons_iiwa14/data/processed/demo_r02_auto/"
-    "demo_r02_13_demos_20hz.npz"
+    / "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/"
+    "demo_fixed_scene_7_demos_20hz_loader_input.npz"
 )
 DEFAULT_OUTPUT = (
     PROJECT_ROOT
-    / "robot/stage_cons_iiwa14/data/processed/demo_r02_auto/"
-    "demo_r02_12_demos_5hz_training.npz"
+    / "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/"
+    "demo_fixed_scene_7_demos_10hz_training.npz"
+)
+DEFAULT_ANNOTATION_REFERENCE = (
+    PROJECT_ROOT
+    / "robot/stage_cons_iiwa14/data/processed/demo_fixed_scene_loader_export/"
+    "demo_fixed_scene_7_demos_5hz_training.npz"
 )
 
 
@@ -32,6 +37,14 @@ def _resolve(path: str | Path) -> Path:
     if not resolved.is_absolute():
         resolved = PROJECT_ROOT / resolved
     return resolved.resolve()
+
+
+def _stored_path(path: str | Path) -> str:
+    resolved = _resolve(path)
+    try:
+        return str(resolved.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(resolved)
 
 
 def _required(archive: np.lib.npyio.NpzFile, names: set[str]) -> None:
@@ -77,6 +90,66 @@ def _merge_nearby_runs(runs: list[tuple[int, int]], maximum_gap: int) -> list[tu
     return merged
 
 
+def _reference_cutpoint_times(
+    reference_path: str | Path,
+) -> tuple[dict[int, np.ndarray], float, str]:
+    path = _resolve(reference_path)
+    with np.load(path, allow_pickle=False) as archive:
+        _required(
+            archive,
+            {
+                "timestamps",
+                "coarse_bounds_indices",
+                "source_demo_ids",
+                "downsample_hz",
+                "cutpoint_annotation_kind",
+            },
+        )
+        timestamps = np.asarray(archive["timestamps"], dtype=float)
+        bounds = np.asarray(archive["coarse_bounds_indices"], dtype=np.int64)
+        source_demo_ids = np.asarray(archive["source_demo_ids"], dtype=np.int64)
+        reference_hz = float(np.asarray(archive["downsample_hz"]).item())
+        annotation_kind = str(np.asarray(archive["cutpoint_annotation_kind"]).item())
+
+    if bounds.shape != (len(source_demo_ids), 6):
+        raise ValueError("Reference BarClean bounds must have shape (num_demos, 6).")
+    result: dict[int, np.ndarray] = {}
+    for source_demo_id, row in zip(source_demo_ids, bounds):
+        if np.any(np.diff(row) <= 0):
+            raise ValueError(f"Invalid reference bounds: {row.tolist()}")
+        result[int(source_demo_id)] = timestamps[row[1:-1]].copy()
+    return result, reference_hz, annotation_kind
+
+
+def _bounds_from_cutpoint_times(
+    timestamps: np.ndarray,
+    cutpoint_times: np.ndarray,
+) -> np.ndarray:
+    internal = np.asarray(
+        [int(np.argmin(np.abs(timestamps - value))) for value in cutpoint_times],
+        dtype=np.int64,
+    )
+    bounds = np.r_[0, internal, len(timestamps)].astype(np.int64)
+    if np.any(np.diff(bounds) <= 0):
+        raise ValueError(f"Mapped BarClean bounds are not strictly ordered: {bounds.tolist()}")
+    return bounds
+
+
+def _stage_diagnostics(
+    task_xyz: np.ndarray,
+    bounds: np.ndarray,
+) -> dict[str, object]:
+    return {
+        "boundary_task_xyz_m": task_xyz[bounds[1:-1]].tolist(),
+        "axial_progress_m": float(
+            task_xyz[bounds[2] - 1, 0] - task_xyz[bounds[1], 0]
+        ),
+        "lateral_progress_m": float(
+            task_xyz[bounds[3], 1] - task_xyz[bounds[4] - 1, 1]
+        ),
+    }
+
+
 def motion_phase_stage_bounds(
     features: np.ndarray,
     env: BarCleanEnv,
@@ -88,7 +161,7 @@ def motion_phase_stage_bounds(
     bridge_samples: int = 3,
     merge_axial_gap_samples: int = 8,
 ) -> tuple[np.ndarray, dict[str, object]]:
-    """Split five phases from actual 5 Hz motion, without using task endpoints.
+    """Split five phases from motion, without using task endpoints.
 
     Stage 2 is the dominant positive bar-axial run with little lateral/vertical
     motion. Stage 4 is the subsequent dominant negative bar-lateral run with
@@ -126,7 +199,7 @@ def motion_phase_stage_bounds(
     ]
     axial_runs = _merge_nearby_runs(axial_runs, merge_axial_gap_samples)
     if not axial_runs:
-        raise ValueError("No sustained axial-cleaning phase was found at 5 Hz.")
+        raise ValueError("No sustained axial-cleaning phase was found.")
     axial_begin, axial_end = max(
         axial_runs,
         key=lambda run: float(task_xyz[run[1] - 1, 0] - task_xyz[run[0], 0]),
@@ -139,7 +212,7 @@ def motion_phase_stage_bounds(
         and int(begin) > int(axial_end)
     ]
     if not lateral_runs:
-        raise ValueError("No sustained transverse-discharge phase was found at 5 Hz.")
+        raise ValueError("No sustained transverse-discharge phase was found.")
     lateral_begin, lateral_end = max(
         lateral_runs,
         key=lambda run: float(task_xyz[run[0], 1] - task_xyz[run[1] - 1, 1]),
@@ -151,24 +224,16 @@ def motion_phase_stage_bounds(
     )
     if np.any(np.diff(bounds) < int(minimum_stage_samples)):
         raise ValueError(f"Invalid five-stage bounds: {bounds.tolist()}")
-    diagnostics = {
-        "boundary_task_xyz_m": task_xyz[bounds[1:-1]].tolist(),
-        "axial_progress_m": float(
-            task_xyz[axial_end - 1, 0] - task_xyz[axial_begin, 0]
-        ),
-        "lateral_progress_m": float(
-            task_xyz[lateral_begin, 1] - task_xyz[lateral_end - 1, 1]
-        ),
-    }
-    return bounds, diagnostics
+    return bounds, _stage_diagnostics(task_xyz, bounds)
 
 
 def process_bar_clean_archive(
     input_path: str | Path = DEFAULT_INPUT,
     output_path: str | Path = DEFAULT_OUTPUT,
     *,
-    output_hz: float = 5.0,
-    exclude_demo_ids: tuple[int, ...] = (6,),
+    output_hz: float = 10.0,
+    exclude_demo_ids: tuple[int, ...] = (),
+    annotation_reference_path: str | Path | None = DEFAULT_ANNOTATION_REFERENCE,
 ) -> dict[str, object]:
     source_path = _resolve(input_path)
     destination = _resolve(output_path)
@@ -221,6 +286,20 @@ def process_bar_clean_archive(
     if len(source_demo_ids) == 0:
         raise ValueError("exclude_demo_ids removed every BarClean demonstration.")
 
+    reference_cutpoints: dict[int, np.ndarray] | None = None
+    reference_hz: float | None = None
+    reference_annotation_kind: str | None = None
+    if annotation_reference_path is not None:
+        reference_cutpoints, reference_hz, reference_annotation_kind = (
+            _reference_cutpoint_times(annotation_reference_path)
+        )
+        missing_reference_ids = sorted(set(source_demo_ids.tolist()) - reference_cutpoints.keys())
+        if missing_reference_ids:
+            raise ValueError(
+                "Reference annotations are missing source demo IDs: "
+                f"{missing_reference_ids}"
+            )
+
     env = BarCleanEnv(
         dt=1.0 / float(output_hz),
         optitrack_to_robot_rotation=tracker_rotation,
@@ -250,7 +329,17 @@ def process_bar_clean_archive(
             obstacle_pose_optitrack=obstacle_pose,
         )
         demo_features = env.compute_all_features_matrix(trajectory, scene=scene)
-        local_bounds, diagnostics = motion_phase_stage_bounds(demo_features, env)
+        if reference_cutpoints is None:
+            local_bounds, diagnostics = motion_phase_stage_bounds(demo_features, env)
+        else:
+            local_bounds = _bounds_from_cutpoint_times(
+                demo_time,
+                reference_cutpoints[int(source_demo_id)],
+            )
+            diagnostics = _stage_diagnostics(
+                _task_coordinates(demo_features, env),
+                local_bounds,
+            )
         labels = np.repeat(np.arange(5, dtype=np.int64), np.diff(local_bounds))
         if len(labels) != len(trajectory):
             raise RuntimeError("BarClean stage labels do not cover the complete demo.")
@@ -293,15 +382,23 @@ def process_bar_clean_archive(
         "source_hz": np.asarray(source_hz),
         "downsample_hz": np.asarray(float(output_hz)),
         "downsample_factor": np.asarray(factor, dtype=np.int64),
-        "source_archive": np.asarray(str(source_path.relative_to(PROJECT_ROOT))),
+        "source_archive": np.asarray(_stored_path(source_path)),
         "cutpoint_annotation_kind": np.asarray(
-            "5hz_task_motion_direction_change_points"
+            f"{float(output_hz):g}hz_time_mapped_from_"
+            f"{reference_annotation_kind}"
+            if reference_annotation_kind is not None
+            else f"{float(output_hz):g}hz_task_motion_direction_change_points"
         ),
         "cutpoint_evaluation_role": np.asarray("motion_phase_reference"),
         "scene_pose_policy": np.asarray("per_demo_robust_static_lock"),
         "optitrack_to_robot_rotation": tracker_rotation,
         "optitrack_to_robot_translation": tracker_translation,
     }
+    if annotation_reference_path is not None:
+        output["cutpoint_annotation_source"] = np.asarray(
+            _stored_path(annotation_reference_path)
+        )
+        output["cutpoint_annotation_source_hz"] = np.asarray(reference_hz)
     destination.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(destination, **output)
     return {
@@ -325,11 +422,17 @@ def main() -> None:
     )
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--output-hz", type=float, default=5.0)
+    parser.add_argument("--output-hz", type=float, default=10.0)
     parser.add_argument(
         "--exclude-demo-ids",
-        default="6",
-        help="Comma-separated source demo IDs to omit; default: 6.",
+        default="",
+        help="Comma-separated source demo IDs to omit; default: none.",
+    )
+    parser.add_argument(
+        "--annotation-reference",
+        type=Path,
+        default=DEFAULT_ANNOTATION_REFERENCE,
+        help="Archive whose cutpoint times are mapped onto the new sampling grid.",
     )
     args = parser.parse_args()
     summary = process_bar_clean_archive(
@@ -341,6 +444,7 @@ def main() -> None:
             for value in str(args.exclude_demo_ids).split(",")
             if value.strip()
         ),
+        annotation_reference_path=args.annotation_reference,
     )
     print(summary)
 

@@ -92,6 +92,7 @@ def _fit_single_map(kwargs: Dict[str, Any], dataset: TaskBundle) -> Dict[str, An
         map_mstep_boundary_trim=kwargs.get("map_mstep_boundary_trim", 0),
         map_progress_kappa=kwargs.get("map_progress_kappa"),
         map_progress_kappa_max=kwargs.get("map_progress_kappa_max", 100.0),
+        map_save_density_plots=kwargs.get("map_save_density_plots", False),
     )
     gammas = learner.fit(
         max_iter=kwargs.get("max_iter", 30),
