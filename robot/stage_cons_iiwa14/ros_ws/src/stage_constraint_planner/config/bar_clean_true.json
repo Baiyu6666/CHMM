@@ -8,11 +8,11 @@
     "default_goal": {"x": 0.45, "y": -0.44, "z": 0.26584, "qx": 0.0, "qy": 1.0, "qz": 0.0, "qw": 0.0}
   },
   "planner": {
-    "control_spacing_m": 0.045,
+    "control_spacing_m": 0.025,
     "output_spacing_m": 0.005,
     "output_axis_spacing_deg": 2.0,
     "min_control_points": 6,
-    "max_control_points": 10,
+    "max_control_points": 16,
     "max_nfev": 80,
     "multi_start": 2
   },
@@ -133,7 +133,7 @@
       "feature_name": "obstacle_clearance",
       "stage": 0,
       "semantics": "lower_bound",
-      "value": 0.095,
+      "value": 0.082,
       "scale": 0.0234,
       "weight": 6.0
     },

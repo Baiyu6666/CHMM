@@ -4,7 +4,8 @@
   <arg name="port" default="3883"/>
   <arg name="base_name" default="iiwa14"/>
   <arg name="object_name" default="baiyu_bar"/>
-  <arg name="obstacle_name" default="baiyu_obs_bar"/>
+  <arg name="obstacle_a_name" default="baiyu_obs_bar"/>
+  <arg name="obstacle_b_name" default="baiyu_obs_bar_b"/>
   <arg name="output_frame" default="base"/>
   <arg name="base_timeout" default="0.25"/>
   <arg name="use_fixed_scene" default="true"/>
@@ -33,7 +34,7 @@
     <param name="base_name" value="$(arg base_name)"/>
     <param name="output_frame" value="$(arg output_frame)"/>
     <param name="base_timeout" value="$(arg base_timeout)"/>
-    <rosparam param="object_names" subst_value="true">[$(arg object_name), $(arg obstacle_name)]</rosparam>
+    <rosparam param="object_names" subst_value="true">[$(arg object_name), $(arg obstacle_a_name), $(arg obstacle_b_name)]</rosparam>
   </node>
 
   <node pkg="stage_optitrack"
@@ -51,13 +52,28 @@
 
   <node pkg="stage_optitrack"
         type="fixed_pose_publisher.py"
-        name="fixed_scene_obstacle_publisher"
+        name="fixed_scene_obstacle_a_publisher"
         output="screen"
         if="$(arg use_fixed_scene)"
         required="true">
     <param name="base_name" value="$(arg base_name)"/>
-    <param name="object_name" value="$(arg obstacle_name)"/>
-    <param name="object_key" value="obstacle"/>
+    <param name="object_name" value="$(arg obstacle_a_name)"/>
+    <param name="object_key" value="obstacles"/>
+    <param name="object_index" value="0"/>
+    <param name="output_frame" value="$(arg output_frame)"/>
+    <param name="scene_config" value="$(arg fixed_scene_config)"/>
+  </node>
+
+  <node pkg="stage_optitrack"
+        type="fixed_pose_publisher.py"
+        name="fixed_scene_obstacle_b_publisher"
+        output="screen"
+        if="$(arg use_fixed_scene)"
+        required="true">
+    <param name="base_name" value="$(arg base_name)"/>
+    <param name="object_name" value="$(arg obstacle_b_name)"/>
+    <param name="object_key" value="obstacles"/>
+    <param name="object_index" value="1"/>
     <param name="output_frame" value="$(arg output_frame)"/>
     <param name="scene_config" value="$(arg fixed_scene_config)"/>
   </node>

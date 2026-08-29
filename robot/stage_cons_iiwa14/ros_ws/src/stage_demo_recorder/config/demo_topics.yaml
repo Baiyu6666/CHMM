@@ -10,6 +10,7 @@ required_topics:
   - /tf
   - /vrpn_client_node/baiyu_bar/pose_from_iiwa14
   - /vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14
+  - /vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14
 
 # These topics are recorded when they appear, but do not block recording start.
 optional_topics:
@@ -22,6 +23,7 @@ optional_topics:
   - /vrpn_client_node/iiwa14/pose
   - /vrpn_client_node/baiyu_bar/pose
   - /vrpn_client_node/baiyu_obs_bar/pose
+  - /vrpn_client_node/baiyu_obs_bar_b/pose
   - /stage_cons/plan
 
 marker_topic: /stage_cons/demo_marker
@@ -33,3 +35,4 @@ optitrack_server: 128.178.145.104
 optitrack_base: iiwa14
 optitrack_object: baiyu_bar
 optitrack_obstacle: baiyu_obs_bar
+optitrack_obstacle_b: baiyu_obs_bar_b

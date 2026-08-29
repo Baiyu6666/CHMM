@@ -15,6 +15,7 @@ from nav_msgs.msg import Path
 from stage_constraint_planner import (
     StageConstraintTrajectoryOptimizer,
     configure_planning_profile,
+    stage_zero_approach_clearance,
     transform_pose,
 )
 from std_msgs.msg import Int32MultiArray, String
@@ -94,9 +95,23 @@ class TaskPlannerNode:
         self._bar = None
         self._bar_received = 0.0
         self._bar_history = deque(maxlen=256)
-        self._obstacle = None
-        self._obstacle_received = 0.0
-        self._obstacle_history = deque(maxlen=256)
+        self._scene_config_path = str(
+            rospy.get_param("~scene_config", "/workcell_definition/demo_scene.json")
+        )
+        self._obstacle_topics = list(
+            rospy.get_param(
+                "~obstacle_topics",
+                [
+                    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
+                    "/vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14",
+                ],
+            )
+        )
+        if not self._obstacle_topics:
+            raise ValueError("At least one obstacle topic is required")
+        self._obstacles = [None] * len(self._obstacle_topics)
+        self._obstacle_received = [0.0] * len(self._obstacle_topics)
+        self._obstacle_history = [deque(maxlen=256) for _ in self._obstacle_topics]
 
         self._path_publisher = rospy.Publisher(
             "/stage_cons/plan", Path, queue_size=1, latch=True
@@ -137,15 +152,16 @@ class TaskPlannerNode:
             self._bar_callback,
             queue_size=2,
         )
-        self._obstacle_subscriber = rospy.Subscriber(
-            rospy.get_param(
-                "~obstacle_topic",
-                "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
-            ),
-            PoseStamped,
-            self._obstacle_callback,
-            queue_size=2,
-        )
+        self._obstacle_subscribers = [
+            rospy.Subscriber(
+                topic,
+                PoseStamped,
+                self._obstacle_callback,
+                callback_args=index,
+                queue_size=2,
+            )
+            for index, topic in enumerate(self._obstacle_topics)
+        ]
         self._service = rospy.Service("~plan", Trigger, self._plan)
         self._tracking_status_timer = rospy.Timer(
             rospy.Duration(0.1), self._publish_tracking_status
@@ -240,16 +256,16 @@ class TaskPlannerNode:
             self._bar_received = received
             self._bar_history.append((received, position.tolist()))
 
-    def _obstacle_callback(self, message):
+    def _obstacle_callback(self, message, index):
         try:
             position = _pose_array(message)[:3]
         except ValueError:
             return
         received = rospy.get_time()
         with self._lock:
-            self._obstacle = copy.deepcopy(message)
-            self._obstacle_received = received
-            self._obstacle_history.append((received, position.tolist()))
+            self._obstacles[index] = copy.deepcopy(message)
+            self._obstacle_received[index] = received
+            self._obstacle_history[index].append((received, position.tolist()))
 
     def _tracking_reason(self, name, message, received, history, now):
         if message is None:
@@ -290,21 +306,21 @@ class TaskPlannerNode:
             bar = copy.deepcopy(self._bar)
             bar_received = float(self._bar_received)
             bar_history = list(self._bar_history)
-            obstacle = copy.deepcopy(self._obstacle)
-            obstacle_received = float(self._obstacle_received)
-            obstacle_history = list(self._obstacle_history)
-        return {
+            obstacles = copy.deepcopy(self._obstacles)
+            obstacle_received = list(self._obstacle_received)
+            obstacle_history = [list(values) for values in self._obstacle_history]
+        reasons = {
             "bar": self._tracking_reason(
                 "bar", bar, bar_received, bar_history, now
             ),
-            "obstacle": self._tracking_reason(
-                "obstacle",
-                obstacle,
-                obstacle_received,
-                obstacle_history,
-                now,
-            ),
         }
+        for index, (obstacle, received, history) in enumerate(
+            zip(obstacles, obstacle_received, obstacle_history)
+        ):
+            reasons["obstacle_{}".format(index)] = self._tracking_reason(
+                "obstacle {}".format(index + 1), obstacle, received, history, now
+            )
+        return reasons
 
     def _publish_tracking_status(self, _event):
         reasons = self._tracking_reasons()
@@ -314,7 +330,10 @@ class TaskPlannerNode:
                     {
                         "valid": all(reason is None for reason in reasons.values()),
                         "bar": reasons["bar"],
-                        "obstacle": reasons["obstacle"],
+                        "obstacles": [
+                            reasons["obstacle_{}".format(index)]
+                            for index in range(len(self._obstacle_topics))
+                        ],
                         "stamp": rospy.get_time(),
                     },
                     sort_keys=True,
@@ -330,10 +349,10 @@ class TaskPlannerNode:
                 copy.deepcopy(self._goal),
                 copy.deepcopy(self._bar),
                 float(self._bar_received),
-                copy.deepcopy(self._obstacle),
-                float(self._obstacle_received),
+                copy.deepcopy(self._obstacles),
+                list(self._obstacle_received),
                 list(self._bar_history),
-                list(self._obstacle_history),
+                [list(values) for values in self._obstacle_history],
             )
         (
             task_id,
@@ -341,15 +360,15 @@ class TaskPlannerNode:
             goal,
             bar,
             bar_received,
-            obstacle,
+            obstacles,
             obstacle_received,
             bar_history,
             obstacle_history,
         ) = values
         if start is None or goal is None:
             raise ValueError("Publish both start and goal poses first")
-        if bar is None or obstacle is None:
-            raise ValueError("Current bar and obstacle poses have not been received")
+        if bar is None or any(obstacle is None for obstacle in obstacles):
+            raise ValueError("Current bar and all obstacle poses have not been received")
         start_frame = start.header.frame_id or self._frame_id
         goal_frame = goal.header.frame_id or self._frame_id
         if start_frame != goal_frame:
@@ -358,19 +377,28 @@ class TaskPlannerNode:
         bar_reason = self._tracking_reason(
             "bar", bar, bar_received, bar_history, now
         )
-        obstacle_reason = self._tracking_reason(
-            "obstacle", obstacle, obstacle_received, obstacle_history, now
-        )
-        if bar_reason is not None or obstacle_reason is not None:
+        obstacle_reasons = [
+            self._tracking_reason(
+                "obstacle {}".format(index + 1),
+                obstacle,
+                received,
+                history,
+                now,
+            )
+            for index, (obstacle, received, history) in enumerate(
+                zip(obstacles, obstacle_received, obstacle_history)
+            )
+        ]
+        if bar_reason is not None or any(reason is not None for reason in obstacle_reasons):
             raise ValueError(
                 "OptiTrack scene is invalid: "
                 + "; ".join(
                     reason
-                    for reason in (bar_reason, obstacle_reason)
+                    for reason in [bar_reason] + obstacle_reasons
                     if reason is not None
                 )
             )
-        return task_id, start, goal, bar, obstacle, start_frame
+        return task_id, start, goal, bar, obstacles, start_frame
 
     def _plan(self, _request):
         with self._lock:
@@ -378,7 +406,7 @@ class TaskPlannerNode:
                 return TriggerResponse(False, "A planning request is already active")
             self._planning = True
         try:
-            task_id, start, goal, bar, obstacle, frame = self._snapshot()
+            task_id, start, goal, bar, obstacles, frame = self._snapshot()
             # The host task definition is intentionally re-read for every plan.
             # Parameter-only edits therefore take effect on the next click.
             constraint_source = rospy.get_param(
@@ -392,17 +420,87 @@ class TaskPlannerNode:
                 self._scene_pose_rotation,
                 self._scene_pose_translation,
             )
-            obstacle_pose = transform_pose(
-                _pose_array(obstacle),
-                self._scene_pose_rotation,
-                self._scene_pose_translation,
+            obstacle_poses = np.asarray(
+                [
+                    transform_pose(
+                        _pose_array(obstacle),
+                        self._scene_pose_rotation,
+                        self._scene_pose_translation,
+                    )
+                    for obstacle in obstacles
+                ],
+                dtype=float,
+            )
+            with open(self._scene_config_path, "r", encoding="utf-8") as stream:
+                scene_config = json.load(stream)
+            obstacle_geometry = list(scene_config["obstacles"])
+            if len(obstacle_geometry) != len(obstacle_poses):
+                raise ValueError(
+                    "Scene obstacle geometry does not match the published obstacle poses"
+                )
+            obstacle_radii = np.asarray(
+                [float(value["radius"]) for value in obstacle_geometry], dtype=float
+            )
+            planning_obstacle = dict(scene_config["planning_obstacle"])
+            geometry_by_name = {
+                str(value["name"]): (index, value)
+                for index, value in enumerate(obstacle_geometry)
+            }
+            obstacle_type = str(planning_obstacle.get("type"))
+            if obstacle_type == "circle":
+                obstacle_name = str(planning_obstacle.get("obstacle"))
+                if obstacle_name not in geometry_by_name:
+                    raise ValueError("Scene circle obstacle name is not published")
+                obstacle_index = geometry_by_name[obstacle_name][0]
+                obstacle = {
+                    "type": "circle",
+                    "center": obstacle_poses[obstacle_index, :3].copy(),
+                    "radius": float(obstacle_radii[obstacle_index]),
+                }
+                approach_obstacle = dict(obstacle)
+            elif obstacle_type == "capsule":
+                endpoint_names = [
+                    str(value) for value in planning_obstacle["endpoint_obstacles"]
+                ]
+                if (
+                    len(endpoint_names) != 2
+                    or len(set(endpoint_names)) != 2
+                    or any(name not in geometry_by_name for name in endpoint_names)
+                ):
+                    raise ValueError(
+                        "Scene capsule must define two distinct published endpoints"
+                    )
+                endpoint_indices = [
+                    geometry_by_name[name][0] for name in endpoint_names
+                ]
+                endpoint_radii = obstacle_radii[endpoint_indices]
+                if (
+                    not np.all(np.isfinite(endpoint_radii))
+                    or np.any(endpoint_radii <= 0.0)
+                    or not np.allclose(endpoint_radii, endpoint_radii[0], atol=1e-9)
+                ):
+                    raise ValueError(
+                        "Capsule endpoint obstacles must have one common radius"
+                    )
+                endpoints = obstacle_poses[endpoint_indices, :3].copy()
+                obstacle = {
+                    "type": "capsule",
+                    "endpoints": endpoints,
+                    "radius": float(endpoint_radii[0]),
+                }
+                approach_obstacle = dict(obstacle)
+            else:
+                raise ValueError("Scene planning_obstacle must be circle or capsule")
+            bar_lateral_centerline = dict(
+                scene_config["bar"]["lateral_centerline"]
             )
             self._publish_status({"state": "optimizing", "task_id": task_id})
             planned = optimizer.plan(
                 _pose_array(start),
                 _pose_array(goal),
                 bar_pose,
-                obstacle_pose,
+                obstacle,
+                bar_lateral_centerline=bar_lateral_centerline,
                 seed=int(rospy.get_param("~seed", 2026)),
             )
             quaternions = planned["tool_quaternions"]
@@ -432,19 +530,9 @@ class TaskPlannerNode:
                 raise ValueError(
                     "Planner tool-yaw mask does not match the path length"
                 )
-            approach_constraints = [
-                term
-                for term in config["true_constraint_terms"]
-                if str(term["feature_name"]) == "obstacle_clearance"
-                and int(term["stage"]) == 0
-                and str(term["semantics"]) == "lower_bound"
-            ]
-            if len(approach_constraints) != 1:
-                raise ValueError(
-                    "Task definition needs exactly one true Stage-1 obstacle clearance"
-                )
+            stage_zero_clearance = stage_zero_approach_clearance(config)
             orientation_constraints = {
-                "schema_version": 3,
+                "schema_version": 5,
                 "stamp_ns": int(stamp.to_nsec()),
                 "task_id": task_id,
                 "point_count": len(path.poses),
@@ -469,14 +557,19 @@ class TaskPlannerNode:
                     ),
                 },
                 "approach_obstacle": {
-                    "center": obstacle_pose[:3].tolist(),
+                    "type": approach_obstacle["type"],
                     "table_normal": [
                         float(value) for value in config["table_normal"]
                     ],
-                    "radius": float(config["obstacle_radius"]),
-                    "clearance": float(approach_constraints[0]["value"]),
+                    "radius": float(approach_obstacle["radius"]),
+                    "clearance": stage_zero_clearance,
                     "margin": float(
                         config["execution"]["approach_obstacle_margin_m"]
+                    ),
+                    **(
+                        {"center": approach_obstacle["center"].tolist()}
+                        if approach_obstacle["type"] == "circle"
+                        else {"endpoints": approach_obstacle["endpoints"].tolist()}
                     ),
                 },
             }
@@ -512,8 +605,21 @@ class TaskPlannerNode:
                     "bar": {
                         "pivot": bar_reference[:2].tolist(),
                         "axis": bar_axis[:2].tolist(),
+                        "lateral_centerline": bar_lateral_centerline,
                     },
-                    "obstacle": {"center": obstacle_pose[:2].tolist()},
+                    "obstacle": (
+                        {
+                            "type": "circle",
+                            "center": obstacle["center"][:2].tolist(),
+                            "radius": float(obstacle["radius"]),
+                        }
+                        if obstacle["type"] == "circle"
+                        else {
+                            "type": "capsule",
+                            "endpoints": obstacle["endpoints"][:, :2].tolist(),
+                            "radius": float(obstacle["radius"]),
+                        }
+                    ),
                 },
                 "stage_names": [str(name) for name in config["stage_names"]],
                 "trace": positions[:, :2].tolist(),

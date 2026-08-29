@@ -322,14 +322,39 @@ def prepare_dataset(
         raw_values[OBSTACLE_TOPIC], position_floor_m=0.02
     )
     tracker_rotation, tracker_translation = _scene_transform(scene_config)
+    scene_definition = json.loads(scene_config.read_text(encoding="utf-8"))
+    obstacle_by_name = {
+        str(value["name"]): value for value in scene_definition["obstacles"]
+    }
+    planning_obstacle = dict(scene_definition["planning_obstacle"])
+    obstacle_kwargs = {}
+    if planning_obstacle["type"] == "circle":
+        obstacle_kwargs["obstacle_center"] = obstacle_by_name[
+            str(planning_obstacle["obstacle"])
+        ]["locked_pose_robot"][:3]
+    elif planning_obstacle["type"] == "capsule":
+        obstacle_kwargs["obstacle_endpoints"] = [
+            obstacle_by_name[str(name)]["locked_pose_robot"][:3]
+            for name in planning_obstacle["endpoint_obstacles"]
+        ]
+    else:
+        raise ValueError("Scene planning_obstacle must be circle or capsule.")
+    scene_centerline = dict(scene_definition["bar"]["lateral_centerline"])
     env = BarCleanEnv(
         dt=dt,
         optitrack_to_robot_rotation=tracker_rotation,
         optitrack_to_robot_translation=tracker_translation,
+        **obstacle_kwargs,
+        bar_lateral_centerline=scene_centerline,
     )
     scene = BarInspectScene(
         bar_pose_optitrack=bar_lock["pose"],
-        obstacle_pose_optitrack=obstacle_lock["pose"],
+        obstacle_pose_optitrack=(
+            obstacle_lock["pose"]
+            if planning_obstacle["type"] == "circle"
+            else None
+        ),
+        bar_lateral_centerline=scene_centerline,
     )
     features = env.compute_all_features_matrix(flange_pose, scene=scene)
     task_xyz = _task_coordinates(features, env)
@@ -406,6 +431,7 @@ def prepare_dataset(
         optitrack_to_robot_translation=tracker_translation,
         global_bar_pose_optitrack=bar_lock["pose"],
         global_obstacle_pose_optitrack=obstacle_lock["pose"],
+        scene_config_json=np.asarray(json.dumps(scene_definition, sort_keys=True)),
     )
     review = {
         "schema_version": REVIEW_SCHEMA_VERSION,
@@ -738,6 +764,7 @@ def export_reviewed_dataset(
         scene_pose_policy=np.asarray("per_demo_robust_static_lock"),
         optitrack_to_robot_rotation=analysis["optitrack_to_robot_rotation"],
         optitrack_to_robot_translation=analysis["optitrack_to_robot_translation"],
+        scene_config_json=analysis["scene_config_json"],
     )
 
     annotation = directory / ANNOTATION_ARCHIVE

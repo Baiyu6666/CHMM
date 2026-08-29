@@ -3,7 +3,8 @@
   <arg name="optitrack_server" default="128.178.145.104"/>
   <arg name="optitrack_base" default="iiwa14"/>
   <arg name="optitrack_object" default="baiyu_bar"/>
-  <arg name="optitrack_obstacle" default="baiyu_obs_bar"/>
+  <arg name="optitrack_obstacle_a" default="baiyu_obs_bar"/>
+  <arg name="optitrack_obstacle_b" default="baiyu_obs_bar_b"/>
   <arg name="start_optitrack" default="true"/>
   <arg name="use_fixed_scene" default="true"/>
   <arg name="gui_host" default="127.0.0.1"/>
@@ -25,7 +26,8 @@
     <arg name="optitrack_server" value="$(arg optitrack_server)"/>
     <arg name="optitrack_base" value="$(arg optitrack_base)"/>
     <arg name="optitrack_object" value="$(arg optitrack_object)"/>
-    <arg name="optitrack_obstacle" value="$(arg optitrack_obstacle)"/>
+    <arg name="optitrack_obstacle_a" value="$(arg optitrack_obstacle_a)"/>
+    <arg name="optitrack_obstacle_b" value="$(arg optitrack_obstacle_b)"/>
   </include>
 
   <include file="$(find inspection_virtual_fixture)/launch/inspection_virtual_fixture_iiwa14.launch"/>

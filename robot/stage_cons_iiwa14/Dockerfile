@@ -54,6 +54,11 @@ RUN useradd --uid "${USER_UID}" -m -s /bin/bash "${USERNAME}" \
        ros-noetic-xacro \
     && rm -rf /var/lib/apt/lists/*
 
+# Privileged containers still obey the V4L2 device's Unix group permissions.
+# The host video devices use the standard video group (GID 44), so Demo and
+# task recorders need this supplementary group when running as the ros user.
+RUN usermod -aG video "${USERNAME}"
+
 # Keep the Noetic/Python 3.8 environment small and deterministic.  The
 # repository's learning requirements target a newer host Python and are not
 # installed wholesale in this ROS image.

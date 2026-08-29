@@ -32,6 +32,7 @@ from urllib.request import Request, urlopen
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parents[1]
+FINAL_VIDEO_RUN_ROOT = PROJECT_ROOT.parent / "final_video_runs"
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 GUI_SETTINGS_PATH = PROJECT_ROOT / "data" / "gui_settings.json"
 LEARNED_CONSTRAINT_ROOT = REPOSITORY_ROOT / "outputs"
@@ -69,6 +70,7 @@ SCENE_CONFIG = (
     / "config"
     / "demo_scene.json"
 )
+SCENE_CONFIG_DIR = SCENE_CONFIG.parent / "scenes"
 TASK_CONFIGS = {
     "BarClean": (
         PROJECT_ROOT / "ros_ws" / "src" / "stage_constraint_planner"
@@ -77,6 +79,27 @@ TASK_CONFIGS = {
 }
 FEATURE_SAMPLE_HZ = 20.0
 CAMERA_PREVIEW_MARKER = "Stage Camera Preview"
+CAMERA_SOURCE_LAUNCHER = Path.home() / "apps" / "android-camera-v4l2"
+TASK_OUTCOME_NAMES = ("obs_avoid", "bar_clean", "table_clean")
+
+
+def _bar_centerline_lateral_offset(axial: float, specification: object) -> float:
+    spec = dict(specification) if isinstance(specification, dict) else {"type": "straight"}
+    if str(spec.get("type", "straight")) == "straight":
+        return 0.0
+    if str(spec.get("type")) != "circular_arc_chord":
+        raise ValueError("Unknown bar lateral centerline type")
+    radius = float(spec["radius_m"])
+    lower, upper = (float(value) for value in spec["axial_bounds_m"])
+    sign = float(spec["bulge_sign"])
+    if not lower <= axial <= upper:
+        return 0.0
+    midpoint = 0.5 * (lower + upper)
+    half_chord = 0.5 * (upper - lower)
+    return sign * (
+        math.sqrt(max(radius * radius - (axial - midpoint) ** 2, 0.0))
+        - math.sqrt(radius * radius - half_chord * half_chord)
+    )
 
 
 class RosTopicStream:
@@ -468,7 +491,7 @@ class TaskVideoRecorder:
             "-video_size", "{}x{}".format(self._width, self._height),
             "-i", self._device,
             "-an", "-vf", select_filter, "-vsync", "vfr",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "15",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             str(partial_path),
         ]
@@ -478,7 +501,7 @@ class TaskVideoRecorder:
             "width": self._width,
             "height": self._height,
             "fps": self._fps,
-            "codec": "libx264-crf18-veryfast",
+            "codec": "libx264-crf15-veryfast",
             "motion_start_unix_ns": int(motion_start_unix_ns),
             "motion_end_unix_ns": int(motion_end_unix_ns),
             "motion_start_monotonic_s": motion_start_monotonic_s,
@@ -677,6 +700,8 @@ class Supervisor:
         self._real_station_verified = False
         self._task_abort = threading.Event()
         self._task_video_recorder = TaskVideoRecorder()
+        self._camera_source_process: Optional[subprocess.Popen[bytes]] = None
+        self._camera_source_lock = threading.Lock()
         self._camera_preview_process: Optional[subprocess.Popen[bytes]] = None
         self._task_state: Dict[str, object] = {
             "task_id": "BarClean",
@@ -867,12 +892,12 @@ class Supervisor:
     def _ensure_data_directories() -> None:
         for relative_path in (
             "data/demos",
-            "data/final_video_runs",
             "data/models",
             "data/real_runs",
             "data/sim_runs",
         ):
             (PROJECT_ROOT / relative_path).mkdir(parents=True, exist_ok=True)
+        FINAL_VIDEO_RUN_ROOT.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _assert_container_storage_access(
@@ -1190,11 +1215,50 @@ class Supervisor:
     def _load_fixed_scene_geometry(cls) -> Dict[str, object]:
         config = json.loads(SCENE_CONFIG.read_text(encoding="utf-8"))
         bar = config["bar"]
-        obstacle = config["obstacle"]
+        obstacles = list(config["obstacles"])
+        planning_obstacle = dict(config["planning_obstacle"])
         bar_pose = [float(value) for value in bar["locked_pose_robot"]]
-        obstacle_pose = [float(value) for value in obstacle["locked_pose_robot"]]
-        if len(bar_pose) != 7 or len(obstacle_pose) != 7:
+        obstacle_poses = [
+            [float(value) for value in obstacle["locked_pose_robot"]]
+            for obstacle in obstacles
+        ]
+        if len(bar_pose) != 7 or not obstacle_poses or any(
+            len(pose) != 7 for pose in obstacle_poses
+        ):
             raise ValueError("Demo scene object poses must contain seven values")
+        obstacle_index_by_name = {
+            str(value["name"]): index for index, value in enumerate(obstacles)
+        }
+        planning_type = str(planning_obstacle.get("type"))
+        if planning_type == "circle":
+            obstacle_name = str(planning_obstacle.get("obstacle", ""))
+            if obstacle_name not in obstacle_index_by_name:
+                raise ValueError("Circle planning_obstacle references an unknown obstacle")
+            source_indices = [obstacle_index_by_name[obstacle_name]]
+        elif planning_type == "capsule":
+            endpoint_names = [
+                str(value)
+                for value in planning_obstacle.get("endpoint_obstacles", [])
+            ]
+            if (
+                len(endpoint_names) != 2
+                or len(set(endpoint_names)) != 2
+                or any(name not in obstacle_index_by_name for name in endpoint_names)
+            ):
+                raise ValueError("Capsule planning_obstacle requires two obstacles")
+            source_indices = [
+                obstacle_index_by_name[name] for name in endpoint_names
+            ]
+        else:
+            raise ValueError("Demo scene planning_obstacle must be circle or capsule")
+        planning_radii = [
+            float(obstacles[index]["radius"]) for index in source_indices
+        ]
+        if any(radius <= 0.0 for radius in planning_radii) or (
+            planning_type == "capsule"
+            and not math.isclose(planning_radii[0], planning_radii[1], abs_tol=1e-9)
+        ):
+            raise ValueError("Planning obstacle radii must be positive and consistent")
 
         x, y, z, w = bar_pose[3:]
         quaternion_norm = math.sqrt(x * x + y * y + z * z + w * w)
@@ -1215,18 +1279,37 @@ class Supervisor:
         if axis_norm <= 1e-12:
             raise ValueError("Demo scene bar axis is vertical in the robot frame")
         bar_reference = bar_pose[:3]
-        obstacle_reference = obstacle_pose[:3]
         return {
             "bar": {
                 "pivot": bar_reference[:2],
                 "axis": [robot_axis[0] / axis_norm, robot_axis[1] / axis_norm],
                 "outline_u": [float(value) for value in bar["outline_u"]],
                 "outline_v": [float(value) for value in bar["outline_v"]],
+                "lateral_centerline": dict(bar["lateral_centerline"]),
                 "live": False,
             },
+            "obstacles": [
+                {
+                    "center": pose[:2],
+                    "radius": float(obstacle["radius"]),
+                    "live": False,
+                }
+                for pose, obstacle in zip(obstacle_poses, obstacles)
+            ],
             "obstacle": {
-                "center": obstacle_reference[:2],
-                "radius": float(obstacle["radius"]),
+                "type": planning_type,
+                **(
+                    {"center": list(obstacle_poses[source_indices[0]][:2])}
+                    if planning_type == "circle"
+                    else {
+                        "endpoints": [
+                            list(obstacle_poses[index][:2])
+                            for index in source_indices
+                        ]
+                    }
+                ),
+                "radius": planning_radii[0],
+                "source_indices": source_indices,
                 "live": False,
             },
         }
@@ -1640,14 +1723,31 @@ class Supervisor:
         demo_scene = demo_state.get("scene_geometry", {})
         scene = self._fallback_scene_geometry()
         live_objects = []
-        for name, dependency in (
-            ("bar", "optitrack_bar"),
-            ("obstacle", "optitrack_obstacle"),
-        ):
+        for name, dependency in (("bar", "optitrack_bar"),):
             geometry = demo_scene.get(name) if isinstance(demo_scene, dict) else None
             if dependencies.get(dependency) and isinstance(geometry, dict):
                 scene[name] = {**geometry, "live": True}
                 live_objects.append(name)
+        demo_obstacles = demo_scene.get("obstacles") if isinstance(demo_scene, dict) else None
+        if isinstance(demo_obstacles, list) and len(demo_obstacles) == len(scene["obstacles"]):
+            scene["obstacles"] = [
+                {**geometry, "live": True} for geometry in demo_obstacles
+            ]
+            source_indices = scene["obstacle"]["source_indices"]
+            if scene["obstacle"]["type"] == "circle":
+                scene["obstacle"].update(
+                    center=list(scene["obstacles"][source_indices[0]]["center"]),
+                    live=True,
+                )
+            else:
+                scene["obstacle"].update(
+                    endpoints=[
+                        list(scene["obstacles"][index]["center"])
+                        for index in source_indices
+                    ],
+                    live=True,
+                )
+            live_objects.append("obstacles")
         current_ee = demo_state.get("current_ee") if dependencies.get("ee_tf") else None
         return {
             "current_ee": current_ee,
@@ -1689,14 +1789,17 @@ class Supervisor:
                     max_age=0.5,
                 )
             )
-            obstacle = self._pose_from_topic_csv(
-                self._topic_value(
-                    CONTAINER,
-                    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
-                    timeout=0.2,
-                    max_age=0.5,
+            obstacles = [
+                self._pose_from_topic_csv(
+                    self._topic_value(
+                        CONTAINER, topic, timeout=0.2, max_age=0.5
+                    )
                 )
-            )
+                for topic in (
+                    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
+                    "/vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14",
+                )
+            ]
         except (RuntimeError, ValueError):
             return None
 
@@ -1705,11 +1808,14 @@ class Supervisor:
         bar_position = self._transform_point(
             rotation, translation, [bar["x"], bar["y"], bar["z"]]
         )
-        obstacle_position = self._transform_point(
-            rotation,
-            translation,
-            [obstacle["x"], obstacle["y"], obstacle["z"]],
-        )
+        obstacle_positions = [
+            self._transform_point(
+                rotation,
+                translation,
+                [obstacle["x"], obstacle["y"], obstacle["z"]],
+            )
+            for obstacle in obstacles
+        ]
         x, y, z, w = (bar[key] for key in ("qx", "qy", "qz", "qw"))
         tracker_axis = [
             1.0 - 2.0 * (y * y + z * z),
@@ -1721,6 +1827,21 @@ class Supervisor:
         if axis_norm <= 1e-12:
             return None
 
+        scene_obstacle = json.loads(
+            json.dumps(self._fixed_scene_geometry["obstacle"])
+        )
+        source_indices = scene_obstacle["source_indices"]
+        if scene_obstacle["type"] == "circle":
+            scene_obstacle.update(
+                center=obstacle_positions[source_indices[0]][:2], live=True
+            )
+        else:
+            scene_obstacle.update(
+                endpoints=[
+                    obstacle_positions[index][:2] for index in source_indices
+                ],
+                live=True,
+            )
         return {
             "current_ee": None,
             "scene_geometry": {
@@ -1729,13 +1850,23 @@ class Supervisor:
                     "axis": [bar_axis[0] / axis_norm, bar_axis[1] / axis_norm],
                     "outline_u": list(self._fixed_scene_geometry["bar"]["outline_u"]),
                     "outline_v": list(self._fixed_scene_geometry["bar"]["outline_v"]),
+                    "lateral_centerline": dict(
+                        self._fixed_scene_geometry["bar"]["lateral_centerline"]
+                    ),
                     "live": True,
                 },
-                "obstacle": {
-                    "center": obstacle_position[:2],
-                    "radius": float(self._fixed_scene_geometry["obstacle"]["radius"]),
-                    "live": True,
-                },
+                "obstacles": [
+                    {
+                        "center": position[:2],
+                        "radius": float(reference["radius"]),
+                        "live": True,
+                    }
+                    for position, reference in zip(
+                        obstacle_positions,
+                        self._fixed_scene_geometry["obstacles"],
+                    )
+                ],
+                "obstacle": scene_obstacle,
             },
             "source": self._scene_pose_source(),
         }
@@ -1753,20 +1884,26 @@ class Supervisor:
         if not isinstance(scene, dict):
             raise RuntimeError("Task scene snapshot is unavailable")
         bar = scene.get("bar")
-        obstacle = scene.get("obstacle")
-        if not isinstance(bar, dict) or not isinstance(obstacle, dict):
+        obstacles = scene.get("obstacles")
+        if not isinstance(bar, dict) or not isinstance(obstacles, list) or not obstacles:
             raise RuntimeError("Task scene snapshot is missing bar or obstacle geometry")
         try:
             pivot = [float(value) for value in bar["pivot"]]
             axis = [float(value) for value in bar["axis"]]
-            center = [float(value) for value in obstacle["center"]]
+            centers = [
+                [float(value) for value in obstacle["center"]]
+                for obstacle in obstacles
+            ]
         except (KeyError, TypeError, ValueError) as error:
             raise RuntimeError("Task scene snapshot contains invalid geometry") from error
         if (
             len(pivot) != 2
             or len(axis) != 2
-            or len(center) != 2
-            or not all(math.isfinite(value) for value in pivot + axis + center)
+            or any(len(center) != 2 for center in centers)
+            or not all(
+                math.isfinite(value)
+                for value in pivot + axis + [item for center in centers for item in center]
+            )
         ):
             raise RuntimeError("Task scene snapshot contains invalid geometry")
         axis_norm = math.hypot(axis[0], axis[1])
@@ -1777,17 +1914,23 @@ class Supervisor:
             "bar": {
                 "pivot": pivot,
                 "axis": [axis[0] / axis_norm, axis[1] / axis_norm],
+                "lateral_centerline": dict(
+                    bar.get("lateral_centerline", {"type": "straight"})
+                ),
                 "live": bar.get("live") is True,
             },
-            "obstacle": {
-                "center": center,
-                "live": obstacle.get("live") is True,
-            },
+            "obstacles": [
+                {
+                    "center": center,
+                    "live": obstacle.get("live") is True,
+                }
+                for center, obstacle in zip(centers, obstacles)
+            ],
         }
         self.log(
             "Frozen simulation scene from {}: bar=({:.3f}, {:.3f}), "
-            "obstacle=({:.3f}, {:.3f})".format(
-                source, pivot[0], pivot[1], center[0], center[1]
+            "obstacles={}".format(
+                source, pivot[0], pivot[1], centers
             )
         )
         return snapshot
@@ -1883,9 +2026,12 @@ class Supervisor:
                 "constraint_sources": json.loads(json.dumps(self._constraint_sources)),
                 "gui_settings": json.loads(json.dumps(self._gui_settings)),
                 "scene_pose_source": self._scene_pose_source(),
+                "scene_name": self._scene_name(),
+                "available_scenes": self._available_scene_names(),
                 "container_running": self._container_running(),
                 "driver_running": driver_node_running or driver_process_running,
                 "robot_control": robot_control,
+                "camera_source_running": self.camera_source_running(),
                 "camera_preview_running": self.camera_preview_running(),
                 "demo_running": "/stage_demo_gui" in nodes,
                 "simulator_running": self._named_container_running(SIM_CONTAINER),
@@ -2248,12 +2394,13 @@ class Supervisor:
             )
         )
 
-    def _optitrack_settings(self) -> Tuple[str, str, str, str]:
+    def _optitrack_settings(self) -> Tuple[str, str, str, str, str]:
         return (
             self._read_env_value("OPTITRACK_SERVER", "128.178.145.104"),
             self._read_env_value("OPTITRACK_BASE", "iiwa14"),
             self._read_env_value("OPTITRACK_OBJECT", "baiyu_bar"),
             self._read_env_value("OPTITRACK_OBSTACLE", "baiyu_obs_bar"),
+            self._read_env_value("OPTITRACK_OBSTACLE_B", "baiyu_obs_bar_b"),
         )
 
     def _scene_pose_source(self) -> str:
@@ -2261,6 +2408,15 @@ class Supervisor:
         if source not in {"fixed", "optitrack"}:
             raise RuntimeError("SCENE_POSE_SOURCE must be fixed or optitrack")
         return source
+
+    @staticmethod
+    def _available_scene_names() -> List[str]:
+        return sorted(path.stem for path in SCENE_CONFIG_DIR.glob("scene*.json"))
+
+    @staticmethod
+    def _scene_name() -> str:
+        config = json.loads(SCENE_CONFIG.read_text(encoding="utf-8"))
+        return str(config["source"]["scene_name"])
 
     @staticmethod
     def _write_env_value(key: str, value: str) -> None:
@@ -2295,7 +2451,8 @@ class Supervisor:
         if self._scene_pose_source() == "fixed":
             return {
                 "/fixed_scene_bar_publisher",
-                "/fixed_scene_obstacle_publisher",
+                "/fixed_scene_obstacle_a_publisher",
+                "/fixed_scene_obstacle_b_publisher",
             }
         return {"/vrpn_client_node", "/optitrack_base_transform"}
 
@@ -2304,7 +2461,8 @@ class Supervisor:
             return {"/vrpn_client_node", "/optitrack_base_transform"}
         return {
             "/fixed_scene_bar_publisher",
-            "/fixed_scene_obstacle_publisher",
+            "/fixed_scene_obstacle_a_publisher",
+            "/fixed_scene_obstacle_b_publisher",
         }
 
     @staticmethod
@@ -2346,7 +2504,8 @@ class Supervisor:
         child: Optional[subprocess.Popen[str]],
         base: str,
         obj: str,
-        obstacle: str,
+        obstacle_a: str,
+        obstacle_b: str,
         timeout: float = 20.0,
     ) -> None:
         source = self._scene_pose_source()
@@ -2354,11 +2513,13 @@ class Supervisor:
         raw_topics = () if source == "fixed" else (
             ("base", base, "/vrpn_client_node/{}/pose".format(base)),
             ("object", obj, "/vrpn_client_node/{}/pose".format(obj)),
-            ("obstacle", obstacle, "/vrpn_client_node/{}/pose".format(obstacle)),
+            ("obstacle A", obstacle_a, "/vrpn_client_node/{}/pose".format(obstacle_a)),
+            ("obstacle B", obstacle_b, "/vrpn_client_node/{}/pose".format(obstacle_b)),
         )
         transformed_topics = (
             "/vrpn_client_node/{}/pose_from_{}".format(obj, base),
-            "/vrpn_client_node/{}/pose_from_{}".format(obstacle, base),
+            "/vrpn_client_node/{}/pose_from_{}".format(obstacle_a, base),
+            "/vrpn_client_node/{}/pose_from_{}".format(obstacle_b, base),
         )
         deadline = time.monotonic() + timeout
         missing_raw = list(raw_topics)
@@ -2384,8 +2545,8 @@ class Supervisor:
                     ]
                 if not missing_raw and not missing_transformed:
                     self.log(
-                        "Scene input is ready from {}: {} and {} are publishing fresh poses".format(
-                            source, obj, obstacle
+                        "Scene input is ready from {}: {}, {}, and {} are publishing fresh poses".format(
+                            source, obj, obstacle_a, obstacle_b
                         )
                     )
                     return
@@ -2426,7 +2587,7 @@ class Supervisor:
     def _start_optitrack_process(self) -> None:
         if not self._container_running():
             raise RuntimeError("Container is not running")
-        server, base, obj, obstacle = self._optitrack_settings()
+        server, base, obj, obstacle_a, obstacle_b = self._optitrack_settings()
         source = self._scene_pose_source()
         required_nodes = self._scene_tracking_nodes()
         nodes = set(self._ros_nodes())
@@ -2440,7 +2601,7 @@ class Supervisor:
             )
         if required_nodes.issubset(nodes):
             self.log("Reusing the running OptiTrack ROS chain")
-            self._wait_for_optitrack_ready(None, base, obj, obstacle)
+            self._wait_for_optitrack_ready(None, base, obj, obstacle_a, obstacle_b)
             return
         partial = required_nodes.intersection(nodes)
         if partial:
@@ -2456,12 +2617,13 @@ class Supervisor:
                 "server:={}".format(server),
                 "base_name:={}".format(base),
                 "object_name:={}".format(obj),
-                "obstacle_name:={}".format(obstacle),
+                "obstacle_a_name:={}".format(obstacle_a),
+                "obstacle_b_name:={}".format(obstacle_b),
                 "use_fixed_scene:={}".format("true" if source == "fixed" else "false"),
             ],
         )
         try:
-            self._wait_for_optitrack_ready(child, base, obj, obstacle)
+            self._wait_for_optitrack_ready(child, base, obj, obstacle_a, obstacle_b)
         except Exception:
             self._signal_child("tracking")
             raise
@@ -2705,7 +2867,19 @@ class Supervisor:
         # therefore explicitly abort and confirm the stopped state.
         execution_may_have_started = True
         video_started = False
+        preview_suspended = False
         try:
+            if record_video:
+                # Keep the preview available while the operator checks the
+                # framing and while the task is prepared. Close it before the
+                # execute request so FFmpeg is the only /dev/video10 reader
+                # during the synchronized motion window.
+                self._sync_camera_preview(False)
+                preview_suspended = True
+                self.log(
+                    "Closed camera preview before robot execution to reserve "
+                    "the video stream for recording"
+                )
             response = self._real_ros(
                 "rosservice", "call", "/iiwa14/real_executor/execute", timeout=10.0
             )
@@ -2818,6 +2992,15 @@ class Supervisor:
             if self._task_video_recorder.started:
                 self._task_video_recorder.stop(completed=False)
                 self.log("Incomplete task video deleted after interruption")
+            if preview_suspended:
+                try:
+                    self._sync_camera_preview(True)
+                    self.log("Restored camera preview after task recording")
+                except Exception as error:
+                    self.log(
+                        "Could not restore camera preview after task recording: "
+                        + str(error)
+                    )
 
     def _return_robot_home(self) -> None:
         if not self._container_running():
@@ -2914,7 +3097,7 @@ class Supervisor:
 
     def return_robot_home(self) -> None:
         with self._lock:
-            if self._task_state.get("review_pending") is True:
+            if self._video_review_pending(self._task_state):
                 raise RuntimeError(
                     "Review the completed task video before starting Return Home"
                 )
@@ -2925,6 +3108,14 @@ class Supervisor:
     def _set_task_state(self, **values: object) -> None:
         with self._lock:
             self._task_state.update(values)
+
+    @staticmethod
+    def _video_review_pending(task_state: Dict[str, object]) -> bool:
+        return (
+            task_state.get("review_pending") is True
+            and task_state.get("video") is True
+            and task_state.get("video_available") is True
+        )
 
     def _reset_task_visualization(self, task_id: Optional[str] = None) -> None:
         self._reload_task_definitions()
@@ -2986,19 +3177,55 @@ class Supervisor:
         position = [pose["x"], pose["y"], pose["z"]]
         table_point = [float(value) for value in definition["table_surface_point"]]
         pivot = [float(value) for value in bar["pivot"]]
-        obstacle_center = [float(value) for value in obstacle["center"]]
-        relative_obstacle = [
-            position[0] - obstacle_center[0],
-            position[1] - obstacle_center[1],
-            0.0,
-        ]
-        obstacle_normal = sum(
-            relative_obstacle[index] * normal[index] for index in range(3)
-        )
-        obstacle_radial = [
-            relative_obstacle[index] - obstacle_normal * normal[index]
-            for index in range(3)
-        ]
+        obstacle_type = str(obstacle.get("type"))
+        if obstacle_type == "circle":
+            center = [float(value) for value in obstacle["center"]]
+            if len(center) != 2:
+                raise ValueError("Planner scene contains invalid circle geometry")
+            obstacle_clearance = math.hypot(
+                position[0] - center[0], position[1] - center[1]
+            ) - float(obstacle["radius"])
+        elif obstacle_type == "capsule":
+            obstacle_endpoints = [
+                [float(value) for value in endpoint]
+                for endpoint in obstacle["endpoints"]
+            ]
+            if len(obstacle_endpoints) != 2 or any(
+                len(endpoint) != 2 for endpoint in obstacle_endpoints
+            ):
+                raise ValueError("Planner scene contains invalid capsule geometry")
+            segment = [
+                obstacle_endpoints[1][index] - obstacle_endpoints[0][index]
+                for index in range(2)
+            ]
+            denominator = sum(value * value for value in segment)
+            if denominator <= 1e-12:
+                raise ValueError("Planner capsule endpoints are coincident")
+            relative_obstacle = [
+                position[index] - obstacle_endpoints[0][index]
+                for index in range(2)
+            ]
+            phase = max(
+                0.0,
+                min(
+                    1.0,
+                    sum(
+                        relative_obstacle[index] * segment[index]
+                        for index in range(2)
+                    )
+                    / denominator,
+                ),
+            )
+            closest_obstacle = [
+                obstacle_endpoints[0][index] + phase * segment[index]
+                for index in range(2)
+            ]
+            obstacle_clearance = math.hypot(
+                position[0] - closest_obstacle[0],
+                position[1] - closest_obstacle[1],
+            ) - float(obstacle["radius"])
+        else:
+            raise ValueError("Planner scene contains unknown obstacle geometry")
         relative_bar = [position[0] - pivot[0], position[1] - pivot[1], 0.0]
         tool_axis = self._tool_axis_from_pose(pose)
         tool_x = self._tool_x_from_pose(pose)
@@ -3021,16 +3248,21 @@ class Supervisor:
         axial_reference = float(
             definition["true_constraints"].get("bar_axial_offset_reference", 0.0)
         )
+        raw_bar_axial = sum(
+            relative_bar[index] * axis[index] for index in range(3)
+        )
+        raw_bar_lateral = sum(
+            relative_bar[index] * lateral[index] for index in range(3)
+        )
         return {
-            "obstacle_clearance": math.sqrt(
-                sum(value * value for value in obstacle_radial)
-            ) - float(definition["obstacle_radius"]),
+            "obstacle_clearance": obstacle_clearance,
             "table_dist": sum(
                 (position[index] - table_point[index]) * normal[index]
                 for index in range(3)
             ),
-            "bar_lateral_offset": sum(
-                relative_bar[index] * lateral[index] for index in range(3)
+            "bar_lateral_offset": raw_bar_lateral
+            - _bar_centerline_lateral_offset(
+                raw_bar_axial, bar.get("lateral_centerline")
             ),
             "tool_pitch": math.atan2(down_component, forward_component),
             "tool_roll": math.asin(max(-1.0, min(1.0, plane_component))),
@@ -3044,9 +3276,7 @@ class Supervisor:
                     for index in range(3)
                 ),
             ),
-            "bar_axial_offset": sum(
-                relative_bar[index] * axis[index] for index in range(3)
-            ) - axial_reference,
+            "bar_axial_offset": raw_bar_axial - axial_reference,
         }
 
     def _update_real_visualization(self, sample_time: Optional[float] = None) -> None:
@@ -3167,14 +3397,36 @@ class Supervisor:
                 try:
                     pivot = [float(value) for value in bar["pivot"]]
                     axis = [float(value) for value in bar["axis"]]
-                    center = [float(value) for value in obstacle["center"]]
+                    obstacle_radius = float(obstacle["radius"])
                 except (KeyError, TypeError, ValueError):
-                    pivot, axis, center = [], [], []
+                    pivot, axis, obstacle_radius = [], [], math.nan
+                obstacle_type = str(obstacle.get("type"))
+                obstacle_geometry = None
+                try:
+                    if obstacle_type == "circle":
+                        center = [float(value) for value in obstacle["center"]]
+                        if len(center) == 2 and all(map(math.isfinite, center)):
+                            obstacle_geometry = {"center": center}
+                    elif obstacle_type == "capsule":
+                        endpoints = [
+                            [float(value) for value in endpoint]
+                            for endpoint in obstacle["endpoints"]
+                        ]
+                        if len(endpoints) == 2 and all(
+                            len(endpoint) == 2
+                            and all(map(math.isfinite, endpoint))
+                            for endpoint in endpoints
+                        ):
+                            obstacle_geometry = {"endpoints": endpoints}
+                except (KeyError, TypeError, ValueError):
+                    obstacle_geometry = None
                 if (
                     len(pivot) == 2
                     and len(axis) == 2
-                    and len(center) == 2
-                    and all(math.isfinite(value) for value in pivot + axis + center)
+                    and obstacle_geometry is not None
+                    and math.isfinite(obstacle_radius)
+                    and obstacle_radius > 0.0
+                    and all(map(math.isfinite, pivot + axis))
                 ):
                     axis_norm = math.hypot(axis[0], axis[1])
                     if axis_norm > 1e-12:
@@ -3182,9 +3434,28 @@ class Supervisor:
                         valid_scene["bar"].update(
                             pivot=pivot,
                             axis=[axis[0] / axis_norm, axis[1] / axis_norm],
+                            lateral_centerline=dict(
+                                bar.get("lateral_centerline", {"type": "straight"})
+                            ),
                             live=True,
                         )
-                        valid_scene["obstacle"].update(center=center, live=True)
+                        valid_scene["obstacle"].update(
+                            type=obstacle_type,
+                            **obstacle_geometry,
+                            radius=obstacle_radius,
+                            live=True,
+                        )
+                        source_indices = valid_scene["obstacle"]["source_indices"]
+                        source_centers = (
+                            [obstacle_geometry["center"]]
+                            if obstacle_type == "circle"
+                            else obstacle_geometry["endpoints"]
+                        )
+                        if len(source_indices) == len(source_centers):
+                            for index, center in zip(source_indices, source_centers):
+                                valid_scene["obstacles"][index].update(
+                                    center=center, live=True
+                                )
         expected_transitions = int(self._task_profiles[task_id]["n_stages"]) - 1
         expected_stages = expected_transitions + 1
         if (
@@ -3277,7 +3548,12 @@ class Supervisor:
                         xy = [point["x"], point["y"]]
                         if not self._task_trace or math.dist(self._task_trace[-1], xy) >= 1e-4:
                             self._task_trace.append(xy)
-            if isinstance(scene, dict) and scene.get("bar") and scene.get("obstacle"):
+            if (
+                isinstance(scene, dict)
+                and scene.get("bar")
+                and scene.get("obstacles")
+                and scene.get("obstacle")
+            ):
                 self._task_scene_geometry = json.loads(json.dumps(scene))
                 self._task_scene_source = "simulation"
             if isinstance(feature_series, dict):
@@ -3313,7 +3589,7 @@ class Supervisor:
             raise ValueError("Unknown task_id {}".format(task_id))
         with self._lock:
             selected_task = str(self._task_state.get("task_id", "BarClean"))
-            review_pending = self._task_state.get("review_pending") is True
+            review_pending = self._video_review_pending(self._task_state)
         if review_pending:
             raise RuntimeError(
                 "Review the completed task video before starting another run"
@@ -3350,7 +3626,12 @@ class Supervisor:
 
         if mode == "real":
             def real_task() -> None:
-                self._sync_camera_preview(record_video)
+                if record_video:
+                    self._sync_camera_source(True)
+                    self._sync_camera_preview(True)
+                else:
+                    self._sync_camera_preview(False)
+                    self._sync_camera_source(False)
                 self._execute_real_task(
                     task_id,
                     start,
@@ -3466,7 +3747,7 @@ class Supervisor:
         with self._lock:
             busy = self._job is not None and self._job.is_alive()
             phase = str(self._task_state.get("phase", "idle"))
-            review_pending = self._task_state.get("review_pending") is True
+            review_pending = self._video_review_pending(self._task_state)
         if review_pending:
             raise RuntimeError("Review the completed task video before switching tasks")
         if busy or phase in TASK_ACTIVE_PHASES:
@@ -3604,6 +3885,189 @@ class Supervisor:
                 pids.append(int(entry.name))
         return sorted(pids)
 
+    def _camera_source_pids(self) -> List[int]:
+        process = self._camera_source_process
+        pids = set()
+        if process is not None:
+            if process.poll() is None:
+                pids.add(process.pid)
+            else:
+                self._camera_source_process = None
+        try:
+            entries = list(Path("/proc").iterdir())
+        except OSError:
+            return sorted(pids)
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                arguments = [
+                    value.decode("utf-8", errors="replace")
+                    for value in (entry / "cmdline").read_bytes().split(b"\0")
+                    if value
+                ]
+            except OSError:
+                continue
+            if (
+                any(Path(argument).name == "scrcpy" for argument in arguments[:5])
+                and "--video-source=camera" in arguments
+                and "--v4l2-sink=/dev/video10" in arguments
+            ):
+                pids.add(int(entry.name))
+        return sorted(pids)
+
+    def camera_source_running(self) -> bool:
+        return bool(self._camera_source_pids())
+
+    @staticmethod
+    def _camera_source_log_detail(log_path: Path) -> str:
+        try:
+            return log_path.read_text(
+                encoding="utf-8", errors="replace"
+            ).strip()[-1600:]
+        except OSError:
+            return ""
+
+    def _wait_for_camera_source(
+        self,
+        process: Optional[subprocess.Popen[bytes]],
+        log_path: Path,
+        timeout: float = 12.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        last_error = "waiting for /dev/video10 capture capability"
+        while time.monotonic() < deadline:
+            if process is not None and process.poll() is not None:
+                detail = self._camera_source_log_detail(log_path)
+                raise RuntimeError(
+                    "Phone camera source exited during startup: "
+                    + (detail or "scrcpy could not connect to the wireless Android device")
+                )
+            try:
+                probe = subprocess.run(
+                    ["v4l2-ctl", "--device", "/dev/video10", "--all"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=1.0,
+                    check=False,
+                )
+            except FileNotFoundError as error:
+                raise RuntimeError(
+                    "Automatic phone-camera startup requires v4l2-ctl on the host"
+                ) from error
+            except subprocess.TimeoutExpired:
+                probe = None
+            if (
+                probe is not None
+                and probe.returncode == 0
+                and "Video Capture" in probe.stdout
+            ):
+                try:
+                    self._task_video_recorder.preflight()
+                    return
+                except RuntimeError as error:
+                    last_error = str(error)
+            elif probe is not None and probe.stderr.strip():
+                last_error = probe.stderr.strip()
+            time.sleep(0.2)
+        detail = self._camera_source_log_detail(log_path)
+        raise RuntimeError(
+            "Phone camera did not become ready within {:.0f} s: {}{}".format(
+                timeout,
+                last_error,
+                "\n" + detail if detail else "",
+            )
+        )
+
+    def _sync_camera_source(self, enabled: bool) -> None:
+        with self._camera_source_lock:
+            pids = self._camera_source_pids()
+            log_path = PROJECT_ROOT / "data" / "camera_source_scrcpy.log"
+            if enabled:
+                if pids:
+                    self._wait_for_camera_source(
+                        self._camera_source_process, log_path
+                    )
+                    self.log(
+                        "Reusing phone camera source on /dev/video10 (PID {})".format(
+                            pids[0]
+                        )
+                    )
+                    return
+                if not CAMERA_SOURCE_LAUNCHER.is_file() or not os.access(
+                    str(CAMERA_SOURCE_LAUNCHER), os.X_OK
+                ):
+                    raise RuntimeError(
+                        "Phone camera launcher is missing or not executable: "
+                        + str(CAMERA_SOURCE_LAUNCHER)
+                    )
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                command = [str(CAMERA_SOURCE_LAUNCHER), "-e", "--no-window"]
+                try:
+                    with log_path.open("ab") as log_stream:
+                        process = subprocess.Popen(
+                            command,
+                            stdin=subprocess.DEVNULL,
+                            stdout=log_stream,
+                            stderr=log_stream,
+                            start_new_session=True,
+                        )
+                except FileNotFoundError as error:
+                    raise RuntimeError(
+                        "Could not start the phone camera launcher"
+                    ) from error
+                self._camera_source_process = process
+                try:
+                    self._wait_for_camera_source(process, log_path)
+                except Exception:
+                    if process.poll() is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                    self._camera_source_process = None
+                    raise
+                self.log(
+                    "Started phone camera source at 1920x1080 / 30 fps on /dev/video10"
+                )
+                return
+
+            if not pids:
+                self.log("Phone camera source is already stopped")
+                return
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline and self._camera_source_pids():
+                time.sleep(0.05)
+            for pid in self._camera_source_pids():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            self._camera_source_process = None
+            self.log("Stopped phone camera source because video was unchecked")
+
+    def set_camera_source(self, payload: Dict[str, object]) -> None:
+        if payload.get("enabled") is not True:
+            raise ValueError("Camera source endpoint only accepts enabled=true")
+        self._sync_camera_source(True)
+
+    def prepare_demo_video_recording(self, payload: Dict[str, object]) -> None:
+        enabled = payload.get("enabled") is True
+        if enabled:
+            self._sync_camera_source(True)
+            self._sync_camera_preview(False)
+            self.log("Camera prepared for Demo video recording")
+            return
+        if self.camera_source_running():
+            self._sync_camera_preview(True)
+            self.log("Camera preview restored after Demo video recording")
+
     def camera_preview_running(self) -> bool:
         return bool(self._camera_preview_pids())
 
@@ -3691,8 +4155,30 @@ class Supervisor:
         self.log("Closed the low-bandwidth camera preview because video was unchecked")
 
     @staticmethod
+    def _final_video_run_name(value: object, default_name: str) -> str:
+        name = default_name if value is None else str(value).strip()
+        if not name:
+            raise ValueError("Final run name cannot be empty")
+        if len(name) > 80:
+            raise ValueError("Final run name cannot exceed 80 characters")
+        if (
+            name in (".", "..")
+            or name.startswith(".")
+            or "/" in name
+            or "\\" in name
+            or any(ord(character) < 32 or ord(character) == 127 for character in name)
+        ):
+            raise ValueError(
+                "Final run name must be one visible directory name without slashes"
+            )
+        return name
+
+    @staticmethod
     def _archive_final_video_run(
-        task_state: Dict[str, object], visualization: Dict[str, object]
+        task_state: Dict[str, object],
+        visualization: Dict[str, object],
+        final_name: str,
+        outcomes: Dict[str, str],
     ) -> Path:
         task_id = str(task_state.get("task_id", ""))
         if not task_id or Path(task_id).name != task_id or task_id in (".", ".."):
@@ -3722,9 +4208,9 @@ class Supervisor:
                     )
                 )
 
-        destination_parent = PROJECT_ROOT / "data" / "final_video_runs" / task_id
+        destination_parent = FINAL_VIDEO_RUN_ROOT / task_id
         destination_parent.mkdir(parents=True, exist_ok=True)
-        destination = destination_parent / source_directory.name
+        destination = destination_parent / final_name
         if destination.exists():
             raise RuntimeError("This run already exists in the final video archive")
         visualization_temporary = source_directory / ".visualization.json.tmp"
@@ -3742,13 +4228,15 @@ class Supervisor:
             and path != result_temporary
         }
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "accepted_final",
             "accepted_at_utc": time.strftime(
                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
             ),
             "task_id": task_id,
             "source_run_directory": str(task_state.get("run_directory")),
+            "final_run_name": final_name,
+            "outcomes": outcomes,
             "task": task_state,
             "files": files,
         }
@@ -3759,6 +4247,20 @@ class Supervisor:
         result_temporary.replace(source_directory / "result.json")
         source_directory.replace(destination)
         return destination
+
+    @staticmethod
+    def _validated_task_outcomes(value: object) -> Dict[str, str]:
+        if not isinstance(value, dict) or set(value) != set(TASK_OUTCOME_NAMES):
+            raise ValueError(
+                "Final run outcomes must contain exactly obs_avoid, bar_clean, and table_clean"
+            )
+        outcomes = {name: str(value[name]).strip().lower() for name in TASK_OUTCOME_NAMES}
+        invalid = [name for name, result in outcomes.items() if result not in ("success", "fail")]
+        if invalid:
+            raise ValueError(
+                "Final run outcomes must be success or fail: " + ", ".join(invalid)
+            )
+        return outcomes
 
     def review_task_video(self, payload: Dict[str, object]) -> None:
         decision = str(payload.get("decision", "")).strip().lower()
@@ -3796,9 +4298,16 @@ class Supervisor:
 
         visualization = self.task_visualization()
         run_directory = task_state.get("run_directory")
+        source_directory = self._real_run_host_directory(run_directory)
+        final_name = self._final_video_run_name(
+            payload.get("final_name"), source_directory.name
+        )
+        outcomes = self._validated_task_outcomes(payload.get("outcomes"))
 
         def archive() -> None:
-            destination = self._archive_final_video_run(task_state, visualization)
+            destination = self._archive_final_video_run(
+                task_state, visualization, final_name, outcomes
+            )
             with self._lock:
                 if self._task_state.get("run_directory") != run_directory:
                     raise RuntimeError("The reviewed run changed while it was archived")
@@ -3824,7 +4333,7 @@ class Supervisor:
             if review_status == "accepted" and isinstance(
                 final_result_directory, str
             ):
-                final_root = (PROJECT_ROOT / "data" / "final_video_runs").resolve()
+                final_root = FINAL_VIDEO_RUN_ROOT.resolve()
                 final_directory = Path(final_result_directory)
                 try:
                     final_directory.resolve().relative_to(final_root)
@@ -3976,6 +4485,66 @@ class Supervisor:
 
         self._start_job("Switch scene pose source", task)
 
+    def set_scene(self, payload: Dict[str, object]) -> None:
+        scene_name = str(payload.get("scene", "")).strip()
+        available = self._available_scene_names()
+        if scene_name not in available:
+            raise ValueError(
+                "Unknown scene {}; choose one of {}".format(
+                    scene_name, ", ".join(available)
+                )
+            )
+        source_path = SCENE_CONFIG_DIR / (scene_name + ".json")
+
+        def task() -> None:
+            current = self._scene_name()
+            if scene_name == current:
+                self.log("Scene is already " + scene_name)
+                return
+            nodes = set(self._ros_nodes())
+            if (
+                "/iiwa14/iiwa_driver" in nodes
+                or self._driver_binary_running()
+                or self._task_state.get("phase") in TASK_ACTIVE_PHASES
+            ):
+                raise RuntimeError(
+                    "Exit Demo / release robot control and stop the active task before changing scenes"
+                )
+            demo_was_running = "/stage_demo_gui" in nodes
+            tracking_was_running = bool(
+                nodes.intersection(
+                    self._scene_tracking_nodes()
+                    | self._inactive_scene_tracking_nodes()
+                )
+            )
+            self._signal_child("demo")
+            self._signal_child("tracking")
+            if self._container_running():
+                self._run(
+                    [
+                        "docker", "exec", CONTAINER, "bash", "-lc",
+                        "pkill -INT -f '[r]oslaunch stage_demo_gui demo_station.launch' || true; "
+                        "pkill -INT -f '[r]oslaunch stage_optitrack optitrack.launch' || true",
+                    ],
+                    check=False,
+                    timeout=8,
+                )
+            temporary = SCENE_CONFIG.with_name(SCENE_CONFIG.name + ".tmp")
+            temporary.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+            temporary.replace(SCENE_CONFIG)
+            fixed_geometry = self._load_fixed_scene_geometry()
+            with self._lock:
+                self._fixed_scene_geometry = fixed_geometry
+                self._task_scene_geometry = self._fallback_scene_geometry()
+                self._task_scene_source = "fallback"
+            self.log("Scene changed from {} to {}".format(current, scene_name))
+            if demo_was_running:
+                self._start_demo_process()
+            elif tracking_was_running:
+                self._start_optitrack_process()
+
+        self._start_job("Switch scene", task)
+
     def rebuild_image(self) -> None:
         def task() -> None:
             conflicts = self._driver_process_containers()
@@ -4070,7 +4639,7 @@ class Supervisor:
         if "/stage_demo_gui" in self._ros_nodes():
             self.log("Demo station is already running")
             return
-        server, base, obj, obstacle = self._optitrack_settings()
+        server, base, obj, obstacle_a, obstacle_b = self._optitrack_settings()
         source = self._scene_pose_source()
         tracking_nodes = self._scene_tracking_nodes()
         conflicts = set(self._ros_nodes()).intersection(
@@ -4101,7 +4670,8 @@ class Supervisor:
                 f"optitrack_server:={server}",
                 f"optitrack_base:={base}",
                 f"optitrack_object:={obj}",
-                f"optitrack_obstacle:={obstacle}",
+                f"optitrack_obstacle_a:={obstacle_a}",
+                f"optitrack_obstacle_b:={obstacle_b}",
                 f"gui_port:={DEMO_PORT}",
             ],
         )
@@ -4444,8 +5014,14 @@ class Handler(BaseHTTPRequestHandler):
                 SUPERVISOR.select_task(payload)
             elif self.path == "/api/settings":
                 SUPERVISOR.update_gui_settings(payload)
+            elif self.path == "/api/camera/source":
+                SUPERVISOR.set_camera_source(payload)
+            elif self.path == "/api/camera/demo-recording":
+                SUPERVISOR.prepare_demo_video_recording(payload)
             elif self.path == "/api/scene/source":
                 SUPERVISOR.set_scene_pose_source(payload)
+            elif self.path == "/api/scene/select":
+                SUPERVISOR.set_scene(payload)
             elif self.path == "/api/task/abort":
                 SUPERVISOR.abort_task()
             else:

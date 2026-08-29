@@ -2,7 +2,10 @@ import json
 
 import pytest
 
-from stage_constraint_planner.constraint_artifact import configure_planning_profile
+from stage_constraint_planner.constraint_artifact import (
+    configure_planning_profile,
+    stage_zero_approach_clearance,
+)
 
 
 def _task_config():
@@ -124,6 +127,37 @@ def test_true_source_preserves_true_terms(tmp_path):
 
     assert config["constraint_terms"] == config["true_constraint_terms"]
     assert config["planning_constraint_source"] == "true"
+
+
+def test_stage_zero_approach_uses_selected_task_stage_one_clearance():
+    true_terms = [
+        {
+            "stage": 0,
+            "feature_name": "obstacle_clearance",
+            "semantics": "lower_bound",
+            "value": 0.082,
+        }
+    ]
+    learned_terms = [
+        {
+            "stage": 0,
+            "feature_name": "obstacle_clearance",
+            "semantics": "lower_bound",
+            "value": 0.06422238533038627,
+        }
+    ]
+
+    config = {
+        "true_constraint_terms": true_terms,
+        "constraint_terms": learned_terms,
+    }
+
+    assert stage_zero_approach_clearance(config) == pytest.approx(0.06422238533038627)
+
+
+def test_stage_zero_approach_rejects_missing_task_stage_one_clearance():
+    with pytest.raises(ValueError, match="Stage 1 obstacle-clearance"):
+        stage_zero_approach_clearance({"constraint_terms": []})
 
 
 def test_dense_artifact_replaces_terms_and_skips_inactive(tmp_path):

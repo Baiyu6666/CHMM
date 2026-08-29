@@ -312,6 +312,92 @@ def quaternions_from_axes_and_yaws(tool_axes, tool_yaws, task_frame):
     return np.asarray(quaternions, dtype=float)
 
 
+def bar_lateral_centerline_offset(axial_coordinates, specification=None):
+    """Return the signed task-lateral centerline offset for each axial value."""
+    axial = np.asarray(axial_coordinates, dtype=float)
+    spec = dict(specification or {"type": "straight"})
+    centerline_type = str(spec.get("type", "straight"))
+    if centerline_type == "straight":
+        return np.zeros_like(axial)
+    if centerline_type != "circular_arc_chord":
+        raise ValueError(
+            "Unsupported bar lateral centerline type {}".format(centerline_type)
+        )
+    radius = float(spec["radius_m"])
+    bounds = np.asarray(spec["axial_bounds_m"], dtype=float).reshape(2)
+    bulge_sign = float(spec["bulge_sign"])
+    if (
+        not np.all(np.isfinite(bounds))
+        or not math.isfinite(radius)
+        or not math.isfinite(bulge_sign)
+        or bounds[1] <= bounds[0]
+        or radius <= 0.5 * (bounds[1] - bounds[0])
+        or abs(bulge_sign) != 1.0
+    ):
+        raise ValueError("Invalid circular-arc bar centerline geometry")
+    midpoint = 0.5 * float(bounds[0] + bounds[1])
+    half_chord = 0.5 * float(bounds[1] - bounds[0])
+    chord_height = math.sqrt(radius * radius - half_chord * half_chord)
+    output = np.zeros_like(axial)
+    active = (axial >= bounds[0]) & (axial <= bounds[1])
+    radial_argument = radius * radius - np.square(axial[active] - midpoint)
+    output[active] = bulge_sign * (
+        np.sqrt(np.maximum(radial_argument, 0.0)) - chord_height
+    )
+    return output
+
+
+def capsule_clearance(positions, obstacle, table_normal):
+    """Signed planar distance to one capsule (segment swept by a circle)."""
+    positions = np.asarray(positions, dtype=float)
+    endpoints = np.asarray(obstacle["endpoints"], dtype=float)
+    radius = float(obstacle["radius"])
+    normal = _unit(table_normal, "table normal").reshape(3)
+    if (
+        endpoints.shape != (2, 3)
+        or not np.all(np.isfinite(endpoints))
+        or not math.isfinite(radius)
+        or radius <= 0.0
+    ):
+        raise ValueError("Capsule obstacle needs two finite endpoints and a positive radius")
+    segment = endpoints[1] - endpoints[0]
+    segment -= normal * float(segment @ normal)
+    denominator = float(segment @ segment)
+    if denominator <= 1e-12:
+        raise ValueError("Capsule obstacle endpoints must be distinct in the table plane")
+    relative = positions - endpoints[0][None, :]
+    planar = relative - np.outer(relative @ normal, normal)
+    phases = np.clip((planar @ segment) / denominator, 0.0, 1.0)
+    closest = phases[:, None] * segment[None, :]
+    return np.linalg.norm(planar - closest, axis=1) - radius
+
+
+def circle_clearance(positions, obstacle, table_normal):
+    """Signed planar distance to one circular obstacle."""
+    positions = np.asarray(positions, dtype=float)
+    center = np.asarray(obstacle["center"], dtype=float).reshape(3)
+    radius = float(obstacle["radius"])
+    normal = _unit(table_normal, "table normal").reshape(3)
+    if (
+        not np.all(np.isfinite(center))
+        or not math.isfinite(radius)
+        or radius <= 0.0
+    ):
+        raise ValueError("Circle obstacle needs a finite center and positive radius")
+    relative = positions - center[None, :]
+    planar = relative - np.outer(relative @ normal, normal)
+    return np.linalg.norm(planar, axis=1) - radius
+
+
+def obstacle_clearance(positions, obstacle, table_normal):
+    obstacle_type = str(obstacle.get("type"))
+    if obstacle_type == "circle":
+        return circle_clearance(positions, obstacle, table_normal)
+    if obstacle_type == "capsule":
+        return capsule_clearance(positions, obstacle, table_normal)
+    raise ValueError("Planning obstacle type must be circle or capsule")
+
+
 class BarFeatureEvaluator:
     def __init__(self, config):
         self._table_point = np.asarray(config["table_surface_point"], dtype=float).reshape(3)
@@ -322,25 +408,30 @@ class BarFeatureEvaluator:
             config.get("bar_axial_offset_reference", 0.0)
         )
 
-    def evaluate(self, positions, tool_axes, task_frame, obstacle_pose, tool_yaws=None):
+    def evaluate(
+        self,
+        positions,
+        tool_axes,
+        task_frame,
+        obstacle,
+        tool_yaws=None,
+    ):
         positions = np.asarray(positions, dtype=float)
         tool_axes = _unit(np.asarray(tool_axes, dtype=float), "tool axes")
         bar_axis = _unit(task_frame["axial"], "task axial axis")
         bar_lateral = _unit(task_frame["lateral"], "task lateral axis")
         task_origin = np.asarray(task_frame["origin"], dtype=float).reshape(3)
-        obstacle_center = np.asarray(obstacle_pose, dtype=float).reshape(7)[:3]
-
-        relative_obstacle = positions - obstacle_center[None, :]
-        obstacle_radial = relative_obstacle - np.outer(
-            relative_obstacle @ self._table_normal, self._table_normal
+        obstacle_clearance_values = obstacle_clearance(
+            positions, obstacle, self._table_normal
         )
-        obstacle_clearance = np.linalg.norm(obstacle_radial, axis=1) - self._obstacle_radius
         table_dist = (positions - self._table_point[None, :]) @ self._table_normal
-        bar_lateral_offset = (positions - task_origin) @ bar_lateral
-        bar_axial_offset = (
-            (positions - task_origin) @ bar_axis
-            - self._bar_axial_offset_reference
+        task_relative = positions - task_origin
+        raw_axial = task_relative @ bar_axis
+        bar_lateral_offset = task_relative @ bar_lateral
+        bar_lateral_offset -= bar_lateral_centerline_offset(
+            raw_axial, task_frame.get("bar_lateral_centerline")
         )
+        bar_axial_offset = raw_axial - self._bar_axial_offset_reference
         down_component = -(tool_axes @ self._table_normal)
         forward_component = tool_axes @ bar_axis
         tool_pitch = np.arctan2(down_component, forward_component)
@@ -352,7 +443,7 @@ class BarFeatureEvaluator:
             if len(tool_yaw) != len(positions):
                 raise ValueError("A tool yaw is required for every position")
         return {
-            "obstacle_clearance": obstacle_clearance,
+            "obstacle_clearance": obstacle_clearance_values,
             "table_dist": table_dist,
             "bar_lateral_offset": bar_lateral_offset,
             "bar_axial_offset": bar_axial_offset,
@@ -537,9 +628,14 @@ class StageConstraintTrajectoryOptimizer:
                 task_frame["rotation_world_from_task"], dtype=float
             ).reshape(3, 3)
             task_origin = np.asarray(task_frame["origin"], dtype=float).reshape(3)
+            endpoint_positions = self._endpoint_positions_bar.copy()
+            endpoint_positions[:, 1] += bar_lateral_centerline_offset(
+                endpoint_positions[:, 0],
+                task_frame.get("bar_lateral_centerline"),
+            )
             intermediate = (
                 task_origin[None, :]
-                + self._endpoint_positions_bar @ task_rotation.T
+                + endpoint_positions @ task_rotation.T
             )
         else:
             raise ValueError(
@@ -940,10 +1036,14 @@ class StageConstraintTrajectoryOptimizer:
         yaws,
         stage_weights,
         task_frame,
-        obstacle_pose,
+        obstacle,
     ):
         features = self._feature_evaluator.evaluate(
-            positions, axes, task_frame, obstacle_pose, yaws
+            positions,
+            axes,
+            task_frame,
+            obstacle,
+            yaws,
         )
         residuals = []
         for term in self._constraint_terms:
@@ -993,7 +1093,7 @@ class StageConstraintTrajectoryOptimizer:
         second_shape_weights,
         settling_windows,
         task_frame,
-        obstacle_pose,
+        obstacle,
     ):
         positions, raw_axes, axes, yaws = self._unpack(
             values,
@@ -1070,7 +1170,7 @@ class StageConstraintTrajectoryOptimizer:
                 yaws,
                 stage_weights,
                 task_frame,
-                obstacle_pose,
+                obstacle,
             )
         )
         return np.concatenate([np.asarray(value, dtype=float).reshape(-1) for value in residuals])
@@ -1154,23 +1254,70 @@ class StageConstraintTrajectoryOptimizer:
             np.asarray(boundaries, dtype=int),
         )
 
-    def plan(self, start_pose, goal_pose, bar_pose, obstacle_pose, seed=0):
+    def plan(
+        self,
+        start_pose,
+        goal_pose,
+        bar_pose,
+        obstacle,
+        *,
+        bar_lateral_centerline=None,
+        seed=0,
+    ):
         start_pose = np.asarray(start_pose, dtype=float).reshape(7)
         goal_pose = np.asarray(goal_pose, dtype=float).reshape(7)
         bar_pose = np.asarray(bar_pose, dtype=float).reshape(7)
-        obstacle_pose = np.asarray(obstacle_pose, dtype=float).reshape(7)
-        if not all(np.all(np.isfinite(value)) for value in (start_pose, goal_pose, bar_pose, obstacle_pose)):
+        obstacle_type = str(obstacle.get("type"))
+        obstacle_radius = float(obstacle["radius"])
+        obstacle_points = np.asarray(
+            obstacle["center"] if obstacle_type == "circle" else obstacle["endpoints"],
+            dtype=float,
+        )
+        if not all(
+            np.all(np.isfinite(value))
+            for value in (
+                start_pose,
+                goal_pose,
+                bar_pose,
+                obstacle_points,
+            )
+        ) or (
+            obstacle_type not in ("circle", "capsule")
+            or (
+                obstacle_type == "circle"
+                and obstacle_points.shape != (3,)
+            )
+            or (
+                obstacle_type == "capsule"
+                and obstacle_points.shape != (2, 3)
+            )
+            or not math.isfinite(obstacle_radius)
+            or obstacle_radius <= 0.0
+        ):
             raise ValueError("Planner inputs must be finite")
+        obstacle = {"type": obstacle_type, "radius": obstacle_radius}
+        if obstacle_type == "circle":
+            obstacle["center"] = obstacle_points.copy()
+            obstacle_reference_position = obstacle_points
+        else:
+            obstacle["endpoints"] = obstacle_points.copy()
+            obstacle_reference_position = np.mean(obstacle_points, axis=0)
+        obstacle_reference = np.concatenate(
+            (obstacle_reference_position, [0.0, 0.0, 0.0, 1.0])
+        )
         # This is the only task-frame construction for the plan.  Every
         # endpoint, residual and reported feature below reuses this immutable
         # snapshot even while live OptiTrack callbacks continue in the node.
         task_frame = build_bar_table_task_frame(
             bar_pose,
-            obstacle_pose,
+            obstacle_reference,
             self._config["table_surface_point"],
             self._config["table_normal"],
             self._config.get("bar_axis_local", [1.0, 0.0, 0.0]),
             self._canonical_bar_axis,
+        )
+        task_frame["bar_lateral_centerline"] = dict(
+            bar_lateral_centerline or {"type": "straight"}
         )
         bar_axis_flipped = bool(task_frame["axis_flipped"])
         endpoints = self._world_endpoints(
@@ -1228,7 +1375,7 @@ class StageConstraintTrajectoryOptimizer:
             second_shape_weights,
             settling_windows,
             task_frame,
-            obstacle_pose,
+            obstacle,
         )
         best = None
         for attempt in range(self._multi_start):
@@ -1305,7 +1452,7 @@ class StageConstraintTrajectoryOptimizer:
             yaws,
             stage_weights,
             task_frame,
-            obstacle_pose,
+            obstacle,
         )
         constraint_objective = float(constraint_residuals @ constraint_residuals)
         endpoint_objective = 0.0
@@ -1322,7 +1469,11 @@ class StageConstraintTrajectoryOptimizer:
             positions, boundaries, optimized_settling_distances
         )
         features = self._feature_evaluator.evaluate(
-            positions, axes, task_frame, obstacle_pose, yaws
+            positions,
+            axes,
+            task_frame,
+            obstacle,
+            yaws,
         )
         quaternions = quaternions_from_axes_and_yaws(axes, yaws, task_frame)
         achieved_endpoint_positions = positions[boundaries]

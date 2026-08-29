@@ -382,6 +382,52 @@ class CartesianTrajectoryCompiler:
                     0.75 * previous + 0.25 * center,
                     center,
                 ]
+                # PyBullet's damped IK can converge repeatedly to the same
+                # colliding or high-residual iiwa redundancy branch even when
+                # another in-limit branch exists.  Keep the fast local seeds
+                # first, then add deterministic, symmetric nullspace-biased
+                # rest poses.  These are only search seeds: every returned
+                # solution still has to pass pose, continuity, limit and
+                # collision checks below.
+                alternating = np.where(
+                    np.arange(self._dof) % 2 == 0, 1.0, -1.0
+                )
+                sparse = np.zeros(self._dof, dtype=float)
+                sparse[::2] = alternating[::2]
+                for pattern in (alternating, sparse):
+                    offset = 0.15 * ranges * pattern
+                    rest_candidates.extend(
+                        (
+                            np.clip(previous + offset, self._lower, self._upper),
+                            np.clip(previous - offset, self._lower, self._upper),
+                        )
+                    )
+                rest_candidates.append(
+                    np.clip(2.0 * center - previous, self._lower, self._upper)
+                )
+                low_discrepancy_steps = np.asarray(
+                    [
+                        0.6180339887,
+                        0.4142135624,
+                        0.7320508076,
+                        0.2679491924,
+                        0.5772156649,
+                        0.3535533906,
+                        0.7861513778,
+                    ][: self._dof],
+                    dtype=float,
+                )
+                for seed_index in range(1, 9):
+                    fractions = np.mod(
+                        float(seed_index) * low_discrepancy_steps,
+                        1.0,
+                    )
+                    # Stay away from the hard joint limits while covering
+                    # distinct iiwa elbow/swivel basins deterministically.
+                    fractions = 0.10 + 0.80 * fractions
+                    rest_candidates.append(
+                        self._lower + fractions * ranges
+                    )
                 for candidate_rest in rest_candidates:
                     self._set_q(previous)
                     solution = self._bullet.calculateInverseKinematics(
@@ -676,22 +722,7 @@ class CartesianTrajectoryCompiler:
         return minimum_z
 
     @staticmethod
-    def _segment_point_distance(start, end, point):
-        start = np.asarray(start, dtype=float)
-        end = np.asarray(end, dtype=float)
-        point = np.asarray(point, dtype=float)
-        delta = end - start
-        denominator = float(delta @ delta)
-        if denominator <= 1e-18:
-            return float(np.linalg.norm(start - point))
-        ratio = float(np.clip(((point - start) @ delta) / denominator, 0.0, 1.0))
-        return float(np.linalg.norm(start + ratio * delta - point))
-
-    def _obstacle_avoiding_approach_waypoints(
-        self, current_position, target_position, obstacle
-    ):
-        current_position = np.asarray(current_position, dtype=float).reshape(3)
-        target_position = np.asarray(target_position, dtype=float).reshape(3)
+    def _approach_circle_geometry(obstacle):
         try:
             center = np.asarray(obstacle["center"], dtype=float).reshape(3)
             normal = np.asarray(obstacle["table_normal"], dtype=float).reshape(3)
@@ -704,7 +735,8 @@ class CartesianTrajectoryCompiler:
             ) from error
         normal_norm = float(np.linalg.norm(normal))
         if (
-            not np.all(np.isfinite(center))
+            str(obstacle.get("type", "circle")) != "circle"
+            or not np.all(np.isfinite(center))
             or not np.all(np.isfinite(normal))
             or normal_norm <= 1e-12
             or not all(math.isfinite(value) for value in (radius, clearance, margin))
@@ -715,7 +747,157 @@ class CartesianTrajectoryCompiler:
             raise TrajectoryValidationError(
                 "Stage-0 obstacle geometry must be finite with non-negative clearance"
             )
-        normal /= normal_norm
+        return center, normal / normal_norm, radius, clearance, margin
+
+    @staticmethod
+    def _approach_capsule_geometry(obstacle):
+        try:
+            endpoints = np.asarray(obstacle["endpoints"], dtype=float).reshape(2, 3)
+            normal = np.asarray(obstacle["table_normal"], dtype=float).reshape(3)
+            radius = float(obstacle["radius"])
+            clearance = float(obstacle["clearance"])
+            margin = float(obstacle.get("margin", 0.0))
+        except (KeyError, TypeError, ValueError) as error:
+            raise TrajectoryValidationError(
+                "Stage-0 capsule geometry is incomplete or invalid"
+            ) from error
+        normal_norm = float(np.linalg.norm(normal))
+        if (
+            str(obstacle.get("type")) != "capsule"
+            or not np.all(np.isfinite(endpoints))
+            or not np.all(np.isfinite(normal))
+            or normal_norm <= 1e-12
+            or not all(math.isfinite(value) for value in (radius, clearance, margin))
+            or radius <= 0.0
+            or clearance < 0.0
+            or margin < 0.0
+        ):
+            raise TrajectoryValidationError(
+                "Stage-0 capsule geometry must be finite with non-negative clearance"
+            )
+        normal = normal / normal_norm
+        delta = endpoints[1] - endpoints[0]
+        planar_delta = delta - float(delta @ normal) * normal
+        if float(np.linalg.norm(planar_delta)) <= 1e-9:
+            raise TrajectoryValidationError(
+                "Stage-0 capsule endpoints must be distinct in the table plane"
+            )
+        return endpoints, normal, radius, clearance, margin
+
+    @staticmethod
+    def _point_segment_distances(points, start, end):
+        points = np.asarray(points, dtype=float)
+        start = np.asarray(start, dtype=float)
+        end = np.asarray(end, dtype=float)
+        delta = end - start
+        denominator = float(delta @ delta)
+        if denominator <= 1e-18:
+            return np.linalg.norm(points - start, axis=-1)
+        ratios = np.clip(((points - start) @ delta) / denominator, 0.0, 1.0)
+        closest = start + ratios[..., None] * delta
+        return np.linalg.norm(points - closest, axis=-1)
+
+    @classmethod
+    def _capsule_planar_distances(cls, positions, endpoints, normal):
+        positions = np.asarray(positions, dtype=float)
+        origin = endpoints[0]
+        relative = positions - origin
+        planar_positions = relative - (relative @ normal)[..., None] * normal
+        endpoint_delta = endpoints[1] - origin
+        planar_endpoint = endpoint_delta - float(endpoint_delta @ normal) * normal
+        return cls._point_segment_distances(
+            planar_positions, np.zeros(3), planar_endpoint
+        )
+
+    def _approach_obstacle_checks(self, q_path, obstacle):
+        if obstacle is None:
+            return None
+        obstacle_type = str(obstacle.get("type", "circle"))
+        positions = []
+        for q in np.asarray(q_path, dtype=float):
+            positions.append(np.asarray(self.tip_state(q)[0], dtype=float))
+        positions = np.asarray(positions, dtype=float)
+        if obstacle_type == "circle":
+            center, normal, radius, clearance, _margin = self._approach_circle_geometry(
+                obstacle
+            )
+            relative = positions - center
+            planar = relative - (relative @ normal)[:, None] * normal
+            surface_distances = np.linalg.norm(planar, axis=1)
+        elif obstacle_type == "capsule":
+            endpoints, normal, radius, clearance, _margin = (
+                self._approach_capsule_geometry(obstacle)
+            )
+            surface_distances = self._capsule_planar_distances(
+                positions, endpoints, normal
+            )
+        else:
+            raise TrajectoryValidationError(
+                "Stage-0 obstacle type must be circle or capsule"
+            )
+        minimum_clearance = float(np.min(surface_distances)) - radius
+        if minimum_clearance < -1e-6:
+            raise TrajectoryValidationError(
+                "Approach joint interpolation enters the physical obstacle"
+            )
+        required_radius = radius + clearance
+        safe = np.flatnonzero(surface_distances >= required_radius - 1e-6)
+        if len(safe) == 0:
+            raise TrajectoryValidationError(
+                "Approach joint interpolation never reaches obstacle clearance"
+            )
+        first_safe = int(safe[0])
+        if np.any(np.diff(surface_distances[: first_safe + 1]) < -1e-6):
+            raise TrajectoryValidationError(
+                "Approach moves closer to the obstacle before clearing its envelope"
+            )
+        after_egress = surface_distances[first_safe:]
+        minimum_after_egress = float(np.min(after_egress))
+        if minimum_after_egress < required_radius - 1e-6:
+            violation_index = first_safe + int(np.argmin(after_egress))
+            raise TrajectoryValidationError(
+                "Approach joint interpolation violates obstacle clearance after egress "
+                "at sample {}/{}: {:.4f} m clearance, requires {:.4f} m".format(
+                    violation_index + 1,
+                    len(surface_distances),
+                    minimum_after_egress - radius,
+                    clearance,
+                )
+            )
+        return minimum_clearance
+
+    @staticmethod
+    def _segment_point_distance(start, end, point):
+        start = np.asarray(start, dtype=float)
+        end = np.asarray(end, dtype=float)
+        point = np.asarray(point, dtype=float)
+        delta = end - start
+        denominator = float(delta @ delta)
+        if denominator <= 1e-18:
+            return float(np.linalg.norm(start - point))
+        ratio = float(np.clip(((point - start) @ delta) / denominator, 0.0, 1.0))
+        return float(np.linalg.norm(start + ratio * delta - point))
+
+    def _obstacle_avoiding_approach_waypoints(
+        self,
+        current_position,
+        target_position,
+        obstacle,
+        *,
+        use_long_arc=False,
+    ):
+        if str(obstacle.get("type", "circle")) == "capsule":
+            return self._obstacle_avoiding_capsule_waypoints(
+                current_position,
+                target_position,
+                obstacle,
+                use_long_arc=use_long_arc,
+            )
+        current_position = np.asarray(current_position, dtype=float).reshape(3)
+        target_position = np.asarray(target_position, dtype=float).reshape(3)
+        center, normal, radius, clearance, margin = self._approach_circle_geometry(
+            obstacle
+        )
         reference = np.asarray([1.0, 0.0, 0.0])
         if abs(float(reference @ normal)) > 0.9:
             reference = np.asarray([0.0, 1.0, 0.0])
@@ -730,7 +912,14 @@ class CartesianTrajectoryCompiler:
         current_planar = planar_coordinates(current_position)
         target_planar = planar_coordinates(target_position)
         required_radius = radius + clearance
-        bypass_radius = required_radius + margin
+        chord_compensation = (
+            self._approach_spacing * self._approach_spacing
+            / max(8.0 * required_radius, 1e-9)
+        )
+        bypass_radius = max(
+            required_radius + margin,
+            required_radius + chord_compensation + 1e-6,
+        )
         current_radius = float(np.linalg.norm(current_planar))
         target_radius = float(np.linalg.norm(target_planar))
         if current_radius <= radius + 1e-4:
@@ -754,6 +943,8 @@ class CartesianTrajectoryCompiler:
             math.sin(target_angle - current_angle),
             math.cos(target_angle - current_angle),
         )
+        if use_long_arc and abs(angle_delta) > 1e-9:
+            angle_delta -= math.copysign(2.0 * math.pi, angle_delta)
         arc_length = abs(angle_delta) * bypass_radius
         arc_segments = max(2, int(math.ceil(arc_length / self._approach_spacing)))
         arc_angles = np.linspace(
@@ -783,6 +974,215 @@ class CartesianTrajectoryCompiler:
         heights = current_height + progress * (target_height - current_height)
         return (
             center[None, :]
+            + planar_waypoints[:, :1] * plane_x[None, :]
+            + planar_waypoints[:, 1:] * plane_y[None, :]
+            + heights[:, None] * normal[None, :]
+        )
+
+    @staticmethod
+    def _segments_intersect_2d(first_start, first_end, second_start, second_end):
+        def cross(first, second):
+            return float(first[0] * second[1] - first[1] * second[0])
+
+        first_delta = first_end - first_start
+        second_delta = second_end - second_start
+        denominator = cross(first_delta, second_delta)
+        offset = second_start - first_start
+        if abs(denominator) <= 1e-12:
+            if abs(cross(offset, first_delta)) > 1e-12:
+                return False
+            axis = int(np.argmax(np.abs(first_delta)))
+            if abs(first_delta[axis]) <= 1e-12:
+                return bool(np.linalg.norm(first_start - second_start) <= 1e-12)
+            first_bounds = sorted((first_start[axis], first_end[axis]))
+            second_bounds = sorted((second_start[axis], second_end[axis]))
+            return max(first_bounds[0], second_bounds[0]) <= min(
+                first_bounds[1], second_bounds[1]
+            ) + 1e-12
+        first_ratio = cross(offset, second_delta) / denominator
+        second_ratio = cross(offset, first_delta) / denominator
+        return (
+            -1e-12 <= first_ratio <= 1.0 + 1e-12
+            and -1e-12 <= second_ratio <= 1.0 + 1e-12
+        )
+
+    @classmethod
+    def _segment_segment_distance_2d(cls, first_start, first_end, second_start, second_end):
+        if cls._segments_intersect_2d(
+            first_start, first_end, second_start, second_end
+        ):
+            return 0.0
+        return min(
+            float(cls._point_segment_distances(first_start, second_start, second_end)),
+            float(cls._point_segment_distances(first_end, second_start, second_end)),
+            float(cls._point_segment_distances(second_start, first_start, first_end)),
+            float(cls._point_segment_distances(second_end, first_start, first_end)),
+        )
+
+    def _obstacle_avoiding_capsule_waypoints(
+        self,
+        current_position,
+        target_position,
+        obstacle,
+        *,
+        use_long_arc=False,
+    ):
+        current_position = np.asarray(current_position, dtype=float).reshape(3)
+        target_position = np.asarray(target_position, dtype=float).reshape(3)
+        endpoints, normal, radius, clearance, margin = (
+            self._approach_capsule_geometry(obstacle)
+        )
+        reference = np.asarray([1.0, 0.0, 0.0])
+        if abs(float(reference @ normal)) > 0.9:
+            reference = np.asarray([0.0, 1.0, 0.0])
+        plane_x = np.cross(normal, reference)
+        plane_x /= np.linalg.norm(plane_x)
+        plane_y = np.cross(normal, plane_x)
+        origin = endpoints[0]
+
+        def planar_coordinates(position):
+            relative = np.asarray(position, dtype=float) - origin
+            return np.asarray([relative @ plane_x, relative @ plane_y], dtype=float)
+
+        capsule_start = np.zeros(2)
+        capsule_end = planar_coordinates(endpoints[1])
+        current_planar = planar_coordinates(current_position)
+        target_planar = planar_coordinates(target_position)
+        required_radius = radius + clearance
+        current_radius = float(
+            self._point_segment_distances(
+                current_planar, capsule_start, capsule_end
+            )
+        )
+        target_radius = float(
+            self._point_segment_distances(
+                target_planar, capsule_start, capsule_end
+            )
+        )
+        if current_radius <= radius + 1e-4:
+            raise TrajectoryValidationError(
+                "Stage-0 starts inside the tracked obstacle"
+            )
+        if target_radius < required_radius - 1e-6:
+            raise TrajectoryValidationError(
+                "Task start violates Stage-0 obstacle clearance by {:.4f} m".format(
+                    required_radius - target_radius
+                )
+            )
+        direct_distance = self._segment_segment_distance_2d(
+            current_planar, target_planar, capsule_start, capsule_end
+        )
+        if (
+            current_radius >= required_radius - 1e-9
+            and direct_distance >= required_radius - 1e-9
+        ):
+            return np.vstack((current_position, target_position))
+
+        chord_compensation = (
+            self._approach_spacing * self._approach_spacing
+            / max(8.0 * required_radius, 1e-9)
+        )
+        bypass_radius = max(
+            required_radius + margin,
+            required_radius + chord_compensation + 1e-6,
+        )
+        axis = capsule_end - capsule_start
+        axis_length = float(np.linalg.norm(axis))
+        axis /= axis_length
+        side = np.asarray([-axis[1], axis[0]])
+        side_segments = max(1, int(math.ceil(axis_length / self._approach_spacing)))
+        cap_segments = max(
+            2,
+            int(math.ceil(math.pi * bypass_radius / self._approach_spacing)),
+        )
+        top = capsule_start + side * bypass_radius + np.linspace(
+            0.0, 1.0, side_segments + 1
+        )[:, None] * (capsule_end - capsule_start)
+        end_angles = np.linspace(math.pi / 2.0, -math.pi / 2.0, cap_segments + 1)
+        end_cap = capsule_end + bypass_radius * (
+            np.cos(end_angles)[:, None] * axis
+            + np.sin(end_angles)[:, None] * side
+        )
+        bottom = capsule_end - side * bypass_radius + np.linspace(
+            0.0, 1.0, side_segments + 1
+        )[:, None] * (capsule_start - capsule_end)
+        start_angles = np.linspace(-math.pi / 2.0, -3.0 * math.pi / 2.0, cap_segments + 1)
+        start_cap = capsule_start + bypass_radius * (
+            np.cos(start_angles)[:, None] * axis
+            + np.sin(start_angles)[:, None] * side
+        )
+        boundary = np.vstack((top, end_cap[1:], bottom[1:], start_cap[1:-1]))
+        boundary_count = len(boundary)
+
+        def connection_is_safe(point, boundary_point, allow_egress):
+            if not allow_egress:
+                return self._segment_segment_distance_2d(
+                    point, boundary_point, capsule_start, capsule_end
+                ) >= required_radius - 1e-9
+            phases = np.linspace(0.0, 1.0, 33)
+            samples = point + phases[:, None] * (boundary_point - point)
+            distances = self._point_segment_distances(
+                samples, capsule_start, capsule_end
+            )
+            return bool(
+                np.min(distances) >= radius - 1e-9
+                and np.all(np.diff(distances) >= -1e-9)
+                and distances[-1] >= required_radius - 1e-9
+            )
+
+        start_indices = [
+            index
+            for index, point in enumerate(boundary)
+            if connection_is_safe(
+                current_planar,
+                point,
+                current_radius < required_radius - 1e-9,
+            )
+        ]
+        target_indices = [
+            index
+            for index, point in enumerate(boundary)
+            if connection_is_safe(target_planar, point, False)
+        ]
+        if not start_indices or not target_indices:
+            raise TrajectoryValidationError(
+                "Stage-0 could not connect the approach to the capsule boundary"
+            )
+
+        directional_routes = []
+        for direction in (1, -1):
+            best = None
+            for start_index in start_indices:
+                for target_index in target_indices:
+                    indices = [start_index]
+                    while indices[-1] != target_index:
+                        indices.append((indices[-1] + direction) % boundary_count)
+                        if len(indices) > boundary_count:
+                            break
+                    route = boundary[indices]
+                    route_points = np.vstack((current_planar, route, target_planar))
+                    length = float(
+                        np.sum(np.linalg.norm(np.diff(route_points, axis=0), axis=1))
+                    )
+                    if best is None or length < best[0]:
+                        best = (length, route_points)
+            if best is not None:
+                directional_routes.append(best)
+        if not directional_routes:
+            raise TrajectoryValidationError(
+                "Stage-0 could not route around the capsule"
+            )
+        directional_routes.sort(key=lambda item: item[0])
+        selected = directional_routes[-1 if use_long_arc and len(directional_routes) > 1 else 0]
+        planar_waypoints = selected[1]
+        planar_edges = np.linalg.norm(np.diff(planar_waypoints, axis=0), axis=1)
+        planar_distance = float(np.sum(planar_edges))
+        progress = np.concatenate(([0.0], np.cumsum(planar_edges))) / planar_distance
+        current_height = float((current_position - origin) @ normal)
+        target_height = float((target_position - origin) @ normal)
+        heights = current_height + progress * (target_height - current_height)
+        return (
+            origin[None, :]
             + planar_waypoints[:, :1] * plane_x[None, :]
             + planar_waypoints[:, 1:] * plane_y[None, :]
             + heights[:, None] * normal[None, :]
@@ -1152,6 +1552,176 @@ class CartesianTrajectoryCompiler:
             for joint in range(positions.shape[1])
         ])
 
+    def _sample_approach_waypoints(
+        self,
+        waypoints,
+        current_axis,
+        target_axis,
+        current_x=None,
+        target_x=None,
+        *,
+        orientation_profile="blended",
+        preserve_waypoints=False,
+    ):
+        waypoints = np.asarray(waypoints, dtype=float)
+        if waypoints.ndim != 2 or waypoints.shape[1] != 3 or len(waypoints) < 2:
+            raise TrajectoryValidationError(
+                "Approach waypoints must contain at least two 3D positions"
+            )
+        if orientation_profile not in {
+            "blended",
+            "translate_then_orient",
+            "orient_then_translate",
+        }:
+            raise ValueError(
+                "Unknown approach orientation profile {!r}".format(
+                    orientation_profile
+                )
+            )
+
+        edge_lengths = np.linalg.norm(np.diff(waypoints, axis=0), axis=1)
+        cumulative = np.concatenate(([0.0], np.cumsum(edge_lengths)))
+        distance = float(cumulative[-1])
+        if distance <= 1e-12:
+            spatial_positions = waypoints[-1][None, :]
+            spatial_progress = np.ones(1, dtype=float)
+        else:
+            spatial_sample_count = max(
+                1,
+                int(math.ceil(distance / self._approach_spacing)),
+            )
+            spatial_targets = np.linspace(
+                0.0, distance, spatial_sample_count + 1
+            )[1:]
+            if preserve_waypoints:
+                spatial_targets = np.unique(
+                    np.concatenate((spatial_targets, cumulative[1:]))
+                )
+            spatial_positions = np.column_stack(
+                [
+                    np.interp(
+                        spatial_targets,
+                        cumulative,
+                        waypoints[:, dim],
+                    )
+                    for dim in range(3)
+                ]
+            )
+            spatial_progress = spatial_targets / distance
+
+        current_axis = np.asarray(current_axis, dtype=float)
+        target_axis = np.asarray(target_axis, dtype=float)
+        axis_angle = math.acos(
+            float(np.clip(current_axis @ target_axis, -1.0, 1.0))
+        )
+        orientation_angle = axis_angle
+        if target_x is not None:
+            if current_x is None:
+                raise TrajectoryValidationError(
+                    "Current Tool-X is required for a full-orientation approach"
+                )
+            current_x = np.asarray(current_x, dtype=float)
+            target_x = np.asarray(target_x, dtype=float)
+            orientation_angle = max(
+                orientation_angle,
+                math.acos(
+                    float(np.clip(current_x @ target_x, -1.0, 1.0))
+                ),
+            )
+        orientation_sample_count = max(
+            1,
+            int(math.ceil(orientation_angle / self._approach_axis_spacing)),
+        )
+
+        if orientation_profile == "blended":
+            sample_count = max(
+                len(spatial_positions),
+                orientation_sample_count,
+            )
+            if sample_count != len(spatial_positions) and distance > 1e-12:
+                spatial_targets = np.linspace(
+                    0.0, distance, sample_count + 1
+                )[1:]
+                if preserve_waypoints:
+                    spatial_targets = np.unique(
+                        np.concatenate((spatial_targets, cumulative[1:]))
+                    )
+                positions = np.column_stack(
+                    [
+                        np.interp(
+                            spatial_targets,
+                            cumulative,
+                            waypoints[:, dim],
+                        )
+                        for dim in range(3)
+                    ]
+                )
+                orientation_progress = spatial_targets / distance
+            else:
+                positions = spatial_positions
+                orientation_progress = spatial_progress
+        else:
+            rotation_progress = np.linspace(
+                0.0, 1.0, orientation_sample_count + 1
+            )[1:]
+            if orientation_profile == "translate_then_orient":
+                positions = np.vstack(
+                    (
+                        spatial_positions,
+                        np.repeat(
+                            waypoints[-1][None, :],
+                            orientation_sample_count,
+                            axis=0,
+                        ),
+                    )
+                )
+                orientation_progress = np.concatenate(
+                    (
+                        np.zeros(len(spatial_positions), dtype=float),
+                        rotation_progress,
+                    )
+                )
+            else:
+                positions = np.vstack(
+                    (
+                        np.repeat(
+                            waypoints[0][None, :],
+                            orientation_sample_count,
+                            axis=0,
+                        ),
+                        spatial_positions,
+                    )
+                )
+                orientation_progress = np.concatenate(
+                    (
+                        rotation_progress,
+                        np.ones(len(spatial_positions), dtype=float),
+                    )
+                )
+
+        axes = self._interpolate_axis(
+            current_axis,
+            target_axis,
+            orientation_progress,
+        )
+        x_axes = None
+        if target_x is not None:
+            x_axes = self._interpolate_axis(
+                current_x,
+                target_x,
+                orientation_progress,
+            )
+            orthogonal = []
+            for x_axis, z_axis in zip(x_axes, axes):
+                x_axis = x_axis - float(x_axis @ z_axis) * z_axis
+                if np.linalg.norm(x_axis) <= 1e-8:
+                    raise TrajectoryValidationError(
+                        "Full-orientation approach crosses a Tool-X singularity"
+                    )
+                orthogonal.append(x_axis / np.linalg.norm(x_axis))
+            x_axes = np.asarray(orthogonal)
+        return positions, axes, x_axes, distance
+
     def _approach_samples(
         self,
         current_position,
@@ -1201,48 +1771,124 @@ class CartesianTrajectoryCompiler:
                 0.0,
             )
 
-        waypoints = np.asarray(compact, dtype=float)
-        edge_lengths = np.linalg.norm(np.diff(waypoints, axis=0), axis=1)
-        cumulative = np.concatenate(([0.0], np.cumsum(edge_lengths)))
-        distance = float(cumulative[-1])
-        current_axis = np.asarray(current_axis, dtype=float)
-        target_axis = np.asarray(target_axis, dtype=float)
-        axis_angle = math.acos(float(np.clip(current_axis @ target_axis, -1.0, 1.0)))
-        sample_count = max(
-            1,
-            int(math.ceil(distance / self._approach_spacing)),
-            int(math.ceil(axis_angle / self._approach_axis_spacing)),
+        return self._sample_approach_waypoints(
+            np.asarray(compact, dtype=float),
+            current_axis,
+            target_axis,
+            current_x=current_x,
+            target_x=target_x,
+            orientation_profile="blended",
+            preserve_waypoints=approach_obstacle is None,
         )
-        targets = np.linspace(0.0, distance, sample_count + 1)[1:]
-        if approach_obstacle is None:
-            # Preserve the exact vertical/lateral corners of the legacy
-            # lift-first path.  Obstacle detours are already discretized at
-            # ``approach_spacing`` by _obstacle_avoiding_approach_waypoints;
-            # merging those knots with a second uniform grid creates many
-            # tiny alternating segments, noisy IK corrections and severe
-            # time-dilation without improving obstacle clearance.
-            targets = np.unique(np.concatenate((targets, cumulative[1:])))
-        positions = np.column_stack(
-            [np.interp(targets, cumulative, waypoints[:, dim]) for dim in range(3)]
+
+    def _approach_sample_candidates(
+        self,
+        current_position,
+        current_axis,
+        target_position,
+        target_axis,
+        current_x=None,
+        target_x=None,
+        approach_obstacle=None,
+    ):
+        primary = self._approach_samples(
+            current_position,
+            current_axis,
+            target_position,
+            target_axis,
+            current_x=current_x,
+            target_x=target_x,
+            approach_obstacle=approach_obstacle,
         )
-        axes = self._interpolate_axis(current_axis, target_axis, targets / distance)
-        x_axes = None
-        if target_x is not None:
-            if current_x is None:
-                raise TrajectoryValidationError(
-                    "Current Tool-X is required for a full-orientation approach"
+        candidates = [("blended", *primary)]
+        primary_route = np.vstack(
+            (np.asarray(current_position, dtype=float), primary[0])
+        )
+        orientation_angle = math.acos(
+            float(
+                np.clip(
+                    np.asarray(current_axis, dtype=float)
+                    @ np.asarray(target_axis, dtype=float),
+                    -1.0,
+                    1.0,
                 )
-            x_axes = self._interpolate_axis(current_x, target_x, targets / distance)
-            orthogonal = []
-            for x_axis, z_axis in zip(x_axes, axes):
-                x_axis = x_axis - float(x_axis @ z_axis) * z_axis
-                if np.linalg.norm(x_axis) <= 1e-8:
-                    raise TrajectoryValidationError(
-                        "Full-orientation approach crosses a Tool-X singularity"
+            )
+        )
+        if target_x is not None and current_x is not None:
+            orientation_angle = max(
+                orientation_angle,
+                math.acos(
+                    float(
+                        np.clip(
+                            np.asarray(current_x, dtype=float)
+                            @ np.asarray(target_x, dtype=float),
+                            -1.0,
+                            1.0,
+                        )
                     )
-                orthogonal.append(x_axis / np.linalg.norm(x_axis))
-            x_axes = np.asarray(orthogonal)
-        return positions, axes, x_axes, distance
+                ),
+            )
+        if orientation_angle > 1e-6:
+            for profile in (
+                "translate_then_orient",
+                "orient_then_translate",
+            ):
+                candidate = self._sample_approach_waypoints(
+                    primary_route,
+                    current_axis,
+                    target_axis,
+                    current_x=current_x,
+                    target_x=target_x,
+                    orientation_profile=profile,
+                    preserve_waypoints=False,
+                )
+                candidates.append((profile, *candidate))
+
+        if approach_obstacle is not None:
+            alternate_waypoints = self._obstacle_avoiding_approach_waypoints(
+                current_position,
+                target_position,
+                approach_obstacle,
+                use_long_arc=True,
+            )
+            primary_waypoints = self._obstacle_avoiding_approach_waypoints(
+                current_position,
+                target_position,
+                approach_obstacle,
+            )
+            if (
+                alternate_waypoints.shape != primary_waypoints.shape
+                or not np.allclose(
+                    alternate_waypoints,
+                    primary_waypoints,
+                    atol=1e-9,
+                    rtol=0.0,
+                )
+            ):
+                alternate = self._sample_approach_waypoints(
+                    alternate_waypoints,
+                    current_axis,
+                    target_axis,
+                    current_x=current_x,
+                    target_x=target_x,
+                    orientation_profile="blended",
+                    preserve_waypoints=False,
+                )
+                candidates.append(("alternate_obstacle_arc", *alternate))
+                if orientation_angle > 1e-6:
+                    alternate_phased = self._sample_approach_waypoints(
+                        alternate_waypoints,
+                        current_axis,
+                        target_axis,
+                        current_x=current_x,
+                        target_x=target_x,
+                        orientation_profile="translate_then_orient",
+                        preserve_waypoints=False,
+                    )
+                    candidates.append(
+                        ("alternate_arc_translate_then_orient", *alternate_phased)
+                    )
+        return candidates
 
     def _home_vertical_recovery(self, start_q, abort_requested):
         """Keep the measured TCP pose fixed in XY/orientation while lifting."""
@@ -1290,7 +1936,13 @@ class CartesianTrajectoryCompiler:
             x_errors,
         )
 
-    def compile_joint_home(self, start_q, target_q, abort_requested=None):
+    def compile_joint_home(
+        self,
+        start_q,
+        target_q,
+        abort_requested=None,
+        approach_obstacle=None,
+    ):
         """Compile a collision-checked joint move to a saved comfortable posture.
 
         Robot Home is a posture, not a Cartesian tracking task.  Solving a long
@@ -1352,6 +2004,15 @@ class CartesianTrajectoryCompiler:
                 self._collision_and_singularity_checks(
                     recovery_validation, "Return Home vertical recovery"
                 )
+                obstacle_validation = np.vstack(
+                    (recovery_validation, approach_validation[1:])
+                )
+            else:
+                obstacle_validation = approach_validation
+            minimum_obstacle_clearance = self._approach_obstacle_checks(
+                obstacle_validation,
+                approach_obstacle,
+            )
             timed_segments = [approach] if recovery is None else [recovery, approach]
             return {
                 "start": start_q.copy(),
@@ -1395,6 +2056,11 @@ class CartesianTrajectoryCompiler:
                         for segment in timed_segments
                     ),
                     "minimum_approach_tcp_z_m": minimum_z,
+                    "minimum_home_obstacle_clearance_m": (
+                        None
+                        if minimum_obstacle_clearance is None
+                        else minimum_obstacle_clearance
+                    ),
                     "maximum_interpolated_joint_velocity_ratio": max(
                         segment["maximum_interpolated_velocity_ratio"]
                         for segment in timed_segments
@@ -1415,6 +2081,171 @@ class CartesianTrajectoryCompiler:
             }
         finally:
             self._set_q(start_q)
+
+    def _compile_cartesian_candidate(
+        self,
+        *,
+        route_name,
+        approach_positions,
+        approach_axes,
+        approach_x_axes,
+        approach_distance,
+        positions,
+        axes,
+        x_axes,
+        x_active,
+        start_q,
+        abort_requested,
+        approach_obstacle,
+        stage_timing,
+    ):
+        approach_x_active = None
+        if approach_x_axes is not None:
+            approach_x_active = np.zeros(len(approach_x_axes), dtype=bool)
+            approach_x_active[-1] = True
+        (
+            q_approach_tail,
+            approach_position_error,
+            approach_axis_error,
+            approach_x_error,
+        ) = self._continuous_ik(
+            approach_positions,
+            approach_axes,
+            start_q,
+            abort_requested,
+            "Approach",
+            position_tolerance=self._approach_position_tolerance,
+            final_position_tolerance=self._position_tolerance,
+            max_joint_step=self._approach_joint_bridge_limit,
+            x_axes=approach_x_axes,
+            x_active=approach_x_active,
+        )
+        q_approach = np.vstack((start_q[None, :], q_approach_tail))
+        q_approach = self._densify_joint_path(
+            q_approach, self._max_joint_step
+        )
+        minimum_approach_z = self._approach_workspace_checks(
+            q_approach,
+            enforce_transit_floor=approach_obstacle is None,
+        )
+
+        (
+            q_task_tail,
+            task_position_error,
+            task_axis_error,
+            task_x_error,
+        ) = self._continuous_ik(
+            positions[1:],
+            axes[1:],
+            q_approach[-1],
+            abort_requested,
+            "Task",
+            x_axes=None if x_axes is None else x_axes[1:],
+            x_active=None if x_active is None else x_active[1:],
+        )
+        q_task = np.vstack((q_approach[-1][None, :], q_task_tail))
+        full_path = np.vstack((q_approach, q_task[1:]))
+        if np.any(full_path < self._lower[None, :]) or np.any(
+            full_path > self._upper[None, :]
+        ):
+            raise TrajectoryValidationError("Joint position limit violation")
+        maximum_step = float(np.max(np.abs(np.diff(full_path, axis=0))))
+        if maximum_step > self._max_joint_step:
+            raise TrajectoryValidationError(
+                "Joint continuity check failed at {:.3f} rad".format(
+                    maximum_step
+                )
+            )
+        task_edge_length = np.linalg.norm(
+            np.diff(positions, axis=0), axis=1
+        )
+        task_length = float(np.sum(task_edge_length))
+        task_speed_scales = self.task_segment_speed_scales(
+            positions, stage_timing
+        )
+        approach_minimum = approach_distance / max(
+            self._approach_speed, 1e-4
+        )
+        task_minimum = float(
+            np.sum(
+                task_edge_length
+                / (
+                    max(self._task_speed, 1e-4)
+                    * task_speed_scales
+                )
+            )
+        )
+        approach = self.time_parameterize(q_approach, approach_minimum)
+        task = self.time_parameterize(
+            q_task,
+            task_minimum,
+            segment_speed_scales=task_speed_scales,
+        )
+        minimum_approach_obstacle_clearance = self._approach_obstacle_checks(
+            approach["_validation_position"],
+            approach_obstacle,
+        )
+        minimum_sv = min(
+            self._collision_and_singularity_checks(
+                approach["_validation_position"], "Approach"
+            ),
+            self._collision_and_singularity_checks(
+                task["_validation_position"], "Task"
+            ),
+        )
+        return {
+            "start": start_q.copy(),
+            "approach": approach,
+            "task": task,
+            "metrics": {
+                "approach_route": str(route_name),
+                "approach_points": len(q_approach),
+                "task_points": len(q_task),
+                "approach_duration_s": approach["duration"],
+                "task_duration_s": task["duration"],
+                "approach_distance_m": approach_distance,
+                "task_length_m": task_length,
+                "task_cartesian_minimum_duration_s": task_minimum,
+                "approach_timing_overhead_s": approach["timing_overhead_s"],
+                "task_timing_overhead_s": task["timing_overhead_s"],
+                "approach_timing_iterations": approach["timing_iterations"],
+                "task_timing_iterations": task["timing_iterations"],
+                "task_minimum_speed_scale": float(
+                    np.min(task_speed_scales)
+                ),
+                "maximum_joint_step_rad": maximum_step,
+                "minimum_jacobian_singular_value": minimum_sv,
+                "minimum_approach_tcp_z_m": minimum_approach_z,
+                "minimum_approach_obstacle_clearance_m": (
+                    minimum_approach_obstacle_clearance
+                ),
+                "maximum_ik_position_error_m": max(
+                    approach_position_error + task_position_error
+                ),
+                "maximum_ik_tool_z_error_deg": math.degrees(
+                    max(approach_axis_error + task_axis_error)
+                ),
+                "maximum_ik_tool_x_error_deg": math.degrees(
+                    max(approach_x_error + task_x_error)
+                ),
+                "maximum_interpolated_joint_velocity_ratio": max(
+                    approach["maximum_interpolated_velocity_ratio"],
+                    task["maximum_interpolated_velocity_ratio"],
+                ),
+                "maximum_interpolated_joint_acceleration_ratio": max(
+                    approach["maximum_interpolated_acceleration_ratio"],
+                    task["maximum_interpolated_acceleration_ratio"],
+                ),
+                "maximum_interpolated_joint_velocity_rad_s": max(
+                    approach["maximum_interpolated_velocity_rad_s"],
+                    task["maximum_interpolated_velocity_rad_s"],
+                ),
+                "maximum_interpolated_joint_acceleration_rad_s2": max(
+                    approach["maximum_interpolated_acceleration_rad_s2"],
+                    task["maximum_interpolated_acceleration_rad_s2"],
+                ),
+            },
+        }
 
     def compile(
         self,
@@ -1480,7 +2311,7 @@ class CartesianTrajectoryCompiler:
 
         try:
             current_position, current_rotation = self.tip_state(start_q)
-            approach_positions, approach_axes, approach_x_axes, approach_distance = self._approach_samples(
+            candidates = self._approach_sample_candidates(
                 current_position,
                 current_rotation[:, 2],
                 positions[0],
@@ -1491,138 +2322,45 @@ class CartesianTrajectoryCompiler:
                 target_x=None if x_axes is None else x_axes[0],
                 approach_obstacle=approach_obstacle,
             )
-            approach_x_active = None
-            if approach_x_axes is not None:
-                approach_x_active = np.zeros(len(approach_x_axes), dtype=bool)
-                approach_x_active[-1] = True
-            (
-                q_approach_tail,
-                approach_position_error,
-                approach_axis_error,
-                approach_x_error,
-            ) = self._continuous_ik(
+            failures = []
+            for (
+                route_name,
                 approach_positions,
                 approach_axes,
-                start_q,
-                abort_requested,
-                "Approach",
-                position_tolerance=self._approach_position_tolerance,
-                final_position_tolerance=self._position_tolerance,
-                max_joint_step=self._approach_joint_bridge_limit,
-                x_axes=approach_x_axes,
-                x_active=approach_x_active,
-            )
-            q_approach = np.vstack((start_q[None, :], q_approach_tail))
-            q_approach = self._densify_joint_path(
-                q_approach, self._max_joint_step
-            )
-            minimum_approach_z = self._approach_workspace_checks(
-                q_approach,
-                enforce_transit_floor=approach_obstacle is None,
-            )
-
-            (
-                q_task_tail,
-                task_position_error,
-                task_axis_error,
-                task_x_error,
-            ) = self._continuous_ik(
-                positions[1:],
-                axes[1:],
-                q_approach[-1],
-                abort_requested,
-                "Task",
-                x_axes=None if x_axes is None else x_axes[1:],
-                x_active=None if x_active is None else x_active[1:],
-            )
-            q_task = np.vstack((q_approach[-1][None, :], q_task_tail))
-            full_path = np.vstack((q_approach, q_task[1:]))
-            if np.any(full_path < self._lower[None, :]) or np.any(full_path > self._upper[None, :]):
-                raise TrajectoryValidationError("Joint position limit violation")
-            maximum_step = float(np.max(np.abs(np.diff(full_path, axis=0))))
-            if maximum_step > self._max_joint_step:
-                raise TrajectoryValidationError(
-                    "Joint continuity check failed at {:.3f} rad".format(maximum_step)
-                )
-            task_edge_length = np.linalg.norm(
-                np.diff(positions, axis=0), axis=1
-            )
-            task_length = float(np.sum(task_edge_length))
-            task_speed_scales = self.task_segment_speed_scales(
-                positions, stage_timing
-            )
-            approach_minimum = approach_distance / max(self._approach_speed, 1e-4)
-            task_minimum = float(
-                np.sum(
-                    task_edge_length
-                    / (
-                        max(self._task_speed, 1e-4)
-                        * task_speed_scales
+                approach_x_axes,
+                approach_distance,
+            ) in candidates:
+                self._set_q(start_q)
+                try:
+                    return self._compile_cartesian_candidate(
+                        route_name=route_name,
+                        approach_positions=approach_positions,
+                        approach_axes=approach_axes,
+                        approach_x_axes=approach_x_axes,
+                        approach_distance=approach_distance,
+                        positions=positions,
+                        axes=axes,
+                        x_axes=x_axes,
+                        x_active=x_active,
+                        start_q=start_q,
+                        abort_requested=abort_requested,
+                        approach_obstacle=approach_obstacle,
+                        stage_timing=stage_timing,
                     )
+                except TrajectoryValidationError as error:
+                    if abort_requested():
+                        raise
+                    failures.append((str(route_name), error))
+            if len(failures) == 1:
+                raise failures[0][1]
+            details = "; ".join(
+                "{}: {}".format(name, error)
+                for name, error in failures
+            )
+            raise TrajectoryValidationError(
+                "All {} safe approach candidates failed: {}".format(
+                    len(failures), details
                 )
             )
-            approach = self.time_parameterize(q_approach, approach_minimum)
-            task = self.time_parameterize(
-                q_task,
-                task_minimum,
-                segment_speed_scales=task_speed_scales,
-            )
-            minimum_sv = min(
-                self._collision_and_singularity_checks(
-                    approach["_validation_position"], "Approach"
-                ),
-                self._collision_and_singularity_checks(
-                    task["_validation_position"], "Task"
-                ),
-            )
-            return {
-                "start": start_q.copy(),
-                "approach": approach,
-                "task": task,
-                "metrics": {
-                    "approach_points": len(q_approach),
-                    "task_points": len(q_task),
-                    "approach_duration_s": approach["duration"],
-                    "task_duration_s": task["duration"],
-                    "approach_distance_m": approach_distance,
-                    "task_length_m": task_length,
-                    "task_cartesian_minimum_duration_s": task_minimum,
-                    "approach_timing_overhead_s": approach["timing_overhead_s"],
-                    "task_timing_overhead_s": task["timing_overhead_s"],
-                    "approach_timing_iterations": approach["timing_iterations"],
-                    "task_timing_iterations": task["timing_iterations"],
-                    "task_minimum_speed_scale": float(
-                        np.min(task_speed_scales)
-                    ),
-                    "maximum_joint_step_rad": maximum_step,
-                    "minimum_jacobian_singular_value": minimum_sv,
-                    "minimum_approach_tcp_z_m": minimum_approach_z,
-                    "maximum_ik_position_error_m": max(
-                        approach_position_error + task_position_error
-                    ),
-                    "maximum_ik_tool_z_error_deg": math.degrees(
-                        max(approach_axis_error + task_axis_error)
-                    ),
-                    "maximum_ik_tool_x_error_deg": math.degrees(
-                        max(approach_x_error + task_x_error)
-                    ),
-                    "maximum_interpolated_joint_velocity_ratio": max(
-                        approach["maximum_interpolated_velocity_ratio"],
-                        task["maximum_interpolated_velocity_ratio"],
-                    ),
-                    "maximum_interpolated_joint_acceleration_ratio": max(
-                        approach["maximum_interpolated_acceleration_ratio"],
-                        task["maximum_interpolated_acceleration_ratio"],
-                    ),
-                    "maximum_interpolated_joint_velocity_rad_s": max(
-                        approach["maximum_interpolated_velocity_rad_s"],
-                        task["maximum_interpolated_velocity_rad_s"],
-                    ),
-                    "maximum_interpolated_joint_acceleration_rad_s2": max(
-                        approach["maximum_interpolated_acceleration_rad_s2"],
-                        task["maximum_interpolated_acceleration_rad_s2"],
-                    ),
-                },
-            }
         finally:
             self._set_q(start_q)

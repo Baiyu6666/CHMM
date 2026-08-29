@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "frame_id": "iiwa14_link_0",
+  "source": {
+    "scene_name": "sceneB",
+    "bar_calibration": "data/demos/BarClean/20260829T114850_521145Z_sceneB-_bar2/demo.bag",
+    "bar_method": "orthogonal line fit and 1-99% axial midpoint on the 12-59 s robot-internal flange trajectory; yaw uses the sceneA task-axis direction convention",
+    "obstacle_calibration": "data/demos/BarClean/20260829T095140_476971Z_sceneB-obs/demo.bag",
+    "obstacle_method": "robust XY circle fit to the 9-46 s robot-internal flange trajectory; z is table top plus obstacle radius",
+    "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_00_5hz_coarse.npz",
+    "ik_seed_field": "joint_positions",
+    "ik_seed_sample_index": 305
+  },
+  "fixed_pose_publish_rate": 20.0,
+  "optitrack_to_robot": {
+    "rotation": [
+      [0.0, 0.0, 1.0],
+      [1.0, 0.0, 0.0],
+      [0.0, 1.0, 0.0]
+    ],
+    "translation": [0.0, 0.0, 0.0]
+  },
+  "table": {
+    "top_z": 0.10937,
+    "size": [0.8, 0.8, 0.05]
+  },
+  "bar": {
+    "locked_pose_robot": [
+      0.58766645,
+      -0.05583778,
+      0.12537,
+      0.0,
+      0.0,
+      -0.60870985,
+      0.79339292
+    ],
+    "axis_local": [1.0, 0.0, 0.0],
+    "lateral_centerline": {"type": "straight"},
+    "outline_u": [-0.15, 0.15],
+    "outline_v": [-0.03, 0.03],
+    "height": 0.032
+  },
+  "obstacles": [
+    {
+      "name": "sceneA_obstacle",
+      "locked_pose_robot": [0.6482, 0.1373, 0.13437, 0.0, 0.0, 0.0, 1.0],
+      "radius": 0.025
+    },
+    {
+      "name": "sceneB_obstacle",
+      "locked_pose_robot": [0.585671, 0.208104, 0.13437, 0.0, 0.0, 0.0, 1.0],
+      "radius": 0.025
+    }
+  ],
+  "planning_obstacle": {
+    "type": "circle",
+    "obstacle": "sceneB_obstacle"
+  },
+  "feature_runtime": {
+    "sample_hz": 20.0,
+    "tool_axis_local": [0.0, 0.0, 1.0]
+  },
+  "initial_ik_seed": [
+    0.18990058973306506,
+    1.1311851165268023,
+    -0.765396611847943,
+    -1.354349720161883,
+    0.8898878534039004,
+    0.9932046232699666,
+    2.201225998613089
+  ]
+}

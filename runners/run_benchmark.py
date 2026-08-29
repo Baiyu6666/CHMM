@@ -370,6 +370,7 @@ def run_benchmark(
     dataset_seed: int | None = None,
     config_root: str | Path = "configs",
     outdir: str | Path = "outputs/benchmark",
+    run_output_root: str | Path = "outputs",
     dataset_overrides: dict[str, dict[str, Any]] | None = None,
     method_overrides: dict[str, dict[str, Any]] | None = None,
     refresh_demo_cache: bool = False,
@@ -382,6 +383,10 @@ def run_benchmark(
     outdir = Path(outdir)
     if not outdir.is_absolute():
         outdir = PROJECT_ROOT / outdir
+
+    run_output_root = Path(run_output_root)
+    if not run_output_root.is_absolute():
+        run_output_root = PROJECT_ROOT / run_output_root
 
     dataset_overrides = dataset_overrides or {}
     method_overrides = method_overrides or {}
@@ -467,7 +472,7 @@ def run_benchmark(
                     dataset_name=dataset_name,
                     dataset_seed=actual_dataset_seed,
                     method_seed=default_method_seed(method_name, run_method_cfg),
-                    output_root=PROJECT_ROOT / "outputs",
+                    output_root=run_output_root,
                 )
                 _clear_png_files(run_dir)
                 run_method_cfg = apply_run_plot_dirs(
@@ -548,6 +553,11 @@ def main():
     parser.add_argument("--seeds", default=None)
     parser.add_argument("--config-root", default="configs")
     parser.add_argument("--outdir", default="outputs/benchmark")
+    parser.add_argument(
+        "--run-output-root",
+        default="outputs",
+        help="Root directory for per-run models and plots (default: outputs).",
+    )
     parser.add_argument("--n-demos", "--n_demos", dest="n_demos", type=int, default=None)
     parser.add_argument("--plot-every", "--plot_every", dest="plot_every", type=int, default=None)
     parser.add_argument("--max-iter", "--max_iter", dest="max_iter", type=int, default=None)
@@ -616,6 +626,7 @@ def main():
         dataset_seed=args.dataset_seed,
         config_root=args.config_root,
         outdir=args.outdir,
+        run_output_root=args.run_output_root,
         dataset_overrides=dataset_overrides,
         method_overrides=method_overrides,
         refresh_demo_cache=bool(args.refresh_demo_cache),

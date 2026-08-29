@@ -133,6 +133,11 @@ def main() -> None:
         help="offline TCP transit floor in metres",
     )
     parser.add_argument(
+        "--home-obstacle-clearance",
+        type=float,
+        help="offline-only override for the Home obstacle clearance in metres",
+    )
+    parser.add_argument(
         "--start-joints",
         nargs=7,
         type=float,
@@ -180,6 +185,66 @@ def main() -> None:
         quaternion = [pose[key] for key in ("qx", "qy", "qz", "qw")]
         positions = np.repeat(np.asarray(position, dtype=float)[None, :], 2, axis=0)
         quaternions = [quaternion, quaternion]
+        task_definition = json.loads(
+            (
+                ROS_SOURCE
+                / "stage_constraint_planner"
+                / "config"
+                / "bar_clean_true.json"
+            ).read_text(encoding="utf-8")
+        )
+        scene_definition = json.loads(
+            (
+                ROS_SOURCE
+                / "stage_iiwa_sim"
+                / "config"
+                / "demo_scene.json"
+            ).read_text(encoding="utf-8")
+        )
+        clearance = next(
+            float(term["value"])
+            for term in task_definition["constraint_terms"]
+            if term["feature_name"] == "obstacle_clearance"
+            and int(term["stage"]) == 0
+            and term["semantics"] == "lower_bound"
+        )
+        if arguments.home_obstacle_clearance is not None:
+            clearance = float(arguments.home_obstacle_clearance)
+            if not math.isfinite(clearance) or clearance < 0.0:
+                raise ValueError("Home obstacle clearance override must be non-negative")
+        scene_obstacles = {
+            str(obstacle["name"]): obstacle
+            for obstacle in scene_definition["obstacles"]
+        }
+        planning_obstacle = scene_definition["planning_obstacle"]
+        if planning_obstacle["type"] == "circle":
+            geometry = scene_obstacles[str(planning_obstacle["obstacle"])]
+            center = np.asarray(geometry["locked_pose_robot"][:3], dtype=float)
+            radius = float(geometry["radius"])
+            approach_geometry = {"type": "circle", "center": center.tolist()}
+        elif planning_obstacle["type"] == "capsule":
+            endpoint_geometry = [
+                scene_obstacles[str(name)]
+                for name in planning_obstacle["endpoint_obstacles"]
+            ]
+            endpoints = np.asarray(
+                [value["locked_pose_robot"][:3] for value in endpoint_geometry],
+                dtype=float,
+            )
+            radius = float(endpoint_geometry[0]["radius"])
+            approach_geometry = {
+                "type": "capsule",
+                "endpoints": endpoints.tolist(),
+            }
+        else:
+            raise ValueError("Scene planning_obstacle must be circle or capsule")
+        approach_obstacle = {
+            **approach_geometry,
+            "table_normal": task_definition["table_normal"],
+            "radius": radius,
+            "clearance": clearance,
+            "margin": 0.0,
+        }
     else:
         plan_row = topic_csv("/stage_cons/plan")
         positions = np.asarray(
@@ -304,7 +369,11 @@ def main() -> None:
             + math.sin(angle) * np.cross(axes, x_axes)
         )
     if arguments.home:
-        result = compiler.compile_joint_home(start_q, home_joints)
+        result = compiler.compile_joint_home(
+            start_q,
+            home_joints,
+            approach_obstacle=approach_obstacle,
+        )
     else:
         result = compiler.compile(
             positions,
@@ -334,6 +403,9 @@ def main() -> None:
             {
                 "mode": "home" if arguments.home else "planner_path",
                 "start_joints_rad": start_q.tolist(),
+                "prepared_task_start_joints_rad": (
+                    result["approach"]["position"][-1].tolist()
+                ),
                 "metrics": result["metrics"],
                 "selected_spin_from_planned_tool_x": selected_spin,
             },

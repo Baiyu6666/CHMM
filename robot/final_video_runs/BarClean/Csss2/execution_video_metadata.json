@@ -1,0 +1,14 @@
+{
+  "codec": "libx264-crf15-veryfast",
+  "completed": true,
+  "device": "/dev/video10",
+  "fps": 30.0,
+  "height": 1080,
+  "motion_end_monotonic_s": 3916777.038701808,
+  "motion_end_unix_ns": 1788017648816664282,
+  "motion_start_monotonic_s": 3916758.73667862,
+  "motion_start_unix_ns": 1788017630514641094,
+  "schema_version": 1,
+  "video_file": "execution.mp4",
+  "width": 1920
+}

@@ -1,0 +1,67 @@
+{
+  "accepted_at_utc": "2026-08-29T09:10:39Z",
+  "files": {
+    "execution.mp4": {
+      "bytes": 60248455
+    },
+    "execution_video_ffmpeg.log": {
+      "bytes": 92
+    },
+    "execution_video_metadata.json": {
+      "bytes": 383
+    },
+    "metadata.json": {
+      "bytes": 971
+    },
+    "real_task.bag": {
+      "bytes": 2416353
+    },
+    "visualization.json": {
+      "bytes": 149653
+    }
+  },
+  "final_run_name": "Asss4",
+  "outcomes": {
+    "bar_clean": "success",
+    "obs_avoid": "success",
+    "table_clean": "success"
+  },
+  "schema_version": 2,
+  "source_run_directory": "/data/demos/BarClean/20260829T091005_142575Z_real_task",
+  "status": "accepted_final",
+  "task": {
+    "constraint_source": "/learned_constraints/map_balanced_pooled/BarClean/method_seed_000/learned_constraints.json",
+    "constraint_source_id": "learned:map_balanced_pooled/BarClean/method_seed_000/learned_constraints.json",
+    "constraint_source_label": "map_balanced_pooled \u00b7 seed 0",
+    "data_saved": true,
+    "final_result_directory": null,
+    "goal": {
+      "qw": -0.08583165117743129,
+      "qx": 0.01513443590133869,
+      "qy": 0.981060262190407,
+      "qz": 0.17298739392508955,
+      "x": 0.5761,
+      "y": -0.0054,
+      "z": 0.33
+    },
+    "message": "Task and video completed; review the playback, then accept or reject this run as a final result",
+    "mode": "real",
+    "phase": "complete",
+    "review_pending": true,
+    "review_status": "pending",
+    "run_directory": "/data/demos/BarClean/20260829T091005_142575Z_real_task",
+    "start": {
+      "qw": 0.011289528185853223,
+      "qx": -0.258572706721188,
+      "qy": -0.9650064789340802,
+      "qz": 0.04213309278308513,
+      "x": 0.7419,
+      "y": 0.2528,
+      "z": 0.31
+    },
+    "task_id": "BarClean",
+    "video": true,
+    "video_available": true
+  },
+  "task_id": "BarClean"
+}

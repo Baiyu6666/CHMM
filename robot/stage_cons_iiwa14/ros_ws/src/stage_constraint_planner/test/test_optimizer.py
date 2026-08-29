@@ -335,7 +335,11 @@ def test_endpoint_keeps_task_xy_while_normal_coordinate_satisfies_constraint():
     start = np.asarray([0.6183, -0.1613, 0.26584, 0.0, 1.0, 0.0, 0.0])
     goal = np.asarray([0.45, -0.44, 0.26584, 0.0, 1.0, 0.0, 0.0])
     bar = np.asarray([0.60, -0.20, 0.24, 0.0, 0.0, 0.0, 1.0])
-    obstacle = np.asarray([0.60, 0.20, 0.24, 0.0, 0.0, 0.0, 1.0])
+    obstacle = {
+        "type": "capsule",
+        "endpoints": [[0.55, 0.20, 0.24], [0.65, 0.20, 0.24]],
+        "radius": config["obstacle_radius"],
+    }
 
     planned = optimizer.plan(start, goal, bar, obstacle, seed=11)
 
@@ -343,7 +347,7 @@ def test_endpoint_keeps_task_xy_while_normal_coordinate_satisfies_constraint():
     achieved = planned["stage_endpoints_world"][3]
     task_frame = build_bar_table_task_frame(
         bar,
-        obstacle,
+        np.asarray([0.60, 0.20, 0.24, 0.0, 0.0, 0.0, 1.0]),
         config["table_surface_point"],
         config["table_normal"],
         config.get("bar_axis_local", [1.0, 0.0, 0.0]),

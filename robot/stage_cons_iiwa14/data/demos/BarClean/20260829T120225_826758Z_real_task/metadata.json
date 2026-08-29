@@ -1,0 +1,29 @@
+{
+  "bag_file": "real_task.bag",
+  "constraint_source": "/learned_constraints/map_balanced_pooled/BarClean/method_seed_000/learned_constraints.json",
+  "mode": "real",
+  "orientation_control": "position_plus_full_orientation",
+  "robot": "iiwa14",
+  "schema_version": 1,
+  "started_at_utc": "2026-08-29T12:02:25.826758+00:00",
+  "task_id": "BarClean",
+  "tip_link": "iiwa14_link_7",
+  "topics": [
+    "/iiwa14/joint_states",
+    "/iiwa14/additional_outputs",
+    "/iiwa14/PositionTrajectoryController/state",
+    "/iiwa14/real_executor/status",
+    "/iiwa14/commanding_status",
+    "/iiwa14/fri_command_mode",
+    "/iiwa14/fri_diagnostics",
+    "/stage_cons/plan",
+    "/tf",
+    "/tf_static",
+    "/stage_cons/planner/task",
+    "/stage_cons/plan_stage_boundaries",
+    "/stage_cons/plan_orientation_constraints",
+    "/stage_cons/planner/tracking_status",
+    "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
+    "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14"
+  ]
+}

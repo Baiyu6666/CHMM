@@ -6,6 +6,26 @@ import os
 ACTIVE_MODES = frozenset({"target_value", "lower_bound", "upper_bound"})
 
 
+def stage_zero_approach_clearance(config):
+    """Use the selected task Stage 1 clearance for the pre-task Stage 0 approach."""
+    matches = [
+        term
+        for term in config["constraint_terms"]
+        if int(term["stage"]) == 0
+        and str(term["feature_name"]) == "obstacle_clearance"
+        and str(term["semantics"]) == "lower_bound"
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Selected planning profile needs exactly one Stage 1 "
+            "obstacle-clearance lower bound for the Stage 0 approach"
+        )
+    value = float(matches[0]["value"])
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError("Stage 1 obstacle clearance must be finite and nonnegative")
+    return value
+
+
 def _task_fixed_term_parameters(true_terms, stage, feature_name):
     exact = [
         term

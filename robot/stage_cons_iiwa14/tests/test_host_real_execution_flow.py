@@ -61,7 +61,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             )
         )
 
-        self.assertAlmostEqual(true_source["stage1_obstacle_clearance_m"], 0.095)
+        self.assertAlmostEqual(true_source["stage1_obstacle_clearance_m"], 0.082)
         self.assertAlmostEqual(
             learned_source["stage1_obstacle_clearance_m"],
             0.06422238533038627,
@@ -90,7 +90,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         nodes = {
             "/stage_demo_gui",
             "/fixed_scene_bar_publisher",
-            "/fixed_scene_obstacle_publisher",
+            "/fixed_scene_obstacle_a_publisher",
+            "/fixed_scene_obstacle_b_publisher",
         }
         events = []
         self.subject._ros_nodes = lambda: list(nodes)
@@ -307,6 +308,9 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject._update_plan_visualization = lambda _payload: None
         self.subject._wait_for_fri_position = lambda: True
         self.subject._update_real_visualization = lambda: None
+        self.subject._sync_camera_preview = (
+            lambda enabled: events.append(("preview", enabled))
+        )
 
         def real_ros(*arguments, timeout=10.0):
             del timeout
@@ -338,6 +342,12 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             ),
         )
         self.assertIn(("video_stop", True), events)
+        self.assertLess(
+            events.index(("preview", False)), events.index(start_event)
+        )
+        self.assertLess(
+            events.index(("video_stop", True)), events.index(("preview", True))
+        )
         self.assertTrue(self.subject._task_state["video_available"])
         self.assertTrue(self.subject._task_state["review_pending"])
         self.assertEqual(self.subject._task_state["review_status"], "pending")
@@ -371,13 +381,25 @@ class HostRealExecutionFlowTest(unittest.TestCase):
 
     def test_accept_video_review_creates_self_contained_final_run(self):
         project_root = Path(self._temporary_directory.name)
+        final_root = project_root / "final_video_runs"
         source = self._prepare_video_review_run(project_root)
         visualization = {"trace": [[0.51, -0.12], [0.63, -0.31]]}
         self.subject.task_visualization = lambda: visualization
-        final = project_root / "data/final_video_runs/BarClean/run_01"
+        final = final_root / "BarClean/run_01"
 
-        with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
-            self.subject.review_task_video({"decision": "accept"})
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root), mock.patch.object(
+            self.module, "FINAL_VIDEO_RUN_ROOT", final_root
+        ):
+            self.subject.review_task_video(
+                {
+                    "decision": "accept",
+                    "outcomes": {
+                        "obs_avoid": "success",
+                        "bar_clean": "success",
+                        "table_clean": "success",
+                    },
+                }
+            )
             self.subject._job.join(timeout=3.0)
             self.assertEqual(self.subject.task_video_path(), final / "execution.mp4")
 
@@ -400,6 +422,16 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         )
         manifest = self.module.json.loads((final / "result.json").read_text())
         self.assertEqual(manifest["status"], "accepted_final")
+        self.assertEqual(manifest["schema_version"], 2)
+        self.assertEqual(manifest["final_run_name"], "run_01")
+        self.assertEqual(
+            manifest["outcomes"],
+            {
+                "obs_avoid": "success",
+                "bar_clean": "success",
+                "table_clean": "success",
+            },
+        )
         self.assertEqual(
             manifest["source_run_directory"], "/data/demos/BarClean/run_01"
         )
@@ -410,30 +442,136 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             self.subject._task_state["final_result_directory"], str(final)
         )
 
-    def test_reject_video_review_deletes_video_but_keeps_state_data(self):
+    def test_accept_video_review_uses_custom_final_run_name(self):
         project_root = Path(self._temporary_directory.name)
+        final_root = project_root / "final_video_runs"
         source = self._prepare_video_review_run(project_root)
+        self.subject.task_visualization = lambda: {"trace": []}
+        final = final_root / "BarClean/selected clean run"
+
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root), mock.patch.object(
+            self.module, "FINAL_VIDEO_RUN_ROOT", final_root
+        ):
+            self.subject.review_task_video(
+                {
+                    "decision": "accept",
+                    "final_name": "selected clean run",
+                    "outcomes": {
+                        "obs_avoid": "success",
+                        "bar_clean": "fail",
+                        "table_clean": "success",
+                    },
+                }
+            )
+            self.subject._job.join(timeout=3.0)
+
+        self.assertTrue(self.subject._job_ok)
+        self.assertFalse(source.exists())
+        self.assertTrue((final / "execution.mp4").is_file())
+        manifest = self.module.json.loads((final / "result.json").read_text())
+        self.assertEqual(manifest["final_run_name"], "selected clean run")
+        self.assertEqual(manifest["outcomes"]["bar_clean"], "fail")
+        self.assertEqual(
+            self.subject._task_state["final_result_directory"], str(final)
+        )
+
+    def test_accept_video_review_rejects_unsafe_custom_names(self):
+        project_root = Path(self._temporary_directory.name)
+        self._prepare_video_review_run(project_root)
 
         with mock.patch.object(self.module, "PROJECT_ROOT", project_root):
+            for final_name in ("", ".hidden", "../escape", "nested/name", "nested\\name"):
+                with self.subTest(final_name=final_name):
+                    with self.assertRaises(ValueError):
+                        self.subject.review_task_video(
+                            {"decision": "accept", "final_name": final_name}
+                        )
+
+        self.assertIsNone(self.subject._job)
+
+    def test_final_run_outcomes_require_three_binary_results(self):
+        self.assertEqual(
+            self.subject._validated_task_outcomes(
+                {
+                    "obs_avoid": "SUCCESS",
+                    "bar_clean": "fail",
+                    "table_clean": "success",
+                }
+            ),
+            {
+                "obs_avoid": "success",
+                "bar_clean": "fail",
+                "table_clean": "success",
+            },
+        )
+        invalid_values = (
+            None,
+            {"obs_avoid": "success", "bar_clean": "success"},
+            {
+                "obs_avoid": "success",
+                "bar_clean": "success",
+                "table_clean": "success",
+                "extra": "success",
+            },
+            {
+                "obs_avoid": "success",
+                "bar_clean": "unknown",
+                "table_clean": "success",
+            },
+        )
+        for value in invalid_values:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.subject._validated_task_outcomes(value)
+
+    def test_reject_video_review_deletes_video_but_keeps_state_data(self):
+        project_root = Path(self._temporary_directory.name)
+        final_root = project_root / "final_video_runs"
+        source = self._prepare_video_review_run(project_root)
+
+        with mock.patch.object(self.module, "PROJECT_ROOT", project_root), mock.patch.object(
+            self.module, "FINAL_VIDEO_RUN_ROOT", final_root
+        ):
             self.subject.review_task_video({"decision": "reject"})
 
         self.assertTrue(source.is_dir())
         self.assertFalse((source / "execution.mp4").exists())
         self.assertEqual((source / "real_task.bag").read_bytes(), b"recorded-ros-state")
         self.assertTrue((source / "metadata.json").is_file())
-        self.assertFalse((project_root / "data/final_video_runs").exists())
+        self.assertFalse(final_root.exists())
         self.assertFalse(self.subject._task_state["review_pending"])
         self.assertEqual(self.subject._task_state["review_status"], "rejected")
         self.assertFalse(self.subject._task_state["video_available"])
 
     def test_pending_video_review_blocks_the_next_execution(self):
-        self.subject._task_state["review_pending"] = True
+        self.subject._task_state.update(
+            {
+                "review_pending": True,
+                "video": True,
+                "video_available": True,
+            }
+        )
 
         with self.assertRaisesRegex(RuntimeError, "Review the completed task video"):
             self.subject.execute_task({"task_id": "BarClean", "mode": "real"})
 
+    def test_stale_review_flag_without_video_does_not_block_execution(self):
+        self.subject._task_state.update(
+            {
+                "review_pending": True,
+                "video": False,
+                "video_available": False,
+            }
+        )
+
+        self.assertFalse(
+            self.subject._video_review_pending(self.subject._task_state)
+        )
+
     def test_real_execute_synchronizes_preview_with_video_checkbox(self):
         events = []
+        self.subject._sync_camera_source = (
+            lambda enabled: events.append(("source", enabled))
+        )
         self.subject._sync_camera_preview = (
             lambda enabled: events.append(("preview", enabled))
         )
@@ -457,11 +595,44 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.assertEqual(
             events,
             [
+                ("source", True),
                 ("preview", True),
                 ("execute", True),
                 ("preview", False),
+                ("source", False),
                 ("execute", False),
             ],
+        )
+
+    def test_camera_source_reuses_existing_v4l2_bridge(self):
+        self.subject._camera_source_pids = lambda: [12345]
+        self.subject._wait_for_camera_source = mock.Mock()
+
+        with mock.patch.object(self.module.subprocess, "Popen") as popen:
+            self.subject._sync_camera_source(True)
+
+        popen.assert_not_called()
+        self.subject._wait_for_camera_source.assert_called_once()
+
+    def test_camera_source_starts_headless_and_waits_for_frames(self):
+        process = types.SimpleNamespace(pid=23456, poll=lambda: None)
+        self.subject._camera_source_pids = lambda: []
+        self.subject._wait_for_camera_source = mock.Mock()
+
+        with mock.patch.object(
+            self.module, "CAMERA_SOURCE_LAUNCHER", Path("/bin/true")
+        ), mock.patch.object(
+            self.module.subprocess, "Popen", return_value=process
+        ) as popen:
+            self.subject._sync_camera_source(True)
+
+        self.assertEqual(
+            popen.call_args.args[0],
+            ["/bin/true", "-e", "--no-window"],
+        )
+        self.subject._wait_for_camera_source.assert_called_once_with(
+            process,
+            self.module.PROJECT_ROOT / "data" / "camera_source_scrcpy.log",
         )
 
     def test_camera_preview_reuses_existing_window(self):
@@ -487,6 +658,31 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             self.assertEqual(
                 self.module.TaskVideoRecorder._completion_drain_delay(metadata), 0.0
             )
+
+    def test_video_recorder_uses_crf15_and_records_matching_codec_metadata(self):
+        directory = Path(self._temporary_directory.name) / "quality"
+        process = mock.Mock()
+        process.poll.return_value = None
+        recorder = self.module.TaskVideoRecorder()
+
+        with mock.patch.object(
+            self.module.subprocess, "Popen", return_value=process
+        ) as popen, mock.patch.object(
+            self.module.time, "time_ns", return_value=1_000_000_000
+        ), mock.patch.object(
+            self.module.time, "monotonic_ns", return_value=500_000_000
+        ):
+            recorder.start(directory, 10_000_000_000, 11_000_000_000)
+
+        command = popen.call_args.args[0]
+        self.assertEqual(command[command.index("-crf") + 1], "15")
+        metadata = self.module.json.loads(
+            (directory / "execution_video_metadata.json").read_text()
+        )
+        self.assertEqual(metadata["codec"], "libx264-crf15-veryfast")
+        recorder._process = None
+        recorder._log_stream.close()
+        recorder._log_stream = None
 
     def test_incomplete_video_is_deleted_instead_of_saved_as_partial(self):
         directory = Path(self._temporary_directory.name)
@@ -557,7 +753,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             "/iiwa14/real_executor",
             "/stage_constraint_planner",
             "/fixed_scene_bar_publisher",
-            "/fixed_scene_obstacle_publisher",
+            "/fixed_scene_obstacle_a_publisher",
+            "/fixed_scene_obstacle_b_publisher",
         ]
         self.subject._start_optitrack_process = lambda: self.fail(
             "fast path must not probe OptiTrack topics"
@@ -578,7 +775,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             "/iiwa14/real_executor",
             "/stage_constraint_planner",
             "/fixed_scene_bar_publisher",
-            "/fixed_scene_obstacle_publisher",
+            "/fixed_scene_obstacle_a_publisher",
+            "/fixed_scene_obstacle_b_publisher",
         ]
         self.subject._real_station_interfaces_ready = (
             lambda: checks.append("interfaces") or True
@@ -945,7 +1143,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         child = types.SimpleNamespace(poll=lambda: None)
         self.subject._container_running = lambda: True
         self.subject._optitrack_settings = lambda: (
-            "10.0.0.8", "robot_base", "tracked_bar", "tracked_ball"
+            "10.0.0.8", "robot_base", "tracked_bar", "tracked_ball", "tracked_ball_b"
         )
         self.subject._scene_pose_source = lambda: "optitrack"
         self.subject._ros_nodes = lambda: []
@@ -953,8 +1151,8 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             calls.append((name, command)) or child
         )
         self.subject._wait_for_optitrack_ready = (
-            lambda current_child, base, obj, obstacle: calls.append(
-                (current_child, base, obj, obstacle)
+            lambda current_child, base, obj, obstacle_a, obstacle_b: calls.append(
+                (current_child, base, obj, obstacle_a, obstacle_b)
             )
         )
 
@@ -965,23 +1163,28 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.assertIn("server:=10.0.0.8", command)
         self.assertIn("base_name:=robot_base", command)
         self.assertIn("object_name:=tracked_bar", command)
-        self.assertIn("obstacle_name:=tracked_ball", command)
+        self.assertIn("obstacle_a_name:=tracked_ball", command)
+        self.assertIn("obstacle_b_name:=tracked_ball_b", command)
         self.assertIn("use_fixed_scene:=false", command)
-        self.assertEqual(calls[1], (child, "robot_base", "tracked_bar", "tracked_ball"))
+        self.assertEqual(
+            calls[1],
+            (child, "robot_base", "tracked_bar", "tracked_ball", "tracked_ball_b"),
+        )
 
     def test_fixed_scene_checks_only_the_two_published_poses(self):
         checked = []
         self.subject._scene_pose_source = lambda: "fixed"
         self.subject._ros_nodes = lambda: [
             "/fixed_scene_bar_publisher",
-            "/fixed_scene_obstacle_publisher",
+            "/fixed_scene_obstacle_a_publisher",
+            "/fixed_scene_obstacle_b_publisher",
         ]
         self.subject._topic_has_fresh_message = (
             lambda topic: checked.append(topic) or True
         )
 
         self.subject._wait_for_optitrack_ready(
-            None, "iiwa14", "baiyu_bar", "baiyu_obs_bar", timeout=0.1
+            None, "iiwa14", "baiyu_bar", "baiyu_obs_bar", "baiyu_obs_bar_b", timeout=0.1
         )
 
         self.assertEqual(
@@ -989,6 +1192,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             [
                 "/vrpn_client_node/baiyu_bar/pose_from_iiwa14",
                 "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
+                "/vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14",
             ],
         )
 
@@ -1009,7 +1213,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 RuntimeError, "base rigid body 'iiwa14'.*iiwa14/pose"
             ):
                 self.subject._wait_for_optitrack_ready(
-                    None, "iiwa14", "baiyu_bar", "baiyu_obs_bar", timeout=1.0
+                    None, "iiwa14", "baiyu_bar", "baiyu_obs_bar", "baiyu_obs_bar_b", timeout=1.0
                 )
 
     def test_demo_station_reuses_standalone_tracking_chain(self):
@@ -1019,10 +1223,11 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject._scene_pose_source = lambda: "fixed"
         self.subject._ros_nodes = lambda: [
             "/fixed_scene_bar_publisher",
-            "/fixed_scene_obstacle_publisher",
+            "/fixed_scene_obstacle_a_publisher",
+            "/fixed_scene_obstacle_b_publisher",
         ]
         self.subject._optitrack_settings = lambda: (
-            "128.178.145.104", "iiwa14", "baiyu_bar", "baiyu_obs_bar"
+            "128.178.145.104", "iiwa14", "baiyu_bar", "baiyu_obs_bar", "baiyu_obs_bar_b"
         )
         self.subject._spawn = lambda name, command: (
             spawned.append((name, command)) or child
@@ -1106,10 +1311,10 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                         "axis": [-0.084, -1.982],
                         "live": True,
                     },
-                    "obstacle": {
-                        "center": [0.6271, 0.2706],
-                        "live": True,
-                    },
+                    "obstacles": [
+                        {"center": [0.6271, 0.2706], "live": True},
+                        {"center": [0.58, 0.21], "live": True},
+                    ],
                 },
             }
         )
@@ -1122,16 +1327,20 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             sum(value * value for value in snapshot["bar"]["axis"]), 1.0
         )
         self.assertTrue(snapshot["bar"]["live"])
-        self.assertEqual(snapshot["obstacle"]["center"], [0.6271, 0.2706])
-        self.assertTrue(snapshot["obstacle"]["live"])
+        self.assertEqual(snapshot["obstacles"][0]["center"], [0.6271, 0.2706])
+        self.assertTrue(snapshot["obstacles"][0]["live"])
 
     def test_direct_optitrack_visualization_uses_real_station_topics(self):
+        self.subject._scene_pose_source = lambda: "optitrack"
         topic_values = {
             "/vrpn_client_node/baiyu_bar/pose_from_iiwa14": (
                 "12,1787589991727310453,base,-0.034,0.060,0.616,0.0,1.0,0.0,0.0"
             ),
             "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14": (
                 "13,1787589991727310453,base,0.219,0.022,0.578,0.0,0.0,0.0,1.0"
+            ),
+            "/vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14": (
+                "14,1787589991727310453,base,0.208,0.030,0.586,0.0,0.0,0.0,1.0"
             ),
         }
         self.subject._topic_value = mock.Mock(
@@ -1148,11 +1357,11 @@ class HostRealExecutionFlowTest(unittest.TestCase):
             visualization["scene_geometry"]["bar"]["axis"], [0.0, -1.0]
         )
         self.assertEqual(
-            visualization["scene_geometry"]["obstacle"]["center"],
+            visualization["scene_geometry"]["obstacles"][0]["center"],
             [0.578, 0.219],
         )
         self.assertTrue(visualization["scene_geometry"]["bar"]["live"])
-        self.assertTrue(visualization["scene_geometry"]["obstacle"]["live"])
+        self.assertTrue(visualization["scene_geometry"]["obstacles"][0]["live"])
 
     def test_submit_sim_task_forwards_frozen_scene_snapshot(self):
         captured = {}
@@ -1163,7 +1372,10 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "axis": [-0.04, -0.999],
                 "live": True,
             },
-            "obstacle": {"center": [0.6271, 0.2706], "live": True},
+            "obstacles": [
+                {"center": [0.6271, 0.2706], "live": True},
+                {"center": [0.58, 0.21], "live": True},
+            ],
         }
 
         def sim_ros(*arguments, timeout=10.0):
@@ -1207,7 +1419,10 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "stage_transition_end_times": [1.0, 2.0, 3.0, 4.0],
                 "scene_geometry": {
                     "bar": {"pivot": [0.64, -0.16], "axis": [2.0, 0.0]},
-                    "obstacle": {"center": [0.67, 0.09]},
+                    "obstacles": [
+                        {"center": [0.67, 0.09]},
+                        {"center": [0.58, 0.21]},
+                    ],
                 },
             }
         )
@@ -1216,7 +1431,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
 
         self.assertEqual(visualization["source"], "fallback")
         self.assertFalse(visualization["scene_geometry"]["bar"]["live"])
-        self.assertFalse(visualization["scene_geometry"]["obstacle"]["live"])
+        self.assertFalse(visualization["scene_geometry"]["obstacles"][0]["live"])
 
     def test_control_status_unknown_returns_to_live_optitrack_scene(self):
         self.subject._task_state.update(
@@ -1228,7 +1443,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         )
         self.subject._task_scene_geometry = {
             "bar": {"pivot": [-4.2, 1.2], "axis": [1.0, 0.0]},
-            "obstacle": {"center": [0.63, 0.32]},
+            "obstacles": [{"center": [0.63, 0.32]}, {"center": [0.58, 0.21]}],
         }
         self.subject._task_scene_source = "planner_scene"
         self.subject._direct_optitrack_visualization = mock.Mock(
@@ -1236,7 +1451,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "current_ee": None,
                 "scene_geometry": {
                     "bar": {"pivot": [0.61, 0.03], "axis": [0.0, 1.0]},
-                    "obstacle": {"center": [0.63, 0.32]},
+                    "obstacles": [{"center": [0.63, 0.32]}, {"center": [0.58, 0.21]}],
                 },
                 "source": "optitrack",
             }
@@ -1246,7 +1461,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "current_ee": None,
                 "scene_geometry": {
                     "bar": {"pivot": [9.0, 9.0], "axis": [1.0, 0.0]},
-                    "obstacle": {"center": [9.0, 9.0]},
+                    "obstacles": [{"center": [9.0, 9.0]}, {"center": [8.0, 8.0]}],
                 },
                 "source": "optitrack",
             }
@@ -1265,7 +1480,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         )
         self.subject._task_scene_geometry = {
             "bar": {"pivot": [0.50, -0.20], "axis": [1.0, 0.0]},
-            "obstacle": {"center": [0.70, 0.10]},
+            "obstacles": [{"center": [0.70, 0.10]}, {"center": [0.58, 0.21]}],
         }
         self.subject._task_scene_source = "planner_scene"
         self.subject._direct_optitrack_visualization = mock.Mock(
@@ -1276,7 +1491,7 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "current_ee": None,
                 "scene_geometry": {
                     "bar": {"pivot": [9.0, 9.0], "axis": [0.0, 1.0]},
-                    "obstacle": {"center": [9.0, 9.0]},
+                    "obstacles": [{"center": [9.0, 9.0]}, {"center": [8.0, 8.0]}],
                 },
                 "source": "optitrack",
             }
@@ -1296,7 +1511,15 @@ class HostRealExecutionFlowTest(unittest.TestCase):
         self.subject._reset_task_visualization("BarClean")
         self.subject._task_scene_geometry = {
             "bar": {"pivot": [0.50, -0.20], "axis": [1.0, 0.0]},
-            "obstacle": {"center": [0.70, 0.10], "radius": 0.05},
+            "obstacles": [
+                {"center": [0.70, 0.10], "radius": 0.05},
+                {"center": [0.58, 0.21], "radius": 0.05},
+            ],
+            "obstacle": {
+                "type": "capsule",
+                "endpoints": [[0.70, 0.10], [0.58, 0.21]],
+                "radius": 0.05,
+            },
         }
         self.subject._task_scene_source = "planner_scene"
         actual_pose = {
@@ -1314,7 +1537,15 @@ class HostRealExecutionFlowTest(unittest.TestCase):
                 "current_ee": actual_pose,
                 "scene_geometry": {
                     "bar": {"pivot": [9.0, 9.0], "axis": [0.0, 1.0]},
-                    "obstacle": {"center": [9.0, 9.0], "radius": 0.05},
+                    "obstacles": [
+                        {"center": [9.0, 9.0], "radius": 0.05},
+                        {"center": [8.0, 8.0], "radius": 0.05},
+                    ],
+                    "obstacle": {
+                        "type": "capsule",
+                        "endpoints": [[9.0, 9.0], [8.0, 8.0]],
+                        "radius": 0.05,
+                    },
                 },
                 "source": "optitrack",
             }

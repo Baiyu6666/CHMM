@@ -81,15 +81,18 @@ class FixedPosePublisher:
         self._base_name = str(rospy.get_param("~base_name", "iiwa14"))
         self._object_name = str(rospy.get_param("~object_name", "baiyu_bar"))
         self._object_key = str(rospy.get_param("~object_key"))
+        self._object_index = int(rospy.get_param("~object_index", 0))
         self._output_frame = str(rospy.get_param("~output_frame", "base"))
         config_path = str(
             rospy.get_param("~scene_config", "/workcell_definition/demo_scene.json")
         )
         with open(config_path, "r", encoding="utf-8") as stream:
             scene = json.load(stream)
-        if self._object_key not in {"bar", "obstacle"}:
-            raise ValueError("object_key must be bar or obstacle")
+        if self._object_key not in {"bar", "obstacles"}:
+            raise ValueError("object_key must be bar or obstacles")
         object_config = scene[self._object_key]
+        if self._object_key == "obstacles":
+            object_config = object_config[self._object_index]
         pose_robot = [float(value) for value in object_config["locked_pose_robot"]]
         self._rate_hz = float(scene.get("fixed_pose_publish_rate", 20.0))
         if self._rate_hz <= 0.0:

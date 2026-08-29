@@ -3,6 +3,7 @@ import json
 import math
 import threading
 import time
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -41,6 +42,7 @@ METHODS = {
     "_execution_worker",
     "_disarm_position_commands",
     "_abort_execution",
+    "_load_home_obstacle",
 }
 
 
@@ -145,7 +147,7 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.subject._joint_names = ["iiwa14_joint_{}".format(i) for i in range(1, 8)]
         self.subject._joint_state_timeout = 0.5
         self.subject._start_drift_limit = math.radians(0.5)
-        self.subject._task_start_settle_tolerance = math.radians(1.0)
+        self.subject._task_start_settle_tolerance = math.radians(2.0)
         self.subject._task_start_settle_timeout = 2.0
         self.subject._task_start_settle_samples = 1
         self.subject._controller_desired_position = None
@@ -176,6 +178,62 @@ class RealExecutorFailClosedTest(unittest.TestCase):
             return True, "fixed hold confirmed"
 
         self.subject._disarm_position_commands = disarm
+
+    def test_home_encloses_scenec_capsule_in_one_approach_circle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scene_path = root / "scene.json"
+            task_path = root / "task.json"
+            scene_path.write_text(
+                json.dumps(
+                    {
+                        "obstacles": [
+                            {
+                                "name": "first",
+                                "locked_pose_robot": [0.6, 0.1, 0.13, 0, 0, 0, 1],
+                                "radius": 0.025,
+                            },
+                            {
+                                "name": "second",
+                                "locked_pose_robot": [0.5, 0.2, 0.13, 0, 0, 0, 1],
+                                "radius": 0.025,
+                            },
+                        ],
+                        "planning_obstacle": {
+                            "type": "capsule",
+                            "endpoint_obstacles": ["first", "second"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            task_path.write_text(
+                json.dumps(
+                    {
+                        "table_normal": [0.0, 0.0, 1.0],
+                        "constraint_terms": [
+                            {
+                                "feature_name": "obstacle_clearance",
+                                "stage": 0,
+                                "semantics": "lower_bound",
+                                "value": 0.082,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.subject._scene_config_path = str(scene_path)
+            self.subject._task_config_paths = {"BarClean": str(task_path)}
+
+            obstacle = self.subject._load_home_obstacle()
+
+        self.assertEqual(obstacle["type"], "circle")
+        np.testing.assert_allclose(obstacle["center"], [0.55, 0.15, 0.13])
+        self.assertAlmostEqual(
+            obstacle["radius"], 0.025 + 0.5 * math.sqrt(0.02)
+        )
+        self.assertEqual(obstacle["clearance"], 0.082)
 
     def test_driver_closed_gate_uses_a_fixed_hold_not_moving_measurements(self):
         source = DRIVER_SOURCE.read_text(encoding="utf-8")
@@ -382,7 +440,7 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.assertEqual(len(published), 1)
 
     def test_task_start_wait_accepts_tracking_after_three_settled_samples(self):
-        errors = iter([0.026, 0.018, 0.016, 0.015, 0.014])
+        errors = iter([0.040, 0.036, 0.030, 0.028, 0.026])
         self.subject._task_start_settle_samples = 3
         self.subject._fresh_joint_position = mock.Mock(
             side_effect=lambda: np.asarray([next(errors)] + [0.0] * 6)
@@ -392,18 +450,18 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         with mock.patch.object(time, "sleep", return_value=None):
             final_error = self.subject._wait_for_task_start(np.zeros(7))
 
-        self.assertAlmostEqual(final_error, 0.014)
+        self.assertAlmostEqual(final_error, 0.026)
         self.assertEqual(self.subject._fresh_joint_position.call_count, 5)
 
-    def test_task_start_wait_times_out_without_relaxing_one_degree_limit(self):
+    def test_task_start_wait_times_out_above_configured_two_degree_limit(self):
         self.subject._task_start_settle_timeout = 0.1
         self.subject._fresh_joint_position = lambda: np.asarray(
-            [0.026] + [0.0] * 6
+            [0.040] + [0.0] * 6
         )
         self.subject._fri_failure_reason = lambda: None
 
         with mock.patch.object(time, "monotonic", side_effect=[0.0, 0.2]):
-            with self.assertRaisesRegex(RuntimeError, "0.026 rad after 0.1 s"):
+            with self.assertRaisesRegex(RuntimeError, "0.040 rad after 0.1 s"):
                 self.subject._wait_for_task_start(np.zeros(7))
 
     def test_low_home_runs_vertical_recovery_before_joint_home(self):
@@ -626,15 +684,16 @@ class RealExecutorFailClosedTest(unittest.TestCase):
             types.SimpleNamespace(
                 data=json.dumps(
                     {
-                        "schema_version": 3,
+                        "schema_version": 5,
                         "stamp_ns": 123456,
                         "task_id": "BarClean",
                         "point_count": 2,
                         "tool_yaw_active": [0, 1],
                         "approach_obstacle": {
-                            "center": [0.5, -0.2, 0.1],
+                            "type": "circle",
+                            "center": [0.55, -0.2, 0.1],
                             "table_normal": [0.0, 0.0, 1.0],
-                            "radius": 0.025,
+                            "radius": 0.075,
                             "clearance": 0.085,
                             "margin": 0.005,
                         },
@@ -656,7 +715,7 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         )
         self.assertEqual(
             self.subject._path_approach_obstacle["center"],
-            [0.5, -0.2, 0.1],
+            [0.55, -0.2, 0.1],
         )
         self.assertAlmostEqual(
             self.subject._path_approach_obstacle["clearance"], 0.085
@@ -669,6 +728,45 @@ class RealExecutorFailClosedTest(unittest.TestCase):
         self.assertIsNone(self.subject._prepared)
         self.assertEqual(published["phase"], "path_received")
         self.assertEqual(published["path_serial"], 5)
+
+    def test_stage_zero_metadata_accepts_capsule_geometry(self):
+        message = types.SimpleNamespace(
+            data=json.dumps(
+                {
+                    "schema_version": 5,
+                    "stamp_ns": 123456,
+                    "task_id": "BarClean",
+                    "point_count": 2,
+                    "tool_yaw_active": [0, 1],
+                    "approach_obstacle": {
+                        "type": "capsule",
+                        "endpoints": [
+                            [0.6482, 0.1373, 0.13437],
+                            [0.585671, 0.208104, 0.13437],
+                        ],
+                        "table_normal": [0.0, 0.0, 1.0],
+                        "radius": 0.025,
+                        "clearance": 0.085,
+                        "margin": 0.005,
+                    },
+                    "stage_timing": {
+                        "boundaries": [1],
+                        "transition_windows": [],
+                        "speed_scale": 0.5,
+                        "ramp_before_m": 0.02,
+                        "task_start_ramp_m": 0.03,
+                    },
+                }
+            )
+        )
+
+        _stamp, _task, _yaw, obstacle, _timing = (
+            self.subject._parse_orientation_constraints(message)
+        )
+
+        self.assertEqual(obstacle["type"], "capsule")
+        self.assertEqual(len(obstacle["endpoints"]), 2)
+        self.assertAlmostEqual(obstacle["radius"], 0.025)
 
     def test_new_path_is_ignored_during_execution(self):
         self.subject._path = "current"

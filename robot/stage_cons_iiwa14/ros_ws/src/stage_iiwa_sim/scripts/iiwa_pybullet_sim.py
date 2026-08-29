@@ -30,6 +30,10 @@ from stage_cartesian_trajectory import (
     CartesianTrajectoryCompiler,
     TrajectoryValidationError,
 )
+from stage_constraint_planner.optimizer import (
+    bar_lateral_centerline_offset,
+    obstacle_clearance as evaluate_obstacle_clearance,
+)
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, SetBoolResponse, Trigger, TriggerResponse
 
@@ -175,11 +179,11 @@ class IiwaPyBulletSim:
             approach_clearance_z=float(
                 rospy.get_param(
                     "~approach_clearance_z",
-                    self.table_top_z + 2.0 * self.obstacle_radius + 0.08,
+                    self.table_top_z + 2.0 * max(self.obstacle_radii) + 0.08,
                 )
             ),
         )
-        self.table_id, self.bar_id, self.obstacle_id = self._create_workcell()
+        self.table_id, self.bar_id, self.obstacle_ids = self._create_workcell()
         self._move_to_scan_start()
 
         self.joint_publisher = rospy.Publisher("joint_states", JointState, queue_size=5)
@@ -187,12 +191,13 @@ class IiwaPyBulletSim:
         self.bar_publisher = rospy.Publisher(
             "/vrpn_client_node/baiyu_bar/pose_from_iiwa14", PoseStamped, queue_size=2, latch=True
         )
-        self.obstacle_publisher = rospy.Publisher(
-            "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
-            PoseStamped,
-            queue_size=2,
-            latch=True,
-        )
+        self.obstacle_publishers = [
+            rospy.Publisher(topic, PoseStamped, queue_size=2, latch=True)
+            for topic in (
+                "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14",
+                "/vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14",
+            )
+        ]
         self.start_publisher = rospy.Publisher(
             "/stage_cons/planner/start", PoseStamped, queue_size=1, latch=True
         )
@@ -245,8 +250,8 @@ class IiwaPyBulletSim:
             self.bar_reference_xy[0],
             self.bar_reference_xy[1],
             math.degrees(self.bar_yaw),
-            self.obstacle_center[0],
-            self.obstacle_center[1],
+            self.obstacle_centers[0][0],
+            self.obstacle_centers[0][1],
         )
 
     @staticmethod
@@ -311,20 +316,53 @@ class IiwaPyBulletSim:
 
         table = config["table"]
         bar = config["bar"]
-        obstacle = config["obstacle"]
+        obstacles = list(config["obstacles"])
+        planning_obstacle = dict(config["planning_obstacle"])
         bar_pose = np.asarray(bar["locked_pose_robot"], dtype=float)
-        obstacle_pose = np.asarray(obstacle["locked_pose_robot"], dtype=float)
-        if bar_pose.shape != (7,) or obstacle_pose.shape != (7,):
+        obstacle_poses = np.asarray(
+            [value["locked_pose_robot"] for value in obstacles], dtype=float
+        )
+        if bar_pose.shape != (7,) or obstacle_poses.ndim != 2 or obstacle_poses.shape[1] != 7:
             raise ValueError("Demo scene object poses must contain seven values")
+        if len(obstacle_poses) != 2:
+            raise ValueError("The current station expects exactly two scene obstacles")
+        obstacle_index_by_name = {
+            str(value["name"]): index for index, value in enumerate(obstacles)
+        }
+        self.planning_obstacle_type = str(planning_obstacle.get("type"))
+        if self.planning_obstacle_type == "circle":
+            obstacle_name = str(planning_obstacle.get("obstacle"))
+            if obstacle_name not in obstacle_index_by_name:
+                raise ValueError("Demo scene circle obstacle is not published")
+            self.planning_obstacle_indices = [
+                obstacle_index_by_name[obstacle_name]
+            ]
+        elif self.planning_obstacle_type == "capsule":
+            endpoint_names = [
+                str(value) for value in planning_obstacle["endpoint_obstacles"]
+            ]
+            if (
+                len(endpoint_names) != 2
+                or len(set(endpoint_names)) != 2
+                or any(name not in obstacle_index_by_name for name in endpoint_names)
+            ):
+                raise ValueError("Demo scene capsule endpoints are invalid")
+            self.planning_obstacle_indices = [
+                obstacle_index_by_name[name] for name in endpoint_names
+            ]
+        else:
+            raise ValueError("Demo scene planning_obstacle must be circle or capsule")
 
         bar_rotation = self._rotation_from_quaternion(bar_pose[3:])
-        obstacle_rotation = self._rotation_from_quaternion(obstacle_pose[3:])
         self.bar_reference_position = bar_pose[:3].tolist()
         self.bar_reference_orientation = self._quaternion_from_rotation(bar_rotation)
-        self.obstacle_reference_position = obstacle_pose[:3].tolist()
-        self.obstacle_reference_orientation = self._quaternion_from_rotation(
-            obstacle_rotation
-        )
+        self.obstacle_reference_positions = obstacle_poses[:, :3].tolist()
+        self.obstacle_reference_orientations = [
+            self._quaternion_from_rotation(
+                self._rotation_from_quaternion(obstacle_pose[3:])
+            )
+            for obstacle_pose in obstacle_poses
+        ]
         axis_local = np.asarray(bar["axis_local"], dtype=float)
         bar_axis = bar_rotation @ axis_local
         bar_axis[2] = 0.0
@@ -336,9 +374,9 @@ class IiwaPyBulletSim:
         self.scene_source = dict(config["source"])
         self.scene_snapshot_source = "fixed_demo"
         self.scene_bar_live = False
-        self.scene_obstacle_live = False
+        self.scene_obstacles_live = [False] * len(obstacles)
         self.scene_locked_bar_pose = bar_pose.tolist()
-        self.scene_locked_obstacle_pose = obstacle_pose.tolist()
+        self.scene_locked_obstacle_poses = obstacle_poses.tolist()
         self.table_top_z = float(table["top_z"])
         self.table_size = [float(value) for value in table["size"]]
         self.bar_reference_xy = bar_pose[:2].tolist()
@@ -346,6 +384,7 @@ class IiwaPyBulletSim:
         self.bar_lateral_xy = [-self.bar_axis_xy[1], self.bar_axis_xy[0]]
         self.bar_outline_u = [float(value) for value in bar["outline_u"]]
         self.bar_outline_v = [float(value) for value in bar["outline_v"]]
+        self.bar_lateral_centerline = dict(bar["lateral_centerline"])
         middle_u = 0.5 * sum(self.bar_outline_u)
         middle_v = 0.5 * sum(self.bar_outline_v)
         self.bar_center_xy = [
@@ -360,14 +399,29 @@ class IiwaPyBulletSim:
             self.bar_outline_v[1] - self.bar_outline_v[0],
             float(bar["height"]),
         ]
-        self.obstacle_radius = float(obstacle["radius"])
-        self.obstacle_center = [
-            float(obstacle_pose[0]),
-            float(obstacle_pose[1]),
-            self.table_top_z + self.obstacle_radius,
+        self.obstacle_radii = [float(value["radius"]) for value in obstacles]
+        planning_radii = np.asarray(
+            [self.obstacle_radii[index] for index in self.planning_obstacle_indices]
+        )
+        if (
+            np.any(planning_radii <= 0.0)
+            or not np.allclose(planning_radii, planning_radii[0], atol=1e-9)
+        ):
+            raise ValueError("Planning obstacle must have one positive radius")
+        self.planning_obstacle_radius = float(planning_radii[0])
+        self.obstacle_centers = [
+            [
+                float(obstacle_pose[0]),
+                float(obstacle_pose[1]),
+                self.table_top_z + obstacle_radius,
+            ]
+            for obstacle_pose, obstacle_radius in zip(
+                obstacle_poses, self.obstacle_radii
+            )
         ]
+        obstacle_midpoint = np.mean(np.asarray(self.obstacle_centers)[:, :2], axis=0)
         self.table_center_xy = [
-            0.5 * (self.bar_center_xy[index] + self.obstacle_center[index])
+            0.5 * (self.bar_center_xy[index] + obstacle_midpoint[index])
             for index in range(2)
         ]
         self.initial_ik_seed = [float(value) for value in config["initial_ik_seed"]]
@@ -537,21 +591,23 @@ class IiwaPyBulletSim:
         if not isinstance(payload, dict):
             raise ValueError("Simulation scene snapshot must be an object")
         bar = payload.get("bar")
-        obstacle = payload.get("obstacle")
-        if not isinstance(bar, dict) or not isinstance(obstacle, dict):
-            raise ValueError("Simulation scene snapshot is missing bar or obstacle")
+        obstacles = payload.get("obstacles")
+        if not isinstance(bar, dict) or not isinstance(obstacles, list) or not obstacles:
+            raise ValueError("Simulation scene snapshot is missing bar or obstacles")
         try:
             pivot = np.asarray(bar["pivot"], dtype=float)
             axis = np.asarray(bar["axis"], dtype=float)
-            center = np.asarray(obstacle["center"], dtype=float)
+            centers = np.asarray(
+                [obstacle["center"] for obstacle in obstacles], dtype=float
+            )
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("Simulation scene snapshot has invalid geometry") from error
         if (
             pivot.shape != (2,)
             or axis.shape != (2,)
-            or center.shape != (2,)
-            or not np.all(np.isfinite(np.concatenate((pivot, axis, center))))
-            or np.max(np.abs(np.concatenate((pivot, center)))) > 2.0
+            or centers.shape != (2, 2)
+            or not np.all(np.isfinite(np.concatenate((pivot, axis, centers.reshape(-1)))))
+            or np.max(np.abs(np.concatenate((pivot, centers.reshape(-1))))) > 2.0
         ):
             raise ValueError("Simulation scene snapshot has invalid geometry")
         axis_norm = float(np.linalg.norm(axis))
@@ -563,12 +619,18 @@ class IiwaPyBulletSim:
             "bar": {
                 "pivot": pivot.tolist(),
                 "axis": axis.tolist(),
+                "lateral_centerline": dict(
+                    bar.get("lateral_centerline", {"type": "straight"})
+                ),
                 "live": bar.get("live") is True,
             },
-            "obstacle": {
-                "center": center.tolist(),
-                "live": obstacle.get("live") is True,
-            },
+            "obstacles": [
+                {
+                    "center": center.tolist(),
+                    "live": obstacle.get("live") is True,
+                }
+                for center, obstacle in zip(centers, obstacles)
+            ],
         }
 
     def _apply_scene_snapshot(self, _request):
@@ -611,17 +673,20 @@ class IiwaPyBulletSim:
             self.bar_reference_position, self.bar_reference_orientation
         )
         bar_message.header.stamp = stamp
-        obstacle_message = self._pose_message(
-            self.obstacle_reference_position, self.obstacle_reference_orientation
-        )
-        obstacle_message.header.stamp = stamp
         self.bar_publisher.publish(bar_message)
-        self.obstacle_publisher.publish(obstacle_message)
+        for publisher, position, orientation in zip(
+            self.obstacle_publishers,
+            self.obstacle_reference_positions,
+            self.obstacle_reference_orientations,
+        ):
+            message = self._pose_message(position, orientation)
+            message.header.stamp = stamp
+            publisher.publish(message)
 
     def _apply_scene_snapshot_now(self, snapshot):
         pivot = list(snapshot["bar"]["pivot"])
         axis = list(snapshot["bar"]["axis"])
-        center = list(snapshot["obstacle"]["center"])
+        centers = [list(value["center"]) for value in snapshot["obstacles"]]
         self.bar_reference_xy = pivot
         self.bar_axis_xy = axis
         self.bar_lateral_xy = [-axis[1], axis[0]]
@@ -630,6 +695,7 @@ class IiwaPyBulletSim:
         self.bar_reference_orientation = list(
             bullet.getQuaternionFromEuler([0.0, 0.0, self.bar_yaw])
         )
+        self.bar_lateral_centerline = dict(snapshot["bar"]["lateral_centerline"])
         middle_u = 0.5 * sum(self.bar_outline_u)
         middle_v = 0.5 * sum(self.bar_outline_v)
         self.bar_center_xy = [
@@ -638,8 +704,9 @@ class IiwaPyBulletSim:
             + middle_v * self.bar_lateral_xy[index]
             for index in range(2)
         ]
-        self.obstacle_reference_position[:2] = center
-        self.obstacle_center[:2] = center
+        for index, center in enumerate(centers):
+            self.obstacle_reference_positions[index][:2] = center
+            self.obstacle_centers[index][:2] = center
         bar_body_position = [
             self.bar_center_xy[0],
             self.bar_center_xy[1],
@@ -654,18 +721,25 @@ class IiwaPyBulletSim:
             bar_body_orientation,
             physicsClientId=self.client,
         )
-        bullet.resetBasePositionAndOrientation(
-            self.obstacle_id,
-            self.obstacle_center,
-            self.obstacle_reference_orientation,
-            physicsClientId=self.client,
-        )
+        for obstacle_id, center, orientation in zip(
+            self.obstacle_ids,
+            self.obstacle_centers,
+            self.obstacle_reference_orientations,
+        ):
+            bullet.resetBasePositionAndOrientation(
+                obstacle_id,
+                center,
+                orientation,
+                physicsClientId=self.client,
+            )
         if self._goal_marker_id is not None:
             bullet.removeBody(self._goal_marker_id, physicsClientId=self.client)
             self._goal_marker_id = None
         self.scene_snapshot_source = str(snapshot["source"])
         self.scene_bar_live = bool(snapshot["bar"]["live"])
-        self.scene_obstacle_live = bool(snapshot["obstacle"]["live"])
+        self.scene_obstacles_live = [
+            bool(value["live"]) for value in snapshot["obstacles"]
+        ]
         self._pending_path = None
         self._awaiting_path_metadata = None
         self._prepared_plan = None
@@ -724,23 +798,27 @@ class IiwaPyBulletSim:
             self.bar_size, bar_position, [0.30, 0.32, 0.35, 1.0], bar_orientation
         )
 
-        collision = bullet.createCollisionShape(
-            bullet.GEOM_SPHERE, radius=self.obstacle_radius, physicsClientId=self.client
-        )
-        visual = bullet.createVisualShape(
-            bullet.GEOM_SPHERE,
-            radius=self.obstacle_radius,
-            rgbaColor=[0.80, 0.10, 0.10, 1.0],
-            physicsClientId=self.client,
-        )
-        obstacle_id = bullet.createMultiBody(
-            baseMass=0.0,
-            baseCollisionShapeIndex=collision,
-            baseVisualShapeIndex=visual,
-            basePosition=self.obstacle_center,
-            physicsClientId=self.client,
-        )
-        return table_id, bar_id, obstacle_id
+        obstacle_ids = []
+        for center, radius in zip(self.obstacle_centers, self.obstacle_radii):
+            collision = bullet.createCollisionShape(
+                bullet.GEOM_SPHERE, radius=radius, physicsClientId=self.client
+            )
+            visual = bullet.createVisualShape(
+                bullet.GEOM_SPHERE,
+                radius=radius,
+                rgbaColor=[0.80, 0.10, 0.10, 1.0],
+                physicsClientId=self.client,
+            )
+            obstacle_ids.append(
+                bullet.createMultiBody(
+                    baseMass=0.0,
+                    baseCollisionShapeIndex=collision,
+                    baseVisualShapeIndex=visual,
+                    basePosition=center,
+                    physicsClientId=self.client,
+                )
+            )
+        return table_id, bar_id, obstacle_ids
 
     def _show_goal_marker(self, position):
         if self._goal_marker_id is not None:
@@ -824,18 +902,13 @@ class IiwaPyBulletSim:
     def _parse_orientation_constraints(message):
         try:
             payload = json.loads(message.data)
-            if int(payload.get("schema_version", 0)) != 3:
+            if int(payload.get("schema_version", 0)) != 5:
                 raise ValueError("unsupported schema_version")
             stamp_ns = int(payload["stamp_ns"])
             point_count = int(payload["point_count"])
             task_id = str(payload["task_id"])
             active = np.asarray(payload["tool_yaw_active"], dtype=int)
-            raw_obstacle = payload["approach_obstacle"]
-            center = np.asarray(raw_obstacle["center"], dtype=float)
-            table_normal = np.asarray(raw_obstacle["table_normal"], dtype=float)
-            radius = float(raw_obstacle["radius"])
-            clearance = float(raw_obstacle["clearance"])
-            margin = float(raw_obstacle["margin"])
+            raw_obstacle = dict(payload["approach_obstacle"])
             raw_timing = payload["stage_timing"]
             boundaries = np.asarray(raw_timing["boundaries"], dtype=int)
             transition_windows = np.asarray(
@@ -856,8 +929,17 @@ class IiwaPyBulletSim:
             )
         if np.any((active != 0) & (active != 1)):
             raise ValueError("Planner tool-yaw mask must contain only 0 or 1")
+        try:
+            center = np.asarray(raw_obstacle["center"], dtype=float)
+            table_normal = np.asarray(raw_obstacle["table_normal"], dtype=float)
+            radius = float(raw_obstacle["radius"])
+            clearance = float(raw_obstacle["clearance"])
+            margin = float(raw_obstacle["margin"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("Planner Stage-0 circle metadata is incomplete") from error
         if (
-            center.shape != (3,)
+            str(raw_obstacle.get("type")) != "circle"
+            or center.shape != (3,)
             or table_normal.shape != (3,)
             or not np.all(np.isfinite(center))
             or not np.all(np.isfinite(table_normal))
@@ -867,8 +949,9 @@ class IiwaPyBulletSim:
             or clearance < 0.0
             or margin < 0.0
         ):
-            raise ValueError("Planner Stage-0 obstacle metadata is invalid")
+            raise ValueError("Planner Stage-0 circle metadata is invalid")
         approach_obstacle = {
+            "type": "circle",
             "center": center.tolist(),
             "table_normal": table_normal.tolist(),
             "radius": radius,
@@ -947,7 +1030,11 @@ class IiwaPyBulletSim:
             self._pending_path = (
                 message,
                 np.asarray(tool_yaw_active, dtype=bool).copy(),
-                dict(approach_obstacle),
+                {
+                    **approach_obstacle,
+                    "center": list(approach_obstacle["center"]),
+                    "table_normal": list(approach_obstacle["table_normal"]),
+                },
                 {
                     "boundaries": list(stage_timing["boundaries"]),
                     "transition_windows": [
@@ -1243,9 +1330,12 @@ class IiwaPyBulletSim:
         bar_body_position, bar_body_orientation = bullet.getBasePositionAndOrientation(
             self.bar_id, physicsClientId=self.client
         )
-        obstacle_body_position, _obstacle_body_orientation = bullet.getBasePositionAndOrientation(
-            self.obstacle_id, physicsClientId=self.client
-        )
+        obstacle_body_positions = [
+            bullet.getBasePositionAndOrientation(
+                obstacle_id, physicsClientId=self.client
+            )[0]
+            for obstacle_id in self.obstacle_ids
+        ]
 
         ee_state = bullet.getLinkState(
             self.robot_id,
@@ -1290,18 +1380,37 @@ class IiwaPyBulletSim:
                 tool_x @ self.feature_table_normal
             )
             tool_x_horizontal /= np.linalg.norm(tool_x_horizontal)
-            relative_obstacle = np.asarray(ee_position) - np.asarray(obstacle_body_position)
-            obstacle_radial = relative_obstacle - self.feature_table_normal * float(
-                relative_obstacle @ self.feature_table_normal
+            planning_positions = np.asarray(obstacle_body_positions, dtype=float)[
+                self.planning_obstacle_indices
+            ]
+            planning_geometry = {
+                "type": self.planning_obstacle_type,
+                "radius": self.planning_obstacle_radius,
+            }
+            if self.planning_obstacle_type == "circle":
+                planning_geometry["center"] = planning_positions[0]
+            else:
+                planning_geometry["endpoints"] = planning_positions
+            obstacle_clearance = float(
+                evaluate_obstacle_clearance(
+                    np.asarray(ee_position, dtype=float)[None, :],
+                    planning_geometry,
+                    self.feature_table_normal,
+                )[0]
             )
-            obstacle_clearance = float(np.linalg.norm(obstacle_radial) - self.obstacle_radius)
             table_dist = float(
                 (np.asarray(ee_position) - self.feature_table_surface_point)
                 @ self.feature_table_normal
             )
-            bar_lateral_offset = float(
-                (np.asarray(ee_position) - np.asarray(self.bar_reference_position))
-                @ bar_lateral_3d
+            relative_bar = np.asarray(ee_position) - np.asarray(
+                self.bar_reference_position
+            )
+            raw_bar_axial = float(relative_bar @ bar_axis_3d)
+            bar_lateral_offset = float(relative_bar @ bar_lateral_3d)
+            bar_lateral_offset -= float(
+                bar_lateral_centerline_offset(
+                    raw_bar_axial, self.bar_lateral_centerline
+                )
             )
             down_component = -float(tool_axis @ self.feature_table_normal)
             forward_component = float(tool_axis @ bar_axis_3d)
@@ -1314,8 +1423,7 @@ class IiwaPyBulletSim:
                 float(tool_x_horizontal @ bar_axis_3d),
             )
             bar_axial_offset = float(
-                (np.asarray(ee_position) - np.asarray(self.bar_reference_position))
-                @ bar_axis_3d
+                raw_bar_axial
                 - float(
                     self.feature_true_constraints.get(
                         "bar_axial_offset_reference", 0.0
@@ -1364,6 +1472,27 @@ class IiwaPyBulletSim:
                 - middle_v * bar_lateral[index]
                 for index in range(2)
             ]
+            planning_geometry = {
+                "type": self.planning_obstacle_type,
+                "radius": self.planning_obstacle_radius,
+                "live": all(
+                    self.scene_obstacles_live[index]
+                    for index in self.planning_obstacle_indices
+                ),
+            }
+            if self.planning_obstacle_type == "circle":
+                center = obstacle_body_positions[self.planning_obstacle_indices[0]]
+                planning_geometry["center"] = [
+                    float(center[0]), float(center[1])
+                ]
+            else:
+                planning_geometry["endpoints"] = [
+                    [
+                        float(obstacle_body_positions[index][0]),
+                        float(obstacle_body_positions[index][1]),
+                    ]
+                    for index in self.planning_obstacle_indices
+                ]
             status = {
                 "mode": "pybullet",
                 "task_id": self._task_id,
@@ -1406,16 +1535,22 @@ class IiwaPyBulletSim:
                         "axis": bar_axis,
                         "outline_u": list(self.bar_outline_u),
                         "outline_v": list(self.bar_outline_v),
+                        "lateral_centerline": dict(self.bar_lateral_centerline),
                         "live": self.scene_bar_live,
                     },
-                    "obstacle": {
-                        "center": [
-                            float(obstacle_body_position[0]),
-                            float(obstacle_body_position[1]),
-                        ],
-                        "radius": self.obstacle_radius,
-                        "live": self.scene_obstacle_live,
-                    },
+                    "obstacles": [
+                        {
+                            "center": [float(center[0]), float(center[1])],
+                            "radius": float(radius),
+                            "live": bool(live),
+                        }
+                        for center, radius, live in zip(
+                            obstacle_body_positions,
+                            self.obstacle_radii,
+                            self.scene_obstacles_live,
+                        )
+                    ],
+                    "obstacle": planning_geometry,
                 },
             }
             self.status_publisher.publish(String(data=json.dumps(status, sort_keys=True)))
@@ -1662,15 +1797,15 @@ class IiwaPyBulletSim:
             "scene_source": self.scene_source,
             "scene_snapshot_source": self.scene_snapshot_source,
             "scene_bar_live": self.scene_bar_live,
-            "scene_obstacle_live": self.scene_obstacle_live,
+            "scene_obstacles_live": self.scene_obstacles_live,
             "scene_locked_bar_pose": self.scene_locked_bar_pose,
-            "scene_locked_obstacle_pose": self.scene_locked_obstacle_pose,
+            "scene_locked_obstacle_poses": self.scene_locked_obstacle_poses,
             "bar_size": self.bar_size,
             "bar_reference_xy": self.bar_reference_xy,
             "bar_center_xy": self.bar_center_xy,
             "bar_yaw": self.bar_yaw,
-            "obstacle_center": self.obstacle_center,
-            "obstacle_radius": self.obstacle_radius,
+            "obstacle_centers": self.obstacle_centers,
+            "obstacle_radii": self.obstacle_radii,
             "auto_goal_distance": self.auto_goal_distance,
             "planner": "stage_constraint_planner/task_planner",
             "trajectory_compiler": "stage_cartesian_trajectory/CartesianTrajectoryCompiler",
@@ -1707,9 +1842,15 @@ class IiwaPyBulletSim:
         bar_contacts = bullet.getContactPoints(
             bodyA=self.robot_id, bodyB=self.bar_id, physicsClientId=self.client
         )
-        obstacle_contacts = bullet.getContactPoints(
-            bodyA=self.robot_id, bodyB=self.obstacle_id, physicsClientId=self.client
-        )
+        obstacle_contacts = [
+            contact
+            for obstacle_id in self.obstacle_ids
+            for contact in bullet.getContactPoints(
+                bodyA=self.robot_id,
+                bodyB=obstacle_id,
+                physicsClientId=self.client,
+            )
+        ]
         values = (
             [
                 datetime.now(timezone.utc).isoformat(),

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "frame_id": "iiwa14_link_0",
+  "source": {
+    "scene_name": "sceneC",
+    "bar_pose_source": "sceneA endpoints and pose; curved centerline from the 500 mm diameter CAD geometry",
+    "obstacle_method": "simultaneous fixed sceneA and sceneB obstacle centers",
+    "ik_seed_processed_demo": "robot/stage_cons_iiwa14/data/processed/demo_00_5hz_coarse.npz",
+    "ik_seed_field": "joint_positions",
+    "ik_seed_sample_index": 305
+  },
+  "fixed_pose_publish_rate": 20.0,
+  "optitrack_to_robot": {
+    "rotation": [
+      [0.0, 0.0, 1.0],
+      [1.0, 0.0, 0.0],
+      [0.0, 1.0, 0.0]
+    ],
+    "translation": [0.0, 0.0, 0.0]
+  },
+  "table": {
+    "top_z": 0.10937,
+    "size": [0.8, 0.8, 0.05]
+  },
+  "bar": {
+    "locked_pose_robot": [
+      0.64223939,
+      -0.08751724,
+      0.12537,
+      0.0,
+      0.0,
+      -0.75356339,
+      0.65737525
+    ],
+    "axis_local": [1.0, 0.0, 0.0],
+    "lateral_centerline": {
+      "type": "circular_arc_chord",
+      "radius_m": 0.25,
+      "axial_bounds_m": [-0.15, 0.15],
+      "bulge_sign": 1.0
+    },
+    "outline_u": [-0.15, 0.15],
+    "outline_v": [-0.03, 0.03],
+    "height": 0.032
+  },
+  "obstacles": [
+    {
+      "name": "sceneA_obstacle",
+      "locked_pose_robot": [0.6482, 0.1373, 0.13437, 0.0, 0.0, 0.0, 1.0],
+      "radius": 0.025
+    },
+    {
+      "name": "sceneB_obstacle",
+      "locked_pose_robot": [0.585671, 0.208104, 0.13437, 0.0, 0.0, 0.0, 1.0],
+      "radius": 0.025
+    }
+  ],
+  "planning_obstacle": {
+    "type": "capsule",
+    "endpoint_obstacles": ["sceneA_obstacle", "sceneB_obstacle"]
+  },
+  "feature_runtime": {
+    "sample_hz": 20.0,
+    "tool_axis_local": [0.0, 0.0, 1.0]
+  },
+  "initial_ik_seed": [
+    0.18990058973306506,
+    1.1311851165268023,
+    -0.765396611847943,
+    -1.354349720161883,
+    0.8898878534039004,
+    0.9932046232699666,
+    2.201225998613089
+  ]
+}

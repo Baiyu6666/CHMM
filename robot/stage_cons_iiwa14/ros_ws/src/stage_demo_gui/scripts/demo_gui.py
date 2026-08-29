@@ -35,6 +35,10 @@ class DemoGui:
         self._assistance_active = False
         self._recorder_state = "unknown"
         self._recorder_session = None
+        self._recorder_video_requested = False
+        self._recorder_video_state = "idle"
+        self._recorder_video_file = None
+        self._recorder_video_error = None
         self._trace = deque(maxlen=int(rospy.get_param("~max_trace_points", 5000)))
         self._current_ee = None
         self._current_bar = None
@@ -260,6 +264,10 @@ class DemoGui:
         with self._lock:
             self._recorder_state = status.get("state", "unknown")
             self._recorder_session = status.get("session_id")
+            self._recorder_video_requested = status.get("video_requested") is True
+            self._recorder_video_state = str(status.get("video_state", "idle"))
+            self._recorder_video_file = status.get("video_file")
+            self._recorder_video_error = status.get("video_error")
             self._last_recorder = time.monotonic()
 
     def _on_commanding(self, message):
@@ -406,6 +414,10 @@ class DemoGui:
                 "position_hold_enabled": self._position_hold_enabled,
                 "recorder_state": self._recorder_state,
                 "recorder_session": self._recorder_session,
+                "recorder_video_requested": self._recorder_video_requested,
+                "recorder_video_state": self._recorder_video_state,
+                "recorder_video_file": self._recorder_video_file,
+                "recorder_video_error": self._recorder_video_error,
                 "recording": self._recorder_state == "recording",
                 "current_ee": self._current_ee,
                 "trace": list(self._trace),
@@ -503,9 +515,11 @@ class DemoGui:
                 if enabled:
                     label = str(payload.get("label", "demo")).strip() or "demo"
                     notes = str(payload.get("notes", "")).strip()
+                    record_video = payload.get("record_video", False) is True
                     rospy.set_param("/demo_recorder/task_id", self._task_id)
                     rospy.set_param("/demo_recorder/label", label)
                     rospy.set_param("/demo_recorder/operator_notes", notes)
+                    rospy.set_param("/demo_recorder/record_video", record_video)
                     response = self._record_start_service()
                 else:
                     response = self._record_stop_service()

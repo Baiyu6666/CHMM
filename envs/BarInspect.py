@@ -12,6 +12,8 @@ from .base import TaskBundle
 class BarInspectScene:
     bar_pose_optitrack: np.ndarray | None = None
     obstacle_pose_optitrack: np.ndarray | None = None
+    obstacle_poses_optitrack: np.ndarray | None = None
+    bar_lateral_centerline: dict | None = None
 
     def __post_init__(self):
         if self.bar_pose_optitrack is not None:
@@ -37,6 +39,22 @@ class BarInspectScene:
                 raise ValueError("obstacle_pose_optitrack must be finite.")
             object.__setattr__(self, "obstacle_pose_optitrack", obstacle_pose.copy())
 
+        if self.obstacle_poses_optitrack is not None:
+            obstacle_poses = np.asarray(self.obstacle_poses_optitrack, dtype=float)
+            if obstacle_poses.ndim != 2 or obstacle_poses.shape[1] not in (3, 7):
+                raise ValueError(
+                    "obstacle_poses_optitrack must have shape (obstacles, 3 or 7)."
+                )
+            if len(obstacle_poses) < 1 or not np.all(np.isfinite(obstacle_poses)):
+                raise ValueError("obstacle_poses_optitrack must be nonempty and finite.")
+            object.__setattr__(
+                self, "obstacle_poses_optitrack", obstacle_poses.copy()
+            )
+        if self.bar_lateral_centerline is not None:
+            object.__setattr__(
+                self, "bar_lateral_centerline", dict(self.bar_lateral_centerline)
+            )
+
     def to_dict(self):
         return {
             "bar_pose_optitrack": (
@@ -48,6 +66,16 @@ class BarInspectScene:
                 None
                 if self.obstacle_pose_optitrack is None
                 else np.asarray(self.obstacle_pose_optitrack, dtype=float).tolist()
+            ),
+            "obstacle_poses_optitrack": (
+                None
+                if self.obstacle_poses_optitrack is None
+                else np.asarray(self.obstacle_poses_optitrack, dtype=float).tolist()
+            ),
+            "bar_lateral_centerline": (
+                None
+                if self.bar_lateral_centerline is None
+                else dict(self.bar_lateral_centerline)
             ),
         }
 
@@ -236,6 +264,8 @@ class BarInspectEnv:
         return BarInspectScene(
             bar_pose_optitrack=scene.get("bar_pose_optitrack"),
             obstacle_pose_optitrack=scene.get("obstacle_pose_optitrack"),
+            obstacle_poses_optitrack=scene.get("obstacle_poses_optitrack"),
+            bar_lateral_centerline=scene.get("bar_lateral_centerline"),
         )
 
     def set_scene(self, scene):

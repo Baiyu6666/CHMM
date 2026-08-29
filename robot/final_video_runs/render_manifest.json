@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "task": "BarClean",
+  "selected_runs": [
+    "Asss1",
+    "Asss2",
+    "Asss3"
+  ],
+  "clips": [
+    "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss1/execution_profiles.mp4",
+    "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss2/execution_profiles.mp4",
+    "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss3/execution_profiles.mp4"
+  ],
+  "output": "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss1_Asss2_Asss3.mp4",
+  "start_pause_seconds": 1.0,
+  "end_pause_seconds": 1.0,
+  "fps": 30.0,
+  "crf": 15,
+  "renders": [
+    {
+      "ok": true,
+      "run": "Asss1",
+      "output": "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss1/execution_profiles.mp4",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "frames": 570,
+      "duration": 19.0,
+      "features": [
+        "obstacle_clearance",
+        "table_dist",
+        "bar_lateral_offset",
+        "tool_pitch",
+        "tool_roll",
+        "tool_yaw",
+        "bar_axial_offset"
+      ],
+      "stages": 5,
+      "planned_time_scale": 1.2519461696203407
+    },
+    {
+      "ok": true,
+      "run": "Asss2",
+      "output": "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss2/execution_profiles.mp4",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "frames": 558,
+      "duration": 18.6,
+      "features": [
+        "obstacle_clearance",
+        "table_dist",
+        "bar_lateral_offset",
+        "tool_pitch",
+        "tool_roll",
+        "tool_yaw",
+        "bar_axial_offset"
+      ],
+      "stages": 5,
+      "planned_time_scale": 1.2999739613445174
+    },
+    {
+      "ok": true,
+      "run": "Asss3",
+      "output": "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss3/execution_profiles.mp4",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0,
+      "frames": 581,
+      "duration": 19.367,
+      "features": [
+        "obstacle_clearance",
+        "table_dist",
+        "bar_lateral_offset",
+        "tool_pitch",
+        "tool_roll",
+        "tool_yaw",
+        "bar_axial_offset"
+      ],
+      "stages": 5,
+      "planned_time_scale": 1.271235960826136
+    }
+  ],
+  "concatenation": {
+    "ok": true,
+    "output": "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss1_Asss2_Asss3.mp4",
+    "videos": [
+      "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss1/execution_profiles.mp4",
+      "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss2/execution_profiles.mp4",
+      "/home/baiyu/LearnStageConstraints/robot/final_video_runs/BarClean/Asss3/execution_profiles.mp4"
+    ],
+    "start_pause_seconds": 1.0,
+    "end_pause_seconds": 1.0,
+    "width": 1920,
+    "height": 1080,
+    "fps": "30/1",
+    "duration": 62.967,
+    "frames": 1889
+  }
+}

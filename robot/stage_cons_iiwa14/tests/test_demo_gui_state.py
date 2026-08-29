@@ -28,7 +28,8 @@ def load_demo_gui_module():
     rospy = types.ModuleType("rospy")
     rospy.ServiceException = type("ServiceException", (Exception,), {})
     rospy.ROSException = type("ROSException", (Exception,), {})
-    rospy.set_param = lambda *_args: None
+    rospy.params = {}
+    rospy.set_param = lambda name, value: rospy.params.__setitem__(name, value)
     sys.modules.update(
         {
             "rospy": rospy,
@@ -97,6 +98,11 @@ class DemoGuiStateTest(unittest.TestCase):
         subject._call_set_bool = lambda _proxy, _enabled: (True, "ok")
         subject._task_id = "BarClean"
         subject._recorder_state = "idle"
+        subject._recorder_session = None
+        subject._recorder_video_requested = False
+        subject._recorder_video_state = "idle"
+        subject._recorder_video_file = None
+        subject._recorder_video_error = None
         subject._message = ""
         self.subject = subject
 
@@ -133,13 +139,29 @@ class DemoGuiStateTest(unittest.TestCase):
 
     def test_start_recording_arms_the_motion_gate_automatically(self):
         ok, message = self.subject.set_recording(
-            True, {"label": "demo_00", "notes": ""}
+            True, {"label": "demo_00", "notes": "", "record_video": True}
         )
 
         self.assertTrue(ok)
         self.assertEqual(message, "recording")
         self.assertTrue(self.subject._driver_demo_active)
         self.assertTrue(self.subject._mode_requested)
+        self.assertTrue(self.module.rospy.params["/demo_recorder/record_video"])
+
+    def test_recorder_status_exposes_saved_video(self):
+        self.subject._on_recorder_status(
+            types.SimpleNamespace(
+                data=(
+                    '{"state":"completed","session_id":"demo_00",'
+                    '"video_requested":true,"video_state":"idle",'
+                    '"video_file":"demo.mp4","video_error":null}'
+                )
+            )
+        )
+
+        self.assertTrue(self.subject._recorder_video_requested)
+        self.assertEqual(self.subject._recorder_video_file, "demo.mp4")
+        self.assertIsNone(self.subject._recorder_video_error)
 
 
 if __name__ == "__main__":

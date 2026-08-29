@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 
 from experiments.process_bar_clean_demos import process_bar_clean_archive
@@ -29,6 +31,27 @@ def test_process_barclean_maps_reference_cutpoint_times_to_new_rate(tmp_path):
         sampling_hz=np.asarray(20.0),
         optitrack_to_robot_rotation=np.eye(3),
         optitrack_to_robot_translation=np.zeros(3),
+        scene_config_json=np.asarray(
+            json.dumps(
+                {
+                    "bar": {"lateral_centerline": {"type": "straight"}},
+                    "obstacles": [
+                        {
+                            "name": "sceneA_obstacle",
+                            "locked_pose_robot": [0.0, 0.0, 0.13, 0, 0, 0, 1],
+                        },
+                        {
+                            "name": "sceneB_obstacle",
+                            "locked_pose_robot": [0.3, 0.0, 0.13, 0, 0, 0, 1],
+                        },
+                    ],
+                    "planning_obstacle": {
+                        "type": "circle",
+                        "obstacle": "sceneA_obstacle",
+                    },
+                }
+            )
+        ),
     )
     reference_timestamps = np.tile(np.arange(6, dtype=float) / 5.0, demo_count)
     reference_bounds = np.asarray(

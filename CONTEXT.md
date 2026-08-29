@@ -16,14 +16,21 @@
 
 
 
+你开始改名吧，dataset名字保留。然后feature名字改成table_dist
+obs_dist    （这个你只改名不要去重新计算，我知道它其实是clearance）
 
 
+lateral_offset
+•
+axial_offset
+•
+tool_pitch
+•
+tool_roll
+•
+tool_yaw
 
-挑选7个
-    0,
-    1,
-    2,
-    3,
-    4,
-    6,
-    8
+144-210
+255-316
+342-403
+对于之前训练的结果，你只需要调整这次training的learned  model里的feature名字，还有就是今天做的实验的robot/final_video_runs/BarClean目录也需要调整。   视频处理代码也需要调整。匹配新的环境名字和feature名字

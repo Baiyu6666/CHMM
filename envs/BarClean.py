@@ -27,6 +27,7 @@ if str(PLANNER_PYTHON_ROOT) not in sys.path:
 
 from stage_constraint_planner.optimizer import (  # noqa: E402
     BarFeatureEvaluator,
+    bar_lateral_centerline_offset,
     tool_yaw_from_quaternion,
 )
 
@@ -87,6 +88,8 @@ class BarCleanEnv(BarInspectEnv):
         discharge_axial_noise_std=0.0008,
         discharge_height_variation=0.003,
         obstacle_center=(-0.285, -0.090, 0.13437),
+        obstacle_endpoints=None,
+        bar_lateral_centerline=None,
         seg_lengths=(38, 32, 24, 28, 28),
         seg_length_jitter=(5, 4, 4, 4, 5),
         **kwargs,
@@ -151,6 +154,34 @@ class BarCleanEnv(BarInspectEnv):
 
         geometry = dict(definition["scene_geometry"])
         feature_definition = dict(definition["feature_definition"])
+        if obstacle_endpoints is None:
+            obstacle_center = np.asarray(obstacle_center, dtype=float).reshape(3)
+            if not np.all(np.isfinite(obstacle_center)):
+                raise ValueError("BarClean obstacle_center must be finite.")
+            planning_obstacle = {
+                "type": "circle",
+                "center": obstacle_center.copy(),
+                "radius": float(definition["obstacle_radius"]),
+            }
+        else:
+            obstacle_endpoints = np.asarray(obstacle_endpoints, dtype=float)
+            if (
+                obstacle_endpoints.shape != (2, 3)
+                or not np.all(np.isfinite(obstacle_endpoints))
+                or np.linalg.norm(
+                    obstacle_endpoints[1, :2] - obstacle_endpoints[0, :2]
+                )
+                <= 1e-9
+            ):
+                raise ValueError(
+                    "BarClean obstacle_endpoints must contain two distinct XYZ points."
+                )
+            obstacle_center = np.mean(obstacle_endpoints, axis=0)
+            planning_obstacle = {
+                "type": "capsule",
+                "endpoints": obstacle_endpoints.copy(),
+                "radius": float(definition["obstacle_radius"]),
+            }
         super().__init__(
             *args,
             bar_axis_local=definition["bar_axis_local"],
@@ -195,6 +226,10 @@ class BarCleanEnv(BarInspectEnv):
         self.constraint_specs = self.get_constraint_specs()
         self.stage_specs = self.get_stage_specs()
         self._planner_feature_evaluator = BarFeatureEvaluator(definition)
+        self.planning_obstacle = planning_obstacle
+        self.bar_lateral_centerline = dict(
+            bar_lateral_centerline or {"type": "straight"}
+        )
 
     def get_feature_schema(self):
         schema = [dict(spec) for spec in super().get_feature_schema()]
@@ -222,6 +257,18 @@ class BarCleanEnv(BarInspectEnv):
             }
         )
         return schema
+
+    def _scan_tcp(self, progress, lateral=None, standoff=None):
+        progress_values = np.asarray(progress, dtype=float)
+        lateral_values = 0.0 if lateral is None else np.asarray(lateral, dtype=float)
+        physical_lateral = lateral_values + bar_lateral_centerline_offset(
+            progress_values, self.bar_lateral_centerline
+        )
+        return super()._scan_tcp(
+            progress_values,
+            lateral=physical_lateral,
+            standoff=standoff,
+        )
 
     def get_true_constraints(self):
         return {
@@ -310,7 +357,41 @@ class BarCleanEnv(BarInspectEnv):
             trajectory,
             scene=scene,
         )
-        obstacle_center = self._obstacle_center_trace(trajectory, scene=scene)
+        active_scene = self.scene if scene is None else self._coerce_scene(scene)
+        if self.planning_obstacle["type"] == "capsule":
+            if (
+                active_scene is not None
+                and active_scene.obstacle_poses_optitrack is not None
+            ):
+                obstacle_endpoints = (
+                    np.asarray(active_scene.obstacle_poses_optitrack, dtype=float)[:, :3]
+                    @ self.optitrack_to_robot_rotation.T
+                    + self.optitrack_to_robot_translation[None, :]
+                )
+                if obstacle_endpoints.shape != (2, 3):
+                    raise ValueError(
+                        "BarClean capsule scene must contain exactly two obstacle endpoints."
+                    )
+            else:
+                obstacle_endpoints = self.planning_obstacle["endpoints"].copy()
+            obstacle = {
+                "type": "capsule",
+                "endpoints": obstacle_endpoints,
+                "radius": float(self.obstacle_radius),
+            }
+        else:
+            obstacle_center_trace = self._obstacle_center_trace(
+                trajectory, scene=scene
+            )
+            if not np.allclose(obstacle_center_trace, obstacle_center_trace[:1]):
+                raise ValueError(
+                    "BarClean feature evaluation requires one frozen obstacle snapshot."
+                )
+            obstacle = {
+                "type": "circle",
+                "center": obstacle_center_trace[0],
+                "radius": float(self.obstacle_radius),
+            }
         task_origins = bar_reference - np.outer(
             (bar_reference - self.table_surface_point[None, :]) @ self.table_normal,
             self.table_normal,
@@ -319,7 +400,6 @@ class BarCleanEnv(BarInspectEnv):
             np.allclose(task_origins, task_origins[:1])
             and np.allclose(bar_axis, bar_axis[:1])
             and np.allclose(bar_lateral, bar_lateral[:1])
-            and np.allclose(obstacle_center, obstacle_center[:1])
         ):
             raise ValueError("BarClean feature evaluation requires one frozen task snapshot.")
         task_frame = {
@@ -327,19 +407,22 @@ class BarCleanEnv(BarInspectEnv):
             "axial": bar_axis[0],
             "lateral": bar_lateral[0],
             "normal": self.table_normal,
+            "bar_lateral_centerline": dict(
+                active_scene.bar_lateral_centerline
+                if active_scene is not None
+                and active_scene.bar_lateral_centerline is not None
+                else self.bar_lateral_centerline
+            ),
         }
         tool_yaw = np.asarray(
             [tool_yaw_from_quaternion(value, task_frame) for value in quaternion],
             dtype=float,
         )
-        obstacle_pose = np.concatenate(
-            [obstacle_center[0], np.asarray([0.0, 0.0, 0.0, 1.0])]
-        )
         planner_features = self._planner_feature_evaluator.evaluate(
             tcp,
             np.einsum("tij,j->ti", rotations, self.tool_axis_local),
             task_frame,
-            obstacle_pose,
+            obstacle,
             tool_yaws=tool_yaw,
         )
         for column, name in enumerate(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -13,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from envs.BarClean import BarCleanEnv  # noqa: E402
 from envs.BarInspect import BarInspectScene  # noqa: E402
+from stage_constraint_planner.optimizer import bar_lateral_centerline_offset  # noqa: E402
 
 
 def _resolve(path: str | Path) -> Path:
@@ -52,7 +54,9 @@ def _task_coordinates(features: np.ndarray, env: BarCleanEnv) -> np.ndarray:
         features[:, columns["bar_axial_offset"]]
         + float(env.task_definition["bar_axial_offset_reference"])
     )
-    lateral = features[:, columns["bar_lateral_offset"]]
+    lateral = features[:, columns["bar_lateral_offset"]] + bar_lateral_centerline_offset(
+        axial, env.bar_lateral_centerline
+    )
     height = features[:, columns["table_dist"]]
     return np.column_stack([axial, lateral, height])
 
@@ -232,6 +236,7 @@ def process_bar_clean_archive(
                 "sampling_hz",
                 "optitrack_to_robot_rotation",
                 "optitrack_to_robot_translation",
+                "scene_config_json",
             },
         )
         trajectory_all = np.asarray(archive["flange_pose"], dtype=float)
@@ -247,6 +252,9 @@ def process_bar_clean_archive(
         )
         tracker_translation = np.asarray(
             archive["optitrack_to_robot_translation"], dtype=float
+        )
+        scene_definition = json.loads(
+            str(np.asarray(archive["scene_config_json"]).item())
         )
 
     factor_float = source_hz / float(output_hz)
@@ -283,10 +291,28 @@ def process_bar_clean_archive(
                 f"{missing_reference_ids}"
             )
 
+    obstacle_by_name = {
+        str(value["name"]): value for value in scene_definition["obstacles"]
+    }
+    planning_obstacle = dict(scene_definition["planning_obstacle"])
+    obstacle_kwargs = {}
+    if planning_obstacle["type"] == "circle":
+        obstacle_kwargs["obstacle_center"] = obstacle_by_name[
+            str(planning_obstacle["obstacle"])
+        ]["locked_pose_robot"][:3]
+    elif planning_obstacle["type"] == "capsule":
+        obstacle_kwargs["obstacle_endpoints"] = [
+            obstacle_by_name[str(name)]["locked_pose_robot"][:3]
+            for name in planning_obstacle["endpoint_obstacles"]
+        ]
+    else:
+        raise ValueError("Scene planning_obstacle must be circle or capsule.")
     env = BarCleanEnv(
         dt=1.0 / float(output_hz),
         optitrack_to_robot_rotation=tracker_rotation,
         optitrack_to_robot_translation=tracker_translation,
+        bar_lateral_centerline=scene_definition["bar"]["lateral_centerline"],
+        **obstacle_kwargs,
     )
     feature_names = np.asarray([spec["name"] for spec in env.feature_schema])
     trajectories: list[np.ndarray] = []
@@ -309,7 +335,12 @@ def process_bar_clean_archive(
         demo_time -= demo_time[0]
         scene = BarInspectScene(
             bar_pose_optitrack=bar_pose,
-            obstacle_pose_optitrack=obstacle_pose,
+            obstacle_pose_optitrack=(
+                obstacle_pose
+                if planning_obstacle["type"] == "circle"
+                else None
+            ),
+            bar_lateral_centerline=scene_definition["bar"]["lateral_centerline"],
         )
         demo_features = env.compute_all_features_matrix(trajectory, scene=scene)
         if reference_cutpoints is None:

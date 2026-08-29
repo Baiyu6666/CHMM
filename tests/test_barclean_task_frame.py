@@ -69,7 +69,71 @@ def test_barclean_features_freeze_bar_and_obstacle_scene_per_task():
     )
 
     assert np.allclose(features[0], features[1])
+    obstacle_column = next(
+        spec["column_idx"]
+        for spec in env.feature_schema
+        if spec["name"] == "obstacle_clearance"
+    )
+    assert features[0, obstacle_column] == pytest.approx(
+        np.hypot(0.10 - 0.30, 0.02) - env.obstacle_radius
+    )
     assert env.get_observation_spec()["task_frame"]["snapshot_policy"] == "frozen_per_task"
+
+
+def test_scenec_curved_centerline_changes_only_lateral_feature():
+    centerline = {
+        "type": "circular_arc_chord",
+        "radius_m": 0.25,
+        "axial_bounds_m": [-0.15, 0.15],
+        "bulge_sign": 1.0,
+    }
+    env = BarCleanEnv(
+        optitrack_to_robot_rotation=np.eye(3),
+        optitrack_to_robot_translation=np.zeros(3),
+        obstacle_endpoints=[[1.0, 1.0, 0.0], [2.0, 2.0, 0.0]],
+        bar_lateral_centerline=centerline,
+    )
+    trajectory = np.asarray(
+        [
+            [-0.15, 0.00, 0.20, 0.0, 0.0, 0.0, 1.0],
+            [0.00, 0.05, 0.20, 0.0, 0.0, 0.0, 1.0],
+            [0.15, 0.00, 0.20, 0.0, 0.0, 0.0, 1.0],
+        ]
+    )
+    features = env.compute_all_features_matrix(
+        trajectory,
+        scene={
+            "bar_pose_optitrack": [0.0, 0.0, 0.18, 0.0, 0.0, 0.0, 1.0],
+            "bar_lateral_centerline": centerline,
+        },
+    )
+    columns = {spec["name"]: spec["column_idx"] for spec in env.feature_schema}
+
+    assert np.allclose(features[:, columns["bar_lateral_offset"]], 0.0, atol=1e-12)
+    axial_reference = float(env.task_definition["bar_axial_offset_reference"])
+    assert np.allclose(
+        features[:, columns["bar_axial_offset"]] + axial_reference,
+        [-0.15, 0.0, 0.15],
+    )
+
+
+def test_barclean_obstacle_feature_is_clearance_to_capsule_boundary():
+    env = BarCleanEnv(
+        optitrack_to_robot_rotation=np.eye(3),
+        optitrack_to_robot_translation=np.zeros(3),
+        obstacle_endpoints=[[0.0, 0.0, 0.0], [0.30, 0.0, 0.0]],
+    )
+    trajectory = np.asarray(
+        [[0.20, 0.10, 0.20, 0.0, 0.0, 0.0, 1.0]]
+    )
+    features = env.compute_all_features_matrix(trajectory)
+    column = next(
+        spec["column_idx"]
+        for spec in env.feature_schema
+        if spec["name"] == "obstacle_clearance"
+    )
+
+    assert features[0, column] == pytest.approx(0.075)
 
 
 def test_barclean_learning_definition_keeps_stage_three_free_and_constrains_stage_four():

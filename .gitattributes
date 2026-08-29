@@ -4,4 +4,4 @@
 *.ckpt filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 robot/stage_cons_iiwa14/data/sim_runs/**/trajectory.csv filter=lfs diff=lfs merge=lfs -text
-robot/stage_cons_iiwa14/data/sim_runs/**/goal_reaching.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text

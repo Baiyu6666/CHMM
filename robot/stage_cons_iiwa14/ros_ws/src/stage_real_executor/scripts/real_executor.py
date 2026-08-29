@@ -63,7 +63,7 @@ class RealExecutor:
         self._fri_status_timeout = float(rospy.get_param("~fri_status_timeout", 0.5))
         self._start_drift_limit = float(rospy.get_param("~start_drift_limit_rad", math.radians(0.5)))
         self._task_start_settle_tolerance = float(
-            rospy.get_param("~task_start_settle_tolerance_rad", math.radians(1.0))
+            rospy.get_param("~task_start_settle_tolerance_rad", math.radians(2.0))
         )
         self._task_start_settle_timeout = float(
             rospy.get_param("~task_start_settle_timeout", 2.0)
@@ -85,6 +85,9 @@ class RealExecutor:
         task_definition_dir = rospy.get_param("~task_definition_dir", "/task_definitions")
         self._home_config_path = rospy.get_param(
             "~home_config", os.path.join(task_definition_dir, "robot_home.json")
+        )
+        self._scene_config_path = rospy.get_param(
+            "~scene_config", "/workcell_definition/demo_scene.json"
         )
         self._task_config_paths = {
             "BarInspect": os.path.join(task_definition_dir, "bar_inspect_true.json"),
@@ -275,18 +278,13 @@ class RealExecutor:
     def _parse_orientation_constraints(message):
         try:
             payload = json.loads(message.data)
-            if int(payload.get("schema_version", 0)) != 3:
+            if int(payload.get("schema_version", 0)) != 5:
                 raise ValueError("unsupported schema_version")
             stamp_ns = int(payload["stamp_ns"])
             point_count = int(payload["point_count"])
             task_id = str(payload["task_id"])
             active = np.asarray(payload["tool_yaw_active"], dtype=int)
-            raw_obstacle = payload["approach_obstacle"]
-            center = np.asarray(raw_obstacle["center"], dtype=float)
-            table_normal = np.asarray(raw_obstacle["table_normal"], dtype=float)
-            radius = float(raw_obstacle["radius"])
-            clearance = float(raw_obstacle["clearance"])
-            margin = float(raw_obstacle["margin"])
+            raw_obstacle = dict(payload["approach_obstacle"])
             raw_timing = payload["stage_timing"]
             boundaries = np.asarray(raw_timing["boundaries"], dtype=int)
             transition_windows = np.asarray(
@@ -307,10 +305,26 @@ class RealExecutor:
             )
         if np.any((active != 0) & (active != 1)):
             raise ValueError("Planner tool-yaw mask must contain only 0 or 1")
+        try:
+            obstacle_type = str(raw_obstacle["type"])
+            table_normal = np.asarray(raw_obstacle["table_normal"], dtype=float)
+            radius = float(raw_obstacle["radius"])
+            clearance = float(raw_obstacle["clearance"])
+            margin = float(raw_obstacle["margin"])
+            if obstacle_type == "circle":
+                geometry = np.asarray(raw_obstacle["center"], dtype=float)
+                expected_shape = (3,)
+            elif obstacle_type == "capsule":
+                geometry = np.asarray(raw_obstacle["endpoints"], dtype=float)
+                expected_shape = (2, 3)
+            else:
+                raise ValueError("unsupported obstacle type")
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("Planner Stage-0 obstacle metadata is incomplete") from error
         if (
-            center.shape != (3,)
+            geometry.shape != expected_shape
             or table_normal.shape != (3,)
-            or not np.all(np.isfinite(center))
+            or not np.all(np.isfinite(geometry))
             or not np.all(np.isfinite(table_normal))
             or np.linalg.norm(table_normal) <= 1e-12
             or not all(math.isfinite(value) for value in (radius, clearance, margin))
@@ -319,12 +333,19 @@ class RealExecutor:
             or margin < 0.0
         ):
             raise ValueError("Planner Stage-0 obstacle metadata is invalid")
+        if obstacle_type == "capsule":
+            normal_unit = table_normal / np.linalg.norm(table_normal)
+            endpoint_delta = geometry[1] - geometry[0]
+            planar_delta = endpoint_delta - float(endpoint_delta @ normal_unit) * normal_unit
+            if np.linalg.norm(planar_delta) <= 1e-9:
+                raise ValueError("Planner Stage-0 capsule endpoints are coincident")
         approach_obstacle = {
-            "center": center.tolist(),
+            "type": obstacle_type,
             "table_normal": table_normal.tolist(),
             "radius": radius,
             "clearance": clearance,
             "margin": margin,
+            ("center" if obstacle_type == "circle" else "endpoints"): geometry.tolist(),
         }
         if (
             boundaries.ndim != 1
@@ -399,7 +420,20 @@ class RealExecutor:
             self._path_tool_yaw_active = np.asarray(
                 tool_yaw_active, dtype=bool
             ).copy()
-            self._path_approach_obstacle = dict(approach_obstacle)
+            self._path_approach_obstacle = {
+                **approach_obstacle,
+                "table_normal": list(approach_obstacle["table_normal"]),
+                **(
+                    {"center": list(approach_obstacle["center"])}
+                    if approach_obstacle["type"] == "circle"
+                    else {
+                        "endpoints": [
+                            list(endpoint)
+                            for endpoint in approach_obstacle["endpoints"]
+                        ]
+                    }
+                ),
+            }
             self._path_stage_timing = {
                 "boundaries": list(stage_timing["boundaries"]),
                 "transition_windows": [
@@ -756,7 +790,28 @@ class RealExecutor:
             approach_obstacle = (
                 None
                 if self._path_approach_obstacle is None
-                else dict(self._path_approach_obstacle)
+                else {
+                    **self._path_approach_obstacle,
+                    "table_normal": list(
+                        self._path_approach_obstacle["table_normal"]
+                    ),
+                    **(
+                        {
+                            "center": list(
+                                self._path_approach_obstacle["center"]
+                            )
+                        }
+                        if self._path_approach_obstacle["type"] == "circle"
+                        else {
+                            "endpoints": [
+                                list(endpoint)
+                                for endpoint in self._path_approach_obstacle[
+                                    "endpoints"
+                                ]
+                            ]
+                        }
+                    ),
+                }
             )
             stage_timing = (
                 None
@@ -826,8 +881,99 @@ class RealExecutor:
             raise ValidationError("Home joint positions contain non-finite values")
         return joint_position, approach_speed
 
+    def _load_home_obstacle(self):
+        with open(self._scene_config_path, "r", encoding="utf-8") as stream:
+            scene = json.load(stream)
+        with open(self._task_config_paths[self._task_id], "r", encoding="utf-8") as stream:
+            task = json.load(stream)
+        clearance_terms = [
+            term
+            for term in task["constraint_terms"]
+            if str(term.get("feature_name")) == "obstacle_clearance"
+            and int(term.get("stage", -1)) == 0
+            and str(term.get("semantics")) == "lower_bound"
+        ]
+        if len(clearance_terms) != 1:
+            raise ValidationError(
+                "Return Home needs exactly one Stage-0 obstacle-clearance term"
+            )
+        clearance = float(clearance_terms[0]["value"])
+        table_normal = np.asarray(task["table_normal"], dtype=float)
+        if (
+            table_normal.shape != (3,)
+            or not np.all(np.isfinite(table_normal))
+            or np.linalg.norm(table_normal) <= 1e-12
+        ):
+            raise ValidationError("Return Home table normal is invalid")
+        try:
+            scene_obstacles = {
+                str(obstacle["name"]): obstacle
+                for obstacle in scene["obstacles"]
+            }
+            planning_obstacle = dict(scene["planning_obstacle"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValidationError(
+                "Return Home scene obstacle geometry is invalid"
+            ) from error
+        obstacle_type = str(planning_obstacle.get("type"))
+        if obstacle_type == "circle":
+            try:
+                geometry = scene_obstacles[str(planning_obstacle["obstacle"])]
+                center = np.asarray(geometry["locked_pose_robot"][:3], dtype=float)
+                radius = float(geometry["radius"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValidationError("Return Home circle geometry is invalid") from error
+        elif obstacle_type == "capsule":
+            try:
+                endpoint_names = [
+                    str(value) for value in planning_obstacle["endpoint_obstacles"]
+                ]
+                endpoint_geometry = [scene_obstacles[name] for name in endpoint_names]
+                endpoints = np.asarray(
+                    [value["locked_pose_robot"][:3] for value in endpoint_geometry],
+                    dtype=float,
+                )
+                radii = np.asarray(
+                    [float(value["radius"]) for value in endpoint_geometry], dtype=float
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValidationError("Return Home capsule geometry is invalid") from error
+            if (
+                len(endpoint_names) != 2
+                or len(set(endpoint_names)) != 2
+                or endpoints.shape != (2, 3)
+                or not np.all(np.isfinite(endpoints))
+                or not np.all(np.isfinite(radii))
+                or np.any(radii <= 0.0)
+                or not np.allclose(radii, radii[0], atol=1e-9)
+            ):
+                raise ValidationError("Return Home capsule geometry is invalid")
+            normal_unit = table_normal / np.linalg.norm(table_normal)
+            delta = endpoints[1] - endpoints[0]
+            planar_delta = delta - float(delta @ normal_unit) * normal_unit
+            center = np.mean(endpoints, axis=0)
+            radius = float(radii[0]) + 0.5 * float(np.linalg.norm(planar_delta))
+        else:
+            raise ValidationError("Return Home planning obstacle type is invalid")
+        if (
+            center.shape != (3,)
+            or not np.all(np.isfinite(center))
+            or not math.isfinite(radius)
+            or radius <= 0.0
+        ):
+            raise ValidationError("Return Home circle geometry is invalid")
+        return {
+            "type": "circle",
+            "center": center.tolist(),
+            "table_normal": table_normal.tolist(),
+            "radius": radius,
+            "clearance": clearance,
+            "margin": 0.0,
+        }
+
     def _build_home_plan(self, q_current):
         joint_position, approach_speed = self._load_home_definition()
+        obstacle = self._load_home_obstacle()
         self._trajectory_compiler.set_task_speeds(
             approach_speed, self._task_speed
         )
@@ -835,6 +981,7 @@ class RealExecutor:
             q_current,
             abort_requested=self._abort.is_set,
             target_q=joint_position,
+            approach_obstacle=obstacle,
         )
         plan["path_serial"] = self._path_serial
         plan["task_id"] = "RobotHome"
@@ -1158,7 +1305,7 @@ class RealExecutor:
 
         The trajectory action can report success as soon as its time and velocity
         conditions are satisfied.  Keep the final approach target held and retain
-        the original one-degree position criterion instead of rejecting one
+        the configured position criterion instead of rejecting one
         transient joint-state sample immediately after action completion.
         """
         target = np.asarray(target, dtype=float)

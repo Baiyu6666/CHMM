@@ -5,7 +5,8 @@
   <arg name="optitrack_server" default="128.178.145.104"/>
   <arg name="optitrack_base" default="iiwa14"/>
   <arg name="optitrack_object" default="baiyu_bar"/>
-  <arg name="optitrack_obstacle" default="baiyu_obs_bar"/>
+  <arg name="optitrack_obstacle_a" default="baiyu_obs_bar"/>
+  <arg name="optitrack_obstacle_b" default="baiyu_obs_bar_b"/>
   <arg name="config" default="$(find stage_demo_recorder)/config/demo_topics.yaml"/>
 
   <include if="$(arg start_optitrack)" file="$(find stage_optitrack)/launch/optitrack.launch">
@@ -13,7 +14,8 @@
     <arg name="server" value="$(arg optitrack_server)"/>
     <arg name="base_name" value="$(arg optitrack_base)"/>
     <arg name="object_name" value="$(arg optitrack_object)"/>
-    <arg name="obstacle_name" value="$(arg optitrack_obstacle)"/>
+    <arg name="obstacle_a_name" value="$(arg optitrack_obstacle_a)"/>
+    <arg name="obstacle_b_name" value="$(arg optitrack_obstacle_b)"/>
   </include>
 
   <node pkg="stage_demo_recorder"
@@ -25,7 +27,8 @@
     <param name="optitrack_server" value="$(arg optitrack_server)"/>
     <param name="optitrack_base" value="$(arg optitrack_base)"/>
     <param name="optitrack_object" value="$(arg optitrack_object)"/>
-    <param name="optitrack_obstacle" value="$(arg optitrack_obstacle)"/>
+    <param name="optitrack_obstacle" value="$(arg optitrack_obstacle_a)"/>
+    <param name="optitrack_obstacle_b" value="$(arg optitrack_obstacle_b)"/>
     <param name="scene_pose_source" value="$(eval 'fixed' if arg('use_fixed_scene') == 'true' else 'optitrack')"/>
   </node>
 </launch>

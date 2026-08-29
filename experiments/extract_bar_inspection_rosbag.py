@@ -30,6 +30,7 @@ from experiments.bar_inspect_processing import (  # noqa: E402
 JOINT_TOPIC = "/iiwa14/joint_states"
 BAR_TOPIC = "/vrpn_client_node/baiyu_bar/pose_from_iiwa14"
 OBSTACLE_TOPIC = "/vrpn_client_node/baiyu_obs_bar/pose_from_iiwa14"
+OBSTACLE_B_TOPIC = "/vrpn_client_node/baiyu_obs_bar_b/pose_from_iiwa14"
 JOINT_ORDER = tuple(f"iiwa14_joint_{index}" for index in range(1, 8))
 JOINT_ORIGINS_XYZ = np.asarray(
     [
@@ -105,7 +106,12 @@ def read_recording(bag_path, joint_topic, bar_topic, obstacle_topic):
             "Reading ROS1 bags requires the 'rosbags' Python package."
         ) from error
 
-    topics = (joint_topic, bar_topic, obstacle_topic)
+    obstacle_topics = (
+        (obstacle_topic,)
+        if isinstance(obstacle_topic, str)
+        else tuple(obstacle_topic)
+    )
+    topics = (joint_topic, bar_topic, *obstacle_topics)
     raw_times = {topic: [] for topic in topics}
     raw_values = {topic: [] for topic in topics}
     with AnyReader([Path(bag_path)]) as reader:
