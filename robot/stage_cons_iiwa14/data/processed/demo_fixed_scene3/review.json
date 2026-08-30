@@ -881,15 +881,15 @@
       ],
       "feature_count": 10,
       "feature_names": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
         "motion_axis_err",
         "speed",
         "angular_speed",
-        "bar_axial_offset",
+        "axial_offset",
         "tool_yaw"
       ],
       "true_cutpoints": [

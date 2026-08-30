@@ -166,13 +166,13 @@ let demoState=null,demoBusy=false,demoMessageUntil=0,enterDemoPending=false,demo
 let visualization={trace:[],planned_trace:[],current_ee:null,scene_geometry:{},source:'fallback',feature_series:{samples:[]},planned_feature_series:{samples:[]},stage_boundary_indices:[],stage_boundary_times:[],stage_transition_end_times:[]};
 let pointTarget='start',goalPending=false,plotTransform=null;
 const featurePlots=[
-  {name:'obstacle_clearance',canvas:'featureObstacle',value:'featureObstacleValue',color:'#ff8a91'},
+  {name:'obs_dist',canvas:'featureObstacle',value:'featureObstacleValue',color:'#ff8a91'},
   {name:'table_dist',canvas:'featureTableDistance',value:'featureTableDistanceValue',color:'#68a9ff'},
-  {name:'bar_lateral_offset',canvas:'featureBarLateral',value:'featureBarLateralValue',color:'#4fd1c5'},
+  {name:'lateral_offset',canvas:'featureBarLateral',value:'featureBarLateralValue',color:'#4fd1c5'},
   {name:'tool_pitch',canvas:'featurePitch',value:'featurePitchValue',color:'#55d68b'},
   {name:'tool_roll',canvas:'featureRoll',value:'featureRollValue',color:'#c69cff'},
   {name:'tool_yaw',canvas:'featureYaw',value:'featureYawValue',color:'#ff7f6e'},
-  {name:'bar_axial_offset',canvas:'featureAxial',value:'featureAxialValue',color:'#f0b65d'}
+  {name:'axial_offset',canvas:'featureAxial',value:'featureAxialValue',color:'#f0b65d'}
 ];
 let taskProfiles={},profilesLoaded=false;
 const stageColors=['#55d68b','#68a9ff','#c69cff','#f0b65d','#ff7f6e','#4fd1c5'];

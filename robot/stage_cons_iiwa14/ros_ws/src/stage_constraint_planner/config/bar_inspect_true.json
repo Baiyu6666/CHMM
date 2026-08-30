@@ -24,16 +24,16 @@
   },
   "stage_names": ["approach", "vertical_scan", "oblique_scan", "depart"],
   "visualization_features": [
-    "obstacle_clearance",
+    "obs_dist",
     "table_dist",
-    "bar_lateral_offset",
+    "lateral_offset",
     "tool_pitch",
     "tool_roll"
   ],
   "feature_units": {
-    "obstacle_clearance": "m",
+    "obs_dist": "m",
     "table_dist": "m",
-    "bar_lateral_offset": "m",
+    "lateral_offset": "m",
     "tool_pitch": "rad",
     "tool_roll": "rad"
   },
@@ -71,7 +71,7 @@
   },
   "constraint_terms": [
     {
-      "feature_name": "obstacle_clearance",
+      "feature_name": "obs_dist",
       "stage": 0,
       "semantics": "lower_bound",
       "value": 0.040,
@@ -86,7 +86,7 @@
       "scale": 0.0071
     },
     {
-      "feature_name": "bar_lateral_offset",
+      "feature_name": "lateral_offset",
       "stage": 1,
       "semantics": "target_value",
       "value": 0.0,
@@ -114,7 +114,7 @@
       "scale": 0.0065
     },
     {
-      "feature_name": "bar_lateral_offset",
+      "feature_name": "lateral_offset",
       "stage": 2,
       "semantics": "target_value",
       "value": 0.0,

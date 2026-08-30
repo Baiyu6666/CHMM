@@ -89,7 +89,7 @@ def test_scenec_planner_uses_curved_lateral_and_capsule_obstacle_clearance():
     positions = result["positions"]
     normal = np.asarray(task["table_normal"], dtype=float)
     assert np.allclose(
-        result["features"]["obstacle_clearance"],
+        result["features"]["obs_dist"],
         capsule_clearance(positions, obstacle, normal),
     )
     assert float(
@@ -113,10 +113,10 @@ def test_scenec_planner_uses_curved_lateral_and_capsule_obstacle_clearance():
     assert np.allclose(endpoint_targets_task, expected_endpoints, atol=1e-9)
 
     axial = (
-        np.asarray(result["features"]["bar_axial_offset"], dtype=float)
+        np.asarray(result["features"]["axial_offset"], dtype=float)
         + float(task["bar_axial_offset_reference"])
     )
-    lateral = np.asarray(result["features"]["bar_lateral_offset"], dtype=float)
+    lateral = np.asarray(result["features"]["lateral_offset"], dtype=float)
     stage_labels = np.asarray(result["stage_labels"], dtype=int)
     inside_curved_bar = (
         (stage_labels == 1)

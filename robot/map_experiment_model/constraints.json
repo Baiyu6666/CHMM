@@ -1,0 +1,525 @@
+{
+  "true_constraints": {
+    "stage_0_obstacle_clearance": 0.095,
+    "stage_1_table_dist": 0.10204,
+    "stage_1_bar_lateral_offset": 0.0,
+    "stage_1_tool_pitch": 1.5707963267948966,
+    "stage_1_tool_roll": 0.0,
+    "stage_1_tool_yaw": -0.657767869890225,
+    "stage_3_bar_axial_offset": -0.023,
+    "stage_3_table_dist": 0.07004,
+    "stage_3_tool_pitch": 1.5707963267948966,
+    "stage_3_tool_roll": 0.0,
+    "stage_3_tool_yaw": -0.657767869890225
+  },
+  "constraint_specs": [
+    {
+      "feature_name": "obs_dist",
+      "stage": 0,
+      "semantics": "lower_bound",
+      "oracle_key": "stage_0_obstacle_clearance"
+    },
+    {
+      "feature_name": "table_dist",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_table_dist"
+    },
+    {
+      "feature_name": "lateral_offset",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_bar_lateral_offset"
+    },
+    {
+      "feature_name": "tool_pitch",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_tool_pitch"
+    },
+    {
+      "feature_name": "tool_roll",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_tool_roll"
+    },
+    {
+      "feature_name": "tool_yaw",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_tool_yaw"
+    },
+    {
+      "feature_name": "axial_offset",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_bar_axial_offset"
+    },
+    {
+      "feature_name": "table_dist",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_table_dist"
+    },
+    {
+      "feature_name": "tool_pitch",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_tool_pitch"
+    },
+    {
+      "feature_name": "tool_roll",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_tool_roll"
+    },
+    {
+      "feature_name": "tool_yaw",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_tool_yaw"
+    }
+  ],
+  "ConstraintFeatureNames": [
+    "obs_dist",
+    "table_dist",
+    "lateral_offset",
+    "axial_offset",
+    "tool_pitch",
+    "tool_roll",
+    "tool_yaw"
+  ],
+  "ConstraintTrueActiveMask": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      1,
+      1,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintPredictedActiveMask": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1,
+      0,
+      1,
+      1,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "ConstraintTargetMatrix": [
+    [
+      0.095,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.10204,
+      0.0,
+      NaN,
+      1.5707963267948966,
+      0.0,
+      -0.657767869890225
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.07004,
+      NaN,
+      -0.023,
+      1.5707963267948966,
+      0.0,
+      -0.657767869890225
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedSemanticsMatrix": [
+    [
+      "lower_bound",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "target_value",
+      "",
+      "target_value",
+      "target_value",
+      "target_value"
+    ],
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "target_value",
+      "target_value",
+      "",
+      "target_value",
+      "target_value",
+      "target_value",
+      "target_value"
+    ],
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ConstraintLearnedValueMatrix": [
+    [
+      0.06422238533038627,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.09322627911874387,
+      0.004117708461801768,
+      NaN,
+      1.533423678973983,
+      -0.03204540854569525,
+      -0.6912644393024928
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.3972037160599975,
+      0.0662575107363458,
+      NaN,
+      -0.031846260346327177,
+      1.5873664972040709,
+      -0.04001447648337279,
+      -0.6999839052468153
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedRawValueMatrix": [
+    [
+      0.06422238533038627,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.09322627911874387,
+      0.004117708461801768,
+      NaN,
+      1.533423678973983,
+      -0.03204540854569525,
+      -0.6912644393024928
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      0.3972037160599975,
+      0.0662575107363458,
+      NaN,
+      -0.031846260346327177,
+      1.5873664972040709,
+      -0.04001447648337279,
+      -0.6999839052468153
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintLearnedValuePerDemo": [],
+  "ParameterErrorMatrix": [
+    [
+      0.06130452351677734,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.038997349089593486,
+      0.012140851899641023,
+      NaN,
+      0.017883625195550916,
+      0.03657916510532577,
+      0.013935295990211205
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.01673607052341098,
+      NaN,
+      0.011139950509776841,
+      0.007929187100793387,
+      0.04567568985120932,
+      0.017562782056476812
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ParameterErrorMatrixRaw": [
+    [
+      0.030777614669613734,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.008813720881256135,
+      0.004117708461801768,
+      NaN,
+      0.03737264782091354,
+      0.03204540854569525,
+      0.03349656941226786
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ],
+    [
+      NaN,
+      0.0037824892636542096,
+      NaN,
+      0.008846260346327177,
+      0.0165701704091743,
+      0.04001447648337279,
+      0.04221603535659035
+    ],
+    [
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN,
+      NaN
+    ]
+  ],
+  "ConstraintSemanticsMatrix": [
+    [
+      "lower_bound",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "target_value",
+      "",
+      "target_value",
+      "target_value",
+      "target_value"
+    ],
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "",
+      "target_value",
+      "",
+      "target_value",
+      "target_value",
+      "target_value",
+      "target_value"
+    ],
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "ConstraintFeatureScales": [
+    0.5020447579401014,
+    0.22600820535281183,
+    0.339161411064039,
+    0.7941023022107113,
+    2.089769127470369,
+    0.876056313844888,
+    2.403721416164924
+  ]
+}

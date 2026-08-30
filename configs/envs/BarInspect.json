@@ -26,13 +26,13 @@
     "swcl": {
       "n_stages": 4,
       "selected_raw_feature_ids": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
         "tool_pitch",
         "tool_roll"
       ],
       "feature_model_types": {
-        "obstacle_clearance": "trunc_t_lower_z",
+        "obs_dist": "trunc_t_lower_z",
         "table_dist": "student_t",
         "tool_pitch": "student_t",
         "tool_roll": "student_t"
@@ -51,7 +51,7 @@
     "map": {
       "n_stages": 4,
       "selected_raw_feature_ids": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
         "tool_pitch",
         "tool_roll"
@@ -71,7 +71,7 @@
     "map_pooled": {
       "n_stages": 4,
       "selected_raw_feature_ids": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
         "tool_pitch",
         "tool_roll"
@@ -92,9 +92,9 @@
     "map_balanced_pooled": {
       "n_stages": 4,
       "selected_raw_feature_ids": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
         "speed"
@@ -116,7 +116,7 @@
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": [
-          "obstacle_clearance",
+          "obs_dist",
           "table_dist",
           "tool_pitch",
           "tool_roll"
@@ -129,13 +129,13 @@
     "fchmm": {
       "n_stages": 4,
       "selected_raw_feature_ids": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
         "tool_pitch",
         "tool_roll"
       ],
       "feature_model_types": {
-        "obstacle_clearance": "trunc_t_lower_z",
+        "obs_dist": "trunc_t_lower_z",
         "table_dist": "student_t",
         "tool_pitch": "student_t",
         "tool_roll": "student_t"
@@ -152,7 +152,7 @@
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": [
-          "obstacle_clearance",
+          "obs_dist",
           "table_dist",
           "tool_pitch",
           "tool_roll"
@@ -167,7 +167,7 @@
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": [
-          "obstacle_clearance",
+          "obs_dist",
           "table_dist",
           "tool_pitch",
           "tool_roll"
@@ -182,7 +182,7 @@
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": [
-          "obstacle_clearance",
+          "obs_dist",
           "table_dist",
           "tool_pitch",
           "tool_roll"
@@ -197,7 +197,7 @@
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": [
-          "obstacle_clearance",
+          "obs_dist",
           "table_dist",
           "tool_pitch",
           "tool_roll"
@@ -212,7 +212,7 @@
       "segmenter": {
         "n_stages": 4,
         "selected_raw_feature_ids": [
-          "obstacle_clearance",
+          "obs_dist",
           "table_dist",
           "tool_pitch",
           "tool_roll"

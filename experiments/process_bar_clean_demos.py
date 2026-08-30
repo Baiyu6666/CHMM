@@ -51,10 +51,10 @@ def _downsample_demo_indices(begin: int, end: int, factor: int) -> np.ndarray:
 def _task_coordinates(features: np.ndarray, env: BarCleanEnv) -> np.ndarray:
     columns = {spec["name"]: int(spec["column_idx"]) for spec in env.feature_schema}
     axial = (
-        features[:, columns["bar_axial_offset"]]
+        features[:, columns["axial_offset"]]
         + float(env.task_definition["bar_axial_offset_reference"])
     )
-    lateral = features[:, columns["bar_lateral_offset"]] + bar_lateral_centerline_offset(
+    lateral = features[:, columns["lateral_offset"]] + bar_lateral_centerline_offset(
         axial, env.bar_lateral_centerline
     )
     height = features[:, columns["table_dist"]]

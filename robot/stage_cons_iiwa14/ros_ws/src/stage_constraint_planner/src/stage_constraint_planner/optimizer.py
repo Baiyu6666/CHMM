@@ -389,7 +389,7 @@ def circle_clearance(positions, obstacle, table_normal):
     return np.linalg.norm(planar, axis=1) - radius
 
 
-def obstacle_clearance(positions, obstacle, table_normal):
+def obs_dist(positions, obstacle, table_normal):
     obstacle_type = str(obstacle.get("type"))
     if obstacle_type == "circle":
         return circle_clearance(positions, obstacle, table_normal)
@@ -421,17 +421,17 @@ class BarFeatureEvaluator:
         bar_axis = _unit(task_frame["axial"], "task axial axis")
         bar_lateral = _unit(task_frame["lateral"], "task lateral axis")
         task_origin = np.asarray(task_frame["origin"], dtype=float).reshape(3)
-        obstacle_clearance_values = obstacle_clearance(
+        obstacle_clearance_values = obs_dist(
             positions, obstacle, self._table_normal
         )
         table_dist = (positions - self._table_point[None, :]) @ self._table_normal
         task_relative = positions - task_origin
         raw_axial = task_relative @ bar_axis
-        bar_lateral_offset = task_relative @ bar_lateral
-        bar_lateral_offset -= bar_lateral_centerline_offset(
+        lateral_offset = task_relative @ bar_lateral
+        lateral_offset -= bar_lateral_centerline_offset(
             raw_axial, task_frame.get("bar_lateral_centerline")
         )
-        bar_axial_offset = raw_axial - self._bar_axial_offset_reference
+        axial_offset = raw_axial - self._bar_axial_offset_reference
         down_component = -(tool_axes @ self._table_normal)
         forward_component = tool_axes @ bar_axis
         tool_pitch = np.arctan2(down_component, forward_component)
@@ -443,10 +443,10 @@ class BarFeatureEvaluator:
             if len(tool_yaw) != len(positions):
                 raise ValueError("A tool yaw is required for every position")
         return {
-            "obstacle_clearance": obstacle_clearance_values,
+            "obs_dist": obstacle_clearance_values,
             "table_dist": table_dist,
-            "bar_lateral_offset": bar_lateral_offset,
-            "bar_axial_offset": bar_axial_offset,
+            "lateral_offset": lateral_offset,
+            "axial_offset": axial_offset,
             "tool_pitch": tool_pitch,
             "tool_roll": tool_roll,
             "tool_yaw": tool_yaw,

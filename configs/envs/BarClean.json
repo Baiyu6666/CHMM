@@ -10,10 +10,10 @@
     "map_balanced_pooled": {
       "n_stages": 5,
       "selected_raw_feature_ids": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
-        "bar_axial_offset",
+        "lateral_offset",
+        "axial_offset",
         "tool_pitch",
         "tool_roll",
         "tool_yaw"

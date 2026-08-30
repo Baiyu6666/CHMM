@@ -133,7 +133,7 @@ def test_stage_zero_approach_uses_selected_task_stage_one_clearance():
     true_terms = [
         {
             "stage": 0,
-            "feature_name": "obstacle_clearance",
+            "feature_name": "obs_dist",
             "semantics": "lower_bound",
             "value": 0.082,
         }
@@ -141,7 +141,7 @@ def test_stage_zero_approach_uses_selected_task_stage_one_clearance():
     learned_terms = [
         {
             "stage": 0,
-            "feature_name": "obstacle_clearance",
+            "feature_name": "obs_dist",
             "semantics": "lower_bound",
             "value": 0.06422238533038627,
         }

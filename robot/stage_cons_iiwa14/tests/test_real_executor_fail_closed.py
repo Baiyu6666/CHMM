@@ -213,7 +213,7 @@ class RealExecutorFailClosedTest(unittest.TestCase):
                         "table_normal": [0.0, 0.0, 1.0],
                         "constraint_terms": [
                             {
-                                "feature_name": "obstacle_clearance",
+                                "feature_name": "obs_dist",
                                 "stage": 0,
                                 "semantics": "lower_bound",
                                 "value": 0.082,

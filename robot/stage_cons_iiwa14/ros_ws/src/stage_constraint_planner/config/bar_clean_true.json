@@ -34,22 +34,22 @@
     "depart"
   ],
   "visualization_features": [
-    "obstacle_clearance",
+    "obs_dist",
     "table_dist",
-    "bar_lateral_offset",
+    "lateral_offset",
     "tool_pitch",
     "tool_roll",
     "tool_yaw",
-    "bar_axial_offset"
+    "axial_offset"
   ],
   "feature_units": {
-    "obstacle_clearance": "m",
+    "obs_dist": "m",
     "table_dist": "m",
-    "bar_lateral_offset": "m",
+    "lateral_offset": "m",
     "tool_pitch": "rad",
     "tool_roll": "rad",
     "tool_yaw": "rad",
-    "bar_axial_offset": "m"
+    "axial_offset": "m"
   },
   "endpoint_definition": {
     "source": "BarInspect fitted S1/S2 endpoints plus task-designed S3/S4 goals",
@@ -130,7 +130,7 @@
   },
   "constraint_terms": [
     {
-      "feature_name": "obstacle_clearance",
+      "feature_name": "obs_dist",
       "stage": 0,
       "semantics": "lower_bound",
       "value": 0.082,
@@ -145,7 +145,7 @@
       "scale": 0.0071
     },
     {
-      "feature_name": "bar_lateral_offset",
+      "feature_name": "lateral_offset",
       "stage": 1,
       "semantics": "target_value",
       "value": 0.0,
@@ -174,7 +174,7 @@
       "weight": 2.0
     },
     {
-      "feature_name": "bar_axial_offset",
+      "feature_name": "axial_offset",
       "stage": 3,
       "semantics": "target_value",
       "value": -0.023,

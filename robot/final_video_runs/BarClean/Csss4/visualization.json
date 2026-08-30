@@ -12,7 +12,7 @@
   "feature_series": {
     "constraint_specs": [
       {
-        "feature_name": "obstacle_clearance",
+        "feature_name": "obs_dist",
         "scale": 0.0234,
         "semantics": "lower_bound",
         "stage": 0,
@@ -27,7 +27,7 @@
         "value": 0.10204
       },
       {
-        "feature_name": "bar_lateral_offset",
+        "feature_name": "lateral_offset",
         "scale": 0.0142,
         "semantics": "target_value",
         "stage": 1,
@@ -56,7 +56,7 @@
         "weight": 2.0
       },
       {
-        "feature_name": "bar_axial_offset",
+        "feature_name": "axial_offset",
         "scale": 0.003,
         "semantics": "target_value",
         "stage": 3,
@@ -2108,7 +2108,7 @@
     ],
     "schema": [
       {
-        "name": "obstacle_clearance",
+        "name": "obs_dist",
         "unit": "m"
       },
       {
@@ -2116,7 +2116,7 @@
         "unit": "m"
       },
       {
-        "name": "bar_lateral_offset",
+        "name": "lateral_offset",
         "unit": "m"
       },
       {
@@ -2132,7 +2132,7 @@
         "unit": "rad"
       },
       {
-        "name": "bar_axial_offset",
+        "name": "axial_offset",
         "unit": "m"
       }
     ],
@@ -2147,7 +2147,7 @@
   "planned_feature_series": {
     "constraint_specs": [
       {
-        "feature_name": "obstacle_clearance",
+        "feature_name": "obs_dist",
         "semantics": "lower_bound",
         "stage": 0,
         "value": 0.082
@@ -2159,7 +2159,7 @@
         "value": 0.10204
       },
       {
-        "feature_name": "bar_lateral_offset",
+        "feature_name": "lateral_offset",
         "semantics": "target_value",
         "stage": 1,
         "value": 0.0
@@ -2183,7 +2183,7 @@
         "value": -0.657767869890225
       },
       {
-        "feature_name": "bar_axial_offset",
+        "feature_name": "axial_offset",
         "semantics": "target_value",
         "stage": 3,
         "value": -0.023
@@ -2216,7 +2216,7 @@
     "planning_constraint_source": "/learned_constraints/map_balanced_pooled/BarClean/method_seed_000/learned_constraints.json",
     "planning_constraint_specs": [
       {
-        "feature_name": "obstacle_clearance",
+        "feature_name": "obs_dist",
         "semantics": "lower_bound",
         "stage": 0,
         "value": 0.06422238533038627
@@ -2228,7 +2228,7 @@
         "value": 0.09322627911874387
       },
       {
-        "feature_name": "bar_lateral_offset",
+        "feature_name": "lateral_offset",
         "semantics": "target_value",
         "stage": 1,
         "value": 0.004117708461801768
@@ -2252,7 +2252,7 @@
         "value": -0.6912644393024928
       },
       {
-        "feature_name": "obstacle_clearance",
+        "feature_name": "obs_dist",
         "semantics": "target_value",
         "stage": 3,
         "value": 0.3972037160599975
@@ -2264,7 +2264,7 @@
         "value": 0.0662575107363458
       },
       {
-        "feature_name": "bar_axial_offset",
+        "feature_name": "axial_offset",
         "semantics": "target_value",
         "stage": 3,
         "value": -0.031846260346327177
@@ -4872,7 +4872,7 @@
     ],
     "schema": [
       {
-        "name": "obstacle_clearance",
+        "name": "obs_dist",
         "unit": "m"
       },
       {
@@ -4880,7 +4880,7 @@
         "unit": "m"
       },
       {
-        "name": "bar_lateral_offset",
+        "name": "lateral_offset",
         "unit": "m"
       },
       {
@@ -4896,7 +4896,7 @@
         "unit": "rad"
       },
       {
-        "name": "bar_axial_offset",
+        "name": "axial_offset",
         "unit": "m"
       }
     ],

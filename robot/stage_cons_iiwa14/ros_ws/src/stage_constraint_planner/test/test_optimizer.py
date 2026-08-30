@@ -431,14 +431,14 @@ def test_bar_clean_user_stage_three_is_free_and_stage_four_has_five_equalities()
     assert by_stage[2] == []
     stage_four = {term["feature_name"]: term for term in by_stage[3]}
     assert set(stage_four) == {
-        "bar_axial_offset",
+        "axial_offset",
         "table_dist",
         "tool_pitch",
         "tool_roll",
         "tool_yaw",
     }
     assert all(term["semantics"] == "target_value" for term in stage_four.values())
-    assert np.isclose(stage_four["bar_axial_offset"]["value"], -0.023)
+    assert np.isclose(stage_four["axial_offset"]["value"], -0.023)
     assert np.isclose(stage_four["table_dist"]["value"], 0.07004)
     assert np.isclose(stage_four["tool_pitch"]["value"], np.deg2rad(90.0))
     assert np.isclose(stage_four["tool_roll"]["value"], 0.0)

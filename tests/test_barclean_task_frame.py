@@ -72,7 +72,7 @@ def test_barclean_features_freeze_bar_and_obstacle_scene_per_task():
     obstacle_column = next(
         spec["column_idx"]
         for spec in env.feature_schema
-        if spec["name"] == "obstacle_clearance"
+        if spec["name"] == "obs_dist"
     )
     assert features[0, obstacle_column] == pytest.approx(
         np.hypot(0.10 - 0.30, 0.02) - env.obstacle_radius
@@ -109,10 +109,10 @@ def test_scenec_curved_centerline_changes_only_lateral_feature():
     )
     columns = {spec["name"]: spec["column_idx"] for spec in env.feature_schema}
 
-    assert np.allclose(features[:, columns["bar_lateral_offset"]], 0.0, atol=1e-12)
+    assert np.allclose(features[:, columns["lateral_offset"]], 0.0, atol=1e-12)
     axial_reference = float(env.task_definition["bar_axial_offset_reference"])
     assert np.allclose(
-        features[:, columns["bar_axial_offset"]] + axial_reference,
+        features[:, columns["axial_offset"]] + axial_reference,
         [-0.15, 0.0, 0.15],
     )
 
@@ -130,7 +130,7 @@ def test_barclean_obstacle_feature_is_clearance_to_capsule_boundary():
     column = next(
         spec["column_idx"]
         for spec in env.feature_schema
-        if spec["name"] == "obstacle_clearance"
+        if spec["name"] == "obs_dist"
     )
 
     assert features[0, column] == pytest.approx(0.075)
@@ -147,7 +147,7 @@ def test_barclean_learning_definition_keeps_stage_three_free_and_constrains_stag
 
     assert by_stage[2] == []
     assert {spec["feature_name"] for spec in by_stage[3]} == {
-        "bar_axial_offset",
+        "axial_offset",
         "table_dist",
         "tool_pitch",
         "tool_roll",

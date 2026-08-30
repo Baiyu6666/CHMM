@@ -1224,7 +1224,7 @@ class MatplotlibReviewApp:
         task_xyz = np.asarray(self.analysis["task_xyz"], dtype=float)
         features = np.asarray(self.analysis["features"], dtype=float)
         names = [str(value) for value in self.analysis["feature_names"].tolist()]
-        feature_names = ("table_dist", "bar_lateral_offset", "bar_axial_offset")
+        feature_names = ("table_dist", "lateral_offset", "axial_offset")
 
         for axis in self.axes.flat:
             axis.clear()
@@ -1379,7 +1379,7 @@ class MatplotlibReviewApp:
         names = [str(name) for name in self.analysis["feature_names"].tolist()]
         active_time = np.arange(begin, end, dtype=float) / self.hz
         for feature_name, line, span in zip(
-            ("table_dist", "bar_lateral_offset", "bar_axial_offset"),
+            ("table_dist", "lateral_offset", "axial_offset"),
             self.feature_active_lines,
             self.active_spans,
         ):

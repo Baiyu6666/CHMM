@@ -111,15 +111,15 @@ def test_export_requires_both_human_review_gates(tmp_path):
 def _write_processed_archive(path, source_ids, marker, tracker_translation=None):
     feature_names = np.asarray(
         [
-            "obstacle_clearance",
+            "obs_dist",
             "table_dist",
-            "bar_lateral_offset",
+            "lateral_offset",
             "tool_pitch",
             "tool_roll",
             "motion_axis_err",
             "speed",
             "angular_speed",
-            "bar_axial_offset",
+            "axial_offset",
             "tool_yaw",
         ]
     )
@@ -236,15 +236,15 @@ def test_matplotlib_cutpoint_drag_updates_lines_and_path_marker_live(tmp_path):
     )
     feature_names = np.asarray(
         [
-            "obstacle_clearance",
+            "obs_dist",
             "table_dist",
-            "bar_lateral_offset",
+            "lateral_offset",
             "tool_pitch",
             "tool_roll",
             "motion_axis_err",
             "speed",
             "angular_speed",
-            "bar_axial_offset",
+            "axial_offset",
             "tool_yaw",
         ]
     )

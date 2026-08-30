@@ -66,19 +66,19 @@ class BarCleanEnv(BarInspectEnv):
     4. leave the bar without a task constraint.
 
     The bar axis is treated as task-relative x and the bar-lateral axis as
-    task-relative y.  Therefore stage 4 constrains ``bar_axial_offset`` while
+    task-relative y.  Therefore stage 4 constrains ``axial_offset`` while
     allowing the trajectory to progress along y.
     """
 
     task_name = "BarClean"
     default_learning_features = (
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
         "tool_yaw",
-        "bar_axial_offset",
+        "axial_offset",
     )
 
     def __init__(
@@ -104,12 +104,12 @@ class BarCleanEnv(BarInspectEnv):
         self.stage_endpoint_positions_bar = endpoints.copy()
         self.feature_definition = dict(definition["feature_definition"])
 
-        stage0_clearance = _required_term(definition, 0, "obstacle_clearance")
+        stage0_clearance = _required_term(definition, 0, "obs_dist")
         clean_surface = _required_term(definition, 1, "table_dist")
-        clean_lateral = _required_term(definition, 1, "bar_lateral_offset")
+        clean_lateral = _required_term(definition, 1, "lateral_offset")
         clean_pitch = _required_term(definition, 1, "tool_pitch")
         clean_yaw = _required_term(definition, 1, "tool_yaw")
-        discharge_axial = _required_term(definition, 3, "bar_axial_offset")
+        discharge_axial = _required_term(definition, 3, "axial_offset")
         discharge_surface = _required_term(definition, 3, "table_dist")
         discharge_pitch = _required_term(definition, 3, "tool_pitch")
         discharge_yaw = _required_term(definition, 3, "tool_yaw")
@@ -237,7 +237,7 @@ class BarCleanEnv(BarInspectEnv):
             {
                 "id": 8,
                 "column_idx": 8,
-                "name": "bar_axial_offset",
+                "name": "axial_offset",
                 "unit": "m",
                 "description": (
                     "Signed bar-axis displacement from the transverse-discharge line; "
@@ -427,9 +427,9 @@ class BarCleanEnv(BarInspectEnv):
         )
         for column, name in enumerate(
             (
-                "obstacle_clearance",
+                "obs_dist",
                 "table_dist",
-                "bar_lateral_offset",
+                "lateral_offset",
                 "tool_pitch",
                 "tool_roll",
             )
@@ -438,7 +438,7 @@ class BarCleanEnv(BarInspectEnv):
         features = np.column_stack(
             [
                 base_features,
-                planner_features["bar_axial_offset"],
+                planner_features["axial_offset"],
                 planner_features["tool_yaw"],
             ]
         )

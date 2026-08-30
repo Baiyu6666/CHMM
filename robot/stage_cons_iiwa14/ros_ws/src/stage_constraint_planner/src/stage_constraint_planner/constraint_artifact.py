@@ -12,7 +12,7 @@ def stage_zero_approach_clearance(config):
         term
         for term in config["constraint_terms"]
         if int(term["stage"]) == 0
-        and str(term["feature_name"]) == "obstacle_clearance"
+        and str(term["feature_name"]) == "obs_dist"
         and str(term["semantics"]) == "lower_bound"
     ]
     if len(matches) != 1:

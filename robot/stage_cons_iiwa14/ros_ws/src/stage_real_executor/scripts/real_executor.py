@@ -889,7 +889,7 @@ class RealExecutor:
         clearance_terms = [
             term
             for term in task["constraint_terms"]
-            if str(term.get("feature_name")) == "obstacle_clearance"
+            if str(term.get("feature_name")) == "obs_dist"
             and int(term.get("stage", -1)) == 0
             and str(term.get("semantics")) == "lower_bound"
         ]

@@ -204,7 +204,7 @@ def main() -> None:
         clearance = next(
             float(term["value"])
             for term in task_definition["constraint_terms"]
-            if term["feature_name"] == "obstacle_clearance"
+            if term["feature_name"] == "obs_dist"
             and int(term["stage"]) == 0
             and term["semantics"] == "lower_bound"
         )

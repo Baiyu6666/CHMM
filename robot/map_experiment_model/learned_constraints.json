@@ -1,0 +1,876 @@
+{
+  "schema_version": 5,
+  "artifact_type": "learned_stage_constraints",
+  "task_id": "BarClean",
+  "method_name": "map_balanced_pooled",
+  "method_seed": 0,
+  "num_stages": 5,
+  "feature_schema": [
+    {
+      "name": "obs_dist",
+      "unit": "m",
+      "frame": "frozen scene snapshot"
+    },
+    {
+      "name": "table_dist",
+      "unit": "m",
+      "frame": "bar_table_task.z / calibrated table"
+    },
+    {
+      "name": "lateral_offset",
+      "unit": "m",
+      "frame": "bar_table_task.y"
+    },
+    {
+      "name": "axial_offset",
+      "unit": "m",
+      "frame": "bar_table_task.x"
+    },
+    {
+      "name": "tool_pitch",
+      "unit": "rad",
+      "frame": "bar_table_task orientation"
+    },
+    {
+      "name": "tool_roll",
+      "unit": "rad",
+      "frame": "bar_table_task orientation"
+    },
+    {
+      "name": "tool_yaw",
+      "unit": "rad",
+      "frame": "bar_table_task.xy"
+    }
+  ],
+  "task_frame": {
+    "frame_id": "bar_table_task",
+    "tracked_reference": "Motive rigid-body pivot at the bar 3D geometric center",
+    "origin": "tracked bar geometric-center pivot projected onto the calibrated table plane",
+    "x_axis": "tracked bar local +X projected into the calibrated table plane",
+    "z_axis": "calibrated table normal",
+    "y_axis": "z_axis cross x_axis",
+    "motive_orientation_usage": "bar local +X only",
+    "snapshot_policy": "frozen_per_task"
+  },
+  "feature_definition": {
+    "id": "bar_table_features_v1",
+    "evaluation_point": "flange_origin",
+    "tcp_offset_local": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "tool_axis_local": [
+      0.0,
+      0.0,
+      1.0
+    ],
+    "tool_yaw_axis_local": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "obstacle_geometry": "infinite_cylinder_parallel_to_table_normal"
+  },
+  "endpoint_coordinate_frame": "bar_table_task",
+  "stage_endpoint_poses_bar": [
+    [
+      -0.1244627944953543,
+      0.006533585311021166,
+      0.12499766198161479,
+      -0.9386338045819886,
+      0.3446175305796957,
+      -0.008716391243533982,
+      0.011373787266499907
+    ],
+    [
+      0.18757579339632277,
+      0.008214594150773179,
+      0.09170150854477627,
+      -0.9434500810460048,
+      0.33086780641084934,
+      -0.01872722636184205,
+      0.008816475937254794
+    ],
+    [
+      0.18805567588973263,
+      0.07654411998632417,
+      0.07511824405366223,
+      0.9574557227407567,
+      -0.2858988478815307,
+      0.015702289740420854,
+      0.03596979104605194
+    ],
+    [
+      0.19603887010303298,
+      -0.08733889716275554,
+      0.07809831128644533,
+      -0.9377687401947682,
+      0.3455478701753771,
+      -0.005640015021048094,
+      0.033980134804627214
+    ]
+  ],
+  "endpoint_aggregation": {
+    "position_aggregation": "arithmetic_mean",
+    "orientation_aggregation": "markley_quaternion_mean",
+    "sample_policy": "last_sample_before_predicted_cutpoint",
+    "coordinate_frame": "bar_table_task",
+    "demo_count": 6,
+    "per_demo_endpoint_poses_bar": [
+      [
+        [
+          -0.11080709629283143,
+          -0.002882067728739255,
+          0.13111496883086549,
+          -0.9347395811183015,
+          0.35208075763806945,
+          0.042662065698989296,
+          0.02193179751139047
+        ],
+        [
+          0.2035022213085146,
+          0.013075234005890456,
+          0.08913941479663604,
+          -0.940266855984558,
+          0.3388817596260629,
+          -0.02667602699326187,
+          0.01859521749033409
+        ],
+        [
+          0.19941214273753255,
+          0.10128551144921587,
+          0.10117393989084308,
+          0.9156095982383351,
+          -0.39832235587526965,
+          0.020562613100367985,
+          0.05074981149023265
+        ],
+        [
+          0.19371540250581806,
+          -0.07655574724629276,
+          0.11684325525225625,
+          0.9234247869798254,
+          -0.3829954023362242,
+          0.024518228845268233,
+          0.0002025706519208861
+        ]
+      ],
+      [
+        [
+          -0.11523780284300347,
+          -0.006448099324845143,
+          0.1670588773289404,
+          0.8657799157921866,
+          -0.4992094236833057,
+          0.013474470318248269,
+          0.0321485204371613
+        ],
+        [
+          0.18890158418563932,
+          0.014830108104181724,
+          0.09453179745352197,
+          -0.9465121664912349,
+          0.32054890697412564,
+          0.018261994041815385,
+          0.03208763773447634
+        ],
+        [
+          0.21695267398664317,
+          0.11444430084232358,
+          0.08422413928017825,
+          -0.909403759114577,
+          0.4144312423650104,
+          -0.009399623288693044,
+          0.033811171853415777
+        ],
+        [
+          0.19987873012434593,
+          -0.075532521366203,
+          0.06631651432728683,
+          -0.9203502358600307,
+          0.38899551333759885,
+          -0.007153169843839887,
+          0.03983423297603427
+        ]
+      ],
+      [
+        [
+          -0.12720913517072566,
+          -0.005610541044506586,
+          0.10364466847589368,
+          -0.964408228631902,
+          0.26249485891764907,
+          0.03154099857218625,
+          0.004287539848225333
+        ],
+        [
+          0.18024727647615382,
+          0.00449265439580402,
+          0.09479582260473235,
+          -0.9469106578390523,
+          0.3205848136351399,
+          -0.020007288734016904,
+          0.013612190670488227
+        ],
+        [
+          0.2054974482428656,
+          0.060348278033863556,
+          0.06548016924984354,
+          0.977823079390151,
+          -0.13401161203001333,
+          -0.15252669938514243,
+          0.05136651854811715
+        ],
+        [
+          0.20661019539847314,
+          -0.09633379345402829,
+          0.06542832991258754,
+          -0.944554123355695,
+          0.3240333095833706,
+          0.019857859723009533,
+          0.04925025623713287
+        ]
+      ],
+      [
+        [
+          -0.12533376533845725,
+          0.004734438694521864,
+          0.1170778860083227,
+          -0.961270228484629,
+          0.26322444392462674,
+          -0.02278418556221753,
+          0.07844310573878902
+        ],
+        [
+          0.18233377888664998,
+          0.01134008681819927,
+          0.09172030518795479,
+          -0.9407411503390296,
+          0.33715889118365017,
+          -0.0338830216275464,
+          0.013487438600351398
+        ],
+        [
+          0.16952462842217222,
+          0.06881544396335264,
+          0.06758285189206595,
+          0.9989329161553206,
+          0.0036308829822884682,
+          0.04365205857716817,
+          0.014640474451721503
+        ],
+        [
+          0.19244513962179333,
+          -0.08058120585875252,
+          0.07214345665703786,
+          -0.9452293236378593,
+          0.32033619801193747,
+          0.009400375238902976,
+          0.061950616814846184
+        ]
+      ],
+      [
+        [
+          -0.1498744566924964,
+          0.019755690176672756,
+          0.1246727769899364,
+          0.9526466693563576,
+          -0.298305495083284,
+          0.050781366177457266,
+          0.029990128651052595
+        ],
+        [
+          0.1707748635922272,
+          0.0063535717170715815,
+          0.09131693357030085,
+          0.9467508168764761,
+          -0.31916217033246486,
+          0.04168387703902875,
+          0.007800908113230738
+        ],
+        [
+          0.16908349008764895,
+          0.045121499878027535,
+          0.06634498554471582,
+          0.9429794275579144,
+          -0.3088064761498411,
+          0.05746476033056316,
+          0.11011884857106344
+        ],
+        [
+          0.1910414190155501,
+          -0.10646834071491262,
+          0.07252240379906785,
+          -0.9506532921499468,
+          0.3077219320288038,
+          -0.0334828609257976,
+          0.021081477584651568
+        ]
+      ],
+      [
+        [
+          -0.11831451063461158,
+          0.02965209109302336,
+          0.10641679425573,
+          -0.9225629450900648,
+          0.38303200615657995,
+          -0.03925521981767923,
+          0.024962418221756082
+        ],
+        [
+          0.19969503592875149,
+          -0.0008040901365079858,
+          0.08870477765551157,
+          0.937273134512384,
+          -0.3480771986704467,
+          0.008301469659605034,
+          0.017100312528012206
+        ],
+        [
+          0.16786367186153336,
+          0.06924968575116186,
+          0.06590337846432667,
+          0.899690834834668,
+          -0.4214112190120451,
+          0.1124924573139364,
+          0.017732265866282477
+        ],
+        [
+          0.1925423339522173,
+          -0.08856177433634405,
+          0.0753359077704357,
+          -0.9372070853863131,
+          0.3473191687525311,
+          0.0020512803104445368,
+          0.03175006091066222
+        ]
+      ]
+    ]
+  },
+  "feature_stage_modes": [
+    {
+      "stage": 0,
+      "feature_name": "obs_dist",
+      "mode": "lower_bound",
+      "value": 0.06422238533038627,
+      "mode_scores": {
+        "inactive": 0.3592138197438824,
+        "target_value": 2.94201200349678e-05,
+        "lower_bound": 0.6399870423588672,
+        "upper_bound": 0.0007697177772155426
+      },
+      "confidence": 0.6399870423588672
+    },
+    {
+      "stage": 0,
+      "feature_name": "table_dist",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9850276239402549,
+        "target_value": 5.216849404742282e-08,
+        "lower_bound": 0.012239462447545186,
+        "upper_bound": 0.0027328614437060307
+      },
+      "confidence": 0.9850276239402549
+    },
+    {
+      "stage": 0,
+      "feature_name": "lateral_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9924088394758015,
+        "target_value": 4.273438687786466e-16,
+        "lower_bound": 7.195618293141878e-05,
+        "upper_bound": 0.00751920434126653
+      },
+      "confidence": 0.9924088394758015
+    },
+    {
+      "stage": 0,
+      "feature_name": "axial_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.6667580778002692,
+        "target_value": 3.6857312818011996e-09,
+        "lower_bound": 0.051516534919863737,
+        "upper_bound": 0.28172538359413574
+      },
+      "confidence": 0.6667580778002692
+    },
+    {
+      "stage": 0,
+      "feature_name": "tool_pitch",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9437278763591248,
+        "target_value": 0.022114961497786186,
+        "lower_bound": 0.03357704157214172,
+        "upper_bound": 0.0005801205709471082
+      },
+      "confidence": 0.9437278763591248
+    },
+    {
+      "stage": 0,
+      "feature_name": "tool_roll",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9963273523930026,
+        "target_value": 1.516919384415759e-07,
+        "lower_bound": 0.0030751937589883196,
+        "upper_bound": 0.0005973021560706199
+      },
+      "confidence": 0.9963273523930026
+    },
+    {
+      "stage": 0,
+      "feature_name": "tool_yaw",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.999880508715782,
+        "target_value": 6.756156185835937e-14,
+        "lower_bound": 1.2971551094717947e-05,
+        "upper_bound": 0.00010651973305564951
+      },
+      "confidence": 0.999880508715782
+    },
+    {
+      "stage": 1,
+      "feature_name": "obs_dist",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.7302226209797598,
+        "target_value": 6.892758739625236e-10,
+        "lower_bound": 0.19657637010278958,
+        "upper_bound": 0.07320100822817485
+      },
+      "confidence": 0.7302226209797598
+    },
+    {
+      "stage": 1,
+      "feature_name": "table_dist",
+      "mode": "target_value",
+      "value": 0.09322627911874387,
+      "mode_scores": {
+        "inactive": 6.205210467184699e-05,
+        "target_value": 0.9993995483791933,
+        "lower_bound": 0.0004453223578718574,
+        "upper_bound": 9.307715826291124e-05
+      },
+      "confidence": 0.9993995483791933
+    },
+    {
+      "stage": 1,
+      "feature_name": "lateral_offset",
+      "mode": "target_value",
+      "value": 0.004117708461801768,
+      "mode_scores": {
+        "inactive": 0.0009110722871381591,
+        "target_value": 0.9902131605224747,
+        "lower_bound": 0.004442501069760535,
+        "upper_bound": 0.0044332661206268505
+      },
+      "confidence": 0.9902131605224747
+    },
+    {
+      "stage": 1,
+      "feature_name": "axial_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.7367068718678284,
+        "target_value": 7.339475295188354e-07,
+        "lower_bound": 0.1862999930186257,
+        "upper_bound": 0.07699240116601648
+      },
+      "confidence": 0.7367068718678284
+    },
+    {
+      "stage": 1,
+      "feature_name": "tool_pitch",
+      "mode": "target_value",
+      "value": 1.533423678973983,
+      "mode_scores": {
+        "inactive": 0.0011291649061552032,
+        "target_value": 0.9890340247169565,
+        "lower_bound": 0.005487807705964339,
+        "upper_bound": 0.004349002670923872
+      },
+      "confidence": 0.9890340247169565
+    },
+    {
+      "stage": 1,
+      "feature_name": "tool_roll",
+      "mode": "target_value",
+      "value": -0.03204540854569525,
+      "mode_scores": {
+        "inactive": 0.00038263146492166755,
+        "target_value": 0.994852548700363,
+        "lower_bound": 0.0023919780879135544,
+        "upper_bound": 0.0023728417468018258
+      },
+      "confidence": 0.994852548700363
+    },
+    {
+      "stage": 1,
+      "feature_name": "tool_yaw",
+      "mode": "target_value",
+      "value": -0.6912644393024928,
+      "mode_scores": {
+        "inactive": 0.0013189303969716347,
+        "target_value": 0.9842164382262729,
+        "lower_bound": 0.007254000711800006,
+        "upper_bound": 0.007210630664955414
+      },
+      "confidence": 0.9842164382262729
+    },
+    {
+      "stage": 2,
+      "feature_name": "obs_dist",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.8802936901274366,
+        "target_value": 1.2948819154832596e-05,
+        "lower_bound": 0.11118931024765609,
+        "upper_bound": 0.008504050805752577
+      },
+      "confidence": 0.8802936901274366
+    },
+    {
+      "stage": 2,
+      "feature_name": "table_dist",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.8596972044154724,
+        "target_value": 1.0706667547829323e-10,
+        "lower_bound": 0.10375549164287654,
+        "upper_bound": 0.03654730383458444
+      },
+      "confidence": 0.8596972044154724
+    },
+    {
+      "stage": 2,
+      "feature_name": "lateral_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9876534089578644,
+        "target_value": 3.20729480346621e-05,
+        "lower_bound": 0.0073915639112651435,
+        "upper_bound": 0.004922954182835859
+      },
+      "confidence": 0.9876534089578644
+    },
+    {
+      "stage": 2,
+      "feature_name": "axial_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.6814468373849646,
+        "target_value": 0.0024311787780517966,
+        "lower_bound": 0.306839964298593,
+        "upper_bound": 0.009282019538390657
+      },
+      "confidence": 0.6814468373849646
+    },
+    {
+      "stage": 2,
+      "feature_name": "tool_pitch",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.8917118549591626,
+        "target_value": 0.0008275863068688649,
+        "lower_bound": 0.10634079317835242,
+        "upper_bound": 0.0011197655556159523
+      },
+      "confidence": 0.8917118549591626
+    },
+    {
+      "stage": 2,
+      "feature_name": "tool_roll",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9790097662681844,
+        "target_value": 0.002461512601462327,
+        "lower_bound": 0.018126360095334724,
+        "upper_bound": 0.0004023610350184303
+      },
+      "confidence": 0.9790097662681844
+    },
+    {
+      "stage": 2,
+      "feature_name": "tool_yaw",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9875003416989929,
+        "target_value": 3.3165231245330712e-09,
+        "lower_bound": 0.004251549926997764,
+        "upper_bound": 0.008248105057486245
+      },
+      "confidence": 0.9875003416989929
+    },
+    {
+      "stage": 3,
+      "feature_name": "obs_dist",
+      "mode": "target_value",
+      "value": 0.3972037160599975,
+      "mode_scores": {
+        "inactive": 0.00031733399585581653,
+        "target_value": 0.9964237133350947,
+        "lower_bound": 0.0018253563284282416,
+        "upper_bound": 0.0014335963406212633
+      },
+      "confidence": 0.9964237133350947
+    },
+    {
+      "stage": 3,
+      "feature_name": "table_dist",
+      "mode": "target_value",
+      "value": 0.0662575107363458,
+      "mode_scores": {
+        "inactive": 0.0014225662415235287,
+        "target_value": 0.9866291985502603,
+        "lower_bound": 0.01144822749661345,
+        "upper_bound": 0.0005000077116027029
+      },
+      "confidence": 0.9866291985502603
+    },
+    {
+      "stage": 3,
+      "feature_name": "lateral_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.7200598831588045,
+        "target_value": 5.011728300540969e-09,
+        "lower_bound": 0.05097775470397609,
+        "upper_bound": 0.2289623571254911
+      },
+      "confidence": 0.7200598831588045
+    },
+    {
+      "stage": 3,
+      "feature_name": "axial_offset",
+      "mode": "target_value",
+      "value": -0.031846260346327177,
+      "mode_scores": {
+        "inactive": 1.3034437121266219e-05,
+        "target_value": 0.9998120955359016,
+        "lower_bound": 9.461835785408161e-05,
+        "upper_bound": 8.025166912302901e-05
+      },
+      "confidence": 0.9998120955359016
+    },
+    {
+      "stage": 3,
+      "feature_name": "tool_pitch",
+      "mode": "target_value",
+      "value": 1.5873664972040709,
+      "mode_scores": {
+        "inactive": 0.0007211465999362294,
+        "target_value": 0.9926224600051439,
+        "lower_bound": 0.0028032439025496457,
+        "upper_bound": 0.003853149492370235
+      },
+      "confidence": 0.9926224600051439
+    },
+    {
+      "stage": 3,
+      "feature_name": "tool_roll",
+      "mode": "target_value",
+      "value": -0.04001447648337279,
+      "mode_scores": {
+        "inactive": 0.0005686724939972255,
+        "target_value": 0.9937247556317155,
+        "lower_bound": 0.002894774491996774,
+        "upper_bound": 0.002811797382290798
+      },
+      "confidence": 0.9937247556317155
+    },
+    {
+      "stage": 3,
+      "feature_name": "tool_yaw",
+      "mode": "target_value",
+      "value": -0.6999839052468153,
+      "mode_scores": {
+        "inactive": 0.026346472711073207,
+        "target_value": 0.9003757559734277,
+        "lower_bound": 0.06753882670406776,
+        "upper_bound": 0.005738944611431312
+      },
+      "confidence": 0.9003757559734277
+    },
+    {
+      "stage": 4,
+      "feature_name": "obs_dist",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9961579991731025,
+        "target_value": 8.76260342731393e-12,
+        "lower_bound": 2.3515533286994758e-05,
+        "upper_bound": 0.003818485284847878
+      },
+      "confidence": 0.9961579991731025
+    },
+    {
+      "stage": 4,
+      "feature_name": "table_dist",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9423547507201252,
+        "target_value": 3.1576892861538274e-15,
+        "lower_bound": 0.057518362233591594,
+        "upper_bound": 0.00012688704627999368
+      },
+      "confidence": 0.9423547507201252
+    },
+    {
+      "stage": 4,
+      "feature_name": "lateral_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.933112484042624,
+        "target_value": 4.404638915411282e-09,
+        "lower_bound": 0.001055626168464028,
+        "upper_bound": 0.06583188538427288
+      },
+      "confidence": 0.933112484042624
+    },
+    {
+      "stage": 4,
+      "feature_name": "axial_offset",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.984808178272881,
+        "target_value": 2.4973220559405055e-08,
+        "lower_bound": 1.9956864086568692e-05,
+        "upper_bound": 0.01517183988981172
+      },
+      "confidence": 0.984808178272881
+    },
+    {
+      "stage": 4,
+      "feature_name": "tool_pitch",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9965998833139378,
+        "target_value": 2.030879215622329e-08,
+        "lower_bound": 0.0032182735500411027,
+        "upper_bound": 0.00018182282722885407
+      },
+      "confidence": 0.9965998833139378
+    },
+    {
+      "stage": 4,
+      "feature_name": "tool_roll",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9919891821190855,
+        "target_value": 6.161282934207161e-05,
+        "lower_bound": 0.0002613091864326353,
+        "upper_bound": 0.007687895865139643
+      },
+      "confidence": 0.9919891821190855
+    },
+    {
+      "stage": 4,
+      "feature_name": "tool_yaw",
+      "mode": "inactive",
+      "value": null,
+      "mode_scores": {
+        "inactive": 0.9996882063526524,
+        "target_value": 5.193873235885487e-08,
+        "lower_bound": 0.0003116123190265574,
+        "upper_bound": 1.2938958886397473e-07
+      },
+      "confidence": 0.9996882063526524
+    }
+  ],
+  "true_constraint_specs": [
+    {
+      "feature_name": "obs_dist",
+      "stage": 0,
+      "semantics": "lower_bound",
+      "oracle_key": "stage_0_obstacle_clearance"
+    },
+    {
+      "feature_name": "table_dist",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_table_dist"
+    },
+    {
+      "feature_name": "lateral_offset",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_bar_lateral_offset"
+    },
+    {
+      "feature_name": "tool_pitch",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_tool_pitch"
+    },
+    {
+      "feature_name": "tool_roll",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_tool_roll"
+    },
+    {
+      "feature_name": "tool_yaw",
+      "stage": 1,
+      "semantics": "target_value",
+      "oracle_key": "stage_1_tool_yaw"
+    },
+    {
+      "feature_name": "axial_offset",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_bar_axial_offset"
+    },
+    {
+      "feature_name": "table_dist",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_table_dist"
+    },
+    {
+      "feature_name": "tool_pitch",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_tool_pitch"
+    },
+    {
+      "feature_name": "tool_roll",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_tool_roll"
+    },
+    {
+      "feature_name": "tool_yaw",
+      "stage": 3,
+      "semantics": "target_value",
+      "oracle_key": "stage_3_tool_yaw"
+    }
+  ]
+}

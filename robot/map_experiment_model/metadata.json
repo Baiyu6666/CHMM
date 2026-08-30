@@ -1,0 +1,14 @@
+{
+  "created_at_utc": "2026-08-28T17:43:33.159399+00:00",
+  "dataset_name": "BarClean",
+  "method_name": "map_balanced_pooled",
+  "pipeline": "joint",
+  "dataset_seed": 2026,
+  "dataset_fingerprint": "131480926a1fe065b1dd0e6fead640a5b3e72ab968b89af90a87388d978bd157",
+  "method_seed": 0,
+  "num_demos": 6,
+  "num_stages": 5,
+  "plot_dir": "/home/baiyu/LearnStageConstraints/outputs/map_balanced_pooled/BarClean/method_seed_000",
+  "env_config_path": "/home/baiyu/LearnStageConstraints/configs/envs/BarClean.json",
+  "method_config_path": "/home/baiyu/LearnStageConstraints/configs/methods/map_balanced_pooled.json"
+}

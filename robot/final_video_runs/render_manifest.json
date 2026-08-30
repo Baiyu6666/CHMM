@@ -27,13 +27,13 @@
       "frames": 570,
       "duration": 19.0,
       "features": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
         "tool_yaw",
-        "bar_axial_offset"
+        "axial_offset"
       ],
       "stages": 5,
       "planned_time_scale": 1.2519461696203407
@@ -48,13 +48,13 @@
       "frames": 558,
       "duration": 18.6,
       "features": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
         "tool_yaw",
-        "bar_axial_offset"
+        "axial_offset"
       ],
       "stages": 5,
       "planned_time_scale": 1.2999739613445174
@@ -69,13 +69,13 @@
       "frames": 581,
       "duration": 19.367,
       "features": [
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
         "tool_yaw",
-        "bar_axial_offset"
+        "axial_offset"
       ],
       "stages": 5,
       "planned_time_scale": 1.271235960826136

@@ -34,13 +34,13 @@ STAGE_COLORS = (
 
 
 FEATURE_DISPLAY = {
-    "obstacle_clearance": ("obstacle clearance", "mm", 1000.0),
+    "obs_dist": ("obstacle clearance", "mm", 1000.0),
     "table_dist": ("table distance", "mm", 1000.0),
-    "bar_lateral_offset": ("bar lateral offset", "mm", 1000.0),
+    "lateral_offset": ("bar lateral offset", "mm", 1000.0),
     "tool_pitch": ("tool pitch", "deg", 180.0 / math.pi),
     "tool_roll": ("tool roll", "deg", 180.0 / math.pi),
     "tool_yaw": ("tool yaw", "deg", 180.0 / math.pi),
-    "bar_axial_offset": ("bar axial offset", "mm", 1000.0),
+    "axial_offset": ("bar axial offset", "mm", 1000.0),
 }
 
 

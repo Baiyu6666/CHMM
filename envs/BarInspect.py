@@ -102,9 +102,9 @@ class BarInspectEnv:
 
     task_name = "BarInspect"
     default_learning_features = (
-        "obstacle_clearance",
+        "obs_dist",
         "table_dist",
-        "bar_lateral_offset",
+        "lateral_offset",
         "tool_pitch",
         "tool_roll",
     )
@@ -554,13 +554,13 @@ class BarInspectEnv:
 
     def get_feature_schema(self):
         return [
-            {"id": 0, "column_idx": 0, "name": "obstacle_clearance", "unit": "m",
+            {"id": 0, "column_idx": 0, "name": "obs_dist", "unit": "m",
              "frame": "frozen scene snapshot",
              "description": "EE radial clearance from the infinite vertical obstacle cylinder; positive outside"},
             {"id": 1, "column_idx": 1, "name": "table_dist", "unit": "m",
              "frame": "bar_table_task.z / calibrated table",
              "description": "Signed EE distance to the fixed calibrated table plane along its normal"},
-            {"id": 2, "column_idx": 2, "name": "bar_lateral_offset", "unit": "m",
+            {"id": 2, "column_idx": 2, "name": "lateral_offset", "unit": "m",
              "frame": "bar_table_task.y",
              "description": "Signed in-table offset from the bar centerline"},
             {"id": 3, "column_idx": 3, "name": "tool_pitch", "unit": "rad",
@@ -591,13 +591,13 @@ class BarInspectEnv:
         stage_scan_common = [
             {"feature_name": "table_dist", "semantics": "target_value",
              "oracle_key": "table_distance_target"},
-            {"feature_name": "bar_lateral_offset", "semantics": "target_value",
+            {"feature_name": "lateral_offset", "semantics": "target_value",
              "oracle_key": "bar_lateral_target"},
             {"feature_name": "tool_roll", "semantics": "target_value",
              "oracle_key": "tool_roll_target"},
         ]
         specs = [
-            {"feature_name": "obstacle_clearance", "stage": 0, "semantics": "lower_bound",
+            {"feature_name": "obs_dist", "stage": 0, "semantics": "lower_bound",
              "oracle_key": "obstacle_min_clearance"}
         ]
         for stage, pitch_key in ((1, "stage2_pitch_target"), (2, "stage3_pitch_target")):
@@ -908,12 +908,12 @@ class BarInspectEnv:
         obstacle_radial = relative_obstacle - np.outer(
             relative_obstacle @ self.table_normal, self.table_normal
         )
-        obstacle_clearance = np.linalg.norm(obstacle_radial, axis=1) - self.obstacle_radius
+        obs_dist = np.linalg.norm(obstacle_radial, axis=1) - self.obstacle_radius
         relative_bar = tcp - bar_reference_point
         relative_table = tcp - self.table_surface_point[None, :]
         table_dist = relative_table @ self.table_normal
         bar_progress = np.sum(relative_bar * bar_axis, axis=1)
-        bar_lateral_offset = np.sum(relative_bar * bar_lateral, axis=1)
+        lateral_offset = np.sum(relative_bar * bar_lateral, axis=1)
         down_component = -(tool_axis @ self.table_normal)
         forward_component = np.sum(tool_axis * bar_axis, axis=1)
         tool_pitch = np.arctan2(down_component, forward_component)
@@ -929,7 +929,7 @@ class BarInspectEnv:
         lateral_velocity = np.zeros(len(tcp), dtype=float)
         if len(tcp) > 1:
             along_velocity[1:] = np.diff(bar_progress) / self.dt
-            lateral_velocity[1:] = np.diff(bar_lateral_offset) / self.dt
+            lateral_velocity[1:] = np.diff(lateral_offset) / self.dt
             along_velocity[0] = along_velocity[1]
             lateral_velocity[0] = lateral_velocity[1]
         motion_axis_err = np.arctan2(lateral_velocity, along_velocity)
@@ -948,9 +948,9 @@ class BarInspectEnv:
 
         features = np.column_stack(
             [
-                obstacle_clearance,
+                obs_dist,
                 table_dist,
-                bar_lateral_offset,
+                lateral_offset,
                 tool_pitch,
                 tool_roll,
                 motion_axis_err,

@@ -32,7 +32,7 @@ from stage_cartesian_trajectory import (
 )
 from stage_constraint_planner.optimizer import (
     bar_lateral_centerline_offset,
-    obstacle_clearance as evaluate_obstacle_clearance,
+    obs_dist as evaluate_obstacle_clearance,
 )
 from std_msgs.msg import String
 from std_srvs.srv import SetBool, SetBoolResponse, Trigger, TriggerResponse
@@ -1391,7 +1391,7 @@ class IiwaPyBulletSim:
                 planning_geometry["center"] = planning_positions[0]
             else:
                 planning_geometry["endpoints"] = planning_positions
-            obstacle_clearance = float(
+            obs_dist = float(
                 evaluate_obstacle_clearance(
                     np.asarray(ee_position, dtype=float)[None, :],
                     planning_geometry,
@@ -1406,8 +1406,8 @@ class IiwaPyBulletSim:
                 self.bar_reference_position
             )
             raw_bar_axial = float(relative_bar @ bar_axis_3d)
-            bar_lateral_offset = float(relative_bar @ bar_lateral_3d)
-            bar_lateral_offset -= float(
+            lateral_offset = float(relative_bar @ bar_lateral_3d)
+            lateral_offset -= float(
                 bar_lateral_centerline_offset(
                     raw_bar_axial, self.bar_lateral_centerline
                 )
@@ -1422,7 +1422,7 @@ class IiwaPyBulletSim:
                 float(tool_x_horizontal @ bar_lateral_3d),
                 float(tool_x_horizontal @ bar_axis_3d),
             )
-            bar_axial_offset = float(
+            axial_offset = float(
                 raw_bar_axial
                 - float(
                     self.feature_true_constraints.get(
@@ -1431,13 +1431,13 @@ class IiwaPyBulletSim:
                 )
             )
             feature_values = {
-                "obstacle_clearance": obstacle_clearance,
+                "obs_dist": obs_dist,
                 "table_dist": table_dist,
-                "bar_lateral_offset": bar_lateral_offset,
+                "lateral_offset": lateral_offset,
                 "tool_pitch": tool_pitch,
                 "tool_roll": tool_roll,
                 "tool_yaw": tool_yaw,
-                "bar_axial_offset": bar_axial_offset,
+                "axial_offset": axial_offset,
             }
             self._feature_trace.append(
                 [

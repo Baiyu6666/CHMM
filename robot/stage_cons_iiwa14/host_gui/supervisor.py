@@ -1345,7 +1345,7 @@ class Supervisor:
             try:
                 if (
                     int(raw_spec.get("stage", -1)) != 0
-                    or str(raw_spec.get("feature_name")) != "obstacle_clearance"
+                    or str(raw_spec.get("feature_name")) != "obs_dist"
                     or str(raw_spec.get("semantics", raw_spec.get("mode")))
                     != "lower_bound"
                 ):
@@ -3182,7 +3182,7 @@ class Supervisor:
             center = [float(value) for value in obstacle["center"]]
             if len(center) != 2:
                 raise ValueError("Planner scene contains invalid circle geometry")
-            obstacle_clearance = math.hypot(
+            obs_dist = math.hypot(
                 position[0] - center[0], position[1] - center[1]
             ) - float(obstacle["radius"])
         elif obstacle_type == "capsule":
@@ -3220,7 +3220,7 @@ class Supervisor:
                 obstacle_endpoints[0][index] + phase * segment[index]
                 for index in range(2)
             ]
-            obstacle_clearance = math.hypot(
+            obs_dist = math.hypot(
                 position[0] - closest_obstacle[0],
                 position[1] - closest_obstacle[1],
             ) - float(obstacle["radius"])
@@ -3255,12 +3255,12 @@ class Supervisor:
             relative_bar[index] * lateral[index] for index in range(3)
         )
         return {
-            "obstacle_clearance": obstacle_clearance,
+            "obs_dist": obs_dist,
             "table_dist": sum(
                 (position[index] - table_point[index]) * normal[index]
                 for index in range(3)
             ),
-            "bar_lateral_offset": raw_bar_lateral
+            "lateral_offset": raw_bar_lateral
             - _bar_centerline_lateral_offset(
                 raw_bar_axial, bar.get("lateral_centerline")
             ),
@@ -3276,7 +3276,7 @@ class Supervisor:
                     for index in range(3)
                 ),
             ),
-            "bar_axial_offset": raw_bar_axial - axial_reference,
+            "axial_offset": raw_bar_axial - axial_reference,
         }
 
     def _update_real_visualization(self, sample_time: Optional[float] = None) -> None:
