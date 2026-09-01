@@ -3,6 +3,24 @@
 
 8月31日把ral的最终稿提交。 9月1，2，3，4 灵活机动，大概一天时间修改aude反馈。剩下时间整理swcl paper。选好期刊。  然后差不多9月7日前发给aude。 休息两天。从9月9日开始制作slides，一个月的时间怎么都来得及
 
+
+8月31 日完成视频制作和实验部分的写作
+9月1日，把ral 终稿提交了。然后开始修改method部分
+9月2日，完成method 部分的修改  
+9月3日，检查整理thesis   
+
+注意swcl一节需要调整一下，加了实验之后。
+给swcl 和oncl 视频准备好，上传到lab youtube
+
+
+9月4日，提交thesis，有空的话把TAI也提交了
+9月5，6日，过一个安静的周末，好好休息下
+
+
+
+
+
+
 10月9日答辩。10月10日消失。
 
 
@@ -15,22 +33,5 @@
 4. 3阶段到4阶段的时候不要再4阶段起点做过多调整，容易把产生大量redandunce points
 
 
-
-你开始改名吧，dataset名字保留。然后feature名字改成table_dist
-obs_dist    （这个你只改名不要去重新计算，我知道它其实是clearance）
-
-
-lateral_offset
-•
-axial_offset
-•
-tool_pitch
-•
-tool_roll
-•
-tool_yaw
-
-144-210
-255-316
-342-403
-对于之前训练的结果，你只需要调整这次training的learned  model里的feature名字，还有就是今天做的实验的robot/final_video_runs/BarClean目录也需要调整。   视频处理代码也需要调整。匹配新的环境名字和feature名字
+SWCL 论文改造
+1. 把s5的demo goal改了

@@ -48,7 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--end-pause-seconds", type=float, default=1.0)
     render.add_argument("--fps", type=float, default=30.0)
     render.add_argument("--crf", type=int, default=15)
-    render.add_argument("--panel-width-ratio", type=float, default=0.28)
+    render.add_argument(
+        "--encoder",
+        choices=("auto", "cpu", "nvenc"),
+        default="auto",
+    )
+    render.add_argument("--panel-width-ratio", type=float, default=0.238)
     render.add_argument(
         "--max-seconds",
         type=float,
@@ -153,7 +158,8 @@ def render_selected(options: argparse.Namespace) -> dict:
     clips = []
     render_results = []
     for item in selected:
-        clip = Path(item["directory"]) / "execution_profiles.mp4"
+        run_directory = Path(item["directory"])
+        clip = run_directory / f"{run_directory.name}_execution_profiles.mp4"
         command = [
             sys.executable,
             str(renderer),
@@ -165,6 +171,8 @@ def render_selected(options: argparse.Namespace) -> dict:
             str(float(options.fps)),
             "--crf",
             str(int(options.crf)),
+            "--encoder",
+            str(getattr(options, "encoder", "auto")),
             "--panel-width-ratio",
             str(float(options.panel_width_ratio)),
         ]
@@ -205,6 +213,7 @@ def render_selected(options: argparse.Namespace) -> dict:
         "end_pause_seconds": float(options.end_pause_seconds),
         "fps": float(options.fps),
         "crf": int(options.crf),
+        "encoder": str(getattr(options, "encoder", "auto")),
         "renders": render_results,
         "concatenation": concat_result,
     }

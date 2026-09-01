@@ -1224,10 +1224,12 @@ def plot_map_final_outputs(model, it: int) -> None:
     paper_dir = out_dir / "paper_figures"
     final_gammas = _hard_gammas_from_stage_ends([len(X) for X in model.demos], model.stage_ends_, model.num_stages)
     metrics = _map_learned_constraint_payload(model, evaluate_model_metrics(model, final_gammas, None))
+    env = getattr(model, "env", None)
+    dataset_name = str(getattr(env, "eval_tag", "") or getattr(env, "task_name", ""))
     try:
-        plot_learned_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_learned_constraints.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
-        plot_true_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_true_constraint_active.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
-        plot_true_vs_learned_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_true_vs_learned_constraints.png", dataset_name=str(getattr(getattr(model, "env", None), "eval_tag", "")))
+        plot_learned_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_learned_constraints.png", dataset_name=dataset_name)
+        plot_true_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_true_constraint_active.png", dataset_name=dataset_name)
+        plot_true_vs_learned_constraints_matrix_paper(metrics, save_path=paper_dir / "paper_map_true_vs_learned_constraints.png", dataset_name=dataset_name)
     except Exception as exc:
         if getattr(model, "verbose", False):
             print(f"[MAP] constraint matrix plot skipped: {exc}")

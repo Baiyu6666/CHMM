@@ -24,7 +24,7 @@
   "outcomes": {
     "bar_clean": "success",
     "obs_avoid": "success",
-    "table_clean": "success"
+    "table_clean": "fail"
   },
   "schema_version": 2,
   "source_run_directory": "/data/demos/BarClean/20260829T093956_706433Z_real_task",

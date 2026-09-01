@@ -17,7 +17,7 @@ from visualization.learned_constraints_matrix import (
 
 def _infer_dataset_name(path: Path) -> str | None:
     text = str(path)
-    for name in ("S3ObsAvoid", "S4SlideInsert", "S5SphereInspect"):
+    for name in ("S3ObsAvoid", "S4SlideInsert", "S5SphereInspect", "BarClean"):
         if name in text:
             return name
     return None

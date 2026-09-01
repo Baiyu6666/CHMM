@@ -10,13 +10,63 @@ from robot.video_process import process_recording
 from robot.video_process.process_recording import resolve_selected_runs
 from robot.video_process.render_experiment_profiles import (
     _axis_limits,
+    _display_feature_values,
+    _load_render_visualization,
     _semantics_kind,
     constraint_references,
     stage_timeline,
 )
 
 
-def test_stage_timeline_scales_plan_to_recorded_duration() -> None:
+def test_barclean_orientation_display_uses_relative_angle_calibration() -> None:
+    radians_to_degrees = 180.0 / 3.141592653589793
+    pitch = _display_feature_values(
+        "BarClean", "tool_pitch", [0.0, 0.5 * 3.141592653589793], radians_to_degrees
+    )
+    yaw = _display_feature_values(
+        "BarClean", "tool_yaw", [-38.0 / radians_to_degrees], radians_to_degrees
+    )
+
+    assert pitch == pytest.approx([-90.0, 0.0])
+    assert yaw == pytest.approx([0.30219823954972])
+
+
+def test_barclean_axial_display_uses_obstacle_near_bar_endpoint_as_zero() -> None:
+    axial = _display_feature_values(
+        "BarClean", "axial_offset", [-0.37606532, 0.0], 1000.0
+    )
+
+    assert axial == pytest.approx([0.0, 376.06532])
+
+
+def test_real_render_uses_preextracted_synchronized_profiles(tmp_path) -> None:
+    run_directory = tmp_path / "run_001"
+    run_directory.mkdir()
+    visualization_path = run_directory / "visualization.json"
+    visualization_path.write_text(
+        json.dumps({"mode": "real", "task_id": "BarClean"}), encoding="utf-8"
+    )
+    synchronized = {
+        "task_id": "BarClean",
+        "timing": {"basis": "absolute_test"},
+        "feature_series": {"samples": [[0.0, 1.0]]},
+        "planned_feature_series": {"samples": [[0.0, 2.0]]},
+        "stage_boundary_indices": [1],
+        "stage_boundary_times": [1.0],
+        "stage_transition_end_times": [1.2],
+    }
+    (run_directory / "synchronized_profiles.json").write_text(
+        json.dumps(synchronized), encoding="utf-8"
+    )
+
+    loaded = _load_render_visualization(run_directory, visualization_path)
+
+    assert loaded["feature_series"] == synchronized["feature_series"]
+    assert loaded["planned_feature_series"] == synchronized["planned_feature_series"]
+    assert loaded["profile_synchronization"] == synchronized["timing"]
+
+
+def test_stage_timeline_preserves_synchronized_times() -> None:
     visualization = {
         "planned_feature_series": {
             "schema": [{"name": "distance", "unit": "m"}],
@@ -27,10 +77,10 @@ def test_stage_timeline_scales_plan_to_recorded_duration() -> None:
     }
     windows, transitions, scale = stage_timeline(visualization, 20.0)
 
-    assert scale == pytest.approx(2.0)
-    assert transitions == pytest.approx([(4.0, 5.0), (12.0, 13.0)])
+    assert scale == pytest.approx(1.0)
+    assert transitions == pytest.approx([(2.0, 2.5), (6.0, 6.5)])
     assert [(item.start_s, item.end_s) for item in windows] == pytest.approx(
-        [(0.0, 4.0), (5.0, 12.0), (13.0, 20.0)]
+        [(0.0, 2.25), (2.25, 6.25), (6.25, 20.0)]
     )
 
 
@@ -148,7 +198,7 @@ def test_render_outputs_live_with_final_runs(tmp_path, monkeypatch) -> None:
 
     result = process_recording.render_selected(options)
 
-    clip = run_directory / "execution_profiles.mp4"
+    clip = run_directory / "run_001_execution_profiles.mp4"
     assert result["clips"] == [str(clip)]
     assert result["output"] == str(final_root / "selected_runs.mp4")
     assert result["manifest"] == str(final_root / "render_manifest.json")

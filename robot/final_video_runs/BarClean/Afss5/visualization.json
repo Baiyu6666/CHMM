@@ -2313,9 +2313,9 @@
       },
       {
         "feature_name": "obs_dist",
-        "semantics": "target_value",
+        "semantics": "lower_bound",
         "stage": 3,
-        "value": 0.3972037160599975
+        "value": 0.3854802355375947
       },
       {
         "feature_name": "table_dist",

@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -15,15 +16,19 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from visualization.barclean_display import BARCLEAN_AXIAL_DISPLAY_SHIFT_M
+
 
 EXECUTED_COLOR = (37, 99, 235, 255)
-PLANNED_COLOR = (71, 85, 105, 225)
 LEARNED_CONSTRAINT_COLOR = (234, 88, 12, 245)
 LEARNED_CONSTRAINT_TEXT_COLOR = (194, 65, 12, 255)
 INEQUALITY_FEASIBLE_COLOR = (254, 240, 138, 145)
 EQUALITY_BAND_COLOR = (253, 186, 116, 92)
 CURSOR_COLOR = (79, 70, 229, 210)
-TRANSITION_COLOR = (241, 234, 252, 205)
 STAGE_COLORS = (
     (59, 130, 246),
     (16, 185, 129),
@@ -31,16 +36,29 @@ STAGE_COLORS = (
     (168, 85, 247),
     (239, 68, 68),
 )
+BARCLEAN_SPONGE_YAW_OFFSET_DEG = 38.30219823954972
 
 
 FEATURE_DISPLAY = {
-    "obs_dist": ("obstacle clearance", "mm", 1000.0),
-    "table_dist": ("table distance", "mm", 1000.0),
-    "lateral_offset": ("bar lateral offset", "mm", 1000.0),
-    "tool_pitch": ("tool pitch", "deg", 180.0 / math.pi),
-    "tool_roll": ("tool roll", "deg", 180.0 / math.pi),
-    "tool_yaw": ("tool yaw", "deg", 180.0 / math.pi),
-    "axial_offset": ("bar axial offset", "mm", 1000.0),
+    "obs_dist": ("obs_dist", "mm", 1000.0),
+    "table_dist": ("table_dist", "mm", 1000.0),
+    "lateral_offset": ("lateral_offset", "mm", 1000.0),
+    "axial_offset": ("axial_offset", "mm", 1000.0),
+    "tool_pitch": ("tool_pitch", "deg", 180.0 / math.pi),
+    "tool_roll": ("tool_roll", "deg", 180.0 / math.pi),
+    "tool_yaw": ("tool_yaw", "deg", 180.0 / math.pi),
+}
+
+FEATURE_ORDER_BY_TASK = {
+    "barclean": (
+        "obs_dist",
+        "table_dist",
+        "lateral_offset",
+        "axial_offset",
+        "tool_pitch",
+        "tool_roll",
+        "tool_yaw",
+    ),
 }
 
 
@@ -72,7 +90,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--crf", type=int, default=15)
-    parser.add_argument("--panel-width-ratio", type=float, default=0.28)
+    parser.add_argument(
+        "--encoder",
+        choices=("auto", "cpu", "nvenc"),
+        default="auto",
+        help="video encoder; auto uses NVIDIA NVENC when available",
+    )
+    parser.add_argument("--panel-width-ratio", type=float, default=0.238)
     parser.add_argument(
         "--max-seconds",
         type=float,
@@ -102,6 +126,33 @@ def _run_inputs(run_directory: Path) -> tuple[Path, Path]:
             f"run {directory.name} is missing required files: {', '.join(missing)}"
         )
     return video, visualization
+
+
+def _load_render_visualization(run_directory: Path, path: Path) -> dict:
+    visualization = _load_json(path)
+    if str(visualization.get("mode", "")).lower() != "real":
+        return visualization
+    synchronized_path = run_directory / "synchronized_profiles.json"
+    if not synchronized_path.is_file():
+        raise RuntimeError(
+            f"real run {run_directory.name} has no synchronized_profiles.json; "
+            "run extract_synchronized_profiles.py first"
+        )
+    synchronized = _load_json(synchronized_path)
+    if str(synchronized.get("task_id", "")) != str(
+        visualization.get("task_id", "")
+    ):
+        raise RuntimeError("synchronized profile task does not match visualization")
+    for key in (
+        "feature_series",
+        "planned_feature_series",
+        "stage_boundary_indices",
+        "stage_boundary_times",
+        "stage_transition_end_times",
+    ):
+        visualization[key] = synchronized[key]
+    visualization["profile_synchronization"] = synchronized["timing"]
+    return visualization
 
 
 def probe_video(path: Path) -> dict:
@@ -205,6 +256,23 @@ def _series_array(series: dict) -> tuple[list[str], dict[str, str], np.ndarray]:
     return names, units, array
 
 
+def _ordered_feature_series(
+    task_id: str, names: list[str], units: dict[str, str], values: np.ndarray
+) -> tuple[list[str], dict[str, str], np.ndarray]:
+    preferred_order = FEATURE_ORDER_BY_TASK.get(str(task_id).strip().lower())
+    if preferred_order is None:
+        return names, units, values
+    ordered_names = [name for name in preferred_order if name in names]
+    ordered_names.extend(name for name in names if name not in ordered_names)
+    if ordered_names == names:
+        return names, units, values
+    indices = [names.index(name) for name in ordered_names]
+    ordered_values = np.column_stack(
+        (values[:, 0], values[:, np.asarray(indices, dtype=int) + 1])
+    )
+    return ordered_names, {name: units[name] for name in ordered_names}, ordered_values
+
+
 def stage_timeline(
     visualization: dict, video_duration_s: float
 ) -> tuple[list[StageWindow], list[tuple[float, float]], float]:
@@ -216,14 +284,13 @@ def stage_timeline(
         planned_end = float(video_duration_s)
     if not math.isfinite(planned_end) or planned_end <= 1e-9:
         planned_end = float(video_duration_s)
-    time_scale = float(video_duration_s) / planned_end
     boundaries = [
-        float(value) * time_scale
+        float(value)
         for value in visualization.get("stage_boundary_times", [])
         if isinstance(value, (int, float)) and math.isfinite(float(value))
     ]
     transition_ends = [
-        float(value) * time_scale
+        float(value)
         for value in visualization.get("stage_transition_end_times", [])
         if isinstance(value, (int, float)) and math.isfinite(float(value))
     ]
@@ -239,13 +306,18 @@ def stage_timeline(
                 float(np.clip(max(start, end), 0.0, video_duration_s)),
             )
         )
+    stage_splits = [0.5 * (start + end) for start, end in transitions]
     windows = []
     stage_count = len(boundaries) + 1
     for index in range(stage_count):
-        start = 0.0 if index == 0 else transitions[index - 1][1]
-        end = float(video_duration_s) if index == stage_count - 1 else boundaries[index]
+        start = 0.0 if index == 0 else stage_splits[index - 1]
+        end = (
+            float(video_duration_s)
+            if index == stage_count - 1
+            else stage_splits[index]
+        )
         windows.append(StageWindow(index, min(start, end), max(start, end)))
-    return windows, transitions, time_scale
+    return windows, transitions, 1.0
 
 
 def constraint_references(
@@ -312,22 +384,44 @@ def _feature_display(name: str, source_unit: str) -> tuple[str, str, float]:
     return name.replace("_", " "), source_unit, 1.0
 
 
+def _display_feature_values(
+    task_id: str,
+    feature_name: str,
+    values: Sequence[float] | np.ndarray,
+    value_scale: float,
+) -> np.ndarray:
+    displayed = np.asarray(values, dtype=float) * float(value_scale)
+    if str(task_id).strip().lower() != "barclean":
+        return displayed
+    if feature_name == "tool_pitch":
+        return displayed - 90.0
+    if feature_name == "tool_yaw":
+        return (
+            displayed + BARCLEAN_SPONGE_YAW_OFFSET_DEG + 180.0
+        ) % 360.0 - 180.0
+    if feature_name == "axial_offset":
+        return displayed + BARCLEAN_AXIAL_DISPLAY_SHIFT_M * float(value_scale)
+    return displayed
+
+
 def _fonts(height: int):
     scale = float(np.clip(height / 1080.0, 0.75, 1.4))
     sizes = (
-        max(13, round(15 * scale)),
-        max(13, round(15 * scale)),
-        max(17, round(20 * scale)),
+        max(15, round(17 * scale)),
+        max(15, round(17 * scale)),
+        max(17, round(19 * scale)),
+        max(16, round(18 * scale)),
     )
     try:
         return (
             ImageFont.truetype("DejaVuSans.ttf", sizes[0]),
             ImageFont.truetype("DejaVuSans-Bold.ttf", sizes[1]),
             ImageFont.truetype("DejaVuSans-Bold.ttf", sizes[2]),
+            ImageFont.truetype("DejaVuSans.ttf", sizes[3]),
         )
     except (OSError, IOError):
         fallback = ImageFont.load_default()
-        return fallback, fallback, fallback
+        return fallback, fallback, fallback, fallback
 
 
 def _draw_dashed_segment(
@@ -423,11 +517,14 @@ class FeaturePanel:
         self.visualization = visualization
         self.video_duration_s = float(video_duration_s)
         self.run_id = str(run_id)
+        self.task_id = str(visualization.get("task_id", ""))
         self.names, self.units, self.executed = _series_array(
             visualization.get("feature_series", {})
         )
+        self.names, self.units, self.executed = _ordered_feature_series(
+            self.task_id, self.names, self.units, self.executed
+        )
         planned = visualization.get("planned_feature_series", {})
-        self.planned_names, _, self.planned = _series_array(planned)
         self.windows, self.transitions, self.planned_time_scale = stage_timeline(
             visualization, self.video_duration_s
         )
@@ -436,6 +533,114 @@ class FeaturePanel:
             planned.get("planning_constraint_specs")
         )
         self.shared_angle_span = self._yaw_axis_span()
+        self._curve_layer = None
+        self._curve_cache_key = None
+        self._curve_counts = {}
+        self._last_timestamp_s = -math.inf
+        self._static_layer = None
+        self._row_layouts = []
+
+    def _prepare_curve_cache(
+        self, size: tuple[int, int], panel_width_ratio: float, timestamp_s: float
+    ) -> None:
+        cache_key = (size, round(float(panel_width_ratio), 8))
+        if cache_key != self._curve_cache_key:
+            self._curve_layer = Image.new("RGBA", size, (0, 0, 0, 0))
+            self._curve_cache_key = cache_key
+            self._curve_counts = {}
+            self._static_layer = None
+            self._row_layouts = []
+        elif timestamp_s < self._last_timestamp_s:
+            self._curve_layer = Image.new("RGBA", size, (0, 0, 0, 0))
+            self._curve_counts = {}
+        self._last_timestamp_s = float(timestamp_s)
+
+    def _extend_curve(
+        self,
+        key: tuple[str, int, str],
+        times: np.ndarray,
+        points: list[tuple[float, float]],
+        timestamp_s: float,
+        *,
+        fill: tuple[int, int, int, int],
+        width: int,
+        dashed: bool,
+    ) -> None:
+        if self._curve_layer is None or not points:
+            return
+        visible_count = int(np.searchsorted(times, timestamp_s, side="right"))
+        visible_count = min(visible_count, len(points))
+        previous_count = int(self._curve_counts.get(key, 0))
+        if visible_count <= previous_count:
+            return
+        start = max(0, previous_count - 1)
+        _draw_styled_polyline(
+            ImageDraw.Draw(self._curve_layer),
+            points[start:visible_count],
+            fill=fill,
+            width=width,
+            dashed=dashed,
+        )
+        self._curve_counts[key] = visible_count
+
+    def _draw_cached(
+        self, image: Image.Image, timestamp_s: float
+    ) -> np.ndarray:
+        overlay = self._static_layer.copy()
+        for layout in self._row_layouts:
+            self._extend_curve(
+                ("executed", layout["row"], layout["name"]),
+                layout["executed_times"],
+                layout["executed_points"],
+                timestamp_s,
+                fill=EXECUTED_COLOR,
+                width=layout["line_width"],
+                dashed=False,
+            )
+        if self._curve_layer is not None:
+            overlay = Image.alpha_composite(overlay, self._curve_layer)
+        draw = ImageDraw.Draw(overlay)
+        for layout in self._row_layouts:
+            current_value = _value_at_or_before(
+                layout["executed_times"], layout["executed_values"], timestamp_s
+            )
+            display_unit = layout["display_unit"]
+            draw.text(
+                layout["value_text_xy"],
+                (
+                    f"{_format_value(current_value)} {display_unit}"
+                    if display_unit
+                    else _format_value(current_value)
+                ),
+                fill=EXECUTED_COLOR,
+                font=layout["font"],
+            )
+            cursor_x = layout["plot_x0"] + float(
+                np.clip(timestamp_s, 0.0, self.video_duration_s)
+            ) / max(self.video_duration_s, 1e-9) * layout["plot_width"]
+            draw.line(
+                (cursor_x, layout["py0"], cursor_x, layout["py1"]),
+                fill=CURSOR_COLOR,
+                width=layout["cursor_width"],
+            )
+            if math.isfinite(current_value):
+                current_y = layout["py1"] - (
+                    (current_value - layout["vmin"])
+                    / max(layout["vmax"] - layout["vmin"], 1e-12)
+                    * (layout["py1"] - layout["py0"])
+                )
+                radius = layout["radius"]
+                draw.ellipse(
+                    (
+                        cursor_x - radius,
+                        current_y - radius,
+                        cursor_x + radius,
+                        current_y + radius,
+                    ),
+                    fill=EXECUTED_COLOR,
+                )
+        composited = Image.alpha_composite(image, overlay).convert("RGB")
+        return cv2.cvtColor(np.asarray(composited), cv2.COLOR_RGB2BGR)
 
     def _yaw_axis_span(self) -> float | None:
         name = "tool_yaw"
@@ -444,21 +649,24 @@ class FeaturePanel:
         except ValueError:
             return None
         _, _, value_scale = _feature_display(name, self.units.get(name, ""))
-        values = [self.executed[:, executed_index + 1] * value_scale]
-        try:
-            planned_index = self.planned_names.index(name)
-        except ValueError:
-            planned_index = None
-        if planned_index is not None:
-            values.append(self.planned[:, planned_index + 1] * value_scale)
+        values = [
+            _display_feature_values(
+                self.task_id,
+                name,
+                self.executed[:, executed_index + 1],
+                value_scale,
+            )
+        ]
         references = constraint_references(
             self.learned_constraint_series, name, "planning_constraint_specs"
         )
         if references:
             values.append(
-                np.asarray(
-                    [reference.value * value_scale for reference in references],
-                    dtype=float,
+                _display_feature_values(
+                    self.task_id,
+                    name,
+                    [reference.value for reference in references],
+                    value_scale,
                 )
             )
         combined = np.concatenate(
@@ -475,17 +683,20 @@ class FeaturePanel:
         overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
         width, height = image.size
+        self._prepare_curve_cache(image.size, panel_width_ratio, timestamp_s)
+        if self._static_layer is not None:
+            return self._draw_cached(image, timestamp_s)
         margin = max(10, int(round(height * 0.012)))
         panel_width = int(
             np.clip(
                 width * float(panel_width_ratio),
-                min(480, width - 2 * margin),
+                min(400, width - 2 * margin),
                 width - 2 * margin,
             )
         )
         x0, x1 = width - margin - panel_width, width - margin
         y0, y1 = margin, height - margin
-        font, font_bold, font_title = _fonts(height)
+        font, font_bold, font_title, font_legend = _fonts(height)
         scale = float(np.clip(height / 1080.0, 0.75, 1.4))
         line_thin = max(1, int(round(scale)))
         line_mid = max(2, int(round(2.3 * scale)))
@@ -499,39 +710,36 @@ class FeaturePanel:
         )
         draw.text(
             (x0 + pad, y0 + max(8, pad // 2)),
-            f"{self.visualization.get('task_id', 'Task')} feature profiles",
+            "Feature Profiles and Learned Constraints",
             fill=(20, 24, 30, 255),
             font=font_title,
         )
         legend_y = y0 + int(round(42 * scale))
         legend_items = [
-            ("executed", EXECUTED_COLOR, "line"),
-            ("planned", PLANNED_COLOR, "dashed"),
+            ("executed trajectory", EXECUTED_COLOR, "line"),
         ]
         if self.show_learned_constraints:
             legend_items.extend(
                 [
                     (
-                        "learned equality target",
+                        "learned equality constraint",
                         LEARNED_CONSTRAINT_COLOR,
                         "equality",
                     ),
                     (
-                        "learned inequality bound\nand feasible region",
+                        "learned inequality constraint\n(feasible side shaded)",
                         LEARNED_CONSTRAINT_COLOR,
                         "inequality",
                     ),
                 ]
             )
         legend_x = x0 + pad
-        sample_width = int(round(24 * scale))
-        column_width = max(135, int(round((panel_width - 2 * pad) / 2)))
-        legend_line_height = int(round(22 * scale))
-        for item_index, (label, color, style) in enumerate(legend_items):
-            column = item_index % 2
-            row = item_index // 2
-            lx = legend_x + column * column_width
-            ly = legend_y + row * legend_line_height
+        sample_width = int(round(36 * scale))
+        legend_line_height = int(round(24 * scale))
+        legend_cursor_y = legend_y
+        for label, color, style in legend_items:
+            lx = legend_x
+            ly = legend_cursor_y
             if style == "equality":
                 draw.line(
                     (lx, ly + 7 * scale, lx + sample_width, ly + 7 * scale),
@@ -552,15 +760,6 @@ class FeaturePanel:
                     dash=7 * scale,
                     gap=4 * scale,
                 )
-            elif style == "dashed":
-                _draw_dashed_segment(
-                    draw,
-                    (lx, ly + 7 * scale, lx + sample_width, ly + 7 * scale),
-                    fill=color,
-                    width=line_mid,
-                    dash=6 * scale,
-                    gap=4 * scale,
-                )
             else:
                 draw.line(
                     (lx, ly + 7 * scale, lx + sample_width, ly + 7 * scale),
@@ -575,21 +774,11 @@ class FeaturePanel:
                     if style in {"equality", "inequality"}
                     else color
                 ),
-                font=font,
+                font=font_legend,
                 spacing=max(0, int(round(scale))),
             )
-        legend_rows = int(math.ceil(len(legend_items) / 2.0))
-        legend_extra_height = (
-            legend_line_height
-            if any("\n" in label for label, _, _ in legend_items)
-            else 0
-        )
-        stage_top = (
-            legend_y
-            + legend_rows * legend_line_height
-            + legend_extra_height
-            + int(round(5 * scale))
-        )
+            legend_cursor_y += (label.count("\n") + 1) * legend_line_height
+        stage_top = legend_cursor_y + int(round(5 * scale))
         label_width = int(
             np.clip(panel_width * 0.30, 145 * scale, 185 * scale)
         )
@@ -603,6 +792,25 @@ class FeaturePanel:
             ) / max(self.video_duration_s, 1e-9) * plot_width
 
         stage_height = int(round(21 * scale))
+        stage_bottom = stage_top + stage_height
+        table_x0 = x0 + pad
+        draw.rectangle(
+            (table_x0, stage_top, plot_x1, stage_bottom),
+            fill=(250, 251, 253, 215),
+            outline=(145, 154, 166, 220),
+            width=line_thin,
+        )
+        draw.line(
+            (plot_x0, stage_top, plot_x0, stage_bottom),
+            fill=(145, 154, 166, 220),
+            width=line_thin,
+        )
+        draw.text(
+            (table_x0 + 6 * scale, stage_top + 1 * scale),
+            "Stage",
+            fill=(18, 24, 38, 245),
+            font=font_bold,
+        )
         for window in self.windows:
             xa, xb = x_at(window.start_s), x_at(window.end_s)
             color = STAGE_COLORS[window.index % len(STAGE_COLORS)]
@@ -612,7 +820,7 @@ class FeaturePanel:
                 for channel in color
             )
             draw.rectangle(
-                (xa, stage_top, xb, stage_top + stage_height),
+                (xa, stage_top, xb, stage_bottom),
                 fill=(*pastel, 225),
                 outline=(*color, 210),
                 width=line_thin,
@@ -625,9 +833,7 @@ class FeaturePanel:
             )
         rows_top = stage_top + stage_height + int(round(5 * scale))
         row_height = max(62, int((y1 - pad - rows_top) / max(len(self.names), 1)))
-        planned_index = {
-            name: index for index, name in enumerate(self.planned_names)
-        }
+        row_layouts = []
         for row, name in enumerate(self.names):
             row_y0 = rows_top + row * row_height
             row_y1 = min(y1 - pad, row_y0 + row_height)
@@ -638,14 +844,12 @@ class FeaturePanel:
             source_unit = self.units.get(name, "")
             label, display_unit, value_scale = _feature_display(name, source_unit)
             executed_times = self.executed[:, 0]
-            executed_values = self.executed[:, row + 1] * value_scale
-            pindex = planned_index.get(name)
-            if pindex is None:
-                planned_times = np.empty(0, dtype=float)
-                planned_values = np.empty(0, dtype=float)
-            else:
-                planned_times = self.planned[:, 0] * self.planned_time_scale
-                planned_values = self.planned[:, pindex + 1] * value_scale
+            executed_values = _display_feature_values(
+                self.task_id,
+                name,
+                self.executed[:, row + 1],
+                value_scale,
+            )
             learned_refs = (
                 constraint_references(
                     self.learned_constraint_series,
@@ -656,14 +860,11 @@ class FeaturePanel:
                 else []
             )
             all_values = [executed_values[np.isfinite(executed_values)]]
-            if planned_values.size:
-                all_values.append(planned_values[np.isfinite(planned_values)])
-            reference_values = np.asarray(
-                [
-                    reference.value * value_scale
-                    for reference in learned_refs
-                ],
-                dtype=float,
+            reference_values = _display_feature_values(
+                self.task_id,
+                name,
+                [reference.value for reference in learned_refs],
+                value_scale,
             )
             if reference_values.size:
                 all_values.append(reference_values[np.isfinite(reference_values)])
@@ -689,30 +890,12 @@ class FeaturePanel:
                 fill=(18, 24, 38, 255),
                 font=font_bold,
             )
-            current_value = _value_at_or_before(
-                executed_times, executed_values, timestamp_s
-            )
-            draw.text(
-                (x0 + pad, row_y0 + int(round(30 * scale))),
-                (
-                    f"{_format_value(current_value)} {display_unit}"
-                    if display_unit
-                    else _format_value(current_value)
-                ),
-                fill=EXECUTED_COLOR,
-                font=font,
-            )
             draw.rectangle(
                 (plot_x0, py0, plot_x1, py1),
                 fill=(248, 250, 252, 205),
                 outline=(188, 196, 206, 220),
                 width=line_thin,
             )
-            for transition_start, transition_end in self.transitions:
-                draw.rectangle(
-                    (x_at(transition_start), py0, x_at(transition_end), py1),
-                    fill=TRANSITION_COLOR,
-                )
             for window in self.windows[1:]:
                 x = x_at(window.start_s)
                 draw.line(
@@ -722,7 +905,7 @@ class FeaturePanel:
                 )
             learned_line_width = max(3, int(round(2.0 * scale)))
             learned_heavy_width = max(4, int(round(3.0 * scale)))
-            for reference in learned_refs:
+            for reference, reference_value in zip(learned_refs, reference_values):
                 self._draw_constraint(
                     overlay,
                     draw,
@@ -730,64 +913,49 @@ class FeaturePanel:
                     self.windows,
                     x_at,
                     y_at,
-                    value_scale,
+                    float(reference_value),
                     py0,
                     py1,
                     LEARNED_CONSTRAINT_COLOR,
                     learned_line_width,
                     learned_heavy_width,
                 )
-            planned_visible = planned_times <= timestamp_s
-            planned_points = [
-                (x_at(time_value), y_at(value))
-                for time_value, value in zip(
-                    planned_times[planned_visible], planned_values[planned_visible]
-                )
-                if math.isfinite(float(value))
-            ]
-            _draw_styled_polyline(
-                draw,
-                planned_points,
-                fill=PLANNED_COLOR,
-                width=line_mid,
-                dashed=True,
-            )
-            executed_visible = executed_times <= timestamp_s
+            executed_finite = np.isfinite(executed_values)
+            executed_curve_times = executed_times[executed_finite]
             executed_points = [
                 (x_at(time_value), y_at(value))
                 for time_value, value in zip(
-                    executed_times[executed_visible],
-                    executed_values[executed_visible],
+                    executed_curve_times,
+                    executed_values[executed_finite],
                 )
-                if math.isfinite(float(value))
             ]
-            _draw_styled_polyline(
-                draw,
-                executed_points,
-                fill=EXECUTED_COLOR,
-                width=line_mid,
-                dashed=False,
-            )
-            cursor_x = x_at(timestamp_s)
-            draw.line(
-                (cursor_x, py0, cursor_x, py1),
-                fill=CURSOR_COLOR,
-                width=line_thin,
-            )
-            if math.isfinite(current_value):
-                radius = max(2, int(round(2.5 * scale)))
-                current_y = y_at(current_value)
-                draw.ellipse(
-                    (
-                        cursor_x - radius,
-                        current_y - radius,
-                        cursor_x + radius,
-                        current_y + radius,
+            row_layouts.append(
+                {
+                    "row": row,
+                    "name": name,
+                    "executed_times": executed_curve_times,
+                    "executed_points": executed_points,
+                    "executed_values": executed_values[executed_finite],
+                    "display_unit": display_unit,
+                    "value_text_xy": (
+                        x0 + pad,
+                        row_y0 + int(round(30 * scale)),
                     ),
-                    fill=EXECUTED_COLOR,
-                )
-        composited = Image.alpha_composite(image, overlay).convert("RGB")
-        return cv2.cvtColor(np.asarray(composited), cv2.COLOR_RGB2BGR)
+                    "font": font,
+                    "line_width": line_mid,
+                    "cursor_width": line_thin,
+                    "radius": max(2, int(round(2.5 * scale))),
+                    "plot_x0": plot_x0,
+                    "plot_width": plot_width,
+                    "py0": py0,
+                    "py1": py1,
+                    "vmin": vmin,
+                    "vmax": vmax,
+                }
+            )
+        self._static_layer = overlay.copy()
+        self._row_layouts = row_layouts
+        return self._draw_cached(image, timestamp_s)
 
     @staticmethod
     def _draw_constraint(
@@ -797,7 +965,7 @@ class FeaturePanel:
         windows: Sequence[StageWindow],
         x_at,
         y_at,
-        value_scale: float,
+        display_value: float,
         py0: float,
         py1: float,
         color: tuple[int, int, int, int],
@@ -808,8 +976,7 @@ class FeaturePanel:
             return
         window = windows[reference.stage]
         xa, xb = x_at(window.start_s), x_at(window.end_s)
-        value = reference.value * value_scale
-        y = float(np.clip(y_at(value), py0, py1))
+        y = float(np.clip(y_at(display_value), py0, py1))
         kind = _semantics_kind(reference.semantics)
         if kind == "target":
             band = max(1.5, 0.05 * float(py1 - py0))
@@ -842,12 +1009,51 @@ class FeaturePanel:
         )
 
 
+def nvenc_available() -> bool:
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=size=1920x1080:rate=30",
+        "-frames:v",
+        "1",
+        "-an",
+        "-c:v",
+        "h264_nvenc",
+        "-f",
+        "null",
+        "-",
+    ]
+    return subprocess.run(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+
+
 class FFmpegVideoWriter:
-    def __init__(self, path: Path, fps: float, size: tuple[int, int], crf: int):
+    def __init__(
+        self,
+        path: Path,
+        fps: float,
+        size: tuple[int, int],
+        crf: int,
+        encoder: str,
+    ):
         self.path = path
         self.size = (int(size[0]), int(size[1]))
         self.log_path = path.with_suffix(path.suffix + ".ffmpeg.log")
         self.log_stream = self.log_path.open("wb")
+        requested_encoder = str(encoder).strip().lower()
+        use_nvenc = requested_encoder == "nvenc" or (
+            requested_encoder == "auto" and nvenc_available()
+        )
+        self.encoder = "h264_nvenc" if use_nvenc else "libx264"
         command = [
             "ffmpeg",
             "-hide_banner",
@@ -865,18 +1071,42 @@ class FFmpegVideoWriter:
             "-i",
             "pipe:0",
             "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            str(int(crf)),
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            str(path),
         ]
+        if use_nvenc:
+            command.extend(
+                [
+                    "-c:v",
+                    "h264_nvenc",
+                    "-preset",
+                    "fast",
+                    "-rc:v",
+                    "vbr",
+                    "-cq:v",
+                    str(int(crf)),
+                    "-b:v",
+                    "0",
+                ]
+            )
+        else:
+            command.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    str(int(crf)),
+                ]
+            )
+        command.extend(
+            [
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(path),
+            ]
+        )
         self.process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
@@ -913,11 +1143,12 @@ def render_run(
     *,
     fps: float,
     crf: int,
+    encoder: str,
     panel_width_ratio: float,
     max_seconds: float | None,
 ) -> dict:
     video_path, visualization_path = _run_inputs(run_directory)
-    visualization = _load_json(visualization_path)
+    visualization = _load_render_visualization(run_directory, visualization_path)
     info = probe_video(video_path)
     full_duration = float(info["duration"])
     if full_duration <= 0.0:
@@ -940,6 +1171,7 @@ def render_run(
         float(fps),
         (int(info["width"]), int(info["height"])),
         int(crf),
+        encoder,
     )
     source_index = 0
     schedule_index = 0
@@ -980,6 +1212,10 @@ def render_run(
         "features": panel.names,
         "stages": len(panel.windows),
         "planned_time_scale": panel.planned_time_scale,
+        "timing_source": visualization.get("profile_synchronization", {}).get(
+            "basis", "native"
+        ),
+        "encoder": writer.encoder,
     }
 
 
@@ -990,7 +1226,7 @@ def render_final_frame_preview(
     panel_width_ratio: float,
 ) -> dict:
     video_path, visualization_path = _run_inputs(run_directory)
-    visualization = _load_json(visualization_path)
+    visualization = _load_render_visualization(run_directory, visualization_path)
     info = probe_video(video_path)
     duration_s = float(info["duration"])
     if duration_s <= 0.0:
@@ -1040,6 +1276,7 @@ def main() -> None:
             options.output,
             fps=options.fps,
             crf=options.crf,
+            encoder=options.encoder,
             panel_width_ratio=options.panel_width_ratio,
             max_seconds=options.max_seconds,
         )

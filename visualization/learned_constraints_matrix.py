@@ -78,6 +78,11 @@ def _display_scale_and_unit(dataset_name: str, feature_name: str) -> tuple[float
             return 1000.0, "mm/s"
         if name == "ang_speed":
             return 180.0 / np.pi, "deg/s"
+    if "barclean" in dataset:
+        if name in {"obs_dist", "table_dist", "lateral_offset", "axial_offset"}:
+            return 1000.0, "mm"
+        if name in {"tool_pitch", "tool_roll", "tool_yaw"}:
+            return 180.0 / np.pi, "deg"
     return 1.0, ""
 
 

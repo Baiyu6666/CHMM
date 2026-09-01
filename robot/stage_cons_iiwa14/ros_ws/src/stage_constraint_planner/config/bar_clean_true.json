@@ -37,10 +37,10 @@
     "obs_dist",
     "table_dist",
     "lateral_offset",
+    "axial_offset",
     "tool_pitch",
     "tool_roll",
-    "tool_yaw",
-    "axial_offset"
+    "tool_yaw"
   ],
   "feature_units": {
     "obs_dist": "m",

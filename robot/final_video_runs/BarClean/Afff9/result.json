@@ -22,9 +22,9 @@
   },
   "final_run_name": "Afff9",
   "outcomes": {
-    "bar_clean": "success",
-    "obs_avoid": "success",
-    "table_clean": "success"
+    "bar_clean": "fail",
+    "obs_avoid": "fail",
+    "table_clean": "fail"
   },
   "schema_version": 2,
   "source_run_directory": "/data/demos/BarClean/20260829T094356_342346Z_real_task",
